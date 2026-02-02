@@ -1,0 +1,563 @@
+{
+  "version": "2.0.0",
+  "last_updated": "2025-12-24",
+  "phase": 1,
+  "total_tools": 20,
+
+  "categories": {
+    "system": {
+      "description": "System-level operations and monitoring",
+      "tools": [
+        {
+          "tool_name": "open_app",
+          "description": "Launch installed applications",
+          "execution_target": "client",
+          "params_schema": {
+            "target": { "type": "string", "required": true },
+            "args": { "type": "array", "required": false }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "process_id": { "type": "integer" },
+              "launch_time": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 3000
+          }
+        },
+        {
+          "tool_name": "close_app",
+          "description": "Kill running processes",
+          "execution_target": "client",
+          "params_schema": {
+            "target": { "type": "string", "required": true },
+            "force": { "type": "boolean", "required": false, "default": false }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "exit_code": { "type": "integer" },
+              "closed_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "This app has unsaved work. Force close anyway?",
+            "default_timeout_ms": 3000
+          }
+        },
+        {
+          "tool_name": "restart_app",
+          "description": "Restart apps safely",
+          "execution_target": "client",
+          "params_schema": {
+            "target": { "type": "string", "required": true },
+            "save_state": {
+              "type": "boolean",
+              "required": false,
+              "default": true
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "old_process_id": { "type": "integer" },
+              "new_process_id": { "type": "integer" },
+              "restart_time": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.92,
+            "default_requires_approval": true,
+            "default_approval_question": "Should I save the current state before restarting?",
+            "default_timeout_ms": 5000
+          }
+        },
+        {
+          "tool_name": "system_info",
+          "description": "Get CPU, RAM, Disk usage",
+          "execution_target": "client",
+          "params_schema": {
+            "metrics": {
+              "type": "array",
+              "required": false,
+              "default": ["cpu", "ram", "disk"]
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "cpu_percent": { "type": "number" },
+              "ram_percent": { "type": "number" },
+              "disk_percent": { "type": "number" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
+        },
+        {
+          "tool_name": "battery_status",
+          "description": "Power monitoring and battery info",
+          "execution_target": "client",
+          "params_schema": {},
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "percent": { "type": "number" },
+              "is_charging": { "type": "boolean" },
+              "time_remaining": { "type": "string" },
+              "health": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
+          }
+        },
+        {
+          "tool_name": "network_status",
+          "description": "Internet connectivity and IP info",
+          "execution_target": "client",
+          "params_schema": {
+            "check_internet": {
+              "type": "boolean",
+              "required": false,
+              "default": true
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "connected": { "type": "boolean" },
+              "local_ip": { "type": "string" },
+              "public_ip": { "type": "string" },
+              "network_name": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 3000
+          }
+        },
+        {
+          "tool_name": "clipboard_read",
+          "description": "Read clipboard content",
+          "execution_target": "client",
+          "params_schema": {},
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "content": { "type": "string" },
+              "content_type": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 500
+          }
+        },
+        {
+          "tool_name": "clipboard_write",
+          "description": "Write to clipboard",
+          "execution_target": "client",
+          "params_schema": {
+            "content": { "type": "string", "required": true }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "content_length": { "type": "integer" },
+              "copied_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 500
+          }
+        },
+        {
+          "tool_name": "notification_push",
+          "description": "Send native OS notifications",
+          "execution_target": "client",
+          "params_schema": {
+            "title": { "type": "string", "required": true },
+            "message": { "type": "string", "required": true },
+            "urgency": {
+              "type": "string",
+              "required": false,
+              "default": "normal"
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "notification_id": { "type": "string" },
+              "sent_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
+          }
+        },
+        {
+          "tool_name": "screenshot_capture",
+          "description": "Capture screen or window",
+          "execution_target": "client",
+          "params_schema": {
+            "target": {
+              "type": "string",
+              "required": false,
+              "default": "full"
+            },
+            "save_path": { "type": "string", "required": false }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "file_path": { "type": "string" },
+              "in_clipboard": { "type": "boolean" },
+              "resolution": { "type": "string" },
+              "captured_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.96,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
+        }
+      ]
+    },
+
+    "file_system": {
+      "description": "File and folder operations",
+      "tools": [
+        {
+          "tool_name": "file_search",
+          "description": "Locate files and folders",
+          "execution_target": "client",
+          "params_schema": {
+            "query": { "type": "string", "required": true },
+            "path": { "type": "string", "required": false, "default": "." },
+            "max_results": {
+              "type": "integer",
+              "required": false,
+              "default": 50
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "results": { "type": "array" },
+              "total_found": { "type": "integer" },
+              "search_time_ms": { "type": "number" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.94,
+            "default_requires_approval": false,
+            "default_timeout_ms": 10000
+          }
+        },
+        {
+          "tool_name": "file_open",
+          "description": "Open files with default or specified app",
+          "execution_target": "client",
+          "params_schema": {
+            "path": { "type": "string", "required": true },
+            "app": { "type": "string", "required": false }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "file_path": { "type": "string" },
+              "opened_with": { "type": "string" },
+              "opened_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 3000
+          }
+        },
+        {
+          "tool_name": "file_create",
+          "description": "Create new files with content",
+          "execution_target": "client",
+          "params_schema": {
+            "path": { "type": "string", "required": true },
+            "content": { "type": "string", "required": false, "default": "" },
+            "overwrite": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "file_path": { "type": "string" },
+              "size_bytes": { "type": "integer" },
+              "created_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "A file already exists at this path. Overwrite it?",
+            "default_timeout_ms": 5000
+          }
+        },
+        {
+          "tool_name": "file_delete",
+          "description": "Safely delete files",
+          "execution_target": "client",
+          "params_schema": {
+            "path": { "type": "string", "required": true },
+            "permanent": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "deleted_path": { "type": "string" },
+              "permanent": { "type": "boolean" },
+              "deleted_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.9,
+            "default_requires_approval": true,
+            "default_approval_question": "Are you sure you want to delete this file permanently?",
+            "default_timeout_ms": 3000
+          }
+        },
+        {
+          "tool_name": "file_move",
+          "description": "Move files to new location",
+          "execution_target": "client",
+          "params_schema": {
+            "source": { "type": "string", "required": true },
+            "destination": { "type": "string", "required": true },
+            "overwrite": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "old_path": { "type": "string" },
+              "new_path": { "type": "string" },
+              "moved_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.93,
+            "default_requires_approval": true,
+            "default_approval_question": "Destination file exists. Overwrite it?",
+            "default_timeout_ms": 5000
+          }
+        },
+        {
+          "tool_name": "file_copy",
+          "description": "Copy files",
+          "execution_target": "client",
+          "params_schema": {
+            "source": { "type": "string", "required": true },
+            "destination": { "type": "string", "required": true },
+            "overwrite": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "source_path": { "type": "string" },
+              "destination_path": { "type": "string" },
+              "size_bytes": { "type": "integer" },
+              "copied_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.96,
+            "default_requires_approval": false,
+            "default_timeout_ms": 10000
+          }
+        },
+        {
+          "tool_name": "file_read",
+          "description": "Read content from a file",
+          "execution_target": "client",
+          "params_schema": {
+            "path": { "type": "string", "required": true }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "content": { "type": "string" },
+              "size_bytes": { "type": "integer" },
+              "path": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000
+          }
+        },
+        {
+          "tool_name": "folder_create",
+          "description": "Create new directories",
+          "execution_target": "client",
+          "params_schema": {
+            "path": { "type": "string", "required": true },
+            "title": { "type": "string", "required": false, "default": "" },
+            "recursive": {
+              "type": "boolean",
+              "required": false,
+              "default": true
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "folder_path": { "type": "string" },
+              "created_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
+        },
+        {
+          "tool_name": "folder_cleanup",
+          "description": "Organize and clean folders",
+          "execution_target": "client",
+          "params_schema": {
+            "path": { "type": "string", "required": true },
+            "action": { "type": "string", "required": true }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "files_affected": { "type": "integer" },
+              "action_performed": { "type": "string" },
+              "cleaned_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.88,
+            "default_requires_approval": true,
+            "default_approval_question": "This will reorganize files in the folder. Continue?",
+            "default_timeout_ms": 30000
+          }
+        }
+      ]
+    },
+
+    "web": {
+      "description": "Web operations and API calls",
+      "tools": [
+        {
+          "tool_name": "web_search",
+          "description": "Search the web for information",
+          "execution_target": "server",
+          "params_schema": {
+            "query": { "type": "string", "required": true },
+            "max_results": {
+              "type": "integer",
+              "required": false,
+              "default": 10
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "results": { "type": "array" },
+              "total_results": { "type": "integer" },
+              "search_time_ms": { "type": "number" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000
+          }
+        },
+        {
+          "tool_name": "web_scrape",
+          "description": "Fetches and extracts readable content from a public webpage",
+          "execution_target": "server",
+          "params_schema": {
+            "query": { "type": "string", "required": true },
+            "max_results": {
+              "type": "integer",
+              "required": false,
+              "default": 10
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "results": { "type": "array" },
+              "total_results": { "type": "integer" },
+              "search_time_ms": { "type": "number" },
+              "summary": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000
+          }
+        }
+      ]
+    }
+  }
+}

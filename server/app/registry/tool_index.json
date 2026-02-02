@@ -1,0 +1,120 @@
+{
+  "version": "2.0.0",
+  "total_tools": 19,
+  "tools": [
+    {
+      "name": "open_app",
+      "description": "Launch installed applications",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "close_app",
+      "description": "Kill running processes",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "restart_app",
+      "description": "Restart apps safely",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "system_info",
+      "description": "Get CPU, RAM, Disk usage",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "battery_status",
+      "description": "Power monitoring and battery info",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "network_status",
+      "description": "Internet connectivity and IP info",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "clipboard_read",
+      "description": "Read clipboard content",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "clipboard_write",
+      "description": "Write to clipboard",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "notification_push",
+      "description": "Send native OS notifications",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "screenshot_capture",
+      "description": "Capture screen or window",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_search",
+      "description": "Locate files and folders",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_open",
+      "description": "Open files with default or specified app",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_create",
+      "description": "Create new files with content",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_delete",
+      "description": "Safely delete files",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_move",
+      "description": "Move files to new location",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_copy",
+      "description": "Copy files",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "folder_create",
+      "description": "Create new directories",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "folder_cleanup",
+      "description": "Organize and clean folders",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web for information",
+      "category": "web",
+      "execution_target": "server"
+    }
+  ]
+}

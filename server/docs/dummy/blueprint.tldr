@@ -1,0 +1,982 @@
+{
+	"tldrawFileFormatVersion": 1,
+	"schema": {
+		"schemaVersion": 2,
+		"sequences": {
+			"com.tldraw.store": 5,
+			"com.tldraw.asset": 1,
+			"com.tldraw.camera": 1,
+			"com.tldraw.document": 2,
+			"com.tldraw.instance": 25,
+			"com.tldraw.instance_page_state": 5,
+			"com.tldraw.page": 1,
+			"com.tldraw.instance_presence": 6,
+			"com.tldraw.pointer": 1,
+			"com.tldraw.shape": 4,
+			"com.tldraw.asset.bookmark": 2,
+			"com.tldraw.asset.image": 5,
+			"com.tldraw.asset.video": 5,
+			"com.tldraw.shape.group": 0,
+			"com.tldraw.shape.text": 3,
+			"com.tldraw.shape.bookmark": 2,
+			"com.tldraw.shape.draw": 2,
+			"com.tldraw.shape.geo": 10,
+			"com.tldraw.shape.note": 9,
+			"com.tldraw.shape.line": 5,
+			"com.tldraw.shape.frame": 1,
+			"com.tldraw.shape.arrow": 7,
+			"com.tldraw.shape.highlight": 1,
+			"com.tldraw.shape.embed": 4,
+			"com.tldraw.shape.image": 5,
+			"com.tldraw.shape.video": 4,
+			"com.tldraw.binding.arrow": 1
+		}
+	},
+	"records": [
+		{
+			"id": "pointer:pointer",
+			"typeName": "pointer",
+			"x": -7002.949864680963,
+			"y": -2595.9493585239215,
+			"lastActivityTimestamp": 1765205213003,
+			"meta": {}
+		},
+		{
+			"x": -9584.05355794413,
+			"y": -6547.201641044822,
+			"rotation": 0,
+			"isLocked": false,
+			"opacity": 1,
+			"meta": {},
+			"id": "shape:_6gBjFElKSp5eauxbRCbK",
+			"type": "text",
+			"props": {
+				"color": "orange",
+				"size": "xl",
+				"w": 4743.329366391819,
+				"font": "draw",
+				"textAlign": "start",
+				"autoSize": true,
+				"scale": 2.723703339874717,
+				"richText": {
+					"type": "doc",
+					"content": [
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣤⠖⠉⠉⠉⣉⣙⣛⣲⣶⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣧⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣷⣶⣿⠿⠛⠉⠉⠉⠹⣿⣿⣷⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⡏⠉⠂⠀⠀⠀⠀⠀⢠⣾⣿⣿⣿⣿⣿⣿⡿⢣⠀⠀⠀⠀⠀⠀⢻⣿⣿⣿⣿⣦⡀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⢀⣤⢄⡀⠀⠀⠀⠀⠀⣿⣤⣤⣤⣦⡄⠀⠀⢀⣿⣿⣿⠿⠿⠿⢿⣿⡇⠀⣆⠀⠀⠀⠀⠀⠈⣿⣿⣿⣿⠀⢹⡄⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⢸⣷⠀⠉⠂⠀⠀⠀⠀⣿⣿⠿⠿⠛⠃⠀⠀⢸⣿⣿⣏⠀⠀⠀⢸⣿⡇⠀⢻⡀⠀⠀⠀⠀⠀⣿⣿⣿⣿⠀⠀⣧⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠘⣿⣧⡀⠀⠀⠀⠀⠀⢱⣤⡀⠀⠀⣿⠀⠀⢸⣿⣿⣿⣷⣶⠀⣿⣿⡇⠀⢸⣧⠀⠀⠀⠀⠀⠘⠿⠿⠿⠀⠀⢹⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣶⣦⡀⠀⠀⢸⣿⣷⣀⣀⣿⣇⠀⢸⣿⣿⣿⠟⠋⠀⣿⣿⠃⠀⢸⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿⠛⠋⠀⠀⠀⠀⣿⣿⣿⠿⠟⢿⣦⣾⣿⣿⣿⡶⠀⢠⠿⠃⠀⢀⣼⣿⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⢀⣤⣤⣄⠀⠀⠀⠀⠀⠘⣿⣷⣄⣀⣀⡀⠀⢻⣤⣀⠀⠀⢸⣿⣿⣿⣿⣿⡟⠀⠀⠀⠀⣴⣅⡀⠈⠙⠻⢦⣤⣀⠀⠀⠀⠀⠀⢀⡇⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠸⣧⣀⠉⠉⠀⠀⠀⠀⠀⠘⣿⣿⣿⣿⣿⠀⢸⣿⣿⣆⣀⣼⣿⣿⣿⣿⣟⠁⠀⠀⠀⢸⣿⣿⣿⣷⣦⣤⣤⣿⣿⣿⣿⠶⠶⠶⡾⠁⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠙⢿⣿⣦⣴⣶⡦⠀⠀⠀⠸⣿⣿⣿⡁⢀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⠀⢀⠀⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⣴⡶⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠙⢿⣿⠋⣀⡀⣀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡏⠀⠈⣇⠀⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠙⢿⣿⣿⣿⣷⡀⠘⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀⢀⠈⠀⠀⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠙⢿⠛⠉⠀⢀⣼⣿⣿⣿⣿⡿⠿⢿⠉⠉⢙⡿⠿⣿⣿⣿⣿⣿⠉⠀⠀⠀⠈⠿⠿⠿⠿⠿⠿⠿⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢦⣶⣿⣿⣿⣿⣿⠿⣀⢀⣸⣷⣶⣾⣄⠀⣸⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⢀⡀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⢹⣿⣿⣿⣿⡇⠀⢨⣿⠋⠁⠀⠈⠻⣿⡁⠀⢻⣿⣿⣯⣄⢸⣿⣶⣶⣾⣿⣿⣿⣿⣶⣶⣶⣶⡆⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⢠⡏⢀⠀⣀⠔⠀⠀⠀⠈⣿⣿⣿⣿⡷⠒⢿⣇⠀⠀⠀⠀⠀⣿⡿⠒⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⣼⡁⣿⣾⡏⠀⠀⠀⠀⠀⢹⣿⣿⣿⣇⠀⣸⢿⣦⣄⣀⣠⣼⡿⣄⢀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⠛⠋⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⢿⣿⣿⣿⡇⠀⠀⠀⠀⠀⣾⣿⣿⣿⣿⣿⡁⠀⢹⠟⠛⢻⡅⠀⣨⣿⣿⣿⣿⣿⣿⣿⡿⠛⠛⠛⠿⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⢸⣿⣿⣿⡇⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣷⣿⣤⣤⣴⣿⣾⣿⣿⣿⣿⣿⣿⣿⣿⣇⡀⠀⠀⠀⠈⠙⠿⣿⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠈⢿⣿⣿⣷⠀⠀⠀⠀⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡄⠀⠀⠀⠀⠈⠻⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠈⠻⣿⣿⡄⠀⠀⠀⠀⠹⣿⣿⣇⠙⠻⠿⠿⠿⠿⠿⠛⠛⠛⠛⠛⠛⣻⣿⣿⣿⣿⣯⡀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⣷⣄⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠈⢿⣷⡀⠀⣄⠀⠀⠘⢿⣿⣷⣦⣤⣤⣤⣤⣤⣤⡴⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣶⣦⣄⣀⠀⠀⠀⠀⠀⠀⠈⢿⣦⡀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢸⣿⣿⣄⠈⢷⣤⡀⠀⠈⠉⠉⠉⠉⠉⠉⠉⠁⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⣤⣀⠀⠀⠀⠀⣿⠓⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢸⣿⠛⢿⣷⣤⣿⣿⣦⣄⣀⣀⣀⣀⣀⣀⣀⣤⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣦⡀⠀⢹⡄⠀⠀⠀⠀ "
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠙⢆⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⣠⣬⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⠛⠛⠿⣿⣿⣿⣿⣷⡀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢸⣿⣇⠀⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⢿⣿⣿⣤⣀⠀⠀⠀⠈⠻⣿⣿⣿⣷⡀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢸⣿⣿⡆⠈⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣤⡀⠈⠙⠿⣿⣿⣦⣄⠀⠀⠀⠙⣿⣿⣷⡀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⡀⠈⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠛⠛⠻⣿⣿⣿⣿⣷⣄⠀⠀⠙⠛⠿⠷⣄⠀⠀⢸⣿⣿⣧⡀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⡇⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⠁⠀⠀⠀⠀⠀⠙⠻⣿⣿⣿⣷⣄⠀⠀⠀⠀⠘⢷⣄⣼⣿⣿⠿⣷⣄\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠘⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠉⢳⡀⠀⠀⠀⠈⢿⣿⡿⠁⠀⠀⠉\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⢹⣿⣿⣀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢳⡀⠀⠀⢀⣾⡟⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠱⡀⣠⣿⣿⣷⡀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣹⣿⡿⠉⠙⢷⡀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠋⠛⠛⠻⠿⣿⣿⣦⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⡟⠁⠀⠀⠀⠑⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⣄⠀⠀⠉⠙⠻⢷⣦⣀⠀⠀⠀⢀⣠⡶⠋⠉⠻⣷⡄⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠋⠉⠉⠉⠉⠁⠀⠀⠀⠀⠀⠈⠉⠙⠋⠉⠉⠁⠀⠀⠀⠀⠙⠛⠀⠀⠀⠀⠀⠀⠀"
+								}
+							]
+						}
+					]
+				}
+			},
+			"parentId": "page:page",
+			"index": "a4ktQFGV",
+			"typeName": "shape"
+		},
+		{
+			"x": 8459.235871477827,
+			"y": 4334.676396243712,
+			"z": 0.2450068301454994,
+			"meta": {},
+			"id": "camera:page:page",
+			"typeName": "camera"
+		},
+		{
+			"x": 610.1590431463228,
+			"y": -5131.479777409814,
+			"rotation": 0,
+			"isLocked": false,
+			"opacity": 1,
+			"meta": {},
+			"id": "shape:W6txqWKWMY5m9SpejTuy4",
+			"type": "text",
+			"props": {
+				"color": "orange",
+				"size": "xl",
+				"w": 1117.8775634765625,
+				"font": "draw",
+				"textAlign": "start",
+				"autoSize": true,
+				"scale": 1.843785347383944,
+				"richText": {
+					"type": "doc",
+					"content": [
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡤⠖⣾⣿⣿⣿⣿⣶⠲⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠞⠁⠀⠀⠸⠯⠉⠉⢙⡇⠀⠀⠉⠳⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣼⠁⠀⠀⠀⠀⠀⠀⣠⣼⠁⠀⠀⠀⢠⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⢹⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡄⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⣶⣿⠒⠶⣤⣤⣤⣤⣤⣤⣤⡤⠠⣶⣗⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⠙⠒⠒⠛⠃⠀⠀⠀⠘⠛⠛⠰⠚⠉⢨⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣹⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡞⢸⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡇⢸⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣜⠁⣾⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣇⢘⡿⣄⡴⠶⠶⠶⠶⠶⢦⣀⣾⡟⠀⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣤⣤⣤⣶⣾⣿⣿⣅⢈⡀⠤⠖⠒⠦⠤⣈⠁⢐⡟⣠⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡤⠤⠤⠤⣤⣄⣴⣫⣾⣿⡿⠟⣿⣿⣿⣿⣿⡏⣠⠤⠤⣤⣦⣤⣼⣷⠟⠋⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣤⣤⠴⠋⠁⠀⠀⠀⠀⢀⣄⠀⠉⠻⢥⣤⣾⣿⣿⣿⣿⣿⣿⣿⣶⣿⣿⣿⣿⣶⣀⠤⠚⢹⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡜⢻⡿⠁⠀⠀⠀⠀⠀⠀⠀⠋⠈⠻⠂⠀⠀⠙⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡛⠛⢿⡟⠻⠀⠄⢸⢿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⡿⠁⢸⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢻⣿⡉⠉⠉⠹⣿⣿⣿⣿⣿⣶⣌⣀⠀⠀⣼⢡⣿⡳⢶⣤⣀⢰⣦⡀⠀⠀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⠇⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⢻⣿⢂⡤⠖⠋⠛⠻⢭⣉⠋⠁⠈⠙⠲⢬⣻⣧⢻⡄⠙⠿⣿⡿⠈⠣⡀⠀⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡟⢠⡇⠠⣤⣽⣾⠁⠀⠀⠀⠀⠀⠙⠒⠒⠢⢤⡀⠀⠉⠛⣛⡹⣄⠈⠪⣷⣄⠀⡐⡄⠀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣶⣄⠀⠀⠀⠀⠀⠀⠀⠀⣴⣶⣶⣶⣶⣿⡄⢾⡇⠀⠉⢸⣿⣿⣦⣀⠀⠀⠀⢄⠀⠀⠀⠀⠈⠙⠲⢄⣈⠙⠾⠆⠀⣽⠛⢯⢹⣿⡀⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⠿⢷⡄⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣧⠘⢿⣾⣤⣾⣿⣿⣿⣟⠀⠀⠀⠀⠑⢄⠀⠀⠀⠀⠀⠀⠈⠛⠢⣄⠠⡿⡄⠈⢿⣿⡇⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⣻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⣀⣀⣿⣿⠟⠛⠛⠀⠀⠀⠀⠀⠈⠱⣄⠀⠀⠀⠀⠀⣀⠀⠈⢧⣷⠙⢦⠈⡿⠃⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⢼⡟⠁⢸⠏⠛⠛⠛⠛⠛⠛⠛⠛⠻⢿⣿⣿⣿⣿⣿⡿⠟⠛⣿⣶⣤⣀⡀⠀⠀⠀⠀⠀⠈⠳⡀⠀⠀⠀⡝⠀⣼⣫⠿⣧⣌⢷⣸⡄⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣯⠋⠀⠀⠘⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿⠁⠀⠀⠀⣿⣿⣿⣿⡿⣶⠠⢄⡀⠀⠀⠀⠱⡄⠀⠀⡇⠀⡏⡏⠀⠈⠹⣦⢧⢷⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⣇⠀⠀⠀⠀⠘⡆⠀⠠⣦⣀⠀⠀⠀⠀⠀⢀⣿⣿⡇⠀⠀⠀⡸⢻⡏⠉⠛⠛⠛⠀⠀⠉⠳⢤⡀⠀⠙⡄⠀⢧⠀⣧⡇⠀⠀⠀⢻⡟⡞⡄⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠇⠙⡄⠀⠀⠀⠀⡞⠀⠀⠈⠙⠻⣶⣄⠀⠀⣾⣿⡟⠀⠀⠀⡰⠃⣸⠃⠀⠀⠀⠀⠀⠀⠀⠀⢀⠙⠲⣄⠸⡄⠸⡆⠹⣷⡀⠀⠀⠈⡇⢡⡇⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⡾⠀⠀⢳⡀⠀⠀⣰⠁⠀⠀⠀⠀⠀⠈⠙⢿⣾⣿⣿⠲⣄⣠⠞⠁⢠⣷⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠉⠳⢿⣦⡹⡄⠁⠀⢀⡳⣤⣀⡼⠁⠘⡇⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⠀⢀⡾⠁⠀⠀⠘⡇⠀⣠⠇⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⠛⠁⢀⠀⠀⠉⠉⠛⠿⣷⣄⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣇⣠⠴⠋⠀⠀⢹⠀⠀⠀⡇⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⠀⠀⢠⠎⠀⠀⠀⠀⠀⢸⠉⠁⠈⠹⢷⣦⣀⠀⠀⢠⣿⣿⣿⣿⣿⣿⣦⣶⣥⣤⣀⠀⠀⠀⠀⠀⠉⠓⠦⣄⠀⠀⠀⠀⠀⠀⠀⠙⣷⣄⠀⠀⠀⣮⠀⠀⢀⠃⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⠀⠀⣀⡤⠿⠒⢤⡄⠀⠀⠀⢸⡀⠀⠀⠀⠀⠉⠻⣷⡶⢿⣿⣿⣿⣿⣿⣿⠇⠉⠙⠛⠿⢿⣶⣄⠀⠀⠀⠀⠀⠀⠉⠓⠤⣄⡀⠀⠀⠀⢸⣿⣦⠀⠀⢸⠀⠀⣸⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⢀⣾⣧⣤⠀⠀⢠⣿⠠⢤⣤⠀⣇⡀⠀⠀⠀⠀⣠⠞⠀⠈⢿⣿⣿⣿⣿⣿⣇⠀⠀⠀⠀⠀⠈⠉⠓⠲⢤⣄⡀⠀⠀⠀⠀⠀⠉⠓⠦⣄⠈⡏⢫⣄⣀⢸⣤⣴⠏⠀⠀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⠀⡼⡇⠀⠀⠀⢠⡾⠻⣶⣿⣟⠻⠿⣿⣷⣦⣤⠞⠁⠀⠀⠀⠈⣿⣿⣿⣿⣿⣿⣿⣷⣦⡀⠀⠀⠀⠀⠀⠀⠀⠉⢻⣶⣤⣀⡀⠀⠀⢀⣨⣿⣋⣉⣉⡹⠿⣿⣿⠄⣀⡀⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⢀⡷⠛⢋⣿⣿⡏⠀⠀⠘⣧⠈⠙⠒⢬⡿⠛⠁⠀⠀⠀⠀⠀⠀⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣤⣤⣤⣤⣤⣴⣾⣿⣿⣿⣿⣿⠞⠉⠀⠀⠀⠀⠀⠀⢀⡟⠈⠆⢿⡄⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠀⡞⠀⠀⣸⣿⠏⣿⣄⠀⠀⢹⡉⠉⠲⢾⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣟⣿⡿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⢸⠀⠀⠀⠀⢳⠀\r"
+								}
+							]
+						},
+						{
+							"type": "paragraph",
+							"content": [
+								{
+									"type": "text",
+									"text": "⠸⠀⠀⢀⣿⡟⠀⣿⣿⣦⠀⠀⢹⡟⠶⣏⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣿⣿⡻⢻⠣⠀⠀⠈⠙⠛⠛⠿⢿⠿⠟⡟⠛⠉⠓⡦⠤⣀⣀⠀⠀⠀⠀⠀⢀⢀⡇⠀⠀⡀⠀⠀⡆"
+								}
+							]
+						}
+					]
+				}
+			},
+			"parentId": "page:page",
+			"index": "a3brjGaV",
+			"typeName": "shape"
+		},
+		{
+			"x": -5075.890344045005,
+			"y": -6348.025534040947,
+			"rotation": 0,
+			"isLocked": false,
+			"opacity": 1,
+			"meta": {},
+			"id": "shape:EbA6pOewy8zQwKZMZIxVO",
+			"type": "text",
+			"props": {
+				"color": "orange",
+				"size": "xl",
+				"w": 435.5963439941406,
+				"font": "draw",
+				"textAlign": "start",
+				"autoSize": true,
+				"scale": 19.981136112444034,
+				"richText": {
+					"type": "doc",
+					"content": [
+						{
+							"type": "paragraph",
+							"attrs": {
+								"dir": "auto"
+							},
+							"content": [
+								{
+									"type": "text",
+									"text": "Blueprint Jarvis AI"
+								}
+							]
+						}
+					]
+				}
+			},
+			"parentId": "page:page",
+			"index": "a1obZhOV",
+			"typeName": "shape"
+		},
+		{
+			"editingShapeId": "shape:_6gBjFElKSp5eauxbRCbK",
+			"croppingShapeId": null,
+			"selectedShapeIds": [
+				"shape:_6gBjFElKSp5eauxbRCbK"
+			],
+			"hoveredShapeId": "shape:_6gBjFElKSp5eauxbRCbK",
+			"erasingShapeIds": [],
+			"hintingShapeIds": [],
+			"focusedGroupId": null,
+			"meta": {},
+			"id": "instance_page_state:page:page",
+			"pageId": "page:page",
+			"typeName": "instance_page_state"
+		},
+		{
+			"meta": {},
+			"id": "page:page",
+			"name": "Page 1",
+			"index": "a1",
+			"typeName": "page"
+		},
+		{
+			"gridSize": 10,
+			"name": "",
+			"meta": {},
+			"id": "document:document",
+			"typeName": "document"
+		},
+		{
+			"followingUserId": null,
+			"opacityForNextShape": 1,
+			"stylesForNextShape": {},
+			"brush": null,
+			"scribbles": [],
+			"cursor": {
+				"type": "default",
+				"rotation": 0
+			},
+			"isFocusMode": false,
+			"exportBackground": true,
+			"isDebugMode": false,
+			"isToolLocked": false,
+			"screenBounds": {
+				"x": 0,
+				"y": 0,
+				"w": 1188,
+				"h": 724
+			},
+			"insets": [
+				false,
+				false,
+				true,
+				false
+			],
+			"zoomBrush": null,
+			"isGridMode": false,
+			"isPenMode": false,
+			"chatMessage": "",
+			"isChatting": false,
+			"highlightedUserIds": [],
+			"isFocused": true,
+			"devicePixelRatio": 1.25,
+			"isCoarsePointer": false,
+			"isHoveringCanvas": true,
+			"openMenus": [],
+			"isChangingStyle": false,
+			"isReadonly": false,
+			"meta": {},
+			"duplicateProps": null,
+			"id": "instance:instance",
+			"currentPageId": "page:page",
+			"typeName": "instance"
+		}
+	]
+}

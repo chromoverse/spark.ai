@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "rootDir": "..",
+    "outDir": "../../dist-electron",
+    "skipLibCheck": true,
+    "baseUrl": "..",
+    "paths": {
+      "@shared/*": ["types/*"],
+      "@root/types": ["../types.d.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.cts", "../types/**/*.ts", "../../types.d.ts"]
+}

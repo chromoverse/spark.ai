@@ -1,0 +1,78 @@
+1. steps : Components:
+
+User → Emotion detector + Embedding → Memory Manager (Chroma / Pinecone)
+       ↓
+   Context Builder → Prompt Generator → OpenRouter API (Mistral 7B)
+       ↓
+      Response → Stored back to Memory DB for learning
+
+Emotion Detector – you already have it.
+Embedding Engine – to encode all your text, past chats, preferences, etc.
+Vector Database (Memory) – stores “memories” as embeddings with metadata.
+Context Retriever – every new message, retrieves the most relevant memories (like “Siddhant likes deep explanations when learning code”).
+Prompt Composer – combines core prompt + emotion + retrieved memory + new message → sends to Mistral.
+Memory Updater – after each interaction, stores new insights about your personality, phrasing, or patterns.
+
+
+2. How They Work Together in Your Jarvis
+Purpose	Type	Example Data
+Facts / Config	PostgreSQL / MongoDB	User profile, preferences, settings
+Conversations + long-term thoughts	Vector DB	All your chats, notes, behaviors, embeddings
+Short-term memory	In-memory (RAM / Redis)	Current session context
+
+
+💡 Next Step Suggestion
+
+Now that you understand threading and audio channels, here’s what we can do next (you pick):
+
+🗣️ Add real-time voice input (SpeechRecognition or Whisper).
+
+🔁 Queue multiple TTS outputs safely so they don’t overlap.
+
+🧵 Switch to async model using asyncio for smoother control than threading.
+
+🎚️ Manage multiple voice channels (e.g., interrupting TTS mid-speech).
+
+
+3. jarvis_backend/
+│
+├── .env
+├── requirements.txt
+├── README.md
+├── main.py                   # Entry point (or you may name it app/main.py)
+│
+├── app/
+│   ├── __init__.py
+│   ├── main.py               # Instantiates FastAPI app, includes routers
+│   ├── config.py             # Settings / env loader
+│   ├── routes/               # All API endpoint files
+│   │   ├── __init__.py
+│   │   ├── chat.py           # Chat endpoint(s)
+│   │   ├── translate.py      # Translation endpoint
+│   │   └── tts.py            # Text-to-speech endpoint
+│   │
+│   ├── models/               # Domain models (Pydantic schemas, maybe DB models)
+│   │   ├── __init__.py
+│   │   ├── chat_schema.py
+│   │   ├── translate_schema.py
+│   │   └── tts_schema.py
+│   │
+│   ├── services/             # Business logic (model inference, translation, TTS)
+│   │   ├── __init__.py
+│   │   ├── chat_service.py
+│   │   ├── translate_service.py
+│   │   └── tts_service.py
+│   │
+│   ├── utils/                # Utility helpers
+│   │   ├── __init__.py
+│   │   ├── model_loader.py   # Load LLM/model
+│   │   ├── translator.py     # Translation util
+│   │   └── tts_helper.py     # TTS util
+│   │
+│   └── dependencies.py       # Any shared dependencies (e.g., model session, DB)
+│
+└── tests/                     # Test files for your endpoints/services
+    ├── __init__.py
+    ├── test_chat.py
+    ├── test_translate.py
+    └── test_tts.py

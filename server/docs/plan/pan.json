@@ -1,0 +1,382 @@
+Step 1 — Pick PHASE 0–2 Tools (15 max)
+
+Here’s a lean, useful set of 15 tools:
+
+Tool	Phase	Purpose
+intent_parser	0	Parse raw input → structured intent
+task_router	0	Map intent → tool/action
+conversation_state	0	Track ongoing tasks
+context_memory	0	Store temporary context
+error_classifier	0	Classify execution failures
+open_app	1	Launch installed apps
+close_app	1	Kill running processes
+file_search	1	Find files/folders
+file_open	1	Open files
+run_command	2	Execute shell commands
+start_server	2	Start dev servers
+kill_port	2	Free occupied ports
+git_status	2	Get repo status
+log_monitor	2	Tail logs
+notification_push	1	Send OS notifications
+
+✅ These cover thinking (0) → system (1) → dev (2)
+
+Step 2 — Tool Contracts (JSON Schema)
+
+Every tool has a strict input/output schema:
+
+
+{
+  "tool_name": "open_app",
+  "input": {
+    "type": "object",
+    "properties": {
+      "app_name": { "type": "string" }
+    },
+    "required": ["app_name"]
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "success": { "type": "boolean" },
+      "message": { "type": "string" }
+    },
+    "required": ["success"]
+  }
+}
+
+input: what Jarvis must send
+
+output: what tool returns, must be predictable
+
+All 15 tools will follow this pattern.
+
+Step 3 — Build Executor (Minimal Prototype)
+
+Executor is the core “brain → hand” dispatcher.
+
+# executor.py
+from typing import Any, Dict, Callable
+
+# Tool registry
+tool_registry: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
+
+#TODO Decorator to register tools
+def register_tool(name: str):
+    def decorator(func: Callable):
+        tool_registry[name] = func
+        return func
+    return decorator
+
+# Executor
+def execute_tool(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    if tool_name not in tool_registry:
+        return {"success": False, "message": f"Tool {tool_name} not found"}
+    try:
+        return tool_registry[tool_name](params)
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+Step 4 — Tool Implementation Example
+@register_tool("open_app")
+def open_app_tool(params):
+    import subprocess, sys
+    app = params.get("app_name")
+    if not app:
+        return {"success": False, "message": "No app_name provided"}
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen([app])
+        else:
+            subprocess.Popen([app])
+        return {"success": True, "message": f"{app} opened"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+Other tools (file_search, run_command, git_status) follow the same pattern:
+
+Input → validated JSON
+
+Output → JSON {success, message, optional data}
+
+Step 5 — Execution Flow (Taste)
+User Input → intent_parser → task_router → executor → tool → response → memory/context update
+
+
+Step 1: User says: "Open VSCode"
+
+Step 2: intent_parser → {"action":"open_app", "app_name":"code"}
+
+Step 3: task_router → selects open_app_tool
+
+Step 4: executor → runs open_app_tool({"app_name":"code"})
+
+Step 5: Output returned → "success": true, "message": "code opened"
+
+This is PHASE 0–2 Jarvis “working skeleton”.
+
+
+{
+  "user_query": "Open YouTube and WhatsApp",
+  "plan": [
+    {
+      "tool_name": "open_app",
+      "parameters": { "target": "YouTube" },
+      "metadata": {
+        "confidence_score": 0.98,
+        "requires_clarification": false,
+        "clarification_text": ""
+      }
+    },
+    {
+      "tool_name": "open_app",
+      "parameters": { "target": "WhatsApp" },
+      "metadata": {
+        "confidence_score": 0.99,
+        "requires_clarification": false,
+        "clarification_text": ""
+      }
+    }
+  ]
+}
+
+"action_block": {
+  "execution_mode": "parallel", // or "sequential"
+  "tool_calls": [
+    {
+      "tool_name": "...",
+      "args": {
+        "target": "...",
+        "payload": "...",
+        "options": {}
+      },
+      "verification": {
+        "confidence": 0.95,
+        "ask_first": false,
+        "clarification": ""
+      }
+    }
+  ]
+}
+
+{
+  "id": "T2",
+  "tool_name": "notification_push",
+  "depends_on": ["T1"],
+  "parameters": {
+    "message": "Current BTC price: {{VALUE}}" 
+  },
+  "data_mapping": {
+    "VALUE": {
+      "source": "T1",
+      "path": "$.price || $.data.price || $.result", 
+      "default": "Unknown Price"
+    }
+  }
+}
+
+
+// plan
+{
+  "plan_id": "req_8829_alpha",
+  "execution_strategy": "dynamic_graph",
+  "tasks": [
+    {
+      "id": "T1",
+      "tool_name": "web_search",
+      "depends_on": [],
+      "parameters": {
+        "query": "current price of Bitcoin in USD",
+        "search_depth": "fast"
+      },
+      "data_mapping": null,
+      "metadata": {
+        "confidence": 0.98,
+        "timeout_ms": 5000,
+        "on_failure": "abort"
+      }
+    },
+    {
+      "id": "T2",
+      "tool_name": "notification_push",
+      "depends_on": ["T1"],
+      "parameters": {
+        "title": "Crypto Alert",
+        "message": "The current price of BTC is {{T1.output.price}}."
+      },
+      "data_mapping": {
+        "price": "$.tasks.T1.result.extracted_value"
+      },
+      "metadata": {
+        "confidence": 0.95,
+        "requires_confirmation": false,
+        "on_failure": "continue"
+      }
+    },
+    {
+      "id": "T3",
+      "tool_name": "file_create",
+      "depends_on": ["T1"],
+      "parameters": {
+        "target": "./crypto_logs/btc_price.txt",
+        "payload": "Timestamp: {{SYSTEM.now}} | Price: {{T1.output.price}}",
+        "action_type": "append"
+      },
+      "data_mapping": {
+        "price": "$.tasks.T1.result.extracted_value"
+      },
+      "metadata": {
+        "confidence": 0.99,
+        "on_failure": "retry_3x"
+      }
+    }
+  ]
+}
+
+
+// -----------------------------
+{
+  "request_id": "unique_id_per_user_query",
+  "cognitive_state": {
+    "user_query": "EXACT user input",
+    "emotion": "happy|concerned|neutral",
+    "thought_process": "Gemini's internal reasoning for the plan (optional but helpful for debugging)",
+    "answer": "A concise natural language response to the user."
+  },
+  "execution_plan": {
+    "strategy": "parallel|sequential|dynamic_graph",
+    "tasks": [
+      {
+        "id": "T1",
+        "tool": "web_search",
+        "depends_on": [],
+        "params": {
+          "query": "current weather in New York",
+        },
+        "mapping": null,
+        "metadata": {
+          "confidence": 0.98,
+          "requires_approval": false,
+          "on_failure": "abort"
+        }
+      },
+      {
+        "id": "T2",
+        "tool": "text_summarize",
+        "depends_on": ["T1"],
+        "params": {
+          "text": "{{T1.output.raw_content}}",
+          "length": "short"
+        },
+        "mapping": {
+          "text": "$.tasks.T1.output.raw_content"
+        },
+        "metadata": {
+          "confidence": 0.95,
+          "requires_approval": false,
+          "on_failure": "continue"
+        }
+      }
+    ]
+  }
+}
+
+{
+  "request_id": "8b2k-99a1",
+  "cognitive_state": {
+    "thought": "User wants a folder created and a file written. I will use parallel execution for the folder and app, then sequential for writing.",
+    "answer": "Sure thing! I'm setting up your workspace now."
+  },
+  "execution_plan": {
+    "strategy": "dynamic_graph",
+    "tasks": [
+      {
+        "id": "T1",
+        "tool": "system_control",
+        "params": {
+          "action": "create_directory",
+          "target": "C:/Secret",
+          "status_message": "Sir, I've just completed creating your 'Secret' folder."
+        },
+        "metadata": { "requires_approval": false }
+      },
+      {
+        "id": "T2",
+        "tool": "app_control",
+        "params": {
+          "action": "launch",
+          "target": "Notepad",
+          "status_message": "Notepad is now open and ready."
+        },
+        "metadata": { "requires_approval": false }
+      },
+      {
+        "id": "T3",
+        "tool": "keyboard_input",
+        "depends_on": ["T2"],
+        "params": {
+          "target": "Notepad",
+          "action": "write_text",
+          "content": "hello world",
+          "status_message": "I've finished writing your note, Sir."
+        },
+        "metadata": { 
+          "requires_approval": true,
+          "approval_question": "Should I save the file after writing 'hello'?" 
+        }
+      }
+    ]
+  }
+}
+
+6️⃣ What you should build NEXT (recommended)
+
+Task-optimized path 👇
+
+1️⃣ task_models.py (Pydantic)
+2️⃣ tool_registry.py
+3️⃣ mapping_resolver.py
+4️⃣ task_executor.py
+5️⃣ Approval + retry layer
+6️⃣ Intelligence layer LAST
+
+
+{
+  "task_id": "T1",
+  "tool": "open_app",
+
+  "execution_target": "client",
+
+  "depends_on": ["T0"],
+
+  "inputs": {
+    "target": "chrome",
+    "args": ["--incognito"]
+  },
+
+  "input_mapping": {
+    "target": "$.tasks.T0.output.data.app_name"
+  },
+
+  "lifecycle_messages": {
+    "on_start": "Opening application",
+    "on_success": "Application opened successfully",
+    "on_failure": "Failed to open application"
+  },
+
+  "control": {
+    "confidence": 0.97,
+    "requires_approval": false,
+    "approval_question": null,
+    "on_failure": "abort"
+  }
+}
+
+✅ Correct design
+Component	Responsibility
+Orchestrator	task ordering, mapping, dispatch
+TaskExecutor	run ONE task
+MappingResolver	resolve JSONPath
+ExecutionState	store truth
+ToolAdapter	actual side effects

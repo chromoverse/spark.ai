@@ -1,0 +1,19 @@
+{
+  "appId": "com.chromoverse.spark-ai-assistant",
+  "productName": "Spark AI Assistant",
+  "files": ["dist-electron", "dist-react"],
+  "icon": "icon-high-ql.png",
+  "extraResources": ["dist-electron/preload.cjs", "src/assets/**"],
+  "mac": {
+    "target": "dmg"
+  },
+
+  "linux": {
+    "target": "AppImage",
+    "category": "Utility"
+  },
+
+  "win": {
+    "target": ["portable", "msi"]
+  }
+}

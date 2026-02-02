@@ -1,0 +1,10 @@
+.env
+.venv
+env.sample
+__pycache__
+
+# AI models
+models/
+*.bin
+*.safetensors
+*.onnx

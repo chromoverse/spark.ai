@@ -1,0 +1,6 @@
+# python-service/requirements.txt
+psutil>=5.9.0
+pyautogui>=0.9.54
+pynput>=1.7.6
+pywin32>=306; sys_platform == 'win32'
+pyperclip
