@@ -9,7 +9,7 @@ import logging
 from typing import Optional, List, Dict, Any, Set
 from datetime import datetime
 
-from app.client_core.models import (
+from ..models import (
     Task, TaskRecord, ExecutionState,
     TaskOutput, TaskStatus
 )

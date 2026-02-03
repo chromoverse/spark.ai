@@ -60,8 +60,7 @@ class ToolRegistry:
                 logger.warning("Tool registry already loaded. Skipping reload.")
                 return
             
-            from app.config import BUNDLE_DIR
-            path = BUNDLE_DIR / registry_path
+            path = Path(registry_path)
             print("path", path)
             
             if not path.exists():

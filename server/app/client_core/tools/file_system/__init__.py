@@ -3,7 +3,7 @@
 File system tools subpackage.
 """
 
-from app.client_core.tools.file_system.operations import (
+from .operations import (
     CreateFileTool,
     FolderCreateTool,
     FileCopyTool,

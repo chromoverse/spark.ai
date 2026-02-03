@@ -9,9 +9,9 @@ import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 
-from app.client_core.engine.orchestrator import ClientOrchestrator
-from app.client_core.engine.binding_resolver import ClientBindingResolver
-from app.client_core.models import TaskRecord, TaskOutput
+from .orchestrator import ClientOrchestrator
+from .binding_resolver import ClientBindingResolver
+from ..models import TaskRecord, TaskOutput
 
 logger = logging.getLogger(__name__)
 

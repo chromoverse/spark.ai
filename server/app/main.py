@@ -60,9 +60,9 @@ async def lifespan(app: FastAPI):
         # 5. Register WebSocket task handlers
         logger.info("📡 Registering WebSocket handlers...")
         # real cleint emmiter ws
-        task_handler = await register_task_events(sio, connected_users)
+        # task_handler = await register_task_events(sio, connected_users)
         #  Add mock client emitter - mimicking task_handler behavior
-        # mock_emitter = get_task_emitter()
+        mock_emitter = get_task_emitter()
 
                
         # Initialize Execution Engine
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
         
         # Wire them together
         execution_engine.set_server_executor(server_executor)
-        execution_engine.set_client_emitter(task_handler)
+        execution_engine.set_client_emitter(mock_emitter)
         logger.info("Components wired together")
         
     except Exception as e:

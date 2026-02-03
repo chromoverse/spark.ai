@@ -10,10 +10,10 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from app.client_core.tools.base import get_client_tool_registry, BaseTool
+from .base import get_client_tool_registry, BaseTool
 
 # Import all client tool classes
-from app.client_core.tools.file_system.operations import (
+from .file_system.operations import (
     CreateFileTool,
     FolderCreateTool,
     FileCopyTool,
@@ -21,7 +21,7 @@ from app.client_core.tools.file_system.operations import (
     FileSearchTool,
     FileReadTool
 )
-from app.client_core.tools.system.operations import OpenAppTool, CloseAppTool
+from .system.operations import OpenAppTool, CloseAppTool
 
 logger = logging.getLogger(__name__)
 
@@ -154,5 +154,5 @@ def get_client_tool_for_execution(tool_name: str) -> Optional[BaseTool]:
     
     This is called during task execution (FAST!).
     """
-    from app.client_core.tools.base import get_client_tool
+    from .base import get_client_tool
     return get_client_tool(tool_name)

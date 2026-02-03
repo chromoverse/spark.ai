@@ -193,23 +193,23 @@ async def request_tts(sid, data: RequestTTS):
         lang = user.get("language", "").strip().lower()
         await emit_server_status(f"Loaded user preferences as gender={gender}, language={lang}", "INFO", sid)
 
-        # # Select voice
-        # if lang == "ne":
-        #     voice = settings.nep_voice_male if gender == "male" else settings.nep_voice_female
-        # elif lang == "hi":
-        #     voice = settings.hindi_voice_male if gender == "male" else settings.hindi_voice_female
-        # else:
-        #     voice = settings.eng_voice_male if gender == "male" else settings.eng_voice_female
+        # Select voice
+        if lang == "ne":
+            voice = settings.nep_voice_male if gender == "male" else settings.nep_voice_female
+        elif lang == "hi":
+            voice = settings.hindi_voice_male if gender == "male" else settings.hindi_voice_female
+        else:
+            voice = settings.eng_voice_male if gender == "male" else settings.eng_voice_female
 
-        # logger.info(f"Using voice: {voice} for user: {user_id}")
+        logger.info(f"Using voice: {voice} for user: {user_id}")
 
         # Stream via service
         success = await tts_service.stream_to_socket(
             sio=sio,
             sid=sid,
             text=data.text,
-            lang=lang,
-            gender=gender
+            voice=voice,
+            rate="+10%"
         )
 
         if not success:

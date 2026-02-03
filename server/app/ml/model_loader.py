@@ -34,7 +34,7 @@ class ModelLoader:
         
         model_path = config["path"]
         
-        # Check if already downloaded (simple check: folder exists and not empty)
+        # Check if already downloaded
         if model_path.exists() and any(model_path.iterdir()):
             logger.info(f"✅ Model '{model_key}' already exists at {model_path}")
             return True
@@ -43,27 +43,48 @@ class ModelLoader:
         
         try:
             model_path.mkdir(parents=True, exist_ok=True)
-            from huggingface_hub import snapshot_download
-
-            # Uniform download logic for all HF models
-            # This ensures the model files land EXACTLY in model_path
-            # skipping the confusing cache structures
-            snapshot_download(
-                repo_id=str(config["name"]),
-                local_dir=str(model_path),
-                local_dir_use_symlinks=False,  # Important for windows/portability
-                repo_type="model"
-            )
+            
+            if config["type"] == "sentence-transformer":
+                from sentence_transformers import SentenceTransformer
+                # Download directly to the target path
+                model = SentenceTransformer(config["name"], cache_folder=str(model_path.parent))
+                # Move to exact location if needed
+                import shutil
+                source = model_path.parent / config["name"].replace("/", "--")
+                if source.exists() and source != model_path:
+                    if model_path.exists():
+                        shutil.rmtree(model_path)
+                    shutil.move(str(source), str(model_path))
+                
+            elif config["type"] == "whisper":
+                from faster_whisper import WhisperModel
+                # faster-whisper uses size names, not full model names
+                model_size = config["name"].split("/")[-1].replace("whisper-", "")
+                # Just initialize - it will download automatically
+                WhisperModel(model_size, download_root=str(model_path.parent), device="cpu")
+                
+            elif config["type"] == "transformers":
+                from transformers import AutoModelForSequenceClassification, AutoTokenizer
+                model = AutoModelForSequenceClassification.from_pretrained(config["name"])
+                tokenizer = AutoTokenizer.from_pretrained(config["name"])
+                model.save_pretrained(str(model_path))
+                tokenizer.save_pretrained(str(model_path))
+            
+            elif config["type"] == "fishaudio":
+                from huggingface_hub import snapshot_download
+                # Download the complete model repository
+                snapshot_download(
+                    repo_id=str(config["name"]),  # Explicitly cast to str
+                    local_dir=str(model_path),
+                    local_dir_use_symlinks=False,
+                    repo_type="model"
+                )
                 
             logger.info(f"✅ Model '{model_key}' downloaded successfully")
             return True
             
         except Exception as e:
             logger.error(f"❌ Failed to download model '{model_key}': {e}")
-            # Clean up partial download
-            # import shutil
-            # if model_path.exists():
-            #     shutil.rmtree(model_path)
             return False
     
     def load_model(self, model_key: str, force_reload: bool = False) -> Optional[Any]:
@@ -92,17 +113,17 @@ class ModelLoader:
                 
             elif config["type"] == "whisper":
                 from faster_whisper import WhisperModel
-                # faster-whisper can load from a local directory path
+                model_size = config["name"].split("/")[-1].replace("whisper-", "")
                 compute_type = "float16" if config["device"] in ["cuda"] else "int8"
                 model = WhisperModel(
-                    str(model_path), # Load from local path
+                    model_size,
                     device=config["device"],
-                    compute_type=compute_type
+                    compute_type=compute_type,
+                    download_root=str(model_path.parent)
                 )
                 
             elif config["type"] == "transformers":
-                from transformers import pipeline
-                # Pipelines can load from local path
+                from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
                 model = pipeline(
                     "text-classification",
                     model=str(model_path),
@@ -117,22 +138,23 @@ class ModelLoader:
                 # Load tokenizer
                 tokenizer = AutoTokenizer.from_pretrained(str(model_path))
                 
-                # Load model
-                model_file = model_path / "model.pt"
-                if not model_file.exists():
-                     # Fallback if model.pt isn't the name or structure differs?
-                     # FishAudio s1-mini usually has model.pt or similar in repo. 
-                     # Checking repo: fishaudio/openaudio-s1-mini has model.pth possibly?
-                     # Let's assume standard structure or handle exception.
-                     pass
-
+                # Load model with appropriate precision
                 if config["device"] == "cuda":
-                    model = torch.jit.load(str(model_file), map_location=config["device"]).half()
+                    # Use half precision for GPU
+                    model = torch.jit.load(
+                        str(model_path / "model.pt"),
+                        map_location=config["device"]
+                    ).half()
                 else:
-                    model = torch.jit.load(str(model_file), map_location=config["device"])
+                    # Use full precision for CPU
+                    model = torch.jit.load(
+                        str(model_path / "model.pt"),
+                        map_location=config["device"]
+                    )
                 
-                model.eval()
+                model.eval()  # Set to evaluation mode
                 
+                # Return both model and tokenizer as a dict
                 model = {
                     "model": model,
                     "tokenizer": tokenizer,

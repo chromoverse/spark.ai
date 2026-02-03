@@ -3,7 +3,7 @@
 Executor subpackage - tool execution.
 """
 
-from app.client_core.executor.tool_executor import (
+from .tool_executor import (
     ClientToolExecutor,
     init_client_executor,
     get_client_executor
