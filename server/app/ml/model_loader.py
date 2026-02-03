@@ -70,16 +70,7 @@ class ModelLoader:
                 model.save_pretrained(str(model_path))
                 tokenizer.save_pretrained(str(model_path))
             
-            elif config["type"] == "fishaudio":
-                from huggingface_hub import snapshot_download
-                # Download the complete model repository
-                snapshot_download(
-                    repo_id=str(config["name"]),  # Explicitly cast to str
-                    local_dir=str(model_path),
-                    local_dir_use_symlinks=False,
-                    repo_type="model"
-                )
-                
+            
             logger.info(f"✅ Model '{model_key}' downloaded successfully")
             return True
             
@@ -131,36 +122,7 @@ class ModelLoader:
                     device=0 if config["device"] == "cuda" else -1
                 )
                 
-            elif config["type"] == "fishaudio":
-                import torch
-                from transformers import AutoTokenizer
-                
-                # Load tokenizer
-                tokenizer = AutoTokenizer.from_pretrained(str(model_path))
-                
-                # Load model with appropriate precision
-                if config["device"] == "cuda":
-                    # Use half precision for GPU
-                    model = torch.jit.load(
-                        str(model_path / "model.pt"),
-                        map_location=config["device"]
-                    ).half()
-                else:
-                    # Use full precision for CPU
-                    model = torch.jit.load(
-                        str(model_path / "model.pt"),
-                        map_location=config["device"]
-                    )
-                
-                model.eval()  # Set to evaluation mode
-                
-                # Return both model and tokenizer as a dict
-                model = {
-                    "model": model,
-                    "tokenizer": tokenizer,
-                    "device": config["device"]
-                }
-                
+            
             else:
                 logger.error(f"❌ Unknown model type: {config['type']}")
                 return None
@@ -224,21 +186,7 @@ class ModelLoader:
                 self._models["emotion"]("warmup text")
                 logger.info("✅ Emotion model warmed up")
             
-            # Warmup Fish Audio TTS
-            if "openaudio_s1_mini" in self._models:
-                import torch
-                tts_model = self._models["openaudio_s1_mini"]
-                dummy_text = "Hello world"
-                tokens = tts_model["tokenizer"](
-                    dummy_text,
-                    return_tensors="pt",
-                    padding=True
-                ).to(tts_model["device"])
-                
-                with torch.no_grad():
-                    _ = tts_model["model"](**tokens)
-                    
-                logger.info("✅ Fish Audio TTS model warmed up")
+            # Note: Kokoro TTS handles its own initialization separately
             
             # Whisper warmup happens on first transcription
             

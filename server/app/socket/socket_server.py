@@ -193,23 +193,20 @@ async def request_tts(sid, data: RequestTTS):
         lang = user.get("language", "").strip().lower()
         await emit_server_status(f"Loaded user preferences as gender={gender}, language={lang}", "INFO", sid)
 
-        # Select voice
-        if lang == "ne":
-            voice = settings.nep_voice_male if gender == "male" else settings.nep_voice_female
-        elif lang == "hi":
-            voice = settings.hindi_voice_male if gender == "male" else settings.hindi_voice_female
-        else:
-            voice = settings.eng_voice_male if gender == "male" else settings.eng_voice_female
+        # Note: Don't manually select voice here - let VoiceSelector handle it
+        # based on lang/gender. Settings voice names (Edge TTS format like hi-IN-MadhurNeural)
+        # are incompatible with Kokoro which uses voice IDs like hf_alpha, hm_omega etc.
+        logger.info(f"TTS request for user: {user_id} with lang={lang}, gender={gender}")
 
-        logger.info(f"Using voice: {voice} for user: {user_id}")
-
-        # Stream via service
+        # Stream via service - pass lang and gender for auto voice selection
         success = await tts_service.stream_to_socket(
             sio=sio,
             sid=sid,
             text=data.text,
-            voice=voice,
-            rate="+10%"
+            voice=None,  # Let VoiceSelector pick the right voice for the engine
+            rate="+10%",
+            lang=lang,
+            gender=gender
         )
 
         if not success:

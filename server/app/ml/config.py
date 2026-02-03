@@ -38,12 +38,6 @@ MODELS_CONFIG = {
         "type": "transformers",
         "device": "auto",
     },
-    "openaudio_s1_mini": {
-    "name": "fishaudio/openaudio-s1-mini",
-    "path": MODELS_DIR / "openaudio-s1-mini",
-    "type": "fishaudio",
-    "device": "auto",
-    }
 }
 
 # GPU/Device detection

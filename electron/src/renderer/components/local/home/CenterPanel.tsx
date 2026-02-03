@@ -107,7 +107,7 @@ const handleRefreshToken = async (e: React.MouseEvent<HTMLButtonElement>) => {
 
   function testWebSocket() {
     emit("request-tts", {
-      text: "नमस्ते, यह एक परीक्षण है।",
+      text: "Sir everything ready now. How was your day tough. I am here to help you with your work.  ",
       userId: "test-user-123",
     });
   }

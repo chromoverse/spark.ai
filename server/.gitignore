@@ -8,3 +8,4 @@ models/
 *.bin
 *.safetensors
 *.onnx
+voices.json

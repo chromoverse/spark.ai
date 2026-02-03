@@ -53,6 +53,8 @@ class TTSService:
         text: str,
         voice: Optional[str] = None,
         rate: Optional[str] = None,
+        lang: Optional[str] = None,
+        gender: Optional[str] = None,
         chunk_delay: float = 0.0
     ) -> bool:
         """
@@ -64,7 +66,7 @@ class TTSService:
         
         try:
             chunk_count = 0
-            async for audio_bytes in self.generate_audio_stream(text, voice, rate):
+            async for audio_bytes in self.generate_audio_stream(text, voice, rate, lang=lang, gender=gender):
                 await sio.emit("tts-chunk", audio_bytes, to=sid)
                 chunk_count += 1
                 
