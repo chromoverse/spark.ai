@@ -3,10 +3,11 @@ ML Configuration
 Centralized configuration for all ML models
 """
 import os
-from pathlib import Path
+from app.config import USER_DATA_DIR
 
 # Base paths
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# Models should strictly reside in USER_DATA_DIR (AppData) to be writable and persistent
+BASE_DIR = USER_DATA_DIR
 MODELS_DIR = BASE_DIR / "models"
 
 # Ensure models directory exists
@@ -23,8 +24,8 @@ MODELS_CONFIG = {
         "max_seq_length": 512,
     },
     "whisper": {
-        "name": "openai/whisper-small",
-        "path": MODELS_DIR / "whisper-small",
+        "name": "Systran/faster-whisper-small",
+        "path": MODELS_DIR / "faster-whisper-small",
         "type": "whisper",
         "device": "auto",
         "compute_type": "float16",  # or int8 for CPU
@@ -45,15 +46,18 @@ MODELS_CONFIG = {
 
 # GPU/Device detection
 def get_optimal_device():
-    """Detect the best available device"""
+    """Detect the best available device (cuda > mps > cpu)"""
     try:
         import torch
         if torch.cuda.is_available():
             return "cuda"
         elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return "mps"
-    except ImportError:
-        pass
+    except (ImportError, OSError) as e:
+        # ImportError: torch not installed
+        # OSError: DLL loading failed (WinError 1114)
+        import warnings
+        warnings.warn(f"PyTorch not available or DLL error: {e}. Falling back to CPU.")
     return "cpu"
 
 # Set device for all models

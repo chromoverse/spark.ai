@@ -3,14 +3,14 @@
 Tools subpackage - client-side tool implementations.
 """
 
-from .base import (
+from app.client_core.tools.base import (
     BaseTool,
     ToolOutput,
     ToolInstanceRegistry,
     get_client_tool_registry,
     get_client_tool
 )
-from .loader import (
+from app.client_core.tools.loader import (
     load_client_tools,
     get_client_tool_for_execution,
     get_client_schema_registry

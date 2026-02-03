@@ -6,8 +6,8 @@ Executes client-side tools using preloaded tool instances.
 """
 
 import logging
-from ..models import TaskRecord, TaskOutput
-from ..tools.loader import (
+from app.client_core.models import TaskRecord, TaskOutput
+from app.client_core.tools.loader import (
     get_client_tool_for_execution,
     get_client_schema_registry
 )

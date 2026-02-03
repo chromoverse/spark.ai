@@ -8,3 +8,6 @@ models/
 *.bin
 *.safetensors
 *.onnx
+
+dist/
+build/

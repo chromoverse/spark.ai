@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-from ..models import TaskRecord, ExecutionState
+from app.client_core.models import TaskRecord, ExecutionState
 
 logger = logging.getLogger(__name__)
 

@@ -55,15 +55,15 @@ def initialize_client(user_id: str = "default_client") -> None:
     
     try:
         # 1. Load all client tools (creates instances, injects schemas)
-        from .tools.loader import load_client_tools
+        from app.client_core.tools.loader import load_client_tools
         load_client_tools()
         
         # 2. Initialize execution engine
-        from .engine import init_client_engine
+        from app.client_core.engine import init_client_engine
         _execution_engine = init_client_engine(user_id=user_id)
         
         # 3. Initialize and set tool executor
-        from .executor import init_client_executor
+        from app.client_core.executor import init_client_executor
         tool_executor = init_client_executor()
         _execution_engine.set_tool_executor(tool_executor)
         

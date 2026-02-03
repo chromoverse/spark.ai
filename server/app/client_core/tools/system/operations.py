@@ -10,9 +10,9 @@ import logging
 from typing import Dict, Any
 from datetime import datetime
 
-from ..base import BaseTool, ToolOutput
-from ...utils.app_searcher import AppSearcher
-from ...utils.app_resolver import AppResolver
+from app.client_core.tools.base import BaseTool, ToolOutput
+from app.client_core.utils.app_searcher import AppSearcher
+from app.client_core.utils.app_resolver import AppResolver
 
 
 class OpenAppTool(BaseTool):

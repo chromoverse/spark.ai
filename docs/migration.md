@@ -215,24 +215,61 @@ Creates:
 jarvis-core.exe
 ```
 
-### Step 2️⃣ Electron App Layout
+### Step 2️⃣ Electron App Layout (Packaged)
 
 ```
-Jarvis/
- ├── Jarvis.exe          ← Electron
- ├── resources/
- │   ├── jarvis-core.exe
+Jarvis.exe          ← Electron UI
+resources/
+ ├── app/
+ │   ├── jarvis-core.exe ← FastAPI server
+ │   ├── redis-server.exe
  │   ├── config.json
  │   └── tools/
+data/
+ ├── memory/        ← Redis snapshots or persistent memory
+ └── logs/
 ```
 
-### Step 3️⃣ Electron Starts Server
+* The `data/` folder lives **outside** of the app folder (AppData / Library / .local) so it’s writable.
+* The `resources/app` folder contains **read-only binaries** (server + Redis) and static tools.
+
+### Step 3️⃣ Control During Build
+
+Yes — `electron-builder` lets you:
+
+* Include **any executables, scripts, static files**
+* Decide their **relative path** in the packaged app
+
+Example `electron-builder` config:
+
+```json
+"build": {
+  "files": [
+    "dist/**/*",
+    "resources/jarvis-core.exe",
+    "resources/redis-server.exe",
+    "resources/tools/**",
+    "resources/config.json"
+  ]
+}
+```
+
+### Step 4️⃣ Accessing Resources at Runtime
 
 ```js
-spawn('jarvis-core.exe', { detached: true })
+import path from "path";
+import { app } from "electron";
+
+const resourcesPath = app.isPackaged
+  ? process.resourcesPath  // installed app resources
+  : path.join(__dirname, "resources");  // dev mode
+
+const serverPath = path.join(resourcesPath, "jarvis-core.exe");
+const redisPath = path.join(resourcesPath, "redis-server.exe");
 ```
 
-Server runs silently in background.
+* Electron can now **spawn both Redis and Jarvis Core** automatically
+* Both run in background and are invisible to user
 
 ---
 
@@ -248,7 +285,7 @@ Use OS paths:
 | macOS   | ~/Library/Application Support/Jarvis |
 | Linux   | ~/.local/share/jarvis                |
 
-Electron provides this path.
+Server reads/writes here (memory, Redis snapshots, logs, configs).
 
 ---
 
@@ -288,13 +325,6 @@ Client responds:
 User Input → Server Planner → Server checks permission → Server executes tool → Client displays / asks for confirmation
 ```
 
-This ensures:
-
-* Security
-* Single source of execution
-* Clear responsibility
-* Local-first architecture
-
 ---
 
 ## 1️⃣4️⃣ Why This Design Works
@@ -321,6 +351,6 @@ But **NOT required to function locally**.
 ## ✅ Final Rule
 
 > **Ship ONE app.**
-> **Hide the server.**
+> **Hide the server and Redis.**
 > **Keep everything local.**
 > **Client asks for permission only; server executes all tasks.**

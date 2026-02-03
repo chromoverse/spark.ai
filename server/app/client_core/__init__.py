@@ -22,4 +22,4 @@ __all__ = [
     "receive_tasks_from_server"
 ]
 
-from .main import initialize_client, get_execution_engine, receive_tasks_from_server
+from app.client_core.main import initialize_client, get_execution_engine, receive_tasks_from_server

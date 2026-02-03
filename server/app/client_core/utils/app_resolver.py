@@ -178,7 +178,7 @@ class AppResolver:
 
 # Example usage:
 if __name__ == "__main__":
-    from .app_searcher import AppSearcher
+    from app.client_core.utils.app_searcher import AppSearcher
     
     searcher = AppSearcher()
     resolver = AppResolver(searcher)

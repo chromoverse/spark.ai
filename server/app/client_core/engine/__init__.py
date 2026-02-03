@@ -3,13 +3,13 @@
 Engine subpackage - execution engine and orchestrator.
 """
 
-from .execution_engine import (
+from app.client_core.engine.execution_engine import (
     ClientExecutionEngine,
     init_client_engine,
     get_client_engine
 )
-from .orchestrator import ClientOrchestrator
-from .binding_resolver import ClientBindingResolver
+from app.client_core.engine.orchestrator import ClientOrchestrator
+from app.client_core.engine.binding_resolver import ClientBindingResolver
 
 __all__ = [
     "ClientExecutionEngine",

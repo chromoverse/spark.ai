@@ -1,0 +1,1 @@
+D:/siddhant-files/projects/ai_assistant/ai_local/server/.venv/Scripts/Activate.ps1
