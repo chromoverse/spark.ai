@@ -4,7 +4,7 @@ env.sample
 __pycache__
 
 # AI models
-models/
+llm_models/
 *.bin
 *.safetensors
 *.onnx
