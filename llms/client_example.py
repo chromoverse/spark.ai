@@ -85,7 +85,7 @@ def get_streaming_response(prompt: str, system_prompt: str | None = None):
         "messages": messages,
         "max_tokens": 512,
         "temperature": 0.1,
-        "json_mode": False,
+        "json_mode": True,
         "stream": True
     }
 
@@ -196,6 +196,5 @@ if __name__ == "__main__":
         get_json_response(prompt, "Respond only with valid JSON.")
     else:
         # Run tests
-        get_streaming_response("hey do you know who is siddthecoder ?", "respond plain")
         test_simple_json()
         test_spark_prompt()

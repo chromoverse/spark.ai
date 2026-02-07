@@ -1,0 +1,19 @@
+# -------------------------------------------------------------------------------------
+# FastAPI Reasoning LLM Microservice - Dependencies
+# -------------------------------------------------------------------------------------
+# Core API framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Data validation and settings
+pydantic>=2.5.0
+pydantic-settings>=2.0.0
+
+# HTTP client for model downloads
+requests>=2.31.0
+
+# Progress bars for downloads
+tqdm>=4.66.0
+
+# PyInstaller for future executable builds (optional)
+# pyinstaller>=6.0.0

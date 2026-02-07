@@ -1,4 +1,3 @@
-
 import json
 import logging
 import asyncio
@@ -6,33 +5,140 @@ import time
 import hashlib
 import numpy as np
 import base64
+import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, TYPE_CHECKING
 from collections import OrderedDict
 from app.cache.base_manager import BaseRedisManager
 
+if TYPE_CHECKING:
+    from app.cache.lancedb_manager import LanceDBManager
+    from app.cache.local_kv_manager import LocalKVManager
+
 logger = logging.getLogger(__name__)
 NEPAL_TZ = timezone(timedelta(hours=5, minutes=45))
-EMBEDDING_TTL = 86400 * 7  # 7 days
-LOCAL_CACHE_SIZE = 500  # Number of message embeddings to kept in memory
+EMBEDDING_TTL = 86400 * 7
+LOCAL_CACHE_SIZE = 500
 
 class ChatCacheMixin(BaseRedisManager):
     """Conversation history and embedding logic"""
     
     _local_emb_cache: OrderedDict = OrderedDict()
+    _env: Optional[str] = None  # Cache environment type
+
+    def _init_env(self) -> str:
+        """Initialize environment once and cache it"""
+        if self._env is None:
+            from app.config import settings
+            self._env = settings.environment
+            logger.info(f"🌍 Environment initialized: {self._env}")
+        return self._env
+    
+    def _is_desktop_env(self) -> bool:
+        """Check if running in desktop environment"""
+        return self._init_env() == "desktop"
+
+    def _get_vector_client(self) -> Optional['LanceDBManager']:
+        """Get vector client for desktop"""
+        if self._is_desktop_env() and self.vector_client:
+            return self.vector_client
+        return None
+    
+    def _get_kv_client(self) -> Optional['LocalKVManager']:
+        """Get LocalKV client for desktop - TYPE SAFE"""
+        if self._is_desktop_env():
+            from app.cache.local_kv_manager import LocalKVManager
+            if isinstance(self.client, LocalKVManager):
+                return self.client
+        return None
 
     async def add_message(self, user_id: str, role: str, content: str) -> None:
-        """Add a message to conversation history"""
+        """
+        Add message to BOTH storages:
+        1. SQLite (for fast retrieval of chat history)
+        2. LanceDB (for semantic search with vectors)
+        """
+        timestamp = datetime.now(NEPAL_TZ).isoformat()
+        message_id = f"{user_id}_{int(time.time() * 1000000)}_{uuid.uuid4().hex[:8]}"
+        
+        kv_client = self._get_kv_client()
+        vector_client = self._get_vector_client()
+        
+        if kv_client and vector_client:
+            from app.services.embedding_services import embedding_service
+            try:
+                # Generate embedding
+                embedding = await embedding_service.embed_single(content)
+                
+                # 1. Add to SQLite (messages table)
+                await kv_client.add_message(user_id, role, content, timestamp, message_id)
+                
+                # 2. Add to LanceDB (vectors table)
+                await vector_client.add_chat_message(user_id, role, content, embedding, timestamp)
+                
+                logger.debug(f"✅ Message added to both SQLite + LanceDB: [{role}] {content[:50]}...")
+                return
+            except Exception as e:
+                logger.error(f"❌ Error adding message: {e}", exc_info=True)
+                return
+
+        # Redis path (production/dev)
         key = f"user:{user_id}:conversation"
         message = {
             "role": role,
             "content": content,
-            "timestamp": datetime.now(NEPAL_TZ).isoformat()
+            "timestamp": timestamp
         }
         await self.rpush(key, json.dumps(message))
-        
-        # Cache embedding in background
         asyncio.create_task(self._cache_embedding_with_user(content, user_id))
+    
+    async def add_messages_batch(
+        self, 
+        user_id: str, 
+        messages: List[tuple[str, str]]
+    ) -> int:
+        """Add multiple messages efficiently to BOTH storages"""
+        if not messages:
+            return 0
+        
+        kv_client = self._get_kv_client()
+        vector_client = self._get_vector_client()
+        
+        if kv_client and vector_client:
+            from app.services.embedding_services import embedding_service
+            try:
+                contents = [content for _, content in messages]
+                logger.info(f"Generating {len(contents)} embeddings in batch...")
+                embeddings = await embedding_service.embed_batch(contents)
+                
+                success_count = 0
+                for (role, content), embedding in zip(messages, embeddings):
+                    timestamp = datetime.now(NEPAL_TZ).isoformat()
+                    message_id = f"{user_id}_{int(time.time() * 1000000)}_{uuid.uuid4().hex[:8]}"
+                    
+                    # 1. SQLite
+                    await kv_client.add_message(user_id, role, content, timestamp, message_id)
+                    
+                    # 2. LanceDB
+                    result = await vector_client.add_chat_message(
+                        user_id, role, content, embedding, timestamp
+                    )
+                    if result:
+                        success_count += 1
+                    await asyncio.sleep(0.001)
+                
+                logger.info(f"✅ Batch added {success_count}/{len(messages)} messages to both storages")
+                return success_count
+            except Exception as e:
+                logger.error(f"❌ Batch add failed: {e}", exc_info=True)
+                return 0
+        
+        # Redis batch logic
+        success_count = 0
+        for role, content in messages:
+            await self.add_message(user_id, role, content)
+            success_count += 1
+        return success_count
     
     async def _cache_embedding_with_user(self, text: str, user_id: str) -> None:
         """Background task to cache embedding"""
@@ -44,7 +150,15 @@ class ChatCacheMixin(BaseRedisManager):
             logger.debug(f"Failed to cache embedding: {e}")
     
     async def get_last_n_messages(self, user_id: str, n: int = 10) -> List[Dict[str, Any]]:
-        """Get the last N messages from conversation history"""
+        """
+        Get last N messages from SQLite (FAST, NO VECTORS NEEDED)
+        """
+        kv_client = self._get_kv_client()
+        if kv_client:
+            # Desktop: Get from SQLite directly
+            return await kv_client.get_messages(user_id, n)
+
+        # Redis Logic (production/dev)
         try:
             key = f"user:{user_id}:conversation"
             messages_raw = await self.lrange(key, -n, -1)
@@ -59,13 +173,25 @@ class ChatCacheMixin(BaseRedisManager):
                     except json.JSONDecodeError:
                         continue
             
-            return messages[::-1]  # newest first
+            return messages[::-1]
         except Exception as e:
             self._safe_warn(f"Failed to get messages for user '{user_id}': {e}")
             return []
     
     async def clear_conversation_history(self, user_id: str) -> None:
-        """Clear all conversation history for a user"""
+        """Clear conversation history from BOTH storages"""
+        kv_client = self._get_kv_client()
+        vector_client = self._get_vector_client()
+        
+        if kv_client and vector_client:
+            # 1. Clear SQLite messages
+            await kv_client.clear_messages(user_id)
+            # 2. Clear LanceDB vectors
+            await vector_client.clear_user_data(user_id)
+            logger.info(f"🗑️ Cleared messages from both SQLite + LanceDB for {user_id}")
+            return
+
+        # Redis path
         key = f"user:{user_id}:conversation"
         await self.delete(key)
     
@@ -79,13 +205,12 @@ class ChatCacheMixin(BaseRedisManager):
             return base64.b64encode(np.array(embedding, dtype=np.float32).tobytes()).decode('ascii')
         except Exception as e:
             logger.error(f"Serialization error: {e}")
-            return json.dumps(embedding) # Fallback
+            return json.dumps(embedding)
 
     def _deserialize_embedding(self, data: str) -> Optional[List[float]]:
         """Binary deserialization"""
         try:
             if not data: return None
-            # Check if it's JSON (fallback) or Binary (B64)
             if data.startswith("["):
                 return json.loads(data)
             return np.frombuffer(base64.b64decode(data), dtype=np.float32).tolist()
@@ -113,12 +238,9 @@ class ChatCacheMixin(BaseRedisManager):
         """Get cached embedding for text with local and remote tiers"""
         try:
             text_hash = self._get_text_hash(text)
-            
-            # Tier 1: Local LRU Cache (In-memory)
             local = self._get_local_cache(user_id, text_hash)
             if local: return local
 
-            # Tier 2: Remote Cache (Redis)
             cache_key = f"user:{user_id}:emb:{text_hash}"
             cached = await self.get(cache_key)
             if cached:
@@ -154,7 +276,6 @@ class ChatCacheMixin(BaseRedisManager):
             keys_to_fetch_remote: List[str] = []
             remote_indices: List[int] = []
             
-            # Initial pass: check local cache
             for i, text in enumerate(texts):
                 text_hash = self._get_text_hash(text)
                 local = self._get_local_cache(user_id, text_hash)
@@ -165,7 +286,6 @@ class ChatCacheMixin(BaseRedisManager):
                     keys_to_fetch_remote.append(f"user:{user_id}:emb:{text_hash}")
                     remote_indices.append(i)
 
-            # Second pass: fetch missing from Redis
             if keys_to_fetch_remote:
                 pipeline = await self.pipeline()
                 for key in keys_to_fetch_remote:
@@ -233,7 +353,7 @@ class ChatCacheMixin(BaseRedisManager):
         messages: List[Dict[str, str]],
         text_key: str = "content"
     ) -> List[List[float]]:
-        """OPTIMIZED: Get embeddings for messages with batch caching"""
+        """Get embeddings for messages with batch caching"""
         from app.services.embedding_services import embedding_service
         
         if not messages:
@@ -270,7 +390,16 @@ class ChatCacheMixin(BaseRedisManager):
         top_k: int = 10,
         threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
-        """ULTRA-OPTIMIZED: Semantic search with parallel execution"""
+        """
+        Semantic search from LanceDB ONLY (with vectors)
+        """
+        vector_client = self._get_vector_client()
+        if vector_client:
+            from app.services.embedding_services import embedding_service
+            query_vector = await embedding_service.embed_single(query)
+            return await vector_client.search_chat_messages(user_id, query_vector, top_k, 0.1)
+
+        # Redis path (production/dev)
         start = time.time()
         messages = await self.get_last_n_messages(user_id, n)
         if not messages:
@@ -323,16 +452,71 @@ class ChatCacheMixin(BaseRedisManager):
 
     async def clear_all_user_data(self, user_id: str) -> None:
         """Clear ALL data for a user"""
+        kv_client = self._get_kv_client()
+        vector_client = self._get_vector_client()
+        
+        if kv_client and vector_client:
+            # Desktop: Clear both storages
+            await kv_client.clear_messages(user_id)
+            await vector_client.clear_user_data(user_id)
+            
+            # Clear local embedding cache
+            keys_to_remove = [k for k in self._local_emb_cache.keys() if k.startswith(f"{user_id}:")]
+            for key in keys_to_remove:
+                del self._local_emb_cache[key]
+            
+            # Clear KV data (user details, generic cache)
+            pattern = f"user:{user_id}:*"
+            await self._delete_by_pattern(pattern)
+            
+            logger.info(f"🗑️ Cleared ALL data for user {user_id}")
+            return
+        
+        # Redis path
         pattern = f"user:{user_id}:*"
         total_deleted = await self._delete_by_pattern(pattern)
         if total_deleted > 0:
-            logger.info(f"🗑️  Cleared all data for user {user_id}: {total_deleted} keys")
+            logger.info(f"🗑️ Cleared all data for user {user_id}: {total_deleted} keys")
 
-    async def process_query_and_get_context(self, user_id: str, current_query: str) -> tuple[List[Dict[str, Any]], bool]:
-        """Check if Pinecone data is needed, with parallel operations"""
+    async def process_query_and_get_context(
+        self, 
+        user_id: str, 
+        current_query: str
+    ) -> tuple[List[Dict[str, Any]], bool]:
+        """
+        Process query and get context intelligently:
+        - Desktop: Use LanceDB vector search directly
+        - Production: Use semantic search + fallback to Pinecone
+        """
+        vector_client = self._get_vector_client()
+        
+        # Desktop path: Use LanceDB directly
+        if vector_client:
+            from app.services.embedding_services import embedding_service
+            
+            # Add message to both storages
+            await self.add_message(user_id, "user", current_query)
+            
+            # Search in LanceDB
+            query_vector = await embedding_service.embed_single(current_query)
+            context = await vector_client.search_chat_messages(
+                user_id, 
+                query_vector, 
+                limit=10, 
+                threshold=0.5
+            )
+            
+            logger.info(f"[Desktop/LanceDB] Found {len(context)} results")
+            return context, False
+        
+        # Production path: Semantic search + Pinecone fallback
         is_pinecone_needed = False
-        search_task = asyncio.create_task(self.semantic_search_messages(user_id, current_query))
-        append_task = asyncio.create_task(self._append_message_to_local_and_cloud(user_id, current_query))
+        search_task = asyncio.create_task(
+            self.semantic_search_messages(user_id, current_query)
+        )
+        append_task = asyncio.create_task(
+            self._append_message_to_local_and_cloud(user_id, current_query)
+        )
         
         context = await search_task
         await append_task
@@ -344,11 +528,11 @@ class ChatCacheMixin(BaseRedisManager):
             is_pinecone_needed = True
             return context, is_pinecone_needed
 
-        logger.info(f"[Redis] High similarity - using Redis context ({len(context)} results)")
+        logger.info(f"[Local] High similarity - using local context ({len(context)} results)")
         return context, is_pinecone_needed
     
     async def _append_message_to_local_and_cloud(self, user_id: str, current_query: str):
-        """Append message to local Redis and cloud Pinecone"""
+        """Append message to local storage and cloud Pinecone"""
         from app.db.pinecone.config import upsert_query
         await self.add_message(user_id, "user", current_query)
         asyncio.create_task(asyncio.to_thread(upsert_query, user_id, current_query))

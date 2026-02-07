@@ -1,0 +1,164 @@
+{
+  "models": {
+    "qwen2.5-coder-1.5b": {
+      "cpu": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+        "filename": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+        "size_gb": 1.0,
+        "quantization": "q4_k_m",
+        "description": "BEST FOR JSON - Follows instructions precisely, 1GB"
+      },
+      "gpu": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q8_0.gguf",
+        "filename": "qwen2.5-coder-1.5b-instruct-q8_0.gguf",
+        "size_gb": 1.6,
+        "quantization": "q8_0",
+        "description": "BEST FOR JSON - High precision, GPU optimized"
+      },
+      "vulkan": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+        "filename": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+        "size_gb": 1.0,
+        "quantization": "q4_k_m",
+        "description": "BEST FOR JSON - Vulkan compatible"
+      }
+    },
+    "smollm2-1.7b": {
+      "cpu": {
+        "url": "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
+        "filename": "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
+        "size_gb": 1.1,
+        "quantization": "Q4_K_M",
+        "description": "Excellent instruction following, very small"
+      },
+      "gpu": {
+        "url": "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q8_0.gguf",
+        "filename": "SmolLM2-1.7B-Instruct-Q8_0.gguf",
+        "size_gb": 1.8,
+        "quantization": "Q8_0",
+        "description": "High quality small model for GPU"
+      },
+      "vulkan": {
+        "url": "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
+        "filename": "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
+        "size_gb": 1.1,
+        "quantization": "Q4_K_M",
+        "description": "Small model for Vulkan"
+      }
+    },
+    "llama-3.2-1b": {
+      "cpu": {
+        "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "size_gb": 0.75,
+        "quantization": "Q4_K_M",
+        "description": "Smallest Llama, ultra-fast"
+      },
+      "gpu": {
+        "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf",
+        "filename": "Llama-3.2-1B-Instruct-Q8_0.gguf",
+        "size_gb": 1.3,
+        "quantization": "Q8_0",
+        "description": "Smallest Llama, high precision"
+      },
+      "vulkan": {
+        "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "size_gb": 0.75,
+        "quantization": "Q4_K_M",
+        "description": "Smallest Llama for Vulkan"
+      }
+    },
+    "qwen2.5-7b": {
+      "cpu": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q3_k_m.gguf",
+        "filename": "qwen2.5-7b-instruct-q3_k_m.gguf",
+        "size_gb": 3.81,
+        "quantization": "q3_k_m",
+        "description": "Single file, good for CPU"
+      },
+      "gpu": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q6_k.gguf",
+        "filename": "qwen2.5-7b-instruct-q6_k.gguf",
+        "size_gb": 6.25,
+        "quantization": "q6_k",
+        "description": "Single file, best quality for GPU"
+      },
+      "vulkan": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q3_k_m.gguf",
+        "filename": "qwen2.5-7b-instruct-q3_k_m.gguf",
+        "size_gb": 3.81,
+        "quantization": "q3_k_m",
+        "description": "Single file, good for CPU/Vulkan (reuse)"
+      }
+    },
+    "qwen2.5-1.5b": {
+      "cpu": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "size_gb": 0.98,
+        "quantization": "q4_k_m",
+        "description": "Tiny, ultra-fast for CPU (1GB)"
+      },
+      "gpu": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q8_0.gguf",
+        "filename": "qwen2.5-1.5b-instruct-q8_0.gguf",
+        "size_gb": 1.6,
+        "quantization": "q8_0",
+        "description": "Tiny, fast, high precision"
+      },
+      "vulkan": {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "size_gb": 0.98,
+        "quantization": "q4_k_m",
+        "description": "Tiny, ultra-fast (Vulkan)"
+      }
+    },
+    "llama-3.2-3b": {
+      "cpu": {
+        "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "size_gb": 2.02,
+        "quantization": "Q4_K_M",
+        "description": "Balanced speed/quality (3B params)"
+      },
+      "gpu": {
+        "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q6_K.gguf",
+        "filename": "Llama-3.2-3B-Instruct-Q6_K.gguf",
+        "size_gb": 2.64,
+        "quantization": "Q6_K",
+        "description": "High quality 3B model"
+      },
+      "vulkan": {
+        "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "size_gb": 2.02,
+        "quantization": "Q4_K_M",
+        "description": "Balanced speed/quality (Vulkan)"
+      }
+    }
+  },
+  "llama_cpp_binaries": {
+    "cpu": {
+      "url": "https://github.com/ggerganov/llama.cpp/releases/download/b4480/llama-b4480-bin-win-avx2-x64.zip",
+      "filename": "llama-b4480-bin-win-avx2-x64.zip",
+      "executable": "llama-cli.exe",
+      "size_mb": 50,
+      "description": "CPU-optimized (AVX2)"
+    },
+    "gpu": {
+      "url": "https://github.com/ggerganov/llama.cpp/releases/download/b4480/llama-b4480-bin-win-cuda-cu12.2.0-x64.zip",
+      "filename": "llama-b4480-bin-win-cuda-cu12.2.0-x64.zip",
+      "executable": "llama-cli.exe",
+      "size_mb": 450,
+      "description": "GPU-optimized (CUDA 12.2)"
+    }
+  },
+  "settings": {
+    "models_base_dir": "qwen",
+    "binaries_base_dir": "tools",
+    "auto_detect_device": true,
+    "force_cpu": false
+  }
+}

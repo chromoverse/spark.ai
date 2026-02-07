@@ -1,22 +1,19 @@
-
 import redis.asyncio as redis
 from upstash_redis.asyncio import Redis as UpstashRedis
 import logging
 import asyncio
-from typing import Any, Optional, List, Union, Protocol
-from app.config import settings
+from typing import Any, Optional, List, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.cache.lancedb_manager import LanceDBManager
+    from app.cache.local_kv_manager import LocalKVManager
 
 logger = logging.getLogger(__name__)
 
-class RedisPipeline(Protocol):
-    """Protocol for Redis pipeline operations"""
-    def get(self, key: str) -> Any: ...
-    def setex(self, key: str, seconds: int, value: str) -> Any: ...
-    async def execute(self) -> List[Any]: ...
 
 class UpstashMockPipeline:
-    """Mock pipeline for Upstash (executes commands immediately)"""
-    def __init__(self, client: Any):
+    """Mock pipeline for Upstash"""
+    def __init__(self, client: UpstashRedis):
         self.client = client
         self.commands: List[tuple] = []
     
@@ -39,8 +36,9 @@ class UpstashMockPipeline:
                 results.append(True)
         return results
 
+
 class BaseRedisManager:
-    """Core Redis connection and basic operations"""
+    """Core Redis/LocalKV connection"""
     _instance: Optional['BaseRedisManager'] = None
     _initialized: bool = False
     
@@ -48,22 +46,37 @@ class BaseRedisManager:
         if self._initialized:
             return
         self._initialized = True
-        self.client: Union[redis.Redis, UpstashRedis, None] = None # type: ignore
+        self.client: Union[redis.Redis, UpstashRedis, 'LocalKVManager', None] = None
+        self.vector_client: Optional['LanceDBManager'] = None
         self._is_upstash = False
+        self._is_desktop = False
         self._init_lock = asyncio.Lock()
         self._init_started = False
 
     async def _async_init(self):
+        from app.config import settings
         try:
-            if settings.environment == "production":
+            if settings.environment == "desktop":
+                # Desktop: LocalKV + LanceDB
+                from app.cache.local_kv_manager import LocalKVManager
+                from app.cache.lancedb_manager import LanceDBManager
+                
+                self.client = LocalKVManager()
+                self.vector_client = LanceDBManager()
+                self._is_desktop = True
+                logger.info("🚀 Connected to LocalKV + LanceDB (Desktop)")
+                
+            elif settings.environment == "production":
+                # Production: Upstash only
                 self.client = UpstashRedis(
                     url=settings.upstash_redis_rest_url,
                     token=settings.upstash_redis_rest_token,
                 )
                 self._is_upstash = True
-                await self.client.ping() # type: ignore
-                logger.info("🌐 Connected to Upstash Redis")
+                await self.client.ping()
+                logger.info("🌐 Connected to Upstash Redis (Production)")
             else:
+                # Dev: Local Redis
                 self.client = redis.Redis(
                     host='localhost',
                     port=6379,
@@ -72,11 +85,10 @@ class BaseRedisManager:
                     socket_connect_timeout=3,
                     socket_timeout=3
                 )
-                self._is_upstash = False
-                await self.client.ping() # type: ignore
-                logger.info("🐳 Connected to Local Docker Redis")
+                await self.client.ping()
+                logger.info("🐳 Connected to Local Redis (Dev)")
         except Exception as e:
-            logger.error(f"❌ Redis initialization failed: {e}")
+            logger.error(f"❌ Initialization failed: {e}")
             self.client = None
             raise
 
@@ -91,12 +103,14 @@ class BaseRedisManager:
                 await self._async_init()
 
     def _safe_warn(self, msg: str):
-        print(f"[Redis Warning] {msg}")
+        print(f"[Cache Warning] {msg}")
 
     async def set(self, key: str, value: str, ex: Optional[int] = None) -> bool:
         try:
             await self._ensure_client()
-            await self.client.set(key, value, ex=ex) # type: ignore
+            if self.client is None:
+                return False
+            await self.client.set(key, value, ex=ex)
             return True
         except Exception as e:
             self._safe_warn(f"Failed to set key '{key}': {e}")
@@ -105,7 +119,10 @@ class BaseRedisManager:
     async def get(self, key: str) -> Optional[str]:
         try:
             await self._ensure_client()
-            return await self.client.get(key) # type: ignore
+            if self.client is None:
+                return None
+            result = await self.client.get(key)
+            return str(result) if result is not None else None
         except Exception as e:
             self._safe_warn(f"Failed to get key '{key}': {e}")
             return None
@@ -113,7 +130,9 @@ class BaseRedisManager:
     async def delete(self, *keys: str) -> bool:
         try:
             await self._ensure_client()
-            await self.client.delete(*keys) # type: ignore
+            if self.client is None:
+                return False
+            await self.client.delete(*keys)
             return True
         except Exception as e:
             self._safe_warn(f"Failed to delete keys: {e}")
@@ -122,7 +141,9 @@ class BaseRedisManager:
     async def rpush(self, key: str, *values: str) -> bool:
         try:
             await self._ensure_client()
-            await self.client.rpush(key, *values) # type: ignore
+            if self.client is None:
+                return False
+            await self.client.rpush(key, *values)
             return True
         except Exception as e:
             self._safe_warn(f"Failed to rpush to '{key}': {e}")
@@ -131,10 +152,13 @@ class BaseRedisManager:
     async def lrange(self, key: str, start: int, end: int) -> List[str]:
         try:
             await self._ensure_client()
-            result = await self.client.lrange(key, start, end) # type: ignore
-            if result is None: return []
+            if self.client is None:
+                return []
+            result = await self.client.lrange(key, start, end)
+            if result is None:
+                return []
             if isinstance(result, list):
-                return [str(item) if item else "" for item in result]
+                return [str(item) if item is not None else "" for item in result]
             return []
         except Exception as e:
             self._safe_warn(f"Failed to lrange '{key}': {e}")
@@ -143,23 +167,34 @@ class BaseRedisManager:
     async def scan(self, cursor: int = 0, match: Optional[str] = None, count: int = 100) -> tuple[int, List[str]]:
         try:
             await self._ensure_client()
+            if self.client is None:
+                return 0, []
+            
             if self._is_upstash:
-                result = await self.client.scan(cursor, match=match, count=count) # type: ignore
+                result = await self.client.scan(cursor, match=match, count=count)
                 if isinstance(result, list) and len(result) == 2:
                     return int(result[0]) if result[0] else 0, result[1] if isinstance(result[1], list) else []
                 return 0, []
             else:
-                cursor_result, keys = await self.client.scan(cursor=cursor, match=match, count=count) # type: ignore
-                return int(cursor_result), list(keys) if keys else []
+                cursor_result, keys = await self.client.scan(cursor=cursor, match=match, count=count)
+                return int(cursor_result), [str(k) for k in keys] if keys else []
         except Exception as e:
             self._safe_warn(f"Failed to scan: {e}")
             return 0, []
 
-    async def pipeline(self) -> RedisPipeline:
+    async def pipeline(self) -> Union[UpstashMockPipeline, Any]:
         await self._ensure_client()
+        if self.client is None:
+            raise RuntimeError("Client not initialized")
+        
         if self._is_upstash:
-            return UpstashMockPipeline(self.client) # type: ignore
-        return self.client.pipeline() # type: ignore
+            return UpstashMockPipeline(self.client)
+        
+        if isinstance(self.client, redis.Redis):
+            return self.client.pipeline()
+        
+        # LocalKV doesn't support pipelines - return mock
+        return UpstashMockPipeline(self.client)  # type: ignore
 
     async def _delete_by_pattern(self, pattern: str) -> int:
         cursor = 0
@@ -169,5 +204,6 @@ class BaseRedisManager:
             if keys:
                 await self.delete(*keys)
                 total_deleted += len(keys)
-            if cursor == 0: break
+            if cursor == 0:
+                break
         return total_deleted

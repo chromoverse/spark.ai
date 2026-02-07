@@ -203,9 +203,7 @@ async def request_tts(sid, data: RequestTTS):
             sio=sio,
             sid=sid,
             text=data.text,
-            voice=None,  # Let VoiceSelector pick the right voice for the engine
-            rate="+10%",
-            lang=lang,
+            # lang=lang,
             gender=gender
         )
 
