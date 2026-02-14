@@ -15,11 +15,17 @@ logger = logging.getLogger(__name__)
 
 # ==================== SOCKET.IO INSTANCE ====================
 
+# Quieter loggers — suppress the massive base64 audio payloads
+_sio_logger = logging.getLogger("socketio")
+_sio_logger.setLevel(logging.WARNING)
+_eio_logger = logging.getLogger("engineio")
+_eio_logger.setLevel(logging.WARNING)
+
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",
-    logger=True,
-    engineio_logger=True,
+    logger=_sio_logger,
+    engineio_logger=_eio_logger,
     namespaces=["/"],
     ping_timeout=60,
     ping_interval=25,

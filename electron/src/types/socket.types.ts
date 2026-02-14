@@ -59,6 +59,20 @@ export interface UserQueryPayload {
   sessionId?: string;
 }
 
+// Streaming STT payloads
+export interface UserSpeakingPayload {
+  audio: string; // base64 chunk
+  mimeType: string;
+  sessionId: string;
+  seq: number;
+  timestamp: number;
+}
+
+export interface UserStopSpeakingPayload {
+  sessionId: string;
+  timestamp: number;
+}
+
 export interface TTSPayload {
   text: string | undefined;
   userId: string;
@@ -133,6 +147,8 @@ export interface SocketEvents {
   register_user: (userId: string) => void;
   "send-user-voice-query": (data: UserQueryPayload) => void;
   "send-user-text-query": (query: string) => void;
+  "user-speaking": (data: UserSpeakingPayload) => void;
+  "user-stop-speaking": (data: UserStopSpeakingPayload) => void;
   "request-tts": (data: TTSPayload) => void;
   "test-ws": (data?: any) => void;
   

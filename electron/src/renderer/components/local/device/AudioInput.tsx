@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { MessageSquareWarning, Mic, MicOff, Settings } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -7,11 +7,60 @@ import { toggleMicrophoneListening } from "@/store/features/localState/localSlic
 import { useSocket } from "@/context/socketContextProvider";
 import AudioLevelProgress from "./AudioLevelProgress";
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Minimum audio level (%) to count as a "speaking" sample */
+const SPEAKING_THRESHOLD = 35;
+/** Audio level (%) below which we consider it absolute silence */
+const SILENCE_THRESHOLD = 15;
+/** How long silence must persist before we finalize (ms) */
+const SILENCE_DURATION = 2000;
+/** Consecutive frames above SPEAKING_THRESHOLD to confirm speech */
+const SPEAKING_CONFIRMATION_SAMPLES = 2;
+/** Interval between chunk captures (ms) */
+const CHUNK_INTERVAL_MS = 2000;
+/** Minimum recording length to avoid false triggers (ms) */
+const MIN_RECORDING_DURATION_MS = 600;
+/** Minimum chunk blob size worth sending (bytes) */
+const MIN_CHUNK_SIZE_BYTES = 500;
+/** Safety timeout if server never responds (ms) */
+const PROCESSING_TIMEOUT_MS = 30_000;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Convert a Blob to a base64 string (without data-url prefix). */
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result.split(",")[1]);
+      } else {
+        reject(new Error("Failed to convert blob to base64"));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+/** Generate a unique session ID. */
+const createSessionId = (): string => crypto.randomUUID();
+
+/** Pick the best supported MIME type for recording. */
+const getRecordingMimeType = (): string => {
+  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+    return "audio/webm;codecs=opus";
+  if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
+  return "audio/ogg";
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export function AudioInput() {
   const dispatch = useAppDispatch();
   const { socket, isConnected, emit, on, off } = useSocket();
 
-  // Get state from Redux
+  // Redux state
   const audioInputDevices = useAppSelector(
     (state) => state.device.audioInputDevices,
   );
@@ -23,40 +72,42 @@ export function AudioInput() {
     (state) => state.localState.isMicrophoneListening,
   );
 
+  // UI state
   const [audioLevel, setAudioLevel] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
 
+  // Audio pipeline refs
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number | null>(null);
   const hasAutoStartedRef = useRef(false);
 
-  // Recording refs
+  // Recording / streaming refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isSpeakingRef = useRef(false);
-  const isProcessingRef = useRef(false);
-  const isRecordingRef = useRef(false);
   const processingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-
-  // ✅ IMPROVED: Voice Activity Detection settings - LESS REACTIVE
-  const SILENCE_THRESHOLD = 25; // ✅ Increased from 15 to 25
-  const SILENCE_DURATION = 2000; // ✅ Increased from 1500ms to 2000ms (2 seconds)
-  const SPEAKING_THRESHOLD = 40; // ✅ Increased from 20 to 40 (needs louder voice)
-  const SPEAKING_CONFIRMATION_SAMPLES = 3; // ✅ NEW: Need 3 consecutive samples above threshold
-
-  // ✅ NEW: Track consecutive speaking samples
+  const isSpeakingRef = useRef(false);
+  const isProcessingRef = useRef(false);
+  const isRecordingRef = useRef(false);
+  const recordingStartTimeRef = useRef(0);
   const speakingSamplesRef = useRef(0);
 
-  // Auto-start listening when component mounts and has permissions
+  // ── Streaming session refs ────────────────────────────────────────────
+  const sessionIdRef = useRef<string | null>(null);
+  const seqRef = useRef(0);
+  const mimeTypeRef = useRef<string>("audio/webm;codecs=opus");
+  /** Accumulated chunks for the current micro-recorder segment */
+  const segmentChunksRef = useRef<Blob[]>([]);
+
+  // ── Auto-start listening ──────────────────────────────────────────────
+
   useEffect(() => {
     if (
       hasPermissions &&
@@ -69,23 +120,25 @@ export function AudioInput() {
     }
   }, [hasPermissions, audioInputDevices, dispatch]);
 
-  // React to Redux state changes
   useEffect(() => {
     if (isMicrophoneListening) {
       startListening();
     } else {
       stopListening();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMicrophoneListening]);
 
-  // Restart when device changes (only if currently listening)
   useEffect(() => {
     if (isMicrophoneListening && selectedInputDeviceId) {
       startListening();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInputDeviceId]);
 
-  const setupAudioVisualization = (stream: MediaStream) => {
+  // ── Audio visualization + VAD ─────────────────────────────────────────
+
+  const setupAudioVisualization = useCallback((stream: MediaStream) => {
     try {
       const audioContext = new AudioContext();
       const analyser = audioContext.createAnalyser();
@@ -100,40 +153,37 @@ export function AudioInput() {
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-      const updateAudioLevel = () => {
+      const tick = () => {
         if (analyserRef.current) {
           analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          const average =
+            dataArray.reduce((a, b) => a + b) / dataArray.length;
           setAudioLevel(average);
-
-          // Voice Activity Detection
           handleVoiceActivity(average);
-
-          animationRef.current = requestAnimationFrame(updateAudioLevel);
+          animationRef.current = requestAnimationFrame(tick);
         }
       };
 
-      updateAudioLevel();
+      tick();
     } catch (error) {
       console.error("Error setting up audio visualization:", error);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ✅ IMPROVED: Less reactive voice detection
+  // ── Voice Activity Detection ──────────────────────────────────────────
+
   const handleVoiceActivity = (level: number) => {
-    const levelPercentage = (level / 128) * 100;
+    const pct = (level / 128) * 100;
 
-    // Don't start recording if backend is processing
     if (isProcessingRef.current) {
-      speakingSamplesRef.current = 0; // ✅ Reset counter
+      speakingSamplesRef.current = 0;
       return;
     }
 
-    // ✅ IMPROVED: Require multiple consecutive samples above threshold
-    if (levelPercentage > SPEAKING_THRESHOLD) {
+    if (pct > SPEAKING_THRESHOLD) {
       speakingSamplesRef.current++;
 
-      // ✅ Only trigger speaking after confirmation samples
       if (
         speakingSamplesRef.current >= SPEAKING_CONFIRMATION_SAMPLES &&
         !isSpeakingRef.current
@@ -141,39 +191,34 @@ export function AudioInput() {
         isSpeakingRef.current = true;
         setIsSpeaking(true);
 
-        // Clear any existing silence timeout
         if (silenceTimeoutRef.current) {
           clearTimeout(silenceTimeoutRef.current);
           silenceTimeoutRef.current = null;
         }
 
-        // Start recording if not already recording
         if (!isRecordingRef.current) {
           startRecording();
         }
       }
 
-      // User is speaking - reset silence timer
       if (isSpeakingRef.current) {
         if (silenceTimeoutRef.current) {
           clearTimeout(silenceTimeoutRef.current);
         }
-
-        // Set new timeout for silence detection
-        silenceTimeoutRef.current = setTimeout(() => {
-          handleSilenceDetected();
-        }, SILENCE_DURATION);
+        silenceTimeoutRef.current = setTimeout(
+          handleSilenceDetected,
+          SILENCE_DURATION,
+        );
       }
     } else {
-      // ✅ Below threshold - reset counter
       speakingSamplesRef.current = 0;
 
-      // Complete silence
-      if (levelPercentage <= SILENCE_THRESHOLD && isSpeakingRef.current) {
+      if (pct <= SILENCE_THRESHOLD && isSpeakingRef.current) {
         if (!silenceTimeoutRef.current) {
-          silenceTimeoutRef.current = setTimeout(() => {
-            handleSilenceDetected();
-          }, SILENCE_DURATION);
+          silenceTimeoutRef.current = setTimeout(
+            handleSilenceDetected,
+            SILENCE_DURATION,
+          );
         }
       }
     }
@@ -182,24 +227,30 @@ export function AudioInput() {
   const handleSilenceDetected = () => {
     isSpeakingRef.current = false;
     setIsSpeaking(false);
-    speakingSamplesRef.current = 0; // ✅ Reset counter
+    speakingSamplesRef.current = 0;
 
-    // Clear the silence timeout
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
 
-    // Check MediaRecorder state
-    const recorder = mediaRecorderRef.current;
-    if (
-      recorder &&
-      (recorder.state === "recording" || recorder.state === "paused")
-    ) {
+    // Signal that the overall recording should end.
+    // stopRecording will stop the current micro-recorder and finalize.
+    if (isRecordingRef.current) {
       stopRecording();
     }
   };
 
+  // ── Recording lifecycle (stop-restart approach) ───────────────────────
+  //
+  // Instead of using MediaRecorder.start(timeslice)  — which produces
+  // WebM *fragments* that can't be decoded individually — we create a
+  // fresh MediaRecorder for each ~2 s segment, stop it to get a complete
+  // self-contained audio blob, send it, then start a new one.
+  //
+  // The MediaStream stays alive throughout; only the recorder rotates.
+
+  /** Start a brand-new recording session. */
   const startRecording = () => {
     if (
       !streamRef.current ||
@@ -209,220 +260,220 @@ export function AudioInput() {
       return;
     }
 
+    const mimeType = getRecordingMimeType();
+    mimeTypeRef.current = mimeType;
+
+    // Fresh session
+    const sessionId = createSessionId();
+    sessionIdRef.current = sessionId;
+    seqRef.current = 0;
+
+    isRecordingRef.current = true;
+    setIsRecording(true);
+    recordingStartTimeRef.current = Date.now();
+
+    console.log(
+      `🎙️ Recording started — session: ${sessionId.slice(0, 8)}…`,
+    );
+
+    // Kick off the first micro-recorder segment
+    startSegmentRecorder();
+  };
+
+  /** Create a micro-recorder that captures one ~2 s segment. */
+  const startSegmentRecorder = () => {
+    if (!streamRef.current || !isRecordingRef.current) return;
+
     try {
-      // Clear previous chunks at start
-      audioChunksRef.current = [];
+      segmentChunksRef.current = [];
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "audio/ogg";
-
-      const mediaRecorder = new MediaRecorder(streamRef.current, {
-        mimeType,
+      const recorder = new MediaRecorder(streamRef.current, {
+        mimeType: mimeTypeRef.current,
         audioBitsPerSecond: 128000,
       });
 
-      mediaRecorder.ondataavailable = (event: BlobEvent) => {
+      recorder.ondataavailable = (event: BlobEvent) => {
         if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
+          segmentChunksRef.current.push(event.data);
         }
       };
 
-      mediaRecorder.onstop = async () => {
-        // Update BOTH state and ref
-        isRecordingRef.current = false;
-        setIsRecording(false);
+      recorder.onstop = async () => {
+        // Build a complete, self-contained audio blob from the segment
+        const blob = new Blob(segmentChunksRef.current, {
+          type: mimeTypeRef.current,
+        });
+        segmentChunksRef.current = [];
 
-        // Then send audio
-        if (audioChunksRef.current.length > 0) {
-          await sendAudioToBackend();
+        if (blob.size >= MIN_CHUNK_SIZE_BYTES && sessionIdRef.current) {
+          try {
+            const base64 = await blobToBase64(blob);
+            const seq = seqRef.current++;
+
+            emit("user-speaking", {
+              audio: base64,
+              mimeType: mimeTypeRef.current,
+              sessionId: sessionIdRef.current,
+              seq,
+              timestamp: Date.now(),
+            });
+
+            console.log(
+              `📤 Chunk #${seq} sent (${blob.size} bytes) ` +
+                `session: ${sessionIdRef.current.slice(0, 8)}…`,
+            );
+          } catch (err) {
+            console.error("❌ Error sending audio chunk:", err);
+          }
         }
 
-        mediaRecorderRef.current = null;
+        // If still recording, start the next segment. Otherwise finalize.
+        if (isRecordingRef.current) {
+          startSegmentRecorder();
+        } else {
+          handleRecordingFinished();
+        }
       };
 
-      mediaRecorder.onerror = (event: Event) => {
-        console.error("❌ MediaRecorder error:", event);
-        isRecordingRef.current = false;
-        setIsRecording(false);
-        audioChunksRef.current = [];
+      recorder.onerror = (event: Event) => {
+        console.error("❌ MediaRecorder segment error:", event);
+        // Try to continue with a new segment
+        if (isRecordingRef.current) {
+          startSegmentRecorder();
+        }
       };
 
-      // Request data every 100ms
-      mediaRecorder.start(100);
-      mediaRecorderRef.current = mediaRecorder;
-      isRecordingRef.current = true;
-      setIsRecording(true);
-      setRecordingStartTime(Date.now());
+      recorder.start(); // no timeslice — we'll stop it ourselves
+      mediaRecorderRef.current = recorder;
 
-      console.log("🎙️ Recording started");
+      // Schedule a stop after CHUNK_INTERVAL_MS
+      chunkTimerRef.current = setTimeout(() => {
+        if (
+          recorder.state === "recording" ||
+          recorder.state === "paused"
+        ) {
+          recorder.stop();
+        }
+      }, CHUNK_INTERVAL_MS);
     } catch (error) {
-      console.error("❌ Error starting recording:", error);
-      isRecordingRef.current = false;
-      setIsRecording(false);
+      console.error("❌ Error starting segment recorder:", error);
     }
   };
 
+  /** Stop the current recording session. */
   const stopRecording = () => {
+    if (!isRecordingRef.current) return;
+
+    // Mark as no longer recording so the onstop callback won't start
+    // another segment and will instead call handleRecordingFinished().
+    isRecordingRef.current = false;
+    setIsRecording(false);
+
+    // Clear the chunk timer
+    if (chunkTimerRef.current) {
+      clearTimeout(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
+
+    // Stop the current micro-recorder (triggers onstop → send + finalize)
     const recorder = mediaRecorderRef.current;
-
-    if (!recorder || recorder.state === "inactive") {
-      return;
-    }
-
-    // ✅ IMPROVED: Enforce minimum recording duration (longer to avoid false triggers)
-    const recordingDuration = Date.now() - recordingStartTime;
-    if (recordingDuration < 800) {
-      // ✅ Increased from 500ms to 800ms
-      console.log("⏭️ Recording too short, skipping");
-      audioChunksRef.current = [];
-      return;
-    }
-
-    try {
-      if (recorder.state === "recording" || recorder.state === "paused") {
-        recorder.stop();
-        console.log("⏹️ Recording stopped");
-      }
-    } catch (error) {
-      console.error("❌ Error stopping recording:", error);
-      setIsRecording(false);
-      mediaRecorderRef.current = null;
+    if (
+      recorder &&
+      (recorder.state === "recording" || recorder.state === "paused")
+    ) {
+      recorder.stop();
+      console.log("⏹️ Recording stopped");
+    } else {
+      // Recorder already inactive — finalize directly
+      handleRecordingFinished();
     }
   };
 
-  const sendAudioToBackend = async () => {
-    // Validate we have audio data
-    if (audioChunksRef.current.length === 0) {
+  /** Called after the final segment's onstop fires. */
+  const handleRecordingFinished = () => {
+    const duration = Date.now() - recordingStartTimeRef.current;
+
+    if (duration < MIN_RECORDING_DURATION_MS) {
+      console.log("⏭️ Recording too short, discarding session");
+      sessionIdRef.current = null;
+      seqRef.current = 0;
+      mediaRecorderRef.current = null;
       return;
     }
 
+    if (sessionIdRef.current && seqRef.current > 0) {
+      finalizeSession(sessionIdRef.current);
+    }
+
+    sessionIdRef.current = null;
+    seqRef.current = 0;
+    mediaRecorderRef.current = null;
+  };
+
+  // ── Finalize session — tell server we're done speaking ────────────────
+
+  const finalizeSession = (sessionId: string) => {
     if (!socket || !isConnected) {
-      console.error("❌ Socket not connected");
-      audioChunksRef.current = [];
+      console.error("❌ Socket not connected, cannot finalize session");
       return;
     }
 
-    // Check if already processing
     if (isProcessingRef.current) {
-      console.log("⏸️ Already processing, skipping");
-      audioChunksRef.current = [];
+      console.log("⏸️ Already processing, skipping finalize");
       return;
     }
 
-    try {
-      // Combine all chunks into a single blob
-      const audioBlob = new Blob(audioChunksRef.current, {
-        type: mediaRecorderRef.current?.mimeType || "audio/webm;codecs=opus",
-      });
+    isProcessingRef.current = true;
+    setIsProcessing(true);
 
-      // ✅ IMPROVED: Stricter validation - require larger audio files
-      if (audioBlob.size < 2000) {
-        // ✅ Increased from 1000 to 2000 bytes
-        console.log("⏭️ Audio too small, skipping");
-        audioChunksRef.current = [];
-        return;
-      }
-
-      // Set processing state BEFORE sending
-      isProcessingRef.current = true;
-      setIsProcessing(true);
-
-      console.log(`📤 Sending audio: ${audioBlob.size} bytes`);
-
-      // Safety timeout: reset after 30 seconds if no response
-      processingTimeoutRef.current = setTimeout(() => {
-        console.warn("⏰ Processing timeout - resetting state");
-        isProcessingRef.current = false;
-        setIsProcessing(false);
-      }, 30000);
-
-      // Convert to Base64
-      const base64Audio = await blobToBase64(audioBlob);
-
-      // Send to backend
-      emit("send-user-voice-query", {
-        audio: base64Audio,
-        mimeType: audioBlob.type,
-        timestamp: Date.now(),
-        duration: audioChunksRef.current.length * 100,
-        userId: "guest",
-      });
-    } catch (error) {
-      console.error("❌ Error sending audio:", error);
-      // Reset processing state on error
+    processingTimeoutRef.current = setTimeout(() => {
+      console.warn("⏰ Processing timeout — resetting state");
       isProcessingRef.current = false;
       setIsProcessing(false);
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
-        processingTimeoutRef.current = null;
-      }
-    } finally {
-      // ALWAYS clear chunks after sending
-      audioChunksRef.current = [];
-    }
+    }, PROCESSING_TIMEOUT_MS);
+
+    emit("user-stop-speaking", {
+      sessionId,
+      timestamp: Date.now(),
+    });
+
+    console.log(
+      `📤 user-stop-speaking emitted — session: ${sessionId.slice(0, 8)}…`,
+    );
   };
 
-  // Listen for query results to reset processing state
+  // ── Listen for server response to reset processing lock ───────────────
+
   useEffect(() => {
     if (socket && isConnected) {
       const resetProcessing = () => {
-        // Clear timeout
         if (processingTimeoutRef.current) {
           clearTimeout(processingTimeoutRef.current);
           processingTimeoutRef.current = null;
         }
-
-        // Reset processing state
         isProcessingRef.current = false;
         setIsProcessing(false);
-
         console.log("✅ Processing complete, ready for next input");
       };
 
-      // Listen to ALL possible completion events
-      const handleQueryResult = () => resetProcessing();
-      const handleTTSEnd = () => resetProcessing();
-      const handleQueryError = () => resetProcessing();
-      const handleError = () => resetProcessing();
-
-      // Register all listeners
-      on("query-result", handleQueryResult);
-      on("tts-end", handleTTSEnd);
-      on("query-error", handleQueryError);
-      on("error", handleError);
+      on("query-result", resetProcessing);
+      on("tts-end", resetProcessing);
+      on("query-error", resetProcessing);
+      on("error", resetProcessing);
 
       return () => {
-        off("query-result", handleQueryResult);
-        off("tts-end", handleTTSEnd);
-        off("query-error", handleQueryError);
-        off("error", handleError);
+        off("query-result", resetProcessing);
+        off("tts-end", resetProcessing);
+        off("query-error", resetProcessing);
+        off("error", resetProcessing);
       };
     }
   }, [socket, isConnected, on, off]);
 
-  // Helper function to convert Blob to Base64
-  const blobToBase64 = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          const base64 = reader.result.split(",")[1];
-          resolve(base64);
-        } else {
-          reject(new Error("Failed to convert blob to base64"));
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
+  // ── Microphone stream management ──────────────────────────────────────
 
   const startListening = async () => {
     try {
-      // Stop existing stream first and wait a moment
       if (streamRef.current) {
         streamRef.current
           .getTracks()
@@ -438,12 +489,10 @@ export function AudioInput() {
         animationRef.current = null;
       }
 
-      // Small delay to ensure previous streams are fully released
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const deviceId = selectedInputDeviceId || audioInputDevices[0]?.deviceId;
 
-      // Try with preferred device first
       const getConstraints = (useExact: boolean): MediaStreamConstraints => ({
         audio:
           deviceId && useExact
@@ -470,29 +519,24 @@ export function AudioInput() {
 
       let stream: MediaStream | null = null;
 
-      // Try with exact deviceId first
       try {
         stream = await navigator.mediaDevices.getUserMedia(
           getConstraints(true),
         );
       } catch (exactError: any) {
         console.warn(
-          "⚠️ Exact device failed, trying with ideal preference:",
+          "⚠️ Exact device failed, trying ideal:",
           exactError.message,
         );
-
-        // Fallback: try with ideal (flexible) deviceId
         try {
           stream = await navigator.mediaDevices.getUserMedia(
             getConstraints(false),
           );
         } catch (idealError: any) {
           console.warn(
-            "⚠️ Ideal device failed, trying any available mic:",
+            "⚠️ Ideal device failed, trying any mic:",
             idealError.message,
           );
-
-          // Final fallback: try any available microphone
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
               echoCancellation: true,
@@ -512,19 +556,12 @@ export function AudioInput() {
     } catch (error: any) {
       console.error("❌ Error starting audio:", error);
 
-      // Provide more helpful error message
       if (error.name === "NotReadableError") {
-        console.error(
-          "💡 Tip: The microphone may be in use by another app. Close other apps using the mic and try again.",
-        );
+        console.error("💡 Microphone may be in use by another app.");
       } else if (error.name === "NotAllowedError") {
-        console.error(
-          "💡 Tip: Microphone permission was denied. Please allow microphone access.",
-        );
+        console.error("💡 Microphone permission was denied.");
       } else if (error.name === "NotFoundError") {
-        console.error(
-          "💡 Tip: No microphone found. Please connect a microphone.",
-        );
+        console.error("💡 No microphone found.");
       }
 
       if (isMicrophoneListening) {
@@ -534,25 +571,23 @@ export function AudioInput() {
   };
 
   const stopListening = async () => {
-    // Stop recording if active
-    if (isRecordingRef.current && mediaRecorderRef.current) {
+    if (isRecordingRef.current) {
       stopRecording();
-
-      // Wait briefly for the recording to finish
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
-    // Clear silence timeout
+    if (chunkTimerRef.current) {
+      clearTimeout(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
-
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
     }
-
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
@@ -564,7 +599,7 @@ export function AudioInput() {
     setIsRecording(false);
     setIsSpeaking(false);
     isSpeakingRef.current = false;
-    speakingSamplesRef.current = 0; // ✅ Reset counter
+    speakingSamplesRef.current = 0;
 
     if (streamRef.current) {
       streamRef.current
@@ -574,22 +609,22 @@ export function AudioInput() {
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopListening();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── UI handlers ───────────────────────────────────────────────────────
 
   const handleDeviceChange = (deviceId: string) => {
     dispatch(setSelectedInputDeviceId(deviceId));
   };
 
-  const handleToggleListening = () => {
-    dispatch(toggleMicrophoneListening());
-  };
-
   const levelPercentage = Math.min((audioLevel / 128) * 100, 100);
+
+  // ── Render ────────────────────────────────────────────────────────────
 
   if (!hasPermissions) {
     return (
@@ -597,9 +632,7 @@ export function AudioInput() {
         <div className="text-center text-white">
           <p className="text-sm mb-2">Microphone access needed</p>
           <Button
-            onClick={() => {
-              // Trigger permission request
-            }}
+            onClick={() => {}}
             size="sm"
             className="bg-blue-600 hover:bg-blue-700"
           >

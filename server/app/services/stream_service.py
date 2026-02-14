@@ -97,35 +97,61 @@ class StreamService:
         prompt: str
     ) -> AsyncGenerator[str, None]:
         """
-        Stream AI response and yield complete sentences.
-        
-        Chunks at: . ! ? ,
+        Stream AI response and yield chunks suitable for TTS.
+
+        Rules:
+        - Only split at sentence-ending punctuation:  . ! ?
+        - Collapse repeated punctuation (e.g. "..." or "!!!" count
+          as a single boundary).
+        - Keep delimiters attached to the preceding text so TTS can
+          use the punctuation for intonation.
+        - Enforce a minimum chunk length (MIN_CHUNK_LENGTH chars).
+          If the current split is too short, merge it into the next
+          chunk instead of yielding a tiny fragment.
         """
+        MIN_CHUNK_LENGTH = 40  # characters — prevents tiny TTS calls
+
+        # Matches one or more sentence-ending punctuation chars,
+        # optionally followed by a closing quote/bracket.
+        # e.g.  .  ...  !!  ?!  ."  ?)
+        _split_re = re.compile(r'([.!?]+["\')»\]]*)')
+
         buffer = ""
-        sentence_delimiters = re.compile(r'[.!?,;]')
-        
+        carry = ""  # short fragment waiting to be merged
+
         messages = [{"role": "user", "content": prompt}]
-        
+
         async for chunk in llm_stream(messages):
             buffer += chunk
-            
-            # Check if we have a sentence delimiter
-            if sentence_delimiters.search(buffer):
-                # Split on delimiters but keep them
-                sentences = sentence_delimiters.split(buffer)
-                
-                # Yield all complete sentences
-                for i in range(len(sentences) - 1):
-                    sentence = sentences[i].strip()
-                    if sentence:
-                        yield sentence
-                
-                # Keep the incomplete part
-                buffer = sentences[-1]
-        
-        # Yield any remaining text
-        if buffer.strip():
-            yield buffer.strip()
+
+            # Try to split on sentence-ending punctuation
+            parts = _split_re.split(buffer)
+
+            # _split_re.split produces:
+            #   [text_before, delimiter, text_after, delimiter, …]
+            # We reconstruct "sentence + delimiter" pairs.
+            i = 0
+            while i < len(parts) - 2:
+                sentence = parts[i] + parts[i + 1]  # text + delimiter
+                sentence = (carry + " " + sentence).strip() if carry else sentence.strip()
+                carry = ""
+
+                if len(sentence) < MIN_CHUNK_LENGTH:
+                    # Too short — carry forward and merge with next
+                    carry = sentence
+                else:
+                    yield sentence
+
+                i += 2
+
+            # Whatever is left is the new incomplete buffer
+            buffer = parts[-1] if parts else ""
+
+        # Flush remaining buffer + carry
+        final = ((carry + " " if carry else "") + buffer).strip()
+        if final:
+            yield final
+
 
 
 # ==================== CONVENIENCE FUNCTIONS ====================

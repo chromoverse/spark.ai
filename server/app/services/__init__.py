@@ -7,6 +7,7 @@ from app.services.stt_services import (
     transcribe_audio,
     transcribe_audio_detailed
 )
+from app.services.stt_session_manager import stt_session_manager
 from app.services.emotion_services import (
     emotion_service,
     detect_emotion
@@ -26,6 +27,7 @@ __all__ = [
     "whisper_service",
     "emotion_service",
     "embedding_service",
+    "stt_session_manager",
     
     # Convenience functions (backward compatible)
     "transcribe_audio",
