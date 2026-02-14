@@ -29,7 +29,20 @@ class UserQuerySchema:
 class LanceDBManager:
     """LanceDB backend for vector search ONLY"""
     
+    _instance: Optional['LanceDBManager'] = None
+    _initialized: bool = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
+        # Prevent re-initialization if already initialized
+        if LanceDBManager._initialized:
+            return
+        LanceDBManager._initialized = True
+        
         from app.utils.path_manager import PathManager
         self.path_manager = PathManager()
         self.db_path = self.path_manager.get_user_data_dir() / "db" / "lanceData"

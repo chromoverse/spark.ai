@@ -12,13 +12,19 @@ async def test_generation():
     test_cases = [
         {
             "filename": "test_output_en1.wav",
-            "text": "Hello! I am verifying that the new modular TTS system is working correctly.",
+            "text": "[happy] YouTube's opening — looking for something specific or just random stuff? [chuckle]",
+            "lang": "en"
+        },
+        {
+            "filename": "test_output_en2.wav",
+            "text": "[thinking] bored... hmm. wanna break something or build something? [chuckle] both options available.",
             "lang": "en"
         },
         {
             "filename": "test_output_hi1.wav",
-            "text": "नमस्ते! मैं देख रहा हूँ कि नया टीटीएस सिस्टम ठीक से काम कर रहा है या नहीं।",
+            "text": "[thinking] बोर... हम्म। कुछ तोड़ना है या बनाना है? [chuckle] दोनों ऑप्शन अवेलेबल हैं।",
             "lang": "hi"
+
         }
     ]
     

@@ -13,42 +13,39 @@ import json
 import asyncio
 from typing import List, Dict, Any
 
-from sympy import ask
-
 from app.core.models import LifecycleMessages, Task
 from app.models.pqh_response_model import PQHResponse
 from app.prompts.sqh_prompt import build_sqh_prompt
-from app.ai.providers.manager import ProviderManager
+from app.ai.providers import llm_chat
 from app.core.orchestrator import get_orchestrator
 from app.core.execution_engine import get_execution_engine
 from app.core.server_executor import get_server_executor
 from app.core.task_emitter import get_task_emitter
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 async def process_sqh(
     pqh_response: PQHResponse,
     user_details: Dict[str, Any]
-) -> asyncio.Task:
+) -> None:
     """
-    Process SQH in background:
+    Process SQH in background - AUTO INITIALIZES and STARTS EXECUTION:
     - Generate Plan
     - Register Tasks
-    - Trigger Execution
+    - Trigger Execution Engine (automatically, no waiting)
     
-    ✅ UPDATED: Returns the execution task so caller can await it
+    ✅ UPDATED: Auto-starts execution, no need for caller to manage
     
     Returns:
-        asyncio.Task: The execution engine task (can be awaited)
+        None: Fire-and-forget, execution runs in background
     
     Raises:
         ValueError: If LLM response is invalid or parsing fails
         RuntimeError: If task generation fails
     
     Example:
-        execution_task = await process_sqh(pqh_response, user_details)
-        await execution_task  # Wait for completion
+        # Just call and forget - execution starts automatically
+        await process_sqh(pqh_response, user_details)
     """
     user_id = user_details.get("_id", "guest")
     # user_details['id'] might be ObjectId, ensure string
@@ -61,17 +58,14 @@ async def process_sqh(
         # 1. Build Prompt
         prompt = build_sqh_prompt(pqh_response, user_details)
         
-        # 2. Call AI (Reasoning Model)
-        provider_manager = ProviderManager(user_details)
+        # 2. Call AI via unified provider system (auto fallback: Groq → Gemini → OpenRouter)
+        messages = [{"role": "user", "content": prompt}]
         
-        # Use a reasoning model or smart model for planning
-        model_name = settings.openrouter_reasoning_model_name
+        logger.info("🧠 [SQH] calling LLM...")
+        raw_response, provider = await llm_chat(messages=messages)
         
-        logger.info(f"🧠 [SQH] calling LLM ({model_name})...")
-        raw_response, provider = await provider_manager.call_with_fallback(
-            prompt=prompt
-        )
-        
+        logger.info(f"✅ [SQH] Response {raw_response} received from {provider}")
+
         # ✅ FIX: Raise instead of return
         if not raw_response:
             error_msg = "Empty response from LLM"
@@ -149,14 +143,14 @@ async def process_sqh(
             client_emitter = get_task_emitter()
             execution_engine.set_client_emitter(client_emitter)
         
-        # 6. Trigger Execution Engine and RETURN the task
+        # 6. Trigger Execution Engine - AUTO START (fire-and-forget)
         logger.info(f"⚡ [SQH] Starting execution for {len(tasks)} tasks...")
-        engine_task = await execution_engine.start_execution(user_id)
+        await execution_engine.start_execution(user_id)
         
-        logger.info(f"✅ [SQH] Execution workflow initiated for user: {user_id}")
+        logger.info(f"✅ [SQH] Execution workflow auto-started for user: {user_id}")
         
-        # ✅ RETURN the task so caller can await it
-        return engine_task
+        # ✅ No need to return - execution runs in background automatically
+        return None
 
     except Exception as e:
         logger.error(f"❌ [SQH] Critical Failure: {e}", exc_info=True)

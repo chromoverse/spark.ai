@@ -12,7 +12,20 @@ logger = logging.getLogger(__name__)
 class LocalKVManager:
     """SQLite-based storage for desktop environment"""
     
+    _instance: Optional['LocalKVManager'] = None
+    _initialized: bool = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
+        # Prevent re-initialization if already initialized
+        if LocalKVManager._initialized:
+            return
+        LocalKVManager._initialized = True
+        
         from app.utils.path_manager import PathManager
         self.path_manager = PathManager()
         self.db_path = self.path_manager.get_user_data_dir() / "db" / "kvstore.db"

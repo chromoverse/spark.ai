@@ -60,7 +60,7 @@ class ChatCacheMixin(BaseRedisManager):
         """
         timestamp = datetime.now(NEPAL_TZ).isoformat()
         message_id = f"{user_id}_{int(time.time() * 1000000)}_{uuid.uuid4().hex[:8]}"
-        
+        await self._ensure_client()
         kv_client = self._get_kv_client()
         vector_client = self._get_vector_client()
         
@@ -100,7 +100,7 @@ class ChatCacheMixin(BaseRedisManager):
         """Add multiple messages efficiently to BOTH storages"""
         if not messages:
             return 0
-        
+        await self._ensure_client()
         kv_client = self._get_kv_client()
         vector_client = self._get_vector_client()
         
@@ -153,6 +153,7 @@ class ChatCacheMixin(BaseRedisManager):
         """
         Get last N messages from SQLite (FAST, NO VECTORS NEEDED)
         """
+        await self._ensure_client()
         kv_client = self._get_kv_client()
         if kv_client:
             # Desktop: Get from SQLite directly
@@ -393,6 +394,7 @@ class ChatCacheMixin(BaseRedisManager):
         """
         Semantic search from LanceDB ONLY (with vectors)
         """
+        await self._ensure_client()
         vector_client = self._get_vector_client()
         if vector_client:
             from app.services.embedding_services import embedding_service
@@ -484,10 +486,12 @@ class ChatCacheMixin(BaseRedisManager):
         current_query: str
     ) -> tuple[List[Dict[str, Any]], bool]:
         """
+        This function gives you context for the current query and also add the current message to both vector and SQLite
         Process query and get context intelligently:
         - Desktop: Use LanceDB vector search directly
         - Production: Use semantic search + fallback to Pinecone
         """
+        await self._ensure_client()
         vector_client = self._get_vector_client()
         
         # Desktop path: Use LanceDB directly
@@ -503,7 +507,7 @@ class ChatCacheMixin(BaseRedisManager):
                 user_id, 
                 query_vector, 
                 limit=10, 
-                threshold=0.5
+                threshold=0.1
             )
             
             logger.info(f"[Desktop/LanceDB] Found {len(context)} results")

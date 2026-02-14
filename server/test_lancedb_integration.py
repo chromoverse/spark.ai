@@ -137,20 +137,22 @@ async def test_convenience_functions():
         get_last_n_messages,
         semantic_search_messages,
         set_user_details,
-        
+        redis_manager,
         get_user_details, load_user, clear_user_details
     )
 
-    from app.db.mongo import connect_to_mongo
-    await connect_to_mongo()
+    # from app.db.mongo import connect_to_mongo
+    # await connect_to_mongo()
     
     user_id = "695e2bbaf8efc966aaf9f218"
-    await clear_user_details(user_id)
-    user_data = await load_user(user_id)
-    # Test via convenience functions
-    await set_user_details(user_id, user_data)
-    details = await get_user_details(user_id)
-    print(f"Convenience get_user_details: {details}")
+    # await clear_user_details(user_id)
+    # user_data = await load_user(user_id)
+    # # Test via convenience functions
+    # await set_user_details(user_id, user_data)
+    # details = await get_user_details(user_id)
+    # print(f"Convenience get_user_details: {details}")
+    recent_history = await get_last_n_messages(user_id, 5)
+    print(f"Convenience get_last_n_messages: {recent_history} messages")
     
     # await add_message(user_id, "user", "Testing convenience functions")
     # history = await get_last_n_messages(user_id, 5)

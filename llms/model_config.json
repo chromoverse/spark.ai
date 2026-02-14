@@ -6,136 +6,141 @@
         "filename": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
         "size_gb": 1.0,
         "quantization": "q4_k_m",
-        "description": "BEST FOR JSON - Follows instructions precisely, 1GB"
+        "description": "Best for JSON / schema tasks"
       },
       "gpu": {
         "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q8_0.gguf",
         "filename": "qwen2.5-coder-1.5b-instruct-q8_0.gguf",
         "size_gb": 1.6,
         "quantization": "q8_0",
-        "description": "BEST FOR JSON - High precision, GPU optimized"
+        "description": "High precision GPU"
       },
       "vulkan": {
         "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
         "filename": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
         "size_gb": 1.0,
         "quantization": "q4_k_m",
-        "description": "BEST FOR JSON - Vulkan compatible"
+        "description": "Vulkan compatible"
       }
     },
+
     "smollm2-1.7b": {
       "cpu": {
         "url": "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
         "filename": "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
         "size_gb": 1.1,
         "quantization": "Q4_K_M",
-        "description": "Excellent instruction following, very small"
+        "description": "Small instruct model"
       },
       "gpu": {
         "url": "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q8_0.gguf",
         "filename": "SmolLM2-1.7B-Instruct-Q8_0.gguf",
         "size_gb": 1.8,
         "quantization": "Q8_0",
-        "description": "High quality small model for GPU"
+        "description": "Small GPU"
       },
       "vulkan": {
         "url": "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
         "filename": "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
         "size_gb": 1.1,
         "quantization": "Q4_K_M",
-        "description": "Small model for Vulkan"
+        "description": "Vulkan compatible"
       }
     },
+
     "llama-3.2-1b": {
       "cpu": {
         "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         "size_gb": 0.75,
         "quantization": "Q4_K_M",
-        "description": "Smallest Llama, ultra-fast"
+        "description": "Smallest Llama"
       },
       "gpu": {
         "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf",
         "filename": "Llama-3.2-1B-Instruct-Q8_0.gguf",
         "size_gb": 1.3,
         "quantization": "Q8_0",
-        "description": "Smallest Llama, high precision"
+        "description": "Small Llama GPU"
       },
       "vulkan": {
         "url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         "size_gb": 0.75,
         "quantization": "Q4_K_M",
-        "description": "Smallest Llama for Vulkan"
+        "description": "Small Vulkan Llama"
       }
     },
+
     "qwen2.5-7b": {
       "cpu": {
-        "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q3_k_m.gguf",
-        "filename": "qwen2.5-7b-instruct-q3_k_m.gguf",
-        "size_gb": 3.81,
-        "quantization": "q3_k_m",
-        "description": "Single file, good for CPU"
+        "url": "https://huggingface.co/wanhin/qwen2.5-7b-instruct-gguf/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+        "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
+        "size_gb": 4.68,
+        "quantization": "Q4_K_M",
+        "description": "Primary 7B — CPU/Vulkan baseline"
       },
       "gpu": {
-        "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q6_k.gguf",
+        "url": "https://huggingface.co/wanhin/qwen2.5-7b-instruct-gguf/resolve/main/qwen2.5-7b-instruct-q6_k.gguf",
         "filename": "qwen2.5-7b-instruct-q6_k.gguf",
-        "size_gb": 6.25,
-        "quantization": "q6_k",
-        "description": "Single file, best quality for GPU"
+        "size_gb": 5.82,
+        "quantization": "Q6_K",
+        "description": "Primary 7B — GPU"
       },
       "vulkan": {
-        "url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q3_k_m.gguf",
-        "filename": "qwen2.5-7b-instruct-q3_k_m.gguf",
-        "size_gb": 3.81,
-        "quantization": "q3_k_m",
-        "description": "Single file, good for CPU/Vulkan (reuse)"
+        "url": "https://huggingface.co/wanhin/qwen2.5-7b-instruct-gguf/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+        "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
+        "size_gb": 4.68,
+        "quantization": "Q4_K_M",
+        "description": "Primary 7B Vulkan"
       }
     },
+
+    "mistral-7b": {
+      "cpu": {
+        "url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+        "filename": "mistral-7b-instruct-v0.2-q4_k_m.gguf",
+        "size_gb": 4.37,
+        "quantization": "Q4_K_M",
+        "description": "Fast 7B — CPU/Vulkan safe"
+      },
+      "gpu": {
+        "url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q6_K.gguf",
+        "filename": "mistral-7b-instruct-v0.2-q6_k.gguf",
+        "size_gb": 5.94,
+        "quantization": "Q6_K",
+        "description": "Fast 7B — GPU"
+      },
+      "vulkan": {
+        "url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+        "filename": "mistral-7b-instruct-v0.2-q4_k_m.gguf",
+        "size_gb": 4.37,
+        "quantization": "Q4_K_M",
+        "description": "Fast 7B Vulkan"
+      }
+    },
+
     "qwen2.5-1.5b": {
       "cpu": {
         "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "size_gb": 0.98,
-        "quantization": "q4_k_m",
-        "description": "Tiny, ultra-fast for CPU (1GB)"
+        "quantization": "Q4_K_M",
+        "description": "Tiny CPU/Vulkan"
       },
       "gpu": {
         "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q8_0.gguf",
         "filename": "qwen2.5-1.5b-instruct-q8_0.gguf",
         "size_gb": 1.6,
-        "quantization": "q8_0",
-        "description": "Tiny, fast, high precision"
+        "quantization": "Q8_0",
+        "description": "Tiny GPU"
       },
       "vulkan": {
         "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "size_gb": 0.98,
-        "quantization": "q4_k_m",
-        "description": "Tiny, ultra-fast (Vulkan)"
-      }
-    },
-    "llama-3.2-3b": {
-      "cpu": {
-        "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        "size_gb": 2.02,
         "quantization": "Q4_K_M",
-        "description": "Balanced speed/quality (3B params)"
-      },
-      "gpu": {
-        "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q6_K.gguf",
-        "filename": "Llama-3.2-3B-Instruct-Q6_K.gguf",
-        "size_gb": 2.64,
-        "quantization": "Q6_K",
-        "description": "High quality 3B model"
-      },
-      "vulkan": {
-        "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        "size_gb": 2.02,
-        "quantization": "Q4_K_M",
-        "description": "Balanced speed/quality (Vulkan)"
+        "description": "Tiny Vulkan"
       }
     }
   },

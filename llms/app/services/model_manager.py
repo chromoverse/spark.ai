@@ -62,7 +62,7 @@ class ModelManager:
         
         # Setup models directory
         base_dir = self.path_manager.get_models_dir()
-        models_subdir = self.config.get('settings', {}).get('models_base_dir', 'qwen')
+        models_subdir = self.config.get('settings', {}).get('models_base_dir', 'reasoning_models')
         self.models_dir = base_dir / models_subdir
         self.models_dir.mkdir(parents=True, exist_ok=True)
         

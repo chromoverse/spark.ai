@@ -165,7 +165,7 @@ class VoiceSelector:
             gender = gender.lower().strip()
             
         # Get voice list for gender
-        voices: List[str] = lang_config.get(gender, [])
+        voices: List[str] = list(lang_config.get(gender, []))
         
         # If no voices for this gender, try opposite gender
         if not voices:

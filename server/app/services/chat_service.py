@@ -1,7 +1,7 @@
 from app.utils import  clean_pqh_response
 from app.models.pqh_response_model import CognitiveState, PQHResponse
 from app.cache import load_user 
-from app.ai.providers.manager import ProviderManager
+from app.ai.providers import llm_chat
 from typing import Optional
 from app.config import settings
 # from app.services.detect_emotion import detect_emotion
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 async def chat(
     query: str,
     user_id: str = "guest",
-    model_name: Optional[str] = None,
     wait_for_execution: bool = False,  # ✅ NEW: Option to wait for tasks
     execution_timeout: float = 30.0     # ✅ NEW: Timeout for execution
 ) -> PQHResponse:
@@ -56,14 +55,6 @@ async def chat(
             )
         print("BYPASS 1 -  USER from redis",user_details)
 
-        # --- Get Query Based Context ---
-        query_context, is_pinecone_needed = await process_query_and_get_context(user_id, query)
-        print(f"Query context from chat_service: {json.dumps(query_context, indent=2)}")
-
-        # Get Recent Context from redis
-        recent_context = await get_last_n_messages(user_id, n=10)
-        print(f"Recent context from chat_service: {json.dumps(recent_context, indent=2)}")
-
         # ---  Emotion Detection (placeholder) ---
         emotion = "neutral"
 
@@ -72,30 +63,19 @@ async def chat(
         print("BYPASS 2 -  tools index",len(tools_index))
             
         # --- Build Prompt ---
-        if user_details["language"] == "ne":
-            prompt = pqh_prompt.build_prompt_ne(emotion, query, recent_context, query_context, tools_index)
-            print(f"📝 Prompt built: {prompt[:200]}...")    
-        elif user_details["language"] == "hi":
-            prompt = pqh_prompt.build_prompt_hi(emotion, query, recent_context, query_context, tools_index)
-            print(f"📝 Prompt built: {prompt[:200]}...")
-        else:
-            prompt = pqh_prompt.build_prompt_en(emotion, query, recent_context, query_context, tools_index)
-            print(f"📝 Prompt built: {prompt[:200]}...")
+        prompt = pqh_prompt.build_prompt(query, tools_index)
 
         # --- Step 5: Call AI with Smart Fallback ---
-        provider_manager = ProviderManager(user_details)
-
-        print("BYPASS 5 -  provide  manager",provider_manager)
+        messages = [{"role": "user", "content": prompt}]
         
-        raw_response, provider_used = await provider_manager.call_with_fallback(
-            prompt=prompt,
-            model_name=model_name or settings.openrouter_reasoning_model_name
+        raw_response, provider_used = await llm_chat(
+            messages=messages,
         )
 
-        print("BYPASS 5 -  raw response",raw_response)
-        print("BYPASS 5 -  provider used",provider_used)
+        print("BYPASS  -  raw response", raw_response)
+        print("BYPASS  -  provider used", provider_used)
         
-        print(f"✅ Response received from {provider_used.value}")
+        print(f"✅ Response received from {provider_used}")
         
         if not raw_response:
             return clean_pqh_response._create_error_pqh_response("Empty AI response", emotion)
@@ -104,23 +84,23 @@ async def chat(
         cleaned_response = clean_pqh_response.clean_pqh_response(raw_response, emotion)
 
         
-        # Add ai response to Redis asynchronously
-        asyncio.create_task(
-            redis_add_message(
-                user_id=user_id,
-                role="ai",
-                content=cleaned_response.cognitive_state.answer_english
-            )
-        )
-        # Add chat message to MongoDB asynchronously
-        asyncio.create_task(
-         add_chat_message_to_mongo(
-            ChatController(
-                user_id=user_id,
-                user_query=query,
-                ai_response=cleaned_response.cognitive_state.answer_english
-            )
-        ))
+        # # Add ai response to Redis asynchronously
+        # asyncio.create_task(
+        #     redis_add_message(
+        #         user_id=user_id,
+        #         role="ai",
+        #         content=cleaned_response.cognitive_state.answer_english
+        #     )
+        # )
+        # # Add chat message to MongoDB asynchronously
+        # asyncio.create_task(
+        #  add_chat_message_to_mongo(
+        #     ChatController(
+        #         user_id=user_id,
+        #         user_query=query,
+        #         ai_response=cleaned_response.cognitive_state.answer_english
+        #     )
+        # ))
 
         # --- Step 7: Trigger SQH in Background (if tools needed) ---
         if cleaned_response.requested_tool and len(cleaned_response.requested_tool) > 0:

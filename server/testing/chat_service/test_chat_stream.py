@@ -13,6 +13,8 @@ import requests
 import json
 import sys
 
+from app.registry.tool_index import get_tools_index
+
 # Configuration - Update port to match your server (default: 9001)
 API_URL = "http://localhost:9001/api/v1/llm/reasoning/chat"
 
@@ -137,25 +139,25 @@ def test_spark_prompt():
     """
     system_prompt = """You are SPARK - Siddhant's Personal AI. Respond ONLY with valid JSON.
 
-OUTPUT FORMAT:
-```json
-{
-  "cognitive_state": {
-    "user_query": "exact input echo",
-    "emotion": "neutral",
-    "thought_process": "brief reasoning",
-    "answer": "Pure English response",
-    "answer_english": "English translation"
-  },
-  "requested_tool": ["tool_name"] OR []
-}
-```
+    OUTPUT FORMAT:
+    ```json
+    {
+    "cognitive_state": {
+        "user_query": "exact input echo",
+        "emotion": "neutral",
+        "thought_process": "brief reasoning",
+        "answer": "Pure English response",
+        "answer_english": "English translation"
+    },
+    "requested_tool": ["tool_name"] OR []
+    }
+    ```
 
-RULES:
-- Output ONLY the JSON object, nothing else
-- No markdown code blocks
-- No explanations before or after
-- Pure JSON only"""
+    RULES:
+    - Output ONLY the JSON object, nothing else
+    - No markdown code blocks
+    - No explanations before or after
+    - Pure JSON only"""
 
     user_query = "hey there"
     
@@ -181,6 +183,18 @@ def test_simple_json():
     result = get_json_response(user_query, system_prompt)
     return result
 
+async def get_prompt():
+    from app.prompts import stream_prompt, pqh_prompt
+    from app.cache import redis_manager
+    user_id = "695e2bbaf8efc966aaf9f218"
+    prompt = input("Enter a query to test prompt building: ")
+    recent_context = await redis_manager.get_last_n_messages(user_id, 10)
+    query_based_context, _ = await redis_manager.process_query_and_get_context(user_id, prompt)
+    tools_index = get_tools_index()
+    print("tools index",tools_index)
+    # prompt =  pqh_prompt.build_prompt_en(prompt, tools_index)
+    prompt =  stream_prompt.build_prompt_en("neutral", prompt, recent_context,query_based_context, user_details=None)
+    return prompt
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -195,7 +209,9 @@ if __name__ == "__main__":
         prompt = sys.argv[1]
         get_json_response(prompt, "Respond only with valid JSON.")
     else:
-        # Run tests
-        get_streaming_response("hey do you know who is siddthecoder ?", "respond plain")
-        test_simple_json()
-        test_spark_prompt()
+        while True:
+            import asyncio
+            prompt = asyncio.run(get_prompt())
+            get_streaming_response(prompt, "respond plain")
+            # get_json_response(prompt, "Respond only with valid JSON.")
+           

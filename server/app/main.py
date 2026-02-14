@@ -5,13 +5,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import chat, tts, stt, auth, ml_test, openrouter_debug
-from app.socket.socket_server import sio, connected_users, socket_app
-from app.socket.socket_utils import init_socket_utils
+from app.socket import init_socket, sio, socket_app, connected_users
 from app.db.mongo import connect_to_mongo, close_mongo_connection
 from app.db.indexes import create_indexes
 
 # Import ML components
 from app.ml import model_loader, embedding_worker, DEVICE, MODELS_CONFIG
+
+# Import auto-initializer system
+import app.startup_registrations  # noqa: F401  — registers all init functions
+from app.auto_initializer import run_all as run_all_initializers
 
 # Import orchestration system
 from app.registry.loader import load_tool_registry, get_tool_registry
@@ -85,8 +88,8 @@ async def lifespan(app: FastAPI):
     
     # Initialize WebSocket
     logger.info("📡 WebSocket server available at /ws")
-    init_socket_utils(sio, connected_users)
-    logger.info(" WebSocket initialized")
+    init_socket()
+    logger.info("✅ WebSocket initialized")
     
     # Load ML models
     logger.info("=" * 60)
@@ -101,6 +104,9 @@ async def lifespan(app: FastAPI):
         logger.info(" Models warmed up - no cold start!")
     else:
         logger.warning("⚠️  Some ML models failed to load - check logs")
+    
+    # Run all registered startup initializers (cache, keys, TTS, etc.)
+    await run_all_initializers()
     
     logger.info("=" * 60)
     logger.info(" Application startup complete")

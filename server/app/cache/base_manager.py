@@ -42,10 +42,16 @@ class BaseRedisManager:
     _instance: Optional['BaseRedisManager'] = None
     _initialized: bool = False
     
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        if self._initialized:
+        # Prevent re-initialization if already initialized
+        if BaseRedisManager._initialized:
             return
-        self._initialized = True
+        BaseRedisManager._initialized = True
         self.client: Union[redis.Redis, UpstashRedis, 'LocalKVManager', None] = None
         self.vector_client: Optional['LanceDBManager'] = None
         self._is_upstash = False

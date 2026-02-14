@@ -13,14 +13,14 @@ export function AudioInput() {
 
   // Get state from Redux
   const audioInputDevices = useAppSelector(
-    (state) => state.device.audioInputDevices
+    (state) => state.device.audioInputDevices,
   );
   const selectedInputDeviceId = useAppSelector(
-    (state) => state.device.selectedInputDeviceId
+    (state) => state.device.selectedInputDeviceId,
   );
   const hasPermissions = useAppSelector((state) => state.device.hasPermissions);
   const isMicrophoneListening = useAppSelector(
-    (state) => state.localState.isMicrophoneListening
+    (state) => state.localState.isMicrophoneListening,
   );
 
   const [audioLevel, setAudioLevel] = useState(0);
@@ -44,13 +44,17 @@ export function AudioInput() {
   const isProcessingRef = useRef(false);
   const isRecordingRef = useRef(false);
   const processingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
+    null,
   );
 
-  // Voice Activity Detection settings
-  const SILENCE_THRESHOLD = 15;
-  const SILENCE_DURATION = 1500;
-  const SPEAKING_THRESHOLD = 20;
+  // ✅ IMPROVED: Voice Activity Detection settings - LESS REACTIVE
+  const SILENCE_THRESHOLD = 25; // ✅ Increased from 15 to 25
+  const SILENCE_DURATION = 2000; // ✅ Increased from 1500ms to 2000ms (2 seconds)
+  const SPEAKING_THRESHOLD = 40; // ✅ Increased from 20 to 40 (needs louder voice)
+  const SPEAKING_CONFIRMATION_SAMPLES = 3; // ✅ NEW: Need 3 consecutive samples above threshold
+
+  // ✅ NEW: Track consecutive speaking samples
+  const speakingSamplesRef = useRef(0);
 
   // Auto-start listening when component mounts and has permissions
   useEffect(() => {
@@ -115,49 +119,62 @@ export function AudioInput() {
     }
   };
 
+  // ✅ IMPROVED: Less reactive voice detection
   const handleVoiceActivity = (level: number) => {
     const levelPercentage = (level / 128) * 100;
 
     // Don't start recording if backend is processing
     if (isProcessingRef.current) {
+      speakingSamplesRef.current = 0; // ✅ Reset counter
       return;
     }
 
-    // User started speaking
-    if (levelPercentage > SPEAKING_THRESHOLD && !isSpeakingRef.current) {
-      isSpeakingRef.current = true;
-      setIsSpeaking(true);
+    // ✅ IMPROVED: Require multiple consecutive samples above threshold
+    if (levelPercentage > SPEAKING_THRESHOLD) {
+      speakingSamplesRef.current++;
 
-      // Clear any existing silence timeout
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-        silenceTimeoutRef.current = null;
+      // ✅ Only trigger speaking after confirmation samples
+      if (
+        speakingSamplesRef.current >= SPEAKING_CONFIRMATION_SAMPLES &&
+        !isSpeakingRef.current
+      ) {
+        isSpeakingRef.current = true;
+        setIsSpeaking(true);
+
+        // Clear any existing silence timeout
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+
+        // Start recording if not already recording
+        if (!isRecordingRef.current) {
+          startRecording();
+        }
       }
 
-      // Start recording if not already recording
-      if (!isRecordingRef.current) {
-        startRecording();
-      }
-    }
+      // User is speaking - reset silence timer
+      if (isSpeakingRef.current) {
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+        }
 
-    // User is speaking - reset silence timer
-    if (levelPercentage > SPEAKING_THRESHOLD && isSpeakingRef.current) {
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-      }
-
-      // Set new timeout for silence detection
-      silenceTimeoutRef.current = setTimeout(() => {
-        handleSilenceDetected();
-      }, SILENCE_DURATION);
-    }
-
-    // Complete silence
-    if (levelPercentage <= SILENCE_THRESHOLD && isSpeakingRef.current) {
-      if (!silenceTimeoutRef.current) {
+        // Set new timeout for silence detection
         silenceTimeoutRef.current = setTimeout(() => {
           handleSilenceDetected();
         }, SILENCE_DURATION);
+      }
+    } else {
+      // ✅ Below threshold - reset counter
+      speakingSamplesRef.current = 0;
+
+      // Complete silence
+      if (levelPercentage <= SILENCE_THRESHOLD && isSpeakingRef.current) {
+        if (!silenceTimeoutRef.current) {
+          silenceTimeoutRef.current = setTimeout(() => {
+            handleSilenceDetected();
+          }, SILENCE_DURATION);
+        }
       }
     }
   };
@@ -165,6 +182,7 @@ export function AudioInput() {
   const handleSilenceDetected = () => {
     isSpeakingRef.current = false;
     setIsSpeaking(false);
+    speakingSamplesRef.current = 0; // ✅ Reset counter
 
     // Clear the silence timeout
     if (silenceTimeoutRef.current) {
@@ -198,8 +216,8 @@ export function AudioInput() {
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "audio/ogg";
+          ? "audio/webm"
+          : "audio/ogg";
 
       const mediaRecorder = new MediaRecorder(streamRef.current, {
         mimeType,
@@ -238,6 +256,8 @@ export function AudioInput() {
       isRecordingRef.current = true;
       setIsRecording(true);
       setRecordingStartTime(Date.now());
+
+      console.log("🎙️ Recording started");
     } catch (error) {
       console.error("❌ Error starting recording:", error);
       isRecordingRef.current = false;
@@ -252,15 +272,19 @@ export function AudioInput() {
       return;
     }
 
-    // Enforce minimum recording duration
+    // ✅ IMPROVED: Enforce minimum recording duration (longer to avoid false triggers)
     const recordingDuration = Date.now() - recordingStartTime;
-    if (recordingDuration < 500) {
+    if (recordingDuration < 800) {
+      // ✅ Increased from 500ms to 800ms
+      console.log("⏭️ Recording too short, skipping");
+      audioChunksRef.current = [];
       return;
     }
 
     try {
       if (recorder.state === "recording" || recorder.state === "paused") {
         recorder.stop();
+        console.log("⏹️ Recording stopped");
       }
     } catch (error) {
       console.error("❌ Error stopping recording:", error);
@@ -283,6 +307,7 @@ export function AudioInput() {
 
     // Check if already processing
     if (isProcessingRef.current) {
+      console.log("⏸️ Already processing, skipping");
       audioChunksRef.current = [];
       return;
     }
@@ -293,8 +318,10 @@ export function AudioInput() {
         type: mediaRecorderRef.current?.mimeType || "audio/webm;codecs=opus",
       });
 
-      // Validate audio size
-      if (audioBlob.size < 1000) {
+      // ✅ IMPROVED: Stricter validation - require larger audio files
+      if (audioBlob.size < 2000) {
+        // ✅ Increased from 1000 to 2000 bytes
+        console.log("⏭️ Audio too small, skipping");
         audioChunksRef.current = [];
         return;
       }
@@ -302,6 +329,8 @@ export function AudioInput() {
       // Set processing state BEFORE sending
       isProcessingRef.current = true;
       setIsProcessing(true);
+
+      console.log(`📤 Sending audio: ${audioBlob.size} bytes`);
 
       // Safety timeout: reset after 30 seconds if no response
       processingTimeoutRef.current = setTimeout(() => {
@@ -349,6 +378,8 @@ export function AudioInput() {
         // Reset processing state
         isProcessingRef.current = false;
         setIsProcessing(false);
+
+        console.log("✅ Processing complete, ready for next input");
       };
 
       // Listen to ALL possible completion events
@@ -408,31 +439,32 @@ export function AudioInput() {
       }
 
       // Small delay to ensure previous streams are fully released
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       const deviceId = selectedInputDeviceId || audioInputDevices[0]?.deviceId;
 
       // Try with preferred device first
       const getConstraints = (useExact: boolean): MediaStreamConstraints => ({
-        audio: deviceId && useExact
-          ? {
-              deviceId: { exact: deviceId },
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            }
-          : deviceId && !useExact
-          ? {
-              deviceId: { ideal: deviceId },
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            }
-          : {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
+        audio:
+          deviceId && useExact
+            ? {
+                deviceId: { exact: deviceId },
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              }
+            : deviceId && !useExact
+              ? {
+                  deviceId: { ideal: deviceId },
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                }
+              : {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                },
         video: false,
       });
 
@@ -440,16 +472,26 @@ export function AudioInput() {
 
       // Try with exact deviceId first
       try {
-        stream = await navigator.mediaDevices.getUserMedia(getConstraints(true));
+        stream = await navigator.mediaDevices.getUserMedia(
+          getConstraints(true),
+        );
       } catch (exactError: any) {
-        console.warn("⚠️ Exact device failed, trying with ideal preference:", exactError.message);
-        
+        console.warn(
+          "⚠️ Exact device failed, trying with ideal preference:",
+          exactError.message,
+        );
+
         // Fallback: try with ideal (flexible) deviceId
         try {
-          stream = await navigator.mediaDevices.getUserMedia(getConstraints(false));
+          stream = await navigator.mediaDevices.getUserMedia(
+            getConstraints(false),
+          );
         } catch (idealError: any) {
-          console.warn("⚠️ Ideal device failed, trying any available mic:", idealError.message);
-          
+          console.warn(
+            "⚠️ Ideal device failed, trying any available mic:",
+            idealError.message,
+          );
+
           // Final fallback: try any available microphone
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -469,16 +511,22 @@ export function AudioInput() {
       }
     } catch (error: any) {
       console.error("❌ Error starting audio:", error);
-      
+
       // Provide more helpful error message
       if (error.name === "NotReadableError") {
-        console.error("💡 Tip: The microphone may be in use by another app. Close other apps using the mic and try again.");
+        console.error(
+          "💡 Tip: The microphone may be in use by another app. Close other apps using the mic and try again.",
+        );
       } else if (error.name === "NotAllowedError") {
-        console.error("💡 Tip: Microphone permission was denied. Please allow microphone access.");
+        console.error(
+          "💡 Tip: Microphone permission was denied. Please allow microphone access.",
+        );
       } else if (error.name === "NotFoundError") {
-        console.error("💡 Tip: No microphone found. Please connect a microphone.");
+        console.error(
+          "💡 Tip: No microphone found. Please connect a microphone.",
+        );
       }
-      
+
       if (isMicrophoneListening) {
         dispatch(toggleMicrophoneListening());
       }
@@ -516,6 +564,7 @@ export function AudioInput() {
     setIsRecording(false);
     setIsSpeaking(false);
     isSpeakingRef.current = false;
+    speakingSamplesRef.current = 0; // ✅ Reset counter
 
     if (streamRef.current) {
       streamRef.current

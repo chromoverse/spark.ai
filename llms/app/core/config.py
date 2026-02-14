@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # ---------------------
     # RECOMMENDED: qwen2.5-coder-1.5b for JSON output (follows instructions precisely)
     # Other options: smollm2-1.7b, llama-3.2-1b, qwen2.5-1.5b
-    model_name: str = "qwen2.5-coder-1.5b"  # Best for structured JSON output
+    model_name: str = "qwen2.5-7b"  # Best for structured JSON output
     max_tokens: int = 512           # Default max tokens for generation
     temperature: float = 0.1        # Low temp for deterministic JSON (0.1-0.3 recommended)
     

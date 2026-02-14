@@ -1,4 +1,4 @@
-from datetime import time
+import time  # ✅ FIXED: Changed from 'from datetime import time'
 import json
 import re
 import logging
@@ -8,7 +8,6 @@ from json_repair import repair_json
 from app.models.pqh_response_model import PQHResponse, CognitiveState
 
 logger = logging.getLogger(__name__)
-
 
 
 # ==================== ZERO-LATENCY CLEANER ====================
@@ -80,7 +79,7 @@ def _reconstruct_pqh_response(raw_data: str, emotion: str) -> PQHResponse:
         data = json.loads(cleaned)
         
         # Extract fields with fallbacks
-        request_id = data.get("request_id", f"error_{int(time.time()*1000)}") # type: ignore
+        request_id = data.get("request_id", f"error_{int(time.time()*1000)}")  # ✅ FIXED: Now works correctly
         
         # Extract cognitive_state
         cog_state = data.get("cognitive_state", {})
@@ -111,7 +110,7 @@ def _reconstruct_pqh_response(raw_data: str, emotion: str) -> PQHResponse:
 def _create_error_pqh_response(raw_data: str, emotion: str) -> PQHResponse:
     """Create safe fallback PQHResponse when all parsing fails."""
     
-    import time
+    # ✅ REMOVED: Redundant 'import time' (now using top-level import)
     
     return PQHResponse(
         request_id=f"error_{int(time.time()*1000)}",

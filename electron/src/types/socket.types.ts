@@ -152,11 +152,11 @@ export interface SocketEvents {
   "task:execute_batch": (data: TaskExecuteBatchPayload) => void;
   "task:status": (data: TaskStatusPayload) => void;
   
-  // TTS events
-  "tts-start": () => void;
-  "tts-chunk": (chunk: ArrayBuffer) => void;
-  "tts-end": () => void;
-  "response-tts": (res: any) => void;
+  // TTS events (payloads carry a streamId for per-stream tracking)
+  "tts-start": (payload: { streamId: string; text?: string }) => void;
+  "tts-chunk": (payload: { streamId: string; data: ArrayBuffer }) => void;
+  "tts-end": (payload: { streamId: string; success: boolean; chunks?: number; error?: string }) => void;
+  "response-tts": (res: { success?: boolean; error?: string }) => void;
   
   // Transcription
   "transcription-result": (data: TranscriptionPayload) => void;

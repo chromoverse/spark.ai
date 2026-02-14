@@ -51,24 +51,24 @@ class InferenceService:
     LLAMA_CPP_RELEASES = {
         "Windows": {
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-cpu-x64.zip",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-cpu-x64.zip  ",
                 "executable": "llama-server.exe",
                 "size_mb": 35
             },
             "gpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-cuda-cu12.2.0-x64.zip",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-cuda-cu12.2.0-x64.zip  ",
                 "executable": "llama-server.exe",
                 "size_mb": 450
             },
             "vulkan": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-vulkan-x64.zip",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-vulkan-x64.zip  ",
                 "executable": "llama-server.exe",
                 "size_mb": 40
             }
         },
         "Darwin": {  # macOS
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-macos-arm64.tar.gz",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-macos-arm64.tar.gz  ",
                 "executable": "llama-server",
                 "size_mb": 15
             },
@@ -76,17 +76,17 @@ class InferenceService:
         },
         "Linux": {
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64.tar.gz",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64.tar.gz  ",
                 "executable": "llama-server",
                 "size_mb": 35
             },
             "gpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64-cuda.tar.gz",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64-cuda.tar.gz  ",
                 "executable": "llama-server",
                 "size_mb": 400
             },
             "vulkan": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64.tar.gz", # Usually packaged in main or separate
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64.tar.gz  ", # Usually packaged in main or separate
                 "executable": "llama-server",
                 "size_mb": 35
             }
@@ -352,7 +352,7 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 
 ws ::= ([ \t\n] ws)?
 '''
-
+    
     def generate(
         self,
         prompt: str,
@@ -378,35 +378,46 @@ ws ::= ([ \t\n] ws)?
             
         full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
         
-        # Stop sequences - stop after JSON closes or on common garbage patterns
+        # Balanced stop sequences - not too aggressive
         stop_sequences = [
-            "User:", "Assistant:", 
-            "\n\n\n",           # Triple newline often indicates end
-            "```",              # Code block markers
-            "[Stream Complete]", # Your specific garbage pattern
-            "To be continued",  # Another garbage pattern
+            "</s>",              # EOS token
+            "<|im_end|>",        # Chat format end
+            "<|endoftext|>",     # GPT-style end
+            "<|eot_id|>",        # Llama-3 specific
+            "\n\nUser:",         # Conversation restart
+            "\n\nAssistant:",    # Duplicate assistant
+            "\n\n\n",            # Triple newline (likely garbage)
         ]
+        
+        # FIXED: Remove strict 150 token limit
+        # Use requested max_tokens or fallback to settings
+        token_limit = max_tokens or getattr(settings, 'max_tokens', 512)
         
         payload = {
             "prompt": full_prompt,
-            "n_predict": max_tokens or settings.max_tokens,
-            "temperature": temperature or settings.temperature,
+            "n_predict": token_limit,  # FIXED: No artificial cap
+            "temperature": temperature or getattr(settings, 'temperature', 0.7),
             "stop": stop_sequences,
             "stream": stream,
-            "repeat_penalty": 1.1,  # Prevent repetitive garbage
-            "top_p": 0.9,           # Nucleus sampling for better quality
-            "top_k": 40,            # Limit vocabulary for consistency
+            "repeat_penalty": 1.15,     # Moderate - prevent loops
+            "frequency_penalty": 0.3,   # Reduced - was too aggressive
+            "presence_penalty": 0.3,    # Reduced - was too aggressive
+            "top_p": 0.9,
+            "top_k": 40,
         }
         
-        # Add JSON grammar constraint if json_mode is enabled
         if json_mode:
             payload["grammar"] = self.JSON_GRAMMAR
         
         try:
+            # FIXED: Increased timeout for large contexts
+            timeout = 120 if token_limit > 500 else 60
+            
             response = requests.post(
                 f"http://{self.SERVER_HOST}:{self.SERVER_PORT}/completion",
                 json=payload,
-                stream=stream
+                stream=stream,
+                timeout=timeout
             )
             response.raise_for_status()
             
@@ -414,10 +425,26 @@ ws ::= ([ \t\n] ws)?
                 return self._stream_response(response)
             else:
                 content = response.json().get('content', '').strip()
-                # Post-process: extract JSON if present
+                
+                # Light cleanup - remove only obvious garbage
+                content = content.replace("</s>", "").replace("<s>", "").strip()
+                
+                # Don't aggressively cut at prompt markers
+                # Only remove if they appear at the very end
+                garbage_endings = ["# USER SAYS", "# QUERY", "User:", "Assistant:"]
+                for marker in garbage_endings:
+                    if content.endswith(marker):
+                        content = content[:-len(marker)].strip()
+                
                 if json_mode:
                     content = self._extract_json(content)
+                
                 return content
+                
+        except requests.Timeout:
+            raise RuntimeError(f"Inference timed out after {timeout}s")
+        except requests.RequestException as e:
+            raise RuntimeError(f"Inference request failed: {e}")
         except Exception as e:
             print(f"❌ Inference error: {e}")
             raise RuntimeError(f"Inference failed: {e}")
@@ -440,17 +467,37 @@ ws ::= ([ \t\n] ws)?
         return text
 
     def _stream_response(self, response):
-        """Yield streaming chunks from server response."""
+        """Yield streaming chunks with light garbage filtering."""
+        accumulated = ""
+        
+        # Only critical stop tokens
+        critical_stops = ["</s>", "<|eot_id|>", "<|im_end|>"]
+        
         for line in response.iter_lines():
             if line:
                 decoded_line = line.decode('utf-8')
                 if decoded_line.startswith('data: '):
-                    json_str = decoded_line[6:] # Skip "data: "
+                    json_str = decoded_line[6:]
                     try:
                         data = json.loads(json_str)
                         content = data.get('content', '')
-                        if content:
-                            yield content
+                        
+                        if not content:
+                            continue
+                        
+                        accumulated += content
+                        
+                        # Stop only on critical tokens
+                        for token in critical_stops:
+                            if token in accumulated:
+                                clean = accumulated.split(token)[0].strip()
+                                if clean:  # FIXED: Removed arbitrary length check
+                                    yield clean
+                                return
+                        
+                        # Yield normally
+                        yield content
+                        
                     except json.JSONDecodeError:
                         pass
 
@@ -463,7 +510,7 @@ ws ::= ([ \t\n] ws)?
         json_mode: bool = False
     ):
         """
-        Chat inference via HTTP API.
+        Chat inference optimized for Llama models.
         
         Args:
             messages: List of message dicts with 'role' and 'content'
@@ -472,28 +519,39 @@ ws ::= ([ \t\n] ws)?
             stream: Whether to stream the response
             json_mode: If True, enforces JSON output using grammar
         """
-        # Convert messages to raw prompt for simple completion endpoint
-        # Or use /v1/chat/completions if using valid OAI format
-        # For simplicity with vanilla llama-server, we construct the prompt
+        # Build clean prompt
+        system_content = ""
+        conversation = []
         
-        prompt_parts = []
         for msg in messages:
             role = msg.get('role', 'user')
             content = msg.get('content', '')
+            
             if role == 'system':
-                prompt_parts.append(f"System: {content}")
+                system_content = content
             elif role == 'user':
-                prompt_parts.append(f"User: {content}")
+                conversation.append(f"User: {content}")
             elif role == 'assistant':
-                prompt_parts.append(f"Assistant: {content}")
+                conversation.append(f"Assistant: {content}")
         
-        prompt = "\n".join(prompt_parts) + "\nAssistant:"
-        return self.generate(prompt, max_tokens, temperature, stream=stream, json_mode=json_mode)
+        # Build final prompt
+        if system_content:
+            prompt = f"{system_content}\n\n" + "\n".join(conversation) + "\nAssistant:"
+        else:
+            prompt = "\n".join(conversation) + "\nAssistant:"
+        
+        return self.generate(
+            prompt, 
+            max_tokens, 
+            temperature, 
+            stream=stream, 
+            json_mode=json_mode
+        )
 
     @property
     def is_ready(self) -> bool:
         return self._is_ready and self.server_process is not None
-
+    
     def get_status(self) -> Dict[str, Any]:
         return {
             "ready": self.is_ready,
@@ -501,8 +559,7 @@ ws ::= ([ \t\n] ws)?
             "server_pid": self.server_process.pid if self.server_process else None,
             "device": self.device_type
         }
-
-
+    
 # -----------------------
 # Singleton Instance
 # -----------------------
@@ -517,4 +574,3 @@ def get_inference_service() -> InferenceService:
             if _inference_service is None:
                 _inference_service = InferenceService()
     return _inference_service
-
