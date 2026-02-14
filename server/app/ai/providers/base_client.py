@@ -2,11 +2,17 @@
 Base LLM Client — Abstract base class for all AI provider clients.
 
 Features:
-- JSON array key parsing from os.getenv() (e.g. '["key1","key2"]')
+- Uses key_manager for key storage and rotation
+- JSON array key parsing from key_manager (e.g. '["key1","key2"]')
 - Round-robin key rotation with failure tracking
 - Thread-safe key ops via asyncio.Lock
 - Common quota detection (DRY — subclasses only add provider-specific patterns)
 - Abstract llm_chat() and llm_stream() with auto-retry across keys
+
+Key Manager Integration:
+- Keys are stored in Windows registry via key_manager
+- Key rotation state is tracked in key_manager (not in client instance)
+- This ensures keys are used sequentially across all client instances
 """
 import os
 import json
@@ -14,6 +20,14 @@ import logging
 import asyncio
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any, Set, AsyncIterator, AsyncGenerator
+
+# Import key_manager functions for key rotation
+from app.ai.providers.key_manager import (
+    get_all_keys,
+    get_next_key,
+    rotate_key,
+    get_key_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,15 +102,36 @@ class BaseClient(ABC):
 
     def _load_keys(self) -> List[str]:
         """
-        Load API keys from environment variable (os.getenv only).
+        Load API keys from key_manager.
+        
+        Uses key_manager's get_all_keys() which reads from the registry
+        and parses JSON arrays or single keys.
+        """
+        # Use key_manager to get all keys for this provider
+        keys = get_all_keys(self.provider_name.lower())
+        
+        # Also try with env_key if provider name didn't work
+        if not keys:
+            keys = get_all_keys(self.env_key)
+        
+        # Fallback to os.getenv for initial load if key_manager has nothing
+        if not keys:
+            raw = os.getenv(self.env_key, "")
+            if raw:
+                keys = self._parse_keys_from_string(raw)
+        
+        return keys
 
+    def _parse_keys_from_string(self, raw: str) -> List[str]:
+        """
+        Parse keys from a raw string (fallback method).
+        
         Supports formats:
             '["key1","key2"]'   — JSON array (preferred)
             "['key1','key2']"   — JSON array with single quotes
             '[key1,key2]'       — bracket-wrapped, no quotes (Windows strips them)
             'key1'              — plain single key
         """
-        raw = os.getenv(self.env_key, "")
         if not raw or not raw.strip():
             return []
 
@@ -137,23 +172,42 @@ class BaseClient(ABC):
         # Fallback: treat as single key
         return [raw]
     def _get_active_key(self) -> Optional[str]:
-        """Get the current active key (skipping failed ones)."""
+        """
+        Get the current active key from key_manager (skipping failed ones).
+        
+        Uses key_manager's get_next_key() which handles rotation automatically.
+        """
         if not self._keys:
             return None
 
+        # Try to get a key that hasn't failed
         for _ in range(len(self._keys)):
-            key = self._keys[self._current_key_index % len(self._keys)]
-            if key not in self._failed_keys:
+            # Use key_manager to get next key (handles rotation)
+            key = get_next_key(self.provider_name.lower())
+            if not key:
+                key = get_next_key(self.env_key)
+            
+            if key and key not in self._failed_keys:
                 return key
-            self._current_key_index = (self._current_key_index + 1) % len(self._keys)
+            
+            # If key is failed or None, rotate to next
+            if key:
+                rotate_key(self.provider_name.lower())
+                rotate_key(self.env_key)
 
         return None  # All keys failed
 
     def _rotate_key(self) -> Optional[str]:
-        """Move to the next key in rotation."""
+        """
+        Move to the next key in rotation using key_manager.
+        """
         if not self._keys:
             return None
-        self._current_key_index = (self._current_key_index + 1) % len(self._keys)
+        
+        # Use key_manager to rotate
+        rotate_key(self.provider_name.lower())
+        rotate_key(self.env_key)
+        
         return self._get_active_key()
 
     def _mark_key_failed(self, key: str) -> None:

@@ -27,6 +27,10 @@ from app.ai.providers.key_manager import (
     remove_api_key,
     list_registered_keys,
     get_raw_key,
+    get_next_key,
+    rotate_key,
+    get_all_keys,
+    get_key_status,
 )
 
 __all__ = [
@@ -40,6 +44,11 @@ __all__ = [
     "register_api_key",
     "remove_api_key",
     "list_registered_keys",
+    "get_raw_key",
+    "get_next_key",
+    "rotate_key",
+    "get_all_keys",
+    "get_key_status",
     # Exceptions
     "QuotaError",
     "AllKeysExhaustedError",

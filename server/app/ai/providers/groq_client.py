@@ -15,7 +15,8 @@ from app.ai.providers.base_client import BaseClient
 logger = logging.getLogger(__name__)
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+GROQ_DEFAULT_MODEL = "openai/gpt-oss-20b"
+# GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 class GroqClient(BaseClient):
