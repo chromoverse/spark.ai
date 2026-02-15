@@ -1,20 +1,18 @@
-
+from app.cache import redis_manager
 import asyncio
-import sys
-import os
-
-# Add app root to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from app.cache import load_user, get_current_user_cached, log_cache_performance
+from app.utils.format_context import format_context
 
 async def main():
-    print("\n--- Testing User Cache ---")
-    user = await load_user("guest")
-    print("User Data:", user)
-    
-    a = log_cache_performance()
-    print("Cache Performance Logged:", a)
+    user_id = "695e2bbaf8efc966aaf9f218"
+    current_query = input("Enter a query to test context retrieval: ")
+    context, from_cache = await redis_manager.process_query_and_get_context(user_id, current_query)
+    # print(f"Context for query '{current_query}': {context}")
+    recent_context = await redis_manager.get_last_n_messages(user_id, 10)
+    rcx, formatted_context = format_context(recent_context, context)
+    print(f"Formatted recent_context:\n" ,rcx)
+    print(f"Formatted query_context:\n" ,formatted_context)
+    print(f"Context retrieved from cache: {from_cache}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    while True:
+        asyncio.run(main())    
