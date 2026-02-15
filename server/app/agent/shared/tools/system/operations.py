@@ -15,11 +15,11 @@ from ...utils.app_searcher import AppSearcher
 from ...utils.app_resolver import AppResolver
 
 
-class OpenAppTool(BaseTool):
+class AppOpenTool(BaseTool):
     """Open application or URL with support for all types."""
     
     def get_tool_name(self) -> str:
-        return "open_app"
+        return "app_open"
     
     def __init__(self):
         super().__init__()
@@ -29,7 +29,7 @@ class OpenAppTool(BaseTool):
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Find and open an application or URL."""
         target = inputs.get("target", "")
-        print("OPEN APP TOOL TARGET:", target)
+        print("APP OPEN TOOL TARGET:", target)
         args = inputs.get("args", [])
         
         if not target:
@@ -157,11 +157,11 @@ class OpenAppTool(BaseTool):
             subprocess.Popen(cmd)
 
 
-class CloseAppTool(BaseTool):
+class AppCloseTool(BaseTool):
     """Close application tool."""
     
     def get_tool_name(self) -> str:
-        return "close_app"
+        return "app_close"
     
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Close/Kill an application."""

@@ -12,7 +12,7 @@ from datetime import datetime
 from ..base import BaseTool, ToolOutput
 
 
-class CreateFileTool(BaseTool):
+class FileCreateTool(BaseTool):
     """Create file tool."""
     
     def get_tool_name(self) -> str:
@@ -101,7 +101,6 @@ class FolderCreateTool(BaseTool):
             self.logger.error(f"Failed to create folder: {e}")
             return ToolOutput(success=False, data={}, error=str(e))
 
-
 class FileCopyTool(BaseTool):
     """Copy file tool."""
     
@@ -161,7 +160,6 @@ class FileCopyTool(BaseTool):
         except Exception as e:
             self.logger.error(f"Failed to copy file: {e}")
             return ToolOutput(success=False, data={}, error=str(e))
-
 
 class FileSearchTool(BaseTool):
     """File search tool."""
@@ -227,7 +225,6 @@ class FileSearchTool(BaseTool):
         except Exception as e:
             self.logger.error(f"Failed to search files: {e}")
             return ToolOutput(success=False, data={}, error=str(e))
-
 
 class FileReadTool(BaseTool):
     """Read file tool."""

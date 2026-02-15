@@ -9,7 +9,7 @@
       "description": "System-level operations and monitoring",
       "tools": [
         {
-          "tool_name": "open_app",
+          "tool_name": "app_open",
           "description": "Launch installed applications",
           "execution_target": "client",
           "params_schema": {
@@ -31,7 +31,7 @@
           }
         },
         {
-          "tool_name": "close_app",
+          "tool_name": "app_close",
           "description": "Kill running processes",
           "execution_target": "client",
           "params_schema": {

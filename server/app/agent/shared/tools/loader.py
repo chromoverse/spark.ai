@@ -18,15 +18,15 @@ from app.agent.shared.registry.loader import get_tool_registry
 # Import all tool classes
 from app.agent.shared.tools.web.search import WebSearchTool
 from app.agent.shared.tools.file_system.operations import (
-    CreateFileTool,
+    FileCreateTool,
     FolderCreateTool,
     FileCopyTool,
     FileSearchTool,
     FileReadTool
 )
 from app.agent.shared.tools.system.operations import (
-    OpenAppTool,
-    CloseAppTool
+    AppOpenTool,
+    AppCloseTool
 )
 
 logger = logging.getLogger(__name__)
@@ -57,15 +57,15 @@ def load_all_tools():
         WebSearchTool(),
         
         # File system tools
-        CreateFileTool(),
+        FileCreateTool(),
         FolderCreateTool(),
         FileCopyTool(),
         FileSearchTool(),
         FileReadTool(),
         
         # System tools
-        OpenAppTool(),
-        CloseAppTool(),
+        AppOpenTool(),
+        AppCloseTool(),
         # etc.
     ]
     

@@ -3,19 +3,19 @@
   "total_tools": 19,
   "tools": [
     {
-      "name": "open_app",
+      "name": "app_open",
       "description": "Launch installed applications",
       "category": "system",
       "execution_target": "client"
     },
     {
-      "name": "close_app",
+      "name": "app_close",
       "description": "Kill running processes",
       "category": "system",
       "execution_target": "client"
     },
     {
-      "name": "restart_app",
+      "name": "app_restart",
       "description": "Restart apps safely",
       "category": "system",
       "execution_target": "client"
@@ -113,6 +113,12 @@
     {
       "name": "web_search",
       "description": "Search the web for information",
+      "category": "web",
+      "execution_target": "server"
+    },
+    {
+      "name": "web_scrape",
+      "description": "Scrape web content for structured data",
       "category": "web",
       "execution_target": "server"
     }
