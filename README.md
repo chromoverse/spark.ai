@@ -1,10 +1,1 @@
 # spark.ai
-lets go in server dir,  i want to keep the client_core . i want big modification as if the evirnoment == 'desktop" then action or tasks must not be emitted coz we will be using this server locally in user device so we canexecute the tasknormally from server too whch redce the latency of sending the tasks to the  cleint too isnt ??. and i want you to use the startup+registration for auto loading all the tools registry schema definations . and initilzing the agentic system using env as "desktop" or "production" in the server startup after that no need to load again just execute and if the schema.default_requires_approval is true then we will emit from socket/utils to the cleint asn cleint will send the approval and then we will contnue the task.
-
-also see what is blocking like when there is no tasks then streaming get done perfect but when the task is there then after executong hte task only streaming tts get done which i dont want i want the streaming be idependent it should be done at very first moment and paralley chat will happen and chat(pqh) dtetect if tool or not if yes then it will invoke the sqh(agent) asyncly background no so the sqh should not block the streaing tts. got it.
-
-right now the action is executong pereeclt no need ot change the core logic just make sure if the env is desktop so no emiting just execute and emit socket reuest event to the cleint ans cleint will send approval or decline. if approval then perform and if declin then just forget it. 
-
-also lets do one change as lets edit the sqh moedls insdie the core/models a bit as the llm should genearte the array of tasks too as it do now but also one more field as it generate the ackonowlege_answer as whatever the user have said llm will usr_reuetd_asaction done sir. you can see and a bit follup questio.
-
-and also edit a bit in the prompts inside the stream_prompt as it only asks folloup question when the user query doensot feels like need tooling and if need tooling then follup question will be asked by th sqh. jsut a bit edit no increase the token.
