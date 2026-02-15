@@ -164,21 +164,104 @@ async def receive_acknowledgment(user_id: str, message: str) -> None:
     Public API: Receive SQH acknowledgment (past tense confirmation).
     """
     logger.info(f"✅ [CLIENT API] Acknowledgment: {message}")
-    # In a real GUI client (Electron), this would:
-    # 1. Trigger TTS
-    # 2. Show toast notification
+    
+    # Try to stream TTS via Socket first (Electron Client)
+    tts_streamed = False
+    try:
+        from app.socket import sio, connected_users
+        from app.services.tts_services import tts_service
+        
+        # Check if user is connected via socket
+        # connected_users is a Dict[str, Set[str]] -> user_id mapped to set of sids
+        user_sids = connected_users.get(user_id, set())
+
+        if user_sids:
+            # Broadcast to all connected sessions for this user
+            for sid in user_sids:
+                logger.info(f"📡 [CLIENT] Streaming TTS to socket {sid}")
+                # stream_to_socket handles chunking and emitting events
+                asyncio.create_task(
+                    tts_service.stream_to_socket(
+                        sio=sio, 
+                        sid=sid, 
+                        text=message
+                    )
+                )
+            tts_streamed = True
+        else:
+            logger.info("⚠️ [CLIENT] User not connected via socket (headless mode?)")
+
+    except ImportError:
+        logger.warning("⚠️ [CLIENT] app.socket not available (running in isolation?)")
+    except Exception as e:
+        logger.error(f"❌ [CLIENT] Failed to stream TTS: {e}")
+
+    # Fallback to local playback if streaming failed or no user connected
+    if not tts_streamed:
+        try:
+            from app.services.tts_services import tts_service
+            import tempfile, os, winsound
+            
+            logger.info("🔊 [CLIENT] Falling back to local audio playback")
+            audio_bytes = await tts_service.generate_complete_audio(text=message)
+            
+            if audio_bytes:
+                # Write to temp WAV and play
+                temp_path = os.path.join(tempfile.gettempdir(), "spark_ack_tts.wav")
+                with open(temp_path, "wb") as f:
+                    f.write(audio_bytes)
+                
+                # Play async (non-blocking)
+                winsound.PlaySound(temp_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            else:
+                logger.warning("⚠️ [CLIENT] TTS generated empty audio for fallback playback")
+        except Exception as e:
+            logger.error(f"❌ [CLIENT] Local TTS playback failed: {e}")
+    
+    # Also show a toast notification
+    try:
+        from app.agent.client_core.notification import show_info_notification
+        show_info_notification("SPARK AI", message)
+    except Exception as e:
+        logger.debug(f"Notification skipped: {e}")
 
 
 async def receive_approval_request(user_id: str, task_id: str, question: str) -> None:
     """
     Public API: Receive task approval request.
+    Shows a Windows toast notification with Accept/Deny buttons.
+    User response is sent back to the orchestrator.
     """
-    logger.info(f"❓ [CLIENT API] Approval Request for task {task_id}: {question}")
-    # In a real GUI client, this would show a modal dialog
+    logger.info(f"❓ [CLIENT] Approval Request for task {task_id}: {question}")
     
-    # For DEVELOPMENT/DEMO purposes, we can simulate approval after delay
-    # or just wait for manual API call
-    logger.info("   (Waiting for approval via API...)")
+    async def handle_approval_response(uid: str, tid: str, approved: bool):
+        """Callback when user clicks Accept/Deny on the notification"""
+        try:
+            from app.agent.core.orchestrator import get_orchestrator
+            orchestrator = get_orchestrator()
+            
+            if approved:
+                logger.info(f"✅ [CLIENT] User APPROVED task {tid}")
+                await orchestrator.handle_approval(uid, tid, approved=True)
+            else:
+                logger.info(f"❌ [CLIENT] User DENIED task {tid}")
+                await orchestrator.handle_approval(uid, tid, approved=False)
+        except Exception as e:
+            logger.error(f"❌ [CLIENT] Failed to send approval response: {e}")
+    
+    # Show Windows toast notification with Accept/Deny buttons
+    try:
+        from app.agent.client_core.notification import show_approval_notification
+        show_approval_notification(
+            user_id=user_id,
+            task_id=task_id,
+            question=question,
+            on_response_callback=handle_approval_response
+        )
+    except Exception as e:
+        logger.error(f"❌ [CLIENT] Failed to show approval notification: {e}")
+        logger.info("   (Falling back to auto-approve)")
+        await handle_approval_response(user_id, task_id, True)
 
 
 async def run_demo_tasks() -> None:

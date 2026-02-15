@@ -423,6 +423,29 @@ class TaskOrchestrator:
             
             if user_id in self._locks:
                 del self._locks[user_id]
+    
+    async def handle_approval(self, user_id: str, task_id: str, approved: bool) -> None:
+        """
+        Handle user approval/denial for a task.
+        
+        Called when user clicks Accept/Deny on a notification.
+        
+        Args:
+            user_id: User identifier
+            task_id: Task identifier
+            approved: True if user accepted, False if denied
+        """
+        if approved:
+            logger.info(f"✅ [{user_id}] Task {task_id} APPROVED by user")
+            # Mark as completed with approval output
+            output = TaskOutput(
+                success=True,
+                data={"approved": True, "source": "user_notification"}
+            )
+            await self.mark_task_completed(user_id, task_id, output)
+        else:
+            logger.info(f"❌ [{user_id}] Task {task_id} DENIED by user")
+            await self.mark_task_failed(user_id, task_id, "User denied approval via notification")
 
 
 # Global orchestrator instance
