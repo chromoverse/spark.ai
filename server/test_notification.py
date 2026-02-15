@@ -6,4 +6,4 @@ show_approval_notification(
     question="Approve this task?",
     on_response_callback=None
 )
-show_info_notification("Test Notification", "This is a test notification from the server.")
+# show_info_notification("Test Notification", "This is a test notification from the server.")

@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 try:
     from windows_toasts import (
         Toast, 
-        ToastDisplayImage,
         ToastButton,
         InteractableWindowsToaster,
         ToastActivatedEventArgs,
@@ -42,7 +41,7 @@ def _get_toaster() -> 'InteractableWindowsToaster':
     global _toaster
     if _toaster is None and TOASTS_AVAILABLE:
         _toaster = InteractableWindowsToaster("SPARK AI Assistant")
-    return _toaster
+    return _toaster # type: ignore
 
 
 def show_approval_notification(
@@ -77,21 +76,14 @@ def show_approval_notification(
         # Create toast
         toast = Toast()
         toast.text_fields = [
-            "🤖 SPARK AI — Approval Required",
+            "SPARK AI — Approval Required",
             question
         ]
         
-        # Add Custom Icon
-        import os
-        # Try to find the icon
-        icon_path = os.path.abspath(os.path.join(os.getcwd(), "public", "icon-high-ql.png"))
-        if os.path.exists(icon_path):
-            from windows_toasts import ToastDisplayImage
-            toast.AddImage(ToastDisplayImage.fromPath(icon_path))
         
         # Add Accept and Deny buttons
-        toast.AddAction(ToastButton("✅ Accept", arguments=f"approve|{user_id}|{task_id}"))
-        toast.AddAction(ToastButton("❌ Deny", arguments=f"deny|{user_id}|{task_id}"))
+        toast.AddAction(ToastButton("Accept", arguments=f"approve|{user_id}|{task_id}"))
+        toast.AddAction(ToastButton("Deny", arguments=f"deny|{user_id}|{task_id}"))
         
         # Handle button clicks
         def on_activated(activated_event_args: ToastActivatedEventArgs):
