@@ -10,8 +10,8 @@ import logging
 from typing import Dict, Any, List
 import socketio
 
-from app.core.orchestrator import get_orchestrator
-from app.core.models import TaskOutput, TaskRecord
+from app.agent.core.orchestrator import get_orchestrator
+from app.agent.core.models import TaskOutput, TaskRecord
 
 logger = logging.getLogger(__name__)
 

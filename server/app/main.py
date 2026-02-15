@@ -16,14 +16,9 @@ from app.ml import model_loader, embedding_worker, DEVICE, MODELS_CONFIG
 import app.startup_registrations  # noqa: F401  — registers all init functions
 from app.auto_initializer import run_all as run_all_initializers
 
-# Import orchestration system
-from app.registry.loader import load_tool_registry, get_tool_registry
-from app.core.orchestrator import init_orchestrator, get_orchestrator
-from app.core.execution_engine import init_execution_engine, get_execution_engine
-from app.core.server_executor import init_server_executor, get_server_executor
 # below both imports needed for task handling in client
 from app.socket.task_handler import register_task_events
-from app.core.task_emitter import get_task_emitter
+from app.agent.core.task_emitter import get_task_emitter
 
 # Configure logging
 logging.basicConfig(
@@ -40,46 +35,16 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Application starting up...")
     logger.info("=" * 60)
     
-    # Load Tool Registry FIRST
-    logger.info("\n Loading Tool Registry...")
-    try:
-        load_tool_registry()
-        registry = get_tool_registry()
-        registry.print_summary()
-    except Exception as e:
-        logger.error(f"❌ Failed to load tool registry: {e}")
-        raise
+    # Run all registered startup initializers (cache, keys, TTS, Agent System, etc.)
+    await run_all_initializers()
     
-    # Initialize Orchestrator
-    logger.info("\n Initializing Task Orchestration System...")
-    try:
-        init_orchestrator()
-        logger.info("✅ Task Orchestrator initialized")
-        
-        # Initialize Server Executor
-        server_executor = init_server_executor()
-        logger.info("✅ Server Tool Executor initialized")
-
-        # 5. Register WebSocket task handlers
-        logger.info("📡 Registering WebSocket handlers...")
-        # real cleint emmiter ws
-        # task_handler = await register_task_events(sio, connected_users)
-        #  Add mock client emitter - mimicking task_handler behavior
-        mock_emitter = get_task_emitter()
-
-               
-        # Initialize Execution Engine
-        execution_engine = init_execution_engine()
-        logger.info("Execution Engine initialized")
-        
-        # Wire them together
-        execution_engine.set_server_executor(server_executor)
-        execution_engine.set_client_emitter(mock_emitter)
-        logger.info("Components wired together")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize orchestration: {e}")
-        raise
+    # Wire socket handler to task emitter (for production mode)
+    # This must happen after init_socket() below, or we register events now
+    # Actually register_task_events needs sio instance which is imported from app.socket
+    # Let's register socket events
+    task_handler = await register_task_events(sio, connected_users)
+    get_task_emitter().set_socket_handler(task_handler)
+    logger.info("🔌 Socket task handler wired to emitter")
     
     # Connect to database
     await connect_to_mongo()
@@ -105,8 +70,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("⚠️  Some ML models failed to load - check logs")
     
-    # Run all registered startup initializers (cache, keys, TTS, etc.)
-    await run_all_initializers()
+
     
     logger.info("=" * 60)
     logger.info(" Application startup complete")

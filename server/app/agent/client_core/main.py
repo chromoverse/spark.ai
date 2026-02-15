@@ -21,7 +21,7 @@ Usage:
 import asyncio
 import logging
 import sys
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 
 # Configure logging
 logging.basicConfig(
@@ -55,8 +55,16 @@ def initialize_client(user_id: str = "default_client") -> None:
     
     try:
         # 1. Load all client tools (creates instances, injects schemas)
-        from .tools.loader import load_client_tools
-        load_client_tools()
+        # Try Shared Tools first (Server Mode)
+        try:
+            from app.agent.shared.tools.loader import load_all_tools
+            load_all_tools()
+            logger.info("✅ Loaded Shared Tools")
+        except ImportError:
+            # Fallback to local legacy tools (Standalone Mode)
+            logger.info("⚠️ Shared tools not found, falling back to local legacy tools")
+            from .tools.loader import load_client_tools
+            load_client_tools()
         
         # 2. Initialize execution engine
         from .engine import init_client_engine
@@ -147,7 +155,30 @@ async def receive_tasks_from_server(
         asyncio.create_task(engine.start())
     else:
         # Fallback: trigger processing manually
+        # Fallback: trigger processing manually
         logger.warning("⚠️ Engine doesn't have a start method, tasks may not execute")
+
+
+async def receive_acknowledgment(user_id: str, message: str) -> None:
+    """
+    Public API: Receive SQH acknowledgment (past tense confirmation).
+    """
+    logger.info(f"✅ [CLIENT API] Acknowledgment: {message}")
+    # In a real GUI client (Electron), this would:
+    # 1. Trigger TTS
+    # 2. Show toast notification
+
+
+async def receive_approval_request(user_id: str, task_id: str, question: str) -> None:
+    """
+    Public API: Receive task approval request.
+    """
+    logger.info(f"❓ [CLIENT API] Approval Request for task {task_id}: {question}")
+    # In a real GUI client, this would show a modal dialog
+    
+    # For DEVELOPMENT/DEMO purposes, we can simulate approval after delay
+    # or just wait for manual API call
+    logger.info("   (Waiting for approval via API...)")
 
 
 async def run_demo_tasks() -> None:

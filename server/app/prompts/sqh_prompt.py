@@ -6,8 +6,8 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any
 
-from app.registry.loader import get_tool_registry
-from app.core.models import Task
+from app.agent.shared.registry.loader import get_tool_registry
+from app.agent.core.models import Task
 from app.models.pqh_response_model import PQHResponse
 from app.prompts.common import NEPAL_TZ, LANGUAGE_CONFIG
 
@@ -98,7 +98,21 @@ The following tools are requested for this task. Use ONLY these tools.
 {tool_schemas_json}
 
 # OUTPUT REQUIREMENT
-You must return a JSON Object containing a single key `tasks` which is a List of Task objects.
+You must return a JSON Object with this structure:
+```json
+{{
+  "acknowledge_answer": "...",  // Confirmation in PAST TENSE e.g. 'Opened Chrome Sir'
+  "tasks": [...]                // List of Task objects
+}}
+```
+
+## Acknowledge Answer Rules
+- **Tense:** STRICTLY use **PAST TENSE**.
+  - Example: "Opened Chrome Sir" is correct. "Opening Chrome Sir" is WRONG.
+  - Example: "Started the timer Boss" is correct.
+- **Tone:** Confirm that the action has been initiated/done.
+- **Language:** Use **{lang_key.capitalize()}**.
+- **Honorifics:** Address user as **{honorifics}**.
 
 ## Task Object Structure
 Each task in the list must follow this schema:
@@ -120,7 +134,8 @@ Each task in the list must follow this schema:
     "on_failure": "Failed."
   }},
   "control": {{          // Execution control (optional)
-    "on_failure": "abort" // or "continue"
+    "requires_approval": false, // Optional: if true, pauses for user confirmation
+    "on_failure": "abort"       // or "continue"
   }}
 }}
 ```
@@ -135,10 +150,11 @@ Each task in the list must follow this schema:
 
 # INSTRUCTIONS
 1. **Analyze** the User Query and PQH Thought Process.
-2. **Break down** the request into atomic steps (Tasks).
-3. **Map** each step to a Tool from the provided schemas.
-4. **Construct** the JSON response.
-5. **Ensure** dependencies are correct.
+2. **Formulate** the `acknowledge_answer` in PAST TENSE.
+3. **Break down** the request into atomic steps (Tasks).
+4. **Map** each step to a Tool from the provided schemas.
+5. **Construct** the JSON response.
+6. **Ensure** dependencies are correct.
 
 # JSON OUTPUT
 Return ONLY the raw JSON object. No markdown formatting, no code blocks.

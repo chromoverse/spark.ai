@@ -167,3 +167,15 @@ class TaskBatch(CamelModel):
     """Batch of tasks to execute"""
     server_tasks: List[TaskRecord] = Field(default_factory=list)
     client_tasks: List[TaskRecord] = Field(default_factory=list)
+
+
+class SQHResponse(CamelModel):
+    """
+    Response from SQH LLM
+    Contains tasks and acknowledgment
+    """
+    acknowledge_answer: str = Field(
+        ..., 
+        description="Acknowledge the user's request in the past tense (e.g., 'Opened Chrome Sir!')"
+    )
+    tasks: List[Task] = Field(default_factory=list)

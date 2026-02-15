@@ -7,7 +7,7 @@ from app.config import settings
 # from app.services.detect_emotion import detect_emotion
 from app.cache import get_last_n_messages,process_query_and_get_context,add_message as redis_add_message
 from app.prompts import pqh_prompt
-from app.registry.tool_index import get_tools_index
+from app.agent.shared.registry.tool_index import get_tools_index
 import json
 from app.controllers.chat_controllers import ChatController,add_chat_message_to_mongo
 from app.services.sqh_service import process_sqh
@@ -146,7 +146,7 @@ async def _execute_and_wait(
         user_id: User identifier
         timeout: Max seconds to wait
     """
-    from app.core.execution_engine import get_execution_engine
+    from app.agent.core.execution_engine import get_execution_engine
     
     try:
         logger.info(f"⏳ Starting execution and waiting (timeout: {timeout}s)...")

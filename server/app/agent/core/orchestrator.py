@@ -13,11 +13,11 @@ import logging
 from typing import Dict, List, Optional, Set
 from datetime import datetime
 
-from app.core.models import (
+from app.agent.core.models import (
     Task, TaskRecord, ExecutionState, TaskStatus, 
     TaskOutput, TaskBatch, ExecutionTarget
 )
-from app.registry.loader import get_tool_registry
+from app.agent.shared.registry.loader import get_tool_registry
 
 logger = logging.getLogger(__name__)
 

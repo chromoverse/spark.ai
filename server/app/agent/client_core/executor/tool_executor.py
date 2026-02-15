@@ -7,10 +7,8 @@ Executes client-side tools using preloaded tool instances.
 
 import logging
 from ..models import TaskRecord, TaskOutput
-from ..tools.loader import (
-    get_client_tool_for_execution,
-    get_client_schema_registry
-)
+from app.agent.shared.tools.loader import get_tool_for_execution
+from app.agent.shared.registry.loader import get_tool_registry
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +22,9 @@ class ClientToolExecutor:
     """
     
     def __init__(self):
-        self.schema_registry = get_client_schema_registry()
-        logger.info("✅ Client Tool Executor initialized")
+        # Use shared registry
+        self.schema_registry = get_tool_registry()
+        logger.info("✅ Client Tool Executor initialized (Shared Registry)")
     
     async def execute(
         self, 
@@ -45,7 +44,8 @@ class ClientToolExecutor:
         tool_name = task.tool
         
         # Validate tool exists in schema registry
-        if self.schema_registry.loaded and not self.schema_registry.validate_tool(tool_name):
+        # (schema_registry.get_tool returns ToolMetadata or None)
+        if not self.schema_registry.get_tool(tool_name):
             return TaskOutput(
                 success=False,
                 data={},
@@ -53,7 +53,7 @@ class ClientToolExecutor:
             )
         
         # Get preloaded tool instance (FAST! Just dict lookup!)
-        tool = get_client_tool_for_execution(tool_name)
+        tool = get_tool_for_execution(tool_name)
         
         if not tool:
             return TaskOutput(

@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 from jsonpath_ng import parse
 from jsonpath_ng.exceptions import JsonPathParserError
 
-from app.core.models import TaskRecord, ExecutionState
+from app.agent.core.models import TaskRecord, ExecutionState
 
 logger = logging.getLogger(__name__)
 

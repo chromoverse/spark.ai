@@ -12,16 +12,21 @@ During task execution:
 """
 
 import logging
-from app.tools.base import get_tool_instance_registry, BaseTool
-from app.registry.loader import get_tool_registry
+from app.agent.shared.tools.base import get_tool_instance_registry, BaseTool
+from app.agent.shared.registry.loader import get_tool_registry
 
 # Import all tool classes
-from app.tools.web.search import WebSearchTool
-from app.tools.file_system.operations import (
+from app.agent.shared.tools.web.search import WebSearchTool
+from app.agent.shared.tools.file_system.operations import (
     CreateFileTool,
     FolderCreateTool,
     FileCopyTool,
-    FileSearchTool
+    FileSearchTool,
+    FileReadTool
+)
+from app.agent.shared.tools.system.operations import (
+    OpenAppTool,
+    CloseAppTool
 )
 
 logger = logging.getLogger(__name__)
@@ -56,11 +61,11 @@ def load_all_tools():
         FolderCreateTool(),
         FileCopyTool(),
         FileSearchTool(),
+        FileReadTool(),
         
-        # Add more tools here as you implement them
-        # SystemInfoTool(),
-        # OpenAppTool(),
-        # CloseAppTool(),
+        # System tools
+        OpenAppTool(),
+        CloseAppTool(),
         # etc.
     ]
     
@@ -107,5 +112,5 @@ def get_tool_for_execution(tool_name: str) -> BaseTool | None:
     if get_tool_instance_registry().count() == 0:
         load_all_tools()
 
-    from app.tools.base import get_tool_instance
+    from app.agent.shared.tools.base import get_tool_instance
     return get_tool_instance(tool_name)

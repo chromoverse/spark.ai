@@ -48,7 +48,7 @@ class ToolRegistry:
             self.client_tools: List[str] = []
             self._initialized = True
     
-    def load(self, registry_path: str = "app/registry/tool_registry.json"):
+    def load(self, registry_path: str = "app/agent/shared/registry/tool_registry.json"):
         """
         Load tool registry from JSON file
         
@@ -171,6 +171,6 @@ def get_tool_registry() -> ToolRegistry:
     return tool_registry
 
 
-def load_tool_registry(path: str = "app/registry/tool_registry.json"):
+def load_tool_registry(path: str = "app/agent/shared/registry/tool_registry.json"):
     """Load tool registry at startup"""
     tool_registry.load(path)

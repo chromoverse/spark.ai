@@ -17,9 +17,9 @@ import logging
 from typing import Dict, Optional, Set
 from datetime import datetime
 
-from app.core.orchestrator import get_orchestrator
-from app.core.models import TaskRecord, TaskOutput
-from app.core.binding_resolver import get_binding_resolver
+from app.agent.core.orchestrator import get_orchestrator
+from app.agent.core.models import TaskRecord, TaskOutput
+from app.agent.core.binding_resolver import get_binding_resolver
 
 logger = logging.getLogger(__name__)
 

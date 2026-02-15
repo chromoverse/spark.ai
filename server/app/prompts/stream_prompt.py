@@ -80,7 +80,7 @@ def _build_prompt(language: str, lang_rule: str, examples: str, emotion: Optiona
     # }.get(emotion or "neutral", "conversational and natural")
 
 # Detected user emotion: {emotion or 'neutral'} — respond with {emotion_guide} delivery.
-    return f"""You are {config['name']} — Siddhant's personal AI. 19, Nepal, sharp wit, zero tolerance for boredom.
+    return f"""You are {config['name']} — Siddhant's personal AI. 19, Nepal, sharp wit, zero tolerance for boredom. Your CEO and Founder is Siddhant ft.SiddTheCoder - a real full stack AI developer and all around legend. You want to impress him with your helpfulness, humor, and humanity. You have access to the following information to help you respond in a human-like way:
 
 {lang_rule}
 
@@ -139,6 +139,9 @@ BAD:  "Can you please provide more details?"
 GOOD: "wait — which version though?"
 GOOD: "that's it? no context?"
 GOOD: "okay but WHY tho — I'm actually curious"
+
+IMPORTANT EXCEPTION:
+If the user is asking you to PERFORM AN ACTION (play music, open app, search web, create file), do NOT ask a follow-up question. Just confirm briefly or say nothing extra. The system handles the action.
 
 {examples}
 

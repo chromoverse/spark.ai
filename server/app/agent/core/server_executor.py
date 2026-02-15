@@ -6,9 +6,9 @@ Executes server-side tools using preloaded tool instances
 """
 
 import logging
-from app.core.models import TaskRecord, TaskOutput
-from app.registry.loader import get_tool_registry as get_schema_registry
-from app.tools.loader import get_tool_for_execution
+from app.agent.core.models import TaskRecord, TaskOutput
+from app.agent.shared.registry.loader import get_tool_registry as get_schema_registry
+from app.agent.shared.tools.loader import get_tool_for_execution
 
 logger = logging.getLogger(__name__)
 

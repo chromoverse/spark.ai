@@ -13,14 +13,14 @@ import json
 import asyncio
 from typing import List, Dict, Any
 
-from app.core.models import LifecycleMessages, Task
+from app.agent.core.models import LifecycleMessages, Task
 from app.models.pqh_response_model import PQHResponse
 from app.prompts.sqh_prompt import build_sqh_prompt
 from app.ai.providers import llm_chat
-from app.core.orchestrator import get_orchestrator
-from app.core.execution_engine import get_execution_engine
-from app.core.server_executor import get_server_executor
-from app.core.task_emitter import get_task_emitter
+from app.agent.core.orchestrator import get_orchestrator
+from app.agent.core.execution_engine import get_execution_engine
+from app.agent.core.server_executor import get_server_executor
+from app.agent.core.task_emitter import get_task_emitter
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +84,15 @@ async def process_sqh(
             data = json.loads(cleaned_json)
             
             # Handle both {"tasks": [...]} and [...] formats
+            tasks_data = []
+            ack_msg = None
+            
             if isinstance(data, list):
                 tasks_data = data
             elif isinstance(data, dict):
+                tasks_data = data_dict = data
                 tasks_data = data.get("tasks", [])
+                ack_msg = data.get("acknowledge_answer")
             else:
                 # ✅ FIX: Raise instead of return
                 error_msg = f"Invalid JSON format: {type(data)}"
@@ -97,6 +102,15 @@ async def process_sqh(
             logger.info(f"SQH response:\n{json.dumps(tasks_data, indent=2)}")
             # Parse into Task objects
             tasks = [Task(**task_data) for task_data in tasks_data]
+
+            # ✅ Emit Acknowledgment (Fire-and-forget)
+            if ack_msg:
+                logger.info(f"🎤 [SQH] Acknowledgment: {ack_msg}")
+                # We need to get emitter here or reuse later
+                try:
+                    await get_task_emitter().emit_acknowledgment(user_id, ack_msg)
+                except Exception as e:
+                     logger.error(f"⚠️ Failed to emit ack: {e}")
             
             # ✅ FIX: Raise instead of return
             if not tasks:

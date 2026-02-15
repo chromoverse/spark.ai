@@ -25,7 +25,7 @@ import asyncio
 from typing import Dict, Any
 from datetime import datetime
 
-from app.tools.base import BaseTool, ToolOutput
+from app.agent.shared.tools.base import BaseTool, ToolOutput
 
 # web searcher duckduckgo
 from ddgs import DDGS
