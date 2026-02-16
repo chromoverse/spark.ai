@@ -5,7 +5,7 @@ searcher = SystemSearcher()
 def test_app_resolver():
     apps = searcher.get_all_apps()
     print(f"Found {len(apps)} apps")
-    app = searcher.search_app("camera")
+    app = searcher.search_app("device manager")
     print("Search result ':", app)
     
 
