@@ -24,15 +24,15 @@ async def test_app_controls():
     maximize_tool = AppMaximizeTool()
     focus_tool = AppFocusTool()
     
-    target_app = "device manager"  # Change this to an app you have installed for testing
+    target_app = "vlc media player"  # Change this to an app you have installed for testing
     
     # 1. Open Notepad
-    print(f"\n[1] Opening {target_app}...")
-    res = await open_tool._execute({"target": target_app})
-    print(f"Result: {res.success}, {res.data.get('status')}")
-    if not res.success:
-        print(f"Error: {res.error}")
-        return
+    # print(f"\n[1] Opening {target_app}...")
+    # res = await open_tool._execute({"target": target_app})
+    # print(f"Result: {res.success}, {res.data.get('status')}")
+    # if not res.success:
+    #     print(f"Error: {res.error}")
+    #     return
 
     # await asyncio.sleep(2)
     
@@ -68,13 +68,13 @@ async def test_app_controls():
 
     # await asyncio.sleep(1)
 
-    # # 5. Restart
-    # print(f"\n[5] Restarting {target_app}...")
-    # res = await restart_tool._execute({"target": target_app})
-    # print(f"Result: {res.success}, {res.data.get('status')}")
-    # if not res.success: print(res.error)
+    # 5. Restart
+    print(f"\n[5] Restarting {target_app}...")
+    res = await restart_tool._execute({"target": target_app})
+    print(f"Result: {res.success}, {res.data.get('status')}")
+    if not res.success: print(res.error)
 
-    # await asyncio.sleep(2)
+    await asyncio.sleep(2)
 
     # # 6. Close
     # print(f"\n[6] Closing {target_app}...")

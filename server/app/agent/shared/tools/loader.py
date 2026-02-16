@@ -22,11 +22,33 @@ from app.agent.shared.tools.file_system.operations import (
     FolderCreateTool,
     FileCopyTool,
     FileSearchTool,
-    FileReadTool
+    FileReadTool,
+
 )
 from app.agent.shared.tools.system.operations import (
-    AppOpenTool,
-    AppCloseTool
+     AppOpenTool,
+    AppCloseTool,
+    AppRestartTool,
+    AppMinimizeTool,
+    AppMaximizeTool,
+    AppFocusTool,
+
+    BrightnessStatusTool,
+    BrightnessIncreaseTool,
+    BrightnessDecreaseTool,
+
+    SoundStatusTool,
+    SoundIncreaseTool,
+    SoundDecreaseTool,
+
+    ClipboardReadTool,
+    ClipboardWriteTool,
+
+    ScreenshotCaptureTool,
+
+    SystemInfoTool,
+
+    NotificationPushTool
 )
 
 logger = logging.getLogger(__name__)
@@ -66,6 +88,29 @@ def load_all_tools():
         # System tools
         AppOpenTool(),
         AppCloseTool(),
+        AppRestartTool(),
+        AppMinimizeTool(),
+        AppMaximizeTool(),
+        AppFocusTool(),
+
+        BrightnessStatusTool(),
+        BrightnessIncreaseTool(),
+        BrightnessDecreaseTool(),
+
+        SoundStatusTool(),
+        SoundIncreaseTool(),
+        SoundDecreaseTool(),
+
+        ClipboardReadTool(),
+        ClipboardWriteTool(),
+
+        ScreenshotCaptureTool(),
+
+        SystemInfoTool(),
+
+        NotificationPushTool()
+        
+        # Add more tools here
         # etc.
     ]
     

@@ -1,8 +1,8 @@
 {
-  "version": "2.0.0",
-  "last_updated": "2025-12-24",
+  "version": "2.1.0",
+  "last_updated": "2026-02-16",
   "phase": 1,
-  "total_tools": 20,
+  "total_tools": 26,
 
   "categories": {
     "system": {
@@ -172,7 +172,7 @@
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 500
+            "default_timeout_ms": 
           }
         },
         {
@@ -315,6 +315,161 @@
             "default_confidence": 0.98,
             "default_requires_approval": false,
             "default_timeout_ms": 2000
+          }
+        },
+        {
+          "tool_name": "brightness_status",
+          "description": "Get current screen brightness level",
+          "execution_target": "client",
+          "params_schema": {},
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "brightness": { "type": "integer" },
+              "min_brightness": { "type": "integer" },
+              "max_brightness": { "type": "integer" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
+          }
+        },
+        {
+          "tool_name": "brightness_increase",
+          "description": "Increase screen brightness by specified amount (default +1)",
+          "execution_target": "client",
+          "params_schema": {
+            "amount": {
+              "type": "integer",
+              "required": false,
+              "default": 1,
+              "description": "Amount to increase brightness by (default 1)"
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "previous_brightness": { "type": "integer" },
+              "new_brightness": { "type": "integer" },
+              "amount_changed": { "type": "integer" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
+          }
+        },
+        {
+          "tool_name": "brightness_decrease",
+          "description": "Decrease screen brightness by specified amount (default -1)",
+          "execution_target": "client",
+          "params_schema": {
+            "amount": {
+              "type": "integer",
+              "required": false,
+              "default": 1,
+              "description": "Amount to decrease brightness by (default 1)"
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "previous_brightness": { "type": "integer" },
+              "new_brightness": { "type": "integer" },
+              "amount_changed": { "type": "integer" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
+          }
+        },
+        {
+          "tool_name": "sound_status",
+          "description": "Get current system volume level and mute status",
+          "execution_target": "client",
+          "params_schema": {},
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "volume": { "type": "integer" },
+              "is_muted": { "type": "boolean" },
+              "min_volume": { "type": "integer" },
+              "max_volume": { "type": "integer" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
+          }
+        },
+        {
+          "tool_name": "sound_increase",
+          "description": "Increase system volume by specified amount (default +30)",
+          "execution_target": "client",
+          "params_schema": {
+            "amount": {
+              "type": "integer",
+              "required": false,
+              "default": 30,
+              "description": "Amount to increase volume by (default 30)"
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "previous_volume": { "type": "integer" },
+              "new_volume": { "type": "integer" },
+              "amount_changed": { "type": "integer" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
+          }
+        },
+        {
+          "tool_name": "sound_decrease",
+          "description": "Decrease system volume by specified amount (default -30)",
+          "execution_target": "client",
+          "params_schema": {
+            "amount": {
+              "type": "integer",
+              "required": false,
+              "default": 30,
+              "description": "Amount to decrease volume by (default 30)"
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "previous_volume": { "type": "integer" },
+              "new_volume": { "type": "integer" },
+              "amount_changed": { "type": "integer" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000
           }
         }
       ]
