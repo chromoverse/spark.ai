@@ -63,6 +63,24 @@
       "execution_target": "client"
     },
     {
+      "name": "app_minimize",
+      "description": "Minimize application window",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "app_maximize",
+      "description": "Maximize application window",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "app_focus",
+      "description": "Bring application to front and focus",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
       "name": "file_search",
       "description": "Locate files and folders",
       "category": "file_system",

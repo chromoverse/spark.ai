@@ -1,69 +1,85 @@
-"""
-System control tools (Open/Close App) with URL support.
-"""
-
 import os
 import sys
 import subprocess
 import webbrowser
+import asyncio
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 from ..base import BaseTool, ToolOutput
-from ...utils.app_searcher import AppSearcher
-from ...utils.app_resolver import AppResolver
+from ...utils.searcher.system_searcher import SystemSearcher
+from ...utils.process_manager.process_manager import ProcessManager
 
 
 class AppOpenTool(BaseTool):
-    """Open application or URL with support for all types."""
+    """Open application, system tool, or URL using SystemSearcher."""
     
     def get_tool_name(self) -> str:
         return "app_open"
     
     def __init__(self):
         super().__init__()
-        self.searcher = AppSearcher()
-        self.resolver = AppResolver(self.searcher)
+        # Use the singleton/facade SystemSearcher
+        self.searcher = SystemSearcher()
     
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
-        """Find and open an application or URL."""
+        """Find and open an application, tool, or URL."""
         target = inputs.get("target", "")
-        print("APP OPEN TOOL TARGET:", target)
         args = inputs.get("args", [])
         
         if not target:
             return ToolOutput(success=False, data={}, error="Target app name or URL is required")
             
         try:
-            # 1. Resolve target (system app OR URL)
-            resolved_path, resolve_type = self.resolver.resolve(target)
+            # 1. Search using SystemSearcher (Unified API)
+            # include_icon=False for speed as we just need to launch it
+            result = self.searcher.search_app(target, include_icon=False)
             
-            if not resolved_path:
+            if not result:
                 return ToolOutput(
                     success=False, 
                     data={}, 
-                    error=f"Could not resolve '{target}' to an app or URL"
+                    error=f"Could not find '{target}' (app, tool, or website)"
                 )
             
-            self.logger.info(f"Resolved '{target}' → {resolve_type}: {resolved_path}")
+            # 2. Extract launch details
+            path = result.get("path", "")
+            app_type = result.get("type", "unknown")
+            launch_method = result.get("launch_method", "shell")
             
-            # 2. Launch based on type
-            process_id = 0
-            if resolve_type == "system_app":
-                process_id = self._launch_system_app(resolved_path, args)
-                status = "launched"
-            else:  # URL or website
-                self._launch_url(resolved_path)
+            self.logger.info(f"Opening '{target}' -> {path} ({app_type}) via {launch_method}")
+            
+            # 3. Launch based on method/type
+            pid = 0
+            status = "launched"
+            
+            # Case A: Browser URL
+            if launch_method == "browser" or app_type in ("url", "website"):
+                webbrowser.open(path)
                 status = "opened_in_browser"
+                
+            # Case B: Shell Protocol / file-open / rundll
+            elif launch_method == "shell" or app_type in ("protocol", "open_file", "rundll32", "cpl"):
+                if sys.platform == "win32":
+                    os.startfile(path)
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", path])
+                else:
+                    subprocess.Popen(["xdg-open", path])
+                    
+            # Case C: Executable / Command lines
+            else:
+                pid = self._launch_executable(path, args, app_type)
             
             return ToolOutput(
                 success=True,
                 data={
                     "target": target,
-                    "resolved_to": resolved_path,
-                    "type": resolve_type,
-                    "process_id": process_id,
+                    "resolved_name": result.get("name"),
+                    "resolved_path": path,
+                    "type": app_type,
+                    "process_id": pid,
                     "launch_time": datetime.now().isoformat(),
                     "status": status
                 }
@@ -73,147 +89,239 @@ class AppOpenTool(BaseTool):
             self.logger.error(f"Failed to open '{target}': {e}")
             return ToolOutput(success=False, data={}, error=str(e))
     
-    def _launch_system_app(self, app_path: str, args: list) -> int:
-        """
-        Launch system-installed application.
-        Returns process ID or 0.
-        """
-        self.logger.info(f"Launching system app: {app_path}")
-        
-        if sys.platform == "win32":
-            return self._launch_windows_app(app_path, args)
-        elif sys.platform == "darwin":
-            self._launch_macos_app(app_path, args)
-            return 0
-        else:
-            self._launch_linux_app(app_path, args)
-            return 0
-    
-    def _launch_url(self, url: str):
-        """
-        Open URL in default browser.
-        Cross-platform using webbrowser module.
-        """
-        self.logger.info(f"Opening URL in default browser: {url}")
-        webbrowser.open(url)
-    
-    def _launch_windows_app(self, app_path: str, args: list) -> int:
-        """
-        Launch Windows app - handles Store apps, .lnk, .exe, protocols.
-        """
-        # 1. Windows Store apps (UWP/MSIX) - WhatsApp, Spotify, etc.
-        if app_path.startswith("shell:AppsFolder\\"):
-            self.logger.info("Launching Windows Store app via explorer")
-            subprocess.Popen(["explorer.exe", app_path])
-            return 0
-        
-        # 2. UWP protocol handlers (e.g., microsoft.windows.camera:)
-        if app_path.endswith(":") and not os.path.exists(app_path):
-            self.logger.info("Launching UWP protocol")
-            os.startfile(app_path)
-            return 0
-        
-        # 3. .lnk shortcuts
-        if app_path.endswith(".lnk"):
-            self.logger.info("Launching .lnk shortcut")
-            os.startfile(app_path)
-            return 0
-        
-        # 4. Regular .exe files
-        if app_path.endswith(".exe"):
-            if args:
-                # With arguments - use subprocess
-                self.logger.info(f"Launching .exe with args: {args}")
-                cmd = [app_path] + args
-                process = subprocess.Popen(cmd)
-                return process.pid
-            else:
-                # No arguments - use os.startfile (better for GUI apps)
-                self.logger.info("Launching .exe via startfile")
-                os.startfile(app_path)
+    def _launch_executable(self, path: str, args: list, app_type: str) -> int:
+        """Handle execution of binaries and command/argument strings."""
+        try:
+            cmd = []
+            
+            # Handle special types from AppSearcher
+            if app_type == "uwp_shell":
+                # UWP apps via explorer
+                subprocess.Popen(["explorer.exe", path])
                 return 0
-        
-        # 5. Fallback - try os.startfile
-        self.logger.info("Using fallback os.startfile")
-        os.startfile(app_path)
-        return 0
-    
-    def _launch_macos_app(self, app_path: str, args: list):
-        """Launch macOS app."""
-        cmd = ["open", app_path]
-        if args:
-            cmd.extend(["--args"] + args)
-        subprocess.Popen(cmd)
-    
-    def _launch_linux_app(self, app_path: str, args: list):
-        """Launch Linux app."""
-        if app_path.endswith(".desktop"):
-            # Use gtk-launch for .desktop files
-            cmd = ["gtk-launch", os.path.basename(app_path).replace(".desktop", "")]
-            subprocess.Popen(cmd)
-        else:
-            # Direct executable
-            cmd = [app_path] + args
-            subprocess.Popen(cmd)
+                
+            if app_type == "shell_guid":
+                # Special shell folders
+                subprocess.Popen(path, shell=True)
+                return 0
+
+            # Standard executables
+            if path.endswith(".exe") or app_type == "exe":
+                cmd = [path] + args
+                # Use subprocess.Popen to not block
+                proc = subprocess.Popen(cmd)
+                return proc.pid
+                
+            # MSC / CPL (though usually handled by startfile/shell)
+            if path.endswith(".msc") or path.endswith(".cpl"):
+                 # msc usually needs shell=True or startfile
+                 if sys.platform == "win32":
+                     os.startfile(path)
+                     return 0
+            
+            # Fallback for generic commands
+            cmd = [path] + args
+            proc = subprocess.Popen(cmd, shell=True)
+            return proc.pid
+
+        except Exception as e:
+            self.logger.error(f"Error launching executable {path}: {e}")
+            raise e
 
 
 class AppCloseTool(BaseTool):
-    """Close application tool."""
+    """Close application tool using ProcessManager."""
     
     def get_tool_name(self) -> str:
         return "app_close"
+
+    def __init__(self):
+        super().__init__()
+        self.pm = ProcessManager()
     
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Close/Kill an application."""
         target = inputs.get("target", "")
-        force = inputs.get("force", False)
+        # force = inputs.get("force", False)
         
         if not target:
             return ToolOutput(success=False, data={}, error="Target app name is required")
             
         try:
-            cmd = []
+            self.logger.info(f"Closing app: {target}")
             
-            if sys.platform == "win32":
-                process_name = target if target.endswith(".exe") else f"{target}.exe"
-                cmd = ["taskkill", "/IM", process_name]
-                if force:
-                    cmd.append("/F")
-            else:
-                cmd = ["pkill", "-f", target]
-                if force:
-                    cmd.append("-9")
+            # Using ProcessManager to close the process
+            success = self.pm.close_process(target)
             
-            self.logger.info(f"Closing app with command: {' '.join(cmd)}")
-            
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
+            if success:
                 return ToolOutput(
                     success=True,
                     data={
                         "target": target,
                         "status": "closed",
-                        "exit_code": result.returncode,
                         "closed_at": datetime.now().isoformat(),
-                        "output": result.stdout
                     }
                 )
-            elif result.returncode == 128 or "not found" in result.stderr.lower() or result.returncode == 1:
-                # 128 is common exit for pkill if not found, 1 is common for taskkill
-                # Process not found
-                return ToolOutput(
-                    success=False,
-                    data={},
-                    error=f"Process '{target}' not found or not running"
-                )
             else:
-                return ToolOutput(
-                    success=False, 
-                    data={"stderr": result.stderr}, 
-                    error=f"Failed to close app ({result.returncode}): {result.stderr}"
-                )
+                 # Try to find if process exists to give better error
+                proc = self.pm.find_process(target)
+                if not proc:
+                     return ToolOutput(
+                        success=False,
+                        data={},
+                        error=f"Process '{target}' not found or not running"
+                    )
+                else:
+                    return ToolOutput(
+                        success=False, 
+                        data={}, 
+                        error=f"Failed to close app '{target}'"
+                    )
                 
         except Exception as e:
             self.logger.error(f"Failed to close app: {e}")
             return ToolOutput(success=False, data={}, error=str(e))
+
+
+class AppRestartTool(BaseTool):
+    """Restart application tool."""
+
+    def get_tool_name(self) -> str:
+        return "app_restart"
+
+    def __init__(self):
+        super().__init__()
+        self.pm = ProcessManager()
+        # Uses AppOpenTool which now uses SystemSearcher
+        self.app_open_tool = AppOpenTool()
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        """Restart an application."""
+        target = inputs.get("target", "")
+        if not target:
+             return ToolOutput(success=False, data={}, error="Target app name is required")
+
+        try:
+            self.logger.info(f"Restarting app: {target}")
+
+            # 1. Close the app
+            self.pm.close_process(target)
+            
+            # Wait a bit for it to close completely
+            await asyncio.sleep(2)
+
+            # 2. Open the app
+            # Reuse the AppOpenTool logic
+            open_result = await self.app_open_tool._execute(inputs)
+
+            if open_result.success:
+                 return ToolOutput(
+                    success=True,
+                    data={
+                        "target": target,
+                        "status": "restarted",
+                        "restarted_at": datetime.now().isoformat(),
+                        "open_data": open_result.data
+                    }
+                )
+            else:
+                return ToolOutput(
+                    success=False,
+                    data={"close_status": "attempted"},
+                    error=f"Failed to restart (open failed): {open_result.error}"
+                )
+
+        except Exception as e:
+            self.logger.error(f"Failed to restart app: {e}")
+            return ToolOutput(success=False, data={}, error=str(e))
+
+
+class AppMinimizeTool(BaseTool):
+    def get_tool_name(self) -> str:
+        return "app_minimize"
+
+    def __init__(self):
+        super().__init__()
+        self.pm = ProcessManager()
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        target = inputs.get("target", "")
+        if not target:
+             return ToolOutput(success=False, data={}, error="Target app name is required")
+        
+        try:
+            success = self.pm.minimize_process(target)
+            if success:
+                 return ToolOutput(
+                    success=True,
+                    data={
+                        "target": target,
+                        "minimized": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            else:
+                 return ToolOutput(success=False, data={}, error=f"Failed to minimize '{target}' or not found")
+        except Exception as e:
+             return ToolOutput(success=False, data={}, error=str(e))
+
+
+class AppMaximizeTool(BaseTool):
+    def get_tool_name(self) -> str:
+        return "app_maximize"
+
+    def __init__(self):
+        super().__init__()
+        self.pm = ProcessManager()
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        target = inputs.get("target", "")
+        if not target:
+             return ToolOutput(success=False, data={}, error="Target app name is required")
+        
+        try:
+            success = self.pm.maximize_process(target)
+            if success:
+                 return ToolOutput(
+                    success=True,
+                    data={
+                        "target": target,
+                        "maximized": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            else:
+                 return ToolOutput(success=False, data={}, error=f"Failed to maximize '{target}' or not found")
+        except Exception as e:
+             return ToolOutput(success=False, data={}, error=str(e))
+
+
+class AppFocusTool(BaseTool):
+    def get_tool_name(self) -> str:
+        return "app_focus"
+
+    def __init__(self):
+        super().__init__()
+        self.pm = ProcessManager()
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        target = inputs.get("target", "")
+        if not target:
+             return ToolOutput(success=False, data={}, error="Target app name is required")
+        
+        try:
+            success = self.pm.bring_to_focus(target)
+            if success:
+                 return ToolOutput(
+                    success=True,
+                    data={
+                        "target": target,
+                        "focused": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            else:
+                 return ToolOutput(success=False, data={}, error=f"Failed to focus '{target}' or not found")
+        except Exception as e:
+             return ToolOutput(success=False, data={}, error=str(e))
+

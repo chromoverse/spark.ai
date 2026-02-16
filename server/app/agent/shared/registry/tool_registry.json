@@ -250,6 +250,72 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000
           }
+        },
+        {
+          "tool_name": "app_minimize",
+          "description": "Minimize application window",
+          "execution_target": "client",
+          "params_schema": {
+            "target": { "type": "string", "required": true }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "target": { "type": "string" },
+              "minimized": { "type": "boolean" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
+        },
+        {
+          "tool_name": "app_maximize",
+          "description": "Maximize application window",
+          "execution_target": "client",
+          "params_schema": {
+            "target": { "type": "string", "required": true }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "target": { "type": "string" },
+              "maximized": { "type": "boolean" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
+        },
+        {
+          "tool_name": "app_focus",
+          "description": "Bring application to front and focus",
+          "execution_target": "client",
+          "params_schema": {
+            "target": { "type": "string", "required": true }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "target": { "type": "string" },
+              "focused": { "type": "boolean" },
+              "timestamp": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
         }
       ]
     },
