@@ -24,7 +24,7 @@ async def test_app_controls():
     maximize_tool = AppMaximizeTool()
     focus_tool = AppFocusTool()
     
-    target_app = "device manager"
+    target_app = "device manager"  # Change this to an app you have installed for testing
     
     # 1. Open Notepad
     print(f"\n[1] Opening {target_app}...")
@@ -34,53 +34,53 @@ async def test_app_controls():
         print(f"Error: {res.error}")
         return
 
-    await asyncio.sleep(2)
+    # await asyncio.sleep(2)
     
-    # 2. Minimize
-    print(f"\n[2] Minimizing {target_app}...")
-    res = await minimize_tool._execute({"target": target_app})
-    print(f"Result: {res.success}")
-    if not res.success: print(res.error)
+    # # 2. Minimize
+    # print(f"\n[2] Minimizing {target_app}...")
+    # res = await minimize_tool._execute({"target": target_app})
+    # print(f"Result: {res.success}")
+    # if not res.success: print(res.error)
     
-    await asyncio.sleep(1)
+    # await asyncio.sleep(1)
 
-    # 3. Maximize
-    print(f"\n[3] Maximizing {target_app}...")
-    res = await maximize_tool._execute({"target": target_app})
-    print(f"Result: {res.success}")
-    if not res.success: print(res.error)
+    # # 3. Maximize
+    # print(f"\n[3] Maximizing {target_app}...")
+    # res = await maximize_tool._execute({"target": target_app})
+    # print(f"Result: {res.success}")
+    # if not res.success: print(res.error)
 
-    await asyncio.sleep(1)
+    # await asyncio.sleep(1)
 
-     # 2. Minimize
-    print(f"\n[2] Minimizing {target_app}...")
-    res = await minimize_tool._execute({"target": target_app})
-    print(f"Result: {res.success}")
-    if not res.success: print(res.error)
+    #  # 2. Minimize
+    # print(f"\n[2] Minimizing {target_app}...")
+    # res = await minimize_tool._execute({"target": target_app})
+    # print(f"Result: {res.success}")
+    # if not res.success: print(res.error)
     
-    await asyncio.sleep(1)
+    # await asyncio.sleep(1)
     
-    # 4. Focus
-    print(f"\n[4] Focusing {target_app}...")
-    res = await focus_tool._execute({"target": target_app})
-    print(f"Result: {res.success}")
-    if not res.success: print(res.error)
+    # # 4. Focus
+    # print(f"\n[4] Focusing {target_app}...")
+    # res = await focus_tool._execute({"target": target_app})
+    # print(f"Result: {res.success}")
+    # if not res.success: print(res.error)
 
-    await asyncio.sleep(1)
+    # await asyncio.sleep(1)
 
-    # 5. Restart
-    print(f"\n[5] Restarting {target_app}...")
-    res = await restart_tool._execute({"target": target_app})
-    print(f"Result: {res.success}, {res.data.get('status')}")
-    if not res.success: print(res.error)
+    # # 5. Restart
+    # print(f"\n[5] Restarting {target_app}...")
+    # res = await restart_tool._execute({"target": target_app})
+    # print(f"Result: {res.success}, {res.data.get('status')}")
+    # if not res.success: print(res.error)
 
-    await asyncio.sleep(2)
+    # await asyncio.sleep(2)
 
-    # 6. Close
-    print(f"\n[6] Closing {target_app}...")
-    res = await close_tool._execute({"target": target_app})
-    print(f"Result: {res.success}, {res.data.get('status')}")
-    if not res.success: print(res.error)
+    # # 6. Close
+    # print(f"\n[6] Closing {target_app}...")
+    # res = await close_tool._execute({"target": target_app})
+    # print(f"Result: {res.success}, {res.data.get('status')}")
+    # if not res.success: print(res.error)
 
     print("\n--- Test Finished ---")
 

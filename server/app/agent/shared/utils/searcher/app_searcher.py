@@ -7,6 +7,29 @@ Usage:
     searcher = AppSearcher()
     result   = searcher.find_app("event viewer")
     # → {"name": "Event Viewer", "path": "eventvwr.msc", "type": "msc", ...}
+
+RESOLUTION ORDER (system-first, web-last):
+    1. ms-settings / shell: protocol pass-through
+    2. Natural-language command map (Windows power tools)
+    3. Fuzzy search over NL map + protocol handlers
+    4. System app cache  ← always before any web lookup
+       Windows cache build order (mirrors Raycast / Windows Search):
+         Pass 1 (fast, ~1-2 s):  registry DisplayIcon  ← exact launcher exe
+                                  UWP/Store packages
+                                  Start Menu .lnk shortcuts
+                                  PATH executables
+         Pass 2 (fallback only):  Program Files top-level (depth=1)
+                                  System32/SysWOW64 for .msc / .cpl only
+    5. KNOWN_WEBSITES exact match  ← only if no installed app found
+    6. Web fallback (URL / domain / .com guess)
+
+WHY DisplayIcon (not InstallLocation)?
+    DisplayIcon is the value Windows Start Menu itself reads — it points
+    directly to the launcher exe, e.g.:
+        "C:\\Program Files\\Docker\\Docker Desktop.exe,0"
+    InstallLocation only gives the install directory, forcing a directory
+    scan that picks up internal daemons (dockerd.exe), CLI stubs (docker.exe),
+    and helper tools instead of the actual launcher.
 """
 
 from __future__ import annotations
@@ -31,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  KNOWN WEBSITES — browser fallback dictionary (non-system / web apps)
+#  NOTE: Consulted LAST — after full system scan. Any installed app wins.
 # ══════════════════════════════════════════════════════════════════════════════
 KNOWN_WEBSITES: Dict[str, str] = {
     # Social
@@ -149,7 +173,7 @@ KNOWN_WEBSITES: Dict[str, str] = {
     "aws": "https://aws.amazon.com",
     "azure": "https://portal.azure.com",
     "gcp": "https://console.cloud.google.com",
-    "docker": "https://hub.docker.com",
+    "docker": "https://hub.docker.com",      # web fallback only — Docker Desktop preferred
     "npm": "https://npmjs.com",
     "pypi": "https://pypi.org",
     "codepen": "https://codepen.io",
@@ -207,7 +231,7 @@ PROTOCOL_HANDLERS: Dict[str, str] = {
     "your phone":        "ms-your-phone:",
     "feedback hub":      "feedback-hub:",
     "get started":       "ms-get-started:",
-    # ms-settings (direct protocol strings pass through)
+    # ms-settings
     "ms-settings:network":             "ms-settings:network",
     "ms-settings:privacy-microphone":  "ms-settings:privacy-microphone",
     "ms-settings:windowsupdate":       "ms-settings:windowsupdate",
@@ -235,20 +259,20 @@ PROTOCOL_HANDLERS: Dict[str, str] = {
     "ms-settings:system":              "ms-settings:system",
     "ms-settings:easeofaccess":        "ms-settings:easeofaccess",
     # shell: folders
-    "shell:startup":      "shell:startup",
-    "shell:downloads":    "shell:downloads",
-    "shell:appsfolder":   "shell:appsfolder",
-    "shell:desktop":      "shell:desktop",
-    "shell:documents":    "shell:documents",
-    "shell:pictures":     "shell:pictures",
-    "shell:music":        "shell:music",
-    "shell:videos":       "shell:videos",
-    "shell:recent":       "shell:recent",
-    "shell:sendto":       "shell:sendto",
-    "shell:favorites":    "shell:favorites",
-    "shell:programfiles": "shell:programfiles",
-    "shell:appdata":      "shell:appdata",
-    "shell:localappdata": "shell:localappdata",
+    "shell:startup":        "shell:startup",
+    "shell:downloads":      "shell:downloads",
+    "shell:appsfolder":     "shell:appsfolder",
+    "shell:desktop":        "shell:desktop",
+    "shell:documents":      "shell:documents",
+    "shell:pictures":       "shell:pictures",
+    "shell:music":          "shell:music",
+    "shell:videos":         "shell:videos",
+    "shell:recent":         "shell:recent",
+    "shell:sendto":         "shell:sendto",
+    "shell:favorites":      "shell:favorites",
+    "shell:programfiles":   "shell:programfiles",
+    "shell:appdata":        "shell:appdata",
+    "shell:localappdata":   "shell:localappdata",
     "shell:common startup": "shell:common startup",
     "shell:commonprograms": "shell:commonprograms",
 }
@@ -428,11 +452,29 @@ _SYSTEM_APP_INDICATORS = {
 }
 
 # Minimum score a cache hit must reach to be returned.
-# Prevents fuzzy-char false positives (e.g. "aws" → "Tailwind-CSS").
-_MIN_CACHE_SCORE = 60.0  # requires at least word-boundary or substring match
+_MIN_CACHE_SCORE = 60.0
 
 # Windows Recent folder path fragment — .lnk files here have garbage names
 _WIN_RECENT_PATH_FRAGMENT = os.path.join("Windows", "Recent")
+
+# Path segments that indicate a CLI stub or background daemon, not the GUI
+# entry point. These get a −30 penalty in _score() so the real Desktop app
+# always wins.
+#
+# Pattern                 Example loser                  Example winner
+# ─────────────────────────────────────────────────────────────────────────
+# /bin/                   git\bin\git.exe                Git GUI.exe
+# /resources/bin/         docker\resources\bin\docker.exe  Docker Desktop.exe
+# /resources/             docker\resources\dockerd.exe   Docker Desktop.exe
+#                           ↑ daemon, not the launcher
+# /usr/bin/               Linux CLI tools                .desktop entry
+_CLI_BIN_SEGMENTS = frozenset({
+    "/bin/",
+    "/resources/bin/",
+    "/resources/",       # catches daemon exes (dockerd, etc.)
+    "/usr/bin/",
+    "/usr/local/bin/",
+})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -442,15 +484,16 @@ class AppSearcher:
     """
     Deep, cross-platform application searcher with built-in web fallback.
 
-    Resolution order
-    ────────────────
+    Resolution order  (system-first, web-last)
+    ──────────────────────────────────────────
     1. ms-settings / shell: protocol pass-through
     2. Natural-language command map (Windows power tools)
-    3. System-installed app cache (UWP, registry, Start-Menu, PATH, deep scan)
-    4. Web fallback via KNOWN_WEBSITES → only for non-system queries
+    3. Fuzzy search over NL map + protocol handlers
+    4. System app cache  ← always runs before ANY web lookup
+    5. KNOWN_WEBSITES exact match  ← only if no installed app matched
+    6. URL / domain / .com web fallback
     """
 
-    # Executables that are containers/hosts, not real apps
     _EXE_BLACKLIST = {
         "camerasettingsuihost.exe", "systemsettings.exe",
         "applicationframehost.exe", "runtimebroker.exe",
@@ -459,35 +502,29 @@ class AppSearcher:
         "ctfmon.exe", "conhost.exe", "dllhost.exe",
     }
 
+    # Filename substrings that identify non-launcher support exes.
+    # Applied when evaluating DisplayIcon and InstallLocation candidates.
+    # e.g. "Docker Desktop Installer.exe" → skipped → real launcher found.
+    _LAUNCHER_SKIP_WORDS = frozenset({
+        "installer", "uninstall", "uninstaller",
+        "setup", "update", "updater",
+        "helper", "agent", "daemon",
+        "service", "crash", "reporter",
+        "handler", "monitor",
+    })
+
     def __init__(self):
-        self._os           = sys.platform
+        self._os            = sys.platform
         self._cache: Dict[str, Dict[str, Any]] = {}
-        self._stamp        = 0.0
-        self._ttl          = 300  # 5 min cache
+        self._stamp         = 0.0
+        self._ttl           = 300
         self._icon_resolver = IconResolver(use_fallback=False)
 
     # ─────────────────────────────────────────────────────────────────────────
     #  Public API
     # ─────────────────────────────────────────────────────────────────────────
     def find_app(self, query: str, include_icon: bool = True) -> Optional[Dict[str, Any]]:
-        """
-        Search for *any* app — system, UWP, or web.
-
-        Returns a dict:
-            {
-                "name":          str,
-                "path":          str,   ← cmd / protocol / URL / file path
-                "type":          str,   ← msc | exe | cpl | protocol | uwp |
-                                           uwp_shell | rundll32 | cmd_args |
-                                           netsh_cmd | open_file | shell_guid |
-                                           website | url
-                "launch_method": str,   ← run | shell | browser | cmd
-                "source":        str,   ← protocol | nlmap | cache | web
-                "icon_b64":      str | None  ← base64 PNG  (system apps)
-                "icon_url":      str | None  ← favicon URL (websites)
-            }
-        """
-        q = query.strip()
+        q  = query.strip()
         ql = q.lower()
 
         logger.info("[AppSearcher] query='%s' os=%s", q, self._os)
@@ -508,13 +545,8 @@ class AppSearcher:
             r = self._make_result(name=q, path=ql, rtype="protocol",
                                   launch="shell", source="protocol")
             return self._attach_icon(r, include_icon)
-        if self._os == "win32" and ql in PROTOCOL_HANDLERS:
-            p = PROTOCOL_HANDLERS[ql]
-            r = self._make_result(name=q, path=p, rtype="protocol",
-                                  launch="shell", source="protocol")
-            return self._attach_icon(r, include_icon)
 
-        # ── Step 2: Natural-language map ─────────────────────────────────────
+        # ── Step 2: Natural-language map (exact) ─────────────────────────────
         _is_win_command = any(ql.endswith(s) for s in (".msc", ".exe", ".cpl", ".bat"))
         if self._os == "win32" or _is_win_command:
             hit = NATURAL_LANGUAGE_MAP.get(ql)
@@ -529,46 +561,18 @@ class AppSearcher:
                            if k not in ("cmd", "type", "name")},
                 )
                 return self._attach_icon(r, include_icon)
-        if self._os == "win32":
-            hit = NATURAL_LANGUAGE_MAP.get(ql)
-            if hit:
-                r = self._make_result(
-                    name=hit.get("name", q),
-                    path=hit["cmd"],
-                    rtype=hit["type"],
-                    launch=self._infer_launch(hit["type"]),
-                    source="nlmap",
-                    extra={k: v for k, v in hit.items()
-                           if k not in ("cmd", "type", "name")},
-                )
-                return self._attach_icon(r, include_icon)
 
-        # ── Step 3: KNOWN_WEBSITES exact match — BEFORE cache ────────────────
-        if ql in KNOWN_WEBSITES:
-            r = self._make_result(
-                name=q, path=KNOWN_WEBSITES[ql],
-                rtype="website", launch="browser", source="web",
-            )
-            return self._attach_icon(r, include_icon)
-
-        # ── Step 3.5: Fuzzy search over the maps themselves ───────────────────
-        # Handles: "bluetooth" → ms-settings:bluetooth
-        #          "wifi"      → ms-settings:network-wifi
-        #          "privacy mic" → ms-settings:privacy-microphone
-        #          "event log"   → eventvwr.msc   (synonym not in exact map)
-        # This is PURELY dynamic — no hardcoding — just scoring every key
-        # in PROTOCOL_HANDLERS and NATURAL_LANGUAGE_MAP against the query.
+        # ── Step 3: Fuzzy search over NL map + protocol handlers ─────────────
         map_hit = self._fuzzy_search_maps(ql)
         if map_hit:
             return self._attach_icon(map_hit, include_icon)
 
-        # ── Step 4: Cached / scanned apps ────────────────────────────────────
+        # ── Step 4: System app cache (ALWAYS before web) ──────────────────────
         self._ensure_cache()
         matches = self._fuzzy_search(ql)
 
         if matches:
             best_path, score, info = max(matches, key=lambda x: x[1])
-            # Hard minimum: never return a weak fuzzy match
             if score >= _MIN_CACHE_SCORE:
                 logger.info("[AppSearcher] cache hit: %s (score=%.1f)", best_path, score)
                 result = self._make_result(
@@ -577,10 +581,21 @@ class AppSearcher:
                     rtype=info.get("type", "app"),
                     launch=self._infer_launch(info.get("type", "app")),
                     source="cache",
+                    # Pass icon_exe so _attach_icon can extract the embedded
+                    # icon directly from the launcher exe (registry-sourced apps).
+                    extra={"icon_exe": info["icon_exe"]} if info.get("icon_exe") else None,
                 )
                 return self._attach_icon(result, include_icon)
 
-        # ── Step 5: Web fallback (only for clearly non-system queries) ────────
+        # ── Step 5: KNOWN_WEBSITES exact match ────────────────────────────────
+        if ql in KNOWN_WEBSITES:
+            r = self._make_result(
+                name=q, path=KNOWN_WEBSITES[ql],
+                rtype="website", launch="browser", source="web",
+            )
+            return self._attach_icon(r, include_icon)
+
+        # ── Step 6: Web fallback ──────────────────────────────────────────────
         if not self._looks_like_system_query(ql):
             result = self._web_resolve(q, ql)
             if result:
@@ -606,18 +621,30 @@ class AppSearcher:
         self._stamp = time.time()
         logger.info("[AppSearcher] cache ready: %d apps", len(self._cache))
 
-    # ── Windows ──────────────────────────────────────────────────────────────
     def _scan_windows(self):
-        # NOTE: AppData\Roaming\Microsoft\Windows\Recent is intentionally
-        # excluded — it contains .lnk shortcuts to every file ever opened,
-        # with full garbage filenames (URLs, video titles, etc.) that pollute
-        # the search cache and cause wrong matches.
-        with ThreadPoolExecutor(max_workers=6) as ex:
+        """
+        Windows app discovery — registry-first, like Raycast / Windows Search.
+
+        Pass 1 — Fast registry sources (run in parallel, ~1-2 s total):
+          • Registry Uninstall keys  via DisplayIcon  → exact launcher exe
+          • UWP / Store packages     via PowerShell   → shell:AppsFolder paths
+          • Start Menu .lnk files                    → user-visible shortcuts
+          • PATH executables                          → CLI tools
+
+        Pass 2 — Filesystem fallback (only for apps the registry missed):
+          • Program Files root (depth=1 only — just top-level exes)
+          • System32 / SysWOW64 for .msc and .cpl
+
+        This matches what Raycast does: trust DisplayIcon as the canonical
+        launcher path, skip internal resource/daemon exes entirely.
+        """
+        # ── Pass 1: fast registry + Start Menu (parallel) ────────────────────
+        with ThreadPoolExecutor(max_workers=5) as ex:
             futures = [
-                ex.submit(self._win_store_apps),
-                ex.submit(self._win_registry_apps),
-                ex.submit(self._win_path_executables),
-                # Start Menu shortcuts — CLEAN .lnk names only
+                ex.submit(self._win_registry_apps),      # DisplayIcon → exact exe
+                ex.submit(self._win_store_apps),          # UWP packages
+                ex.submit(self._win_path_executables),    # PATH CLI tools
+                # Start Menu — reliable .lnk names, user-visible apps
                 ex.submit(self._scan_dir,
                           os.path.join(os.environ.get("PROGRAMDATA", ""),
                                        "Microsoft", "Windows", "Start Menu", "Programs"),
@@ -626,29 +653,30 @@ class AppSearcher:
                           os.path.join(Path.home(), "AppData", "Roaming", "Microsoft",
                                        "Windows", "Start Menu", "Programs"),
                           [".lnk"], 4),
+            ]
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception as e:
+                    logger.debug("[AppSearcher] scan error: %s", e)
+
+        # ── Pass 2: filesystem fallback — only for what registry missed ───────
+        # Depth=1 only (top-level exe of each app folder, not subdirs).
+        # System32/SysWOW64 for .msc and .cpl snap-ins.
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futures = [
                 ex.submit(self._scan_dir,
                           os.environ.get("PROGRAMFILES", r"C:\Program Files"),
-                          [".exe"], 4),
+                          [".exe"], 1),           # ← depth 1, top-level only
                 ex.submit(self._scan_dir,
                           os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
-                          [".exe"], 4),
-                # Local\Programs — only .exe (no .lnk to avoid pollution)
+                          [".exe"], 1),
                 ex.submit(self._scan_dir,
                           os.path.join(Path.home(), "AppData", "Local", "Programs"),
-                          [".exe"], 4),
+                          [".exe"], 2),
                 ex.submit(self._scan_dir,
                           os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "System32"),
-                          [".exe", ".msc", ".cpl"], 2),
-                ex.submit(self._scan_dir,
-                          os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "SysWOW64"),
-                          [".exe", ".msc", ".cpl"], 2),
-                # AppData subdirs — only .exe, never .lnk (avoids Recent pollution)
-                ex.submit(self._scan_dir,
-                          os.path.join(Path.home(), "AppData", "Local"),
-                          [".exe"], 3),
-                ex.submit(self._scan_dir,
-                          os.path.join(Path.home(), "AppData", "Roaming"),
-                          [".exe"], 3),
+                          [".msc", ".cpl"], 1),   # MSC/CPL only, no exe noise
             ]
             for f in as_completed(futures):
                 try:
@@ -657,7 +685,6 @@ class AppSearcher:
                     logger.debug("[AppSearcher] scan error: %s", e)
 
     def _win_store_apps(self):
-        """Query UWP / MSIX packages via PowerShell."""
         try:
             ps = (
                 "Get-AppxPackage | ForEach-Object {"
@@ -674,17 +701,31 @@ class AppSearcher:
                 if "|" not in line:
                     continue
                 name, fam = line.strip().split("|", 1)
-                clean = name.split(".")[-1]
+                clean  = name.split(".")[-1]
                 app_id = rf"shell:AppsFolder\{fam}!App"
                 self._add_to_cache(clean, app_id, "uwp_shell", clean)
         except Exception as e:
             logger.debug("[AppSearcher] store scan: %s", e)
 
     def _win_registry_apps(self):
-        """Read installed apps from Uninstall registry keys."""
-        import winreg  # only importable on Windows
+        """
+        Read installed apps from Uninstall registry keys — Raycast-style.
 
-        keys = [
+        Launcher path priority:
+          1. DisplayIcon  → strip ',0' icon index suffix.
+                            This is the exact path Windows Start Menu uses.
+                            Skip if the exe name contains installer/updater words.
+          2. InstallLocation root scan → root folder only, no recursion,
+                            prefer the exe whose name best matches DisplayName,
+                            skip installer/updater/daemon exe names.
+          3. Skip entirely if neither yields a clean launcher exe.
+
+        Also stores icon_exe in the cache entry so _attach_icon can extract
+        the embedded icon without an extra file lookup.
+        """
+        import winreg
+
+        _UNINSTALL_KEYS = [
             (winreg.HKEY_LOCAL_MACHINE,
              r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
             (winreg.HKEY_LOCAL_MACHINE,
@@ -692,42 +733,108 @@ class AppSearcher:
             (winreg.HKEY_CURRENT_USER,
              r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
         ]
-        for hive, subkey in keys:
+
+        for hive, subkey in _UNINSTALL_KEYS:
             try:
                 key = winreg.OpenKey(hive, subkey)
-                i = 0
-                while True:
+            except OSError:
+                continue
+
+            i = 0
+            while True:
+                try:
+                    sub_name = winreg.EnumKey(key, i)
+                except OSError:
+                    break
+                i += 1
+
+                try:
+                    sub_key = winreg.OpenKey(key, sub_name)
+                except OSError:
+                    continue
+
+                try:
+                    # ── DisplayName (required) ────────────────────────────────
                     try:
-                        sub_name = winreg.EnumKey(key, i)
-                        sub_key  = winreg.OpenKey(key, sub_name)
+                        name = winreg.QueryValueEx(sub_key, "DisplayName")[0]
+                    except FileNotFoundError:
+                        continue
+                    if not name or not name.strip():
+                        continue
+                    name = name.strip()
+
+                    exe_path:  Optional[str] = None
+                    icon_exe:  Optional[str] = None   # for icon extraction
+
+                    # ── Strategy 1: DisplayIcon ───────────────────────────────
+                    # Format: "C:\path\App.exe,0"  or  "C:\path\App.exe"
+                    # Skip if the exe is an installer, updater, or daemon.
+                    try:
+                        icon_val = winreg.QueryValueEx(sub_key, "DisplayIcon")[0]
+                        if icon_val:
+                            raw_path = icon_val.strip().split(",")[0].strip().strip('"')
+                            if raw_path.lower().endswith(".exe") and os.path.isfile(raw_path):
+                                fname_l = os.path.basename(raw_path).lower()
+                                is_skip = (
+                                    fname_l in self._EXE_BLACKLIST
+                                    or any(w in fname_l for w in self._LAUNCHER_SKIP_WORDS)
+                                )
+                                if not is_skip:
+                                    exe_path = raw_path
+                                    icon_exe = raw_path   # embedded icon source
+                    except FileNotFoundError:
+                        pass
+
+                    # ── Strategy 2: InstallLocation root scan ─────────────────
+                    # Only if DisplayIcon gave us nothing usable.
+                    # Scan root folder only (no bin/, resources/, subdirs).
+                    # Prefer the exe whose lowercase name contains the most
+                    # words from DisplayName — e.g. "docker desktop" beats "docker".
+                    if not exe_path:
                         try:
-                            name = winreg.QueryValueEx(sub_key, "DisplayName")[0]
-                            exe  = winreg.QueryValueEx(sub_key, "InstallLocation")[0]
-                            if name and exe and os.path.isdir(exe):
-                                # Try to find main exe in install dir
-                                for f in os.listdir(exe):
-                                    if f.lower().endswith(".exe") and f.lower() not in self._EXE_BLACKLIST:
-                                        fp = os.path.join(exe, f)
-                                        self._add_to_cache(name, fp, "exe", name)
-                                        break
+                            install_dir = winreg.QueryValueEx(
+                                sub_key, "InstallLocation"
+                            )[0].strip().strip('"')
+                            if install_dir and os.path.isdir(install_dir):
+                                name_words = set(name.lower().split())
+                                best_score = -1
+                                best_path  = None
+                                for fname in os.listdir(install_dir):
+                                    if not fname.lower().endswith(".exe"):
+                                        continue
+                                    fname_l = fname.lower()
+                                    if fname_l in self._EXE_BLACKLIST:
+                                        continue
+                                    if any(w in fname_l for w in self._LAUNCHER_SKIP_WORDS):
+                                        continue
+                                    candidate = os.path.join(install_dir, fname)
+                                    if not os.path.isfile(candidate):
+                                        continue
+                                    # Score: how many DisplayName words appear in exe name
+                                    score = sum(1 for w in name_words if w in fname_l)
+                                    if score > best_score:
+                                        best_score = score
+                                        best_path  = candidate
+                                if best_path:
+                                    exe_path = best_path
+                                    icon_exe = best_path
                         except FileNotFoundError:
                             pass
-                        finally:
-                            winreg.CloseKey(sub_key)
-                        i += 1
-                    except OSError:
-                        break
-                winreg.CloseKey(key)
-            except Exception:
-                pass
+
+                    if exe_path:
+                        self._add_to_cache(name, exe_path, "exe", name,
+                                           icon_exe=icon_exe)
+
+                finally:
+                    winreg.CloseKey(sub_key)
+
+            winreg.CloseKey(key)
 
     def _win_path_executables(self):
-        """Scan every directory in PATH for executables."""
         for p in os.environ.get("PATH", "").split(os.pathsep):
             if p and os.path.isdir(p):
                 self._scan_dir(p, [".exe", ".msc", ".cpl", ".bat", ".cmd"], max_depth=1)
 
-    # ── macOS ────────────────────────────────────────────────────────────────
     def _scan_macos(self):
         try:
             r = subprocess.run(
@@ -742,13 +849,11 @@ class AppSearcher:
                 return
         except Exception:
             pass
-        # Fallback: manual
         for base in ["/Applications", "/System/Applications",
                      str(Path.home() / "Applications"),
                      "/System/Library/CoreServices"]:
             self._scan_dir(base, [".app"], max_depth=3)
 
-    # ── Linux ────────────────────────────────────────────────────────────────
     def _scan_linux(self):
         desktop_dirs = [
             "/usr/share/applications",
@@ -763,14 +868,11 @@ class AppSearcher:
         for d in desktop_dirs:
             self._scan_dir(d, [".desktop"], max_depth=2)
         for d in bin_dirs:
-            self._scan_dir(d, [], max_depth=1)  # empty = executables
+            self._scan_dir(d, [], max_depth=1)
 
-    # ── Generic directory scanner ────────────────────────────────────────────
     def _scan_dir(self, path: str, extensions: List[str], max_depth: int = 2):
         if not os.path.exists(path):
             return
-        # Never index the Windows Recent folder — .lnk names there are garbage
-        # (full URLs, video titles, ms-actioncenter strings, etc.)
         _recent_marker = os.path.join("Microsoft", "Windows", "Recent")
         if _recent_marker in path:
             return
@@ -780,7 +882,6 @@ class AppSearcher:
                 if depth >= max_depth:
                     dirs[:] = []
                     continue
-                # Prune any "Recent" sub-directory encountered mid-walk
                 dirs[:] = [
                     d for d in dirs
                     if not (d.lower() == "recent" and "microsoft" in root.lower())
@@ -793,24 +894,18 @@ class AppSearcher:
                         continue
                     if fname.lower() in self._EXE_BLACKLIST:
                         continue
-                    # Skip .lnk files with clearly garbage names (URL shortcuts,
-                    # file-open history entries). Real Start Menu shortcuts are short.
                     if fname.lower().endswith(".lnk") and len(fname) > 80:
                         continue
                     clean = fname
-                    for ext in (".exe", ".lnk", ".app", ".desktop", ".msc", ".cpl", ".bat", ".cmd"):
+                    for ext in (".exe", ".lnk", ".app", ".desktop",
+                                ".msc", ".cpl", ".bat", ".cmd"):
                         clean = clean.replace(ext, "").replace(ext.upper(), "")
                     ftype = "exe"
-                    if fname.endswith(".msc"):
-                        ftype = "msc"
-                    elif fname.endswith(".cpl"):
-                        ftype = "cpl"
-                    elif fname.endswith(".lnk"):
-                        ftype = "lnk"
-                    elif fname.endswith(".app"):
-                        ftype = "app"
-                    elif fname.endswith(".desktop"):
-                        ftype = "desktop"
+                    if fname.endswith(".msc"):        ftype = "msc"
+                    elif fname.endswith(".cpl"):       ftype = "cpl"
+                    elif fname.endswith(".lnk"):       ftype = "lnk"
+                    elif fname.endswith(".app"):       ftype = "app"
+                    elif fname.endswith(".desktop"):   ftype = "desktop"
                     self._add_to_cache(clean, os.path.join(root, fname), ftype, clean)
         except PermissionError:
             pass
@@ -818,28 +913,13 @@ class AppSearcher:
             logger.debug("[AppSearcher] scan_dir %s: %s", path, e)
 
     # ─────────────────────────────────────────────────────────────────────────
-    #  Map fuzzy search  (NL map + protocol handlers, no hardcoding)
+    #  Map fuzzy search
     # ─────────────────────────────────────────────────────────────────────────
     def _fuzzy_search_maps(self, query: str) -> Optional[Dict[str, Any]]:
-        """
-        Fuzzy-score the query against every key in NATURAL_LANGUAGE_MAP and
-        PROTOCOL_HANDLERS.  Returns the best match above threshold, or None.
-
-        Scoring targets:
-          • Full key         "ms-settings:bluetooth"  → try matching "bluetooth"
-          • Key leaf         the word(s) after last ':' or '-' separator
-          • NL name field    "Bluetooth"  from the name value in the NL map
-
-        This is what makes "bluetooth" resolve to ms-settings:bluetooth,
-        "wifi" to ms-settings:network-wifi, "privacy mic" to
-        ms-settings:privacy-microphone, "dns" to ipconfig /flushdns, etc.
-        — without a single hardcoded alias.
-        """
-        _MIN = 60.0   # same threshold as cache search
-        best_score = 0.0
+        _MIN        = 60.0
+        best_score  = 0.0
         best_result: Optional[Dict[str, Any]] = None
 
-        # ── Score NATURAL_LANGUAGE_MAP ────────────────────────────────────────
         for map_key, hit in NATURAL_LANGUAGE_MAP.items():
             score = self._score_map_key(query, map_key, hit.get("name", ""))
             if score > best_score:
@@ -854,10 +934,7 @@ class AppSearcher:
                            if k not in ("cmd", "type", "name")},
                 )
 
-        # ── Score PROTOCOL_HANDLERS ───────────────────────────────────────────
         for map_key, protocol_val in PROTOCOL_HANDLERS.items():
-            # Use the key itself as the "name" for protocols
-            # e.g. key = "ms-settings:bluetooth", name_hint = "bluetooth"
             name_hint = map_key.split(":")[-1].replace("-", " ").strip()
             score = self._score_map_key(query, map_key, name_hint)
             if score > best_score:
@@ -880,106 +957,69 @@ class AppSearcher:
 
     @staticmethod
     def _score_map_key(query: str, key: str, name: str) -> float:
-        """
-        Score a query against a map key like "ms-settings:bluetooth" or
-        "event viewer", using several targets:
-
-          1. query vs full key            ("bluetooth" in "ms-settings:bluetooth")
-          2. query vs key leaf            ("bluetooth" == "bluetooth")
-          3. query vs all space/colon/dash tokens in the key
-          4. query vs human name field    ("bluetooth" in "Bluetooth")
-          5. ALL query words match SOME token in the key (multi-word queries)
-
-        Returns 0.0 if no confident match.
-        """
-        q   = query.lower().strip()
-        k   = key.lower()
-        n   = name.lower()
-
+        q = query.lower().strip()
+        k = key.lower()
+        n = name.lower()
         if not q:
             return 0.0
-
-        # Tokenise the key into meaningful parts
-        # "ms-settings:network-wifi" → ["ms", "settings", "network", "wifi"]
-        import re as _re
-        tokens = [t for t in _re.split(r"[:\-\s_]+", k) if t]
-
-        score = 0.0
-
-        # ── Tier 1: exact token match (leaf = last token) ─────────────────────
-        if q == tokens[-1]:                   score = max(score, 95.0)
-        elif q == n:                          score = max(score, 95.0)
-
-        # ── Tier 2: exact match against any token ─────────────────────────────
-        elif q in tokens:                     score = max(score, 88.0)
-
-        # ── Tier 3: substring inside the leaf or name ─────────────────────────
-        if tokens and q in tokens[-1]:        score = max(score, 80.0)
-        if q in n:                            score = max(score, 75.0)
-
-        # ── Tier 4: substring of any token ───────────────────────────────────
-        if any(q in t for t in tokens):       score = max(score, 70.0)
-
-        # ── Tier 5: any token starts with query ──────────────────────────────
+        tokens = [t for t in re.split(r"[:\-\s_]+", k) if t]
+        score  = 0.0
+        if q == tokens[-1]:                      score = max(score, 95.0)
+        elif q == n:                             score = max(score, 95.0)
+        elif q in tokens:                        score = max(score, 88.0)
+        if tokens and q in tokens[-1]:           score = max(score, 80.0)
+        if q in n:                               score = max(score, 75.0)
+        if any(q in t for t in tokens):          score = max(score, 70.0)
         if any(t.startswith(q) for t in tokens): score = max(score, 65.0)
-
-        # ── Tier 6: multi-word query — ALL words must hit SOME token ─────────
         q_words = q.split()
         if len(q_words) > 1:
-            # Every word in the query must be found somewhere in tokens or name
-            all_match = all(
-                any(w in t for t in tokens) or w in n
-                for w in q_words
-            )
-            if all_match:
+            if all(any(w in t for t in tokens) or w in n for w in q_words):
                 score = max(score, 72.0)
-
-        # ── Penalty: prefer shorter / more specific keys ─────────────────────
         if score > 0:
             score -= len(k) / 300.0
-
         return score
 
     # ─────────────────────────────────────────────────────────────────────────
-    #  Fuzzy search (cache)
+    #  Cache fuzzy search
     # ─────────────────────────────────────────────────────────────────────────
     def _fuzzy_search(self, query: str) -> List[Tuple[str, float, Dict]]:
         results = []
         for key, info in self._cache.items():
-            score = self._score(query, key, info.get("name", key))
+            score = self._score(
+                query,
+                key,
+                info.get("name", key),
+                info.get("path", ""),   # ← passed so /bin/ penalty can fire
+            )
             if score >= _MIN_CACHE_SCORE:
                 results.append((info["path"], score, info))
         return results
 
-    def _score(self, query: str, key: str, name: str) -> float:
+    def _score(self, query: str, key: str, name: str, path: str = "") -> float:
         """
         Score a cache entry against the query.
 
         Tier  Score   Condition
         ────  ─────   ─────────────────────────────────────────────────────
           1   100     Exact key match
-          2    90     Key *starts with* query
-          3    75     Query appears as a *substring* inside key
-          4    60     Any word in key *starts with* query (word boundary)
-          5    --     Fuzzy char match DISABLED — too many false positives
-                      (e.g. "aws" matching "Tailwind-CSS",
-                             "claude" matching long video filenames)
+          2    90     Key starts with query
+          3    75     Query is substring of key
+          4    60     Any word in key starts with query
 
-        A length penalty (len(key)/200) is subtracted so shorter, more
-        specific names rank above longer ones at the same tier.
-
-        .lnk files from non-Start-Menu paths are penalised by −20 so a
-        real exe/msc always wins over a shortcut file.
+        Penalties:
+          −(len/200)   length penalty (shorter names rank above longer ones)
+          −20          .lnk shortcut (prefer real exe/msc over shortcuts)
+          −30          path contains a /bin/ segment
+                       CLI stubs like docker.exe in resources/bin/ are
+                       deprioritised so GUI apps like Docker Desktop.exe win.
         """
         k = key.lower()
         q = query.lower()
 
-        # Guard: empty query or impossibly short ratio
         if not q or len(q) < 2:
             return 0.0
 
         score = 0.0
-
         if q == k:
             score = 100.0
         elif k.startswith(q):
@@ -989,37 +1029,33 @@ class AppSearcher:
         elif any(w.startswith(q) for w in k.split()):
             score = 60.0
         else:
-            # No match — skip fuzzy char (intentionally removed)
             return 0.0
 
-        # Length penalty: prefer shorter/more specific names
+        # Length penalty
         score -= len(k) / 200.0
 
-        # Penalise .lnk shortcuts — prefer real executables / MSC / CPL
+        # .lnk penalty
         if name.lower().endswith(".lnk"):
             score -= 20.0
+
+        # /bin/ penalty — normalise separators then check all known segments
+        p = path.lower().replace("\\", "/")
+        if any(seg in p for seg in _CLI_BIN_SEGMENTS):
+            score -= 30.0
 
         return max(score, 0.0)
 
     # ─────────────────────────────────────────────────────────────────────────
-    #  Web fallback (built-in AppResolver logic)
+    #  Web fallback
     # ─────────────────────────────────────────────────────────────────────────
     def _web_resolve(self, original: str, ql: str) -> Optional[Dict[str, Any]]:
-        # 1. Known website shortcut
-        if ql in KNOWN_WEBSITES:
-            url = KNOWN_WEBSITES[ql]
-            return self._make_result(name=original, path=url,
-                                     rtype="website", launch="browser", source="web")
-        # 2. Already a URL
         if self._is_url(original):
             return self._make_result(name=original, path=original,
                                      rtype="url", launch="browser", source="web")
-        # 3. Looks like a domain
         if self._is_domain(original):
             url = original if original.startswith("http") else f"https://{original}"
             return self._make_result(name=original, path=url,
                                      rtype="url", launch="browser", source="web")
-        # 4. Fallback → .com
         url = f"https://{ql.replace(' ', '')}.com"
         return self._make_result(name=original, path=url,
                                  rtype="website", launch="browser", source="web_fallback")
@@ -1042,64 +1078,66 @@ class AppSearcher:
 
     @staticmethod
     def _looks_like_system_query(ql: str) -> bool:
-        for indicator in _SYSTEM_APP_INDICATORS:
-            if indicator in ql:
-                return True
-        return False
+        return any(indicator in ql for indicator in _SYSTEM_APP_INDICATORS)
 
     # ─────────────────────────────────────────────────────────────────────────
     #  Helpers
     # ─────────────────────────────────────────────────────────────────────────
     def _attach_icon(self, result: Dict[str, Any], include_icon: bool) -> Dict[str, Any]:
-        """
-        Add icon information to a result dict.
-
-        For system apps:
-            result["icon_b64"] = "<base64 PNG string>"  # or None
-
-        For websites:
-            result["icon_url"] = "https://www.google.com/s2/favicons?..."
-
-        Icon resolution is skipped entirely when include_icon=False (fast path).
-        """
         result["icon_b64"] = None
         result["icon_url"] = None
-
         if not include_icon:
             return result
 
-        raw = self._icon_resolver.get_icon(result)
+        # icon_exe — set by registry scan — is the exact launcher exe whose
+        # embedded icon we want.  Pass it to the resolver as a direct hint.
+        # For websites the resolver returns "url:<favicon_url>" instead.
+        icon_exe = result.pop("icon_exe", None)
+        resolve_target = dict(result)
+        if icon_exe:
+            resolve_target["path"] = icon_exe
 
+        raw = self._icon_resolver.get_icon(resolve_target)
         if raw and raw.startswith("url:"):
-            # Favicon URL returned by the resolver for websites
-            result["icon_url"] = raw[4:]   # strip "url:" prefix
+            result["icon_url"] = raw[4:]
         else:
-            result["icon_b64"] = raw       # base64 PNG or None
-
+            result["icon_b64"] = raw
         return result
 
-    def _add_to_cache(self, key: str, path: str, ftype: str, name: str):
+    def _add_to_cache(self, key: str, path: str, ftype: str, name: str,
+                      icon_exe: Optional[str] = None):
+        """
+        Add an entry to the cache.
+
+        icon_exe — optional path to the exe whose embedded icon should be used.
+                   Set by _win_registry_apps when DisplayIcon or InstallLocation
+                   gives us the exact launcher. Passed through to _attach_icon
+                   so the UI gets a real icon without extra file I/O.
+        """
         k = key.lower().strip()
         if k and k not in self._cache:
-            self._cache[k] = {"path": path, "type": ftype, "name": name}
+            entry: Dict[str, Any] = {"path": path, "type": ftype, "name": name}
+            if icon_exe:
+                entry["icon_exe"] = icon_exe
+            self._cache[k] = entry
 
     @staticmethod
     def _infer_launch(ftype: str) -> str:
         mapping = {
-            "msc":       "run",
-            "cpl":       "run",
-            "exe":       "run",
-            "lnk":       "shell",
-            "app":       "shell",
-            "uwp_shell": "shell",
-            "protocol":  "shell",
-            "rundll32":  "run",
-            "cmd_args":  "run",
-            "netsh_cmd": "run_admin",
-            "open_file": "run",
-            "shell_guid":"run",
-            "website":   "browser",
-            "url":       "browser",
+            "msc":        "run",
+            "cpl":        "run",
+            "exe":        "run",
+            "lnk":        "shell",
+            "app":        "shell",
+            "uwp_shell":  "shell",
+            "protocol":   "shell",
+            "rundll32":   "run",
+            "cmd_args":   "run",
+            "netsh_cmd":  "run_admin",
+            "open_file":  "run",
+            "shell_guid": "run",
+            "website":    "browser",
+            "url":        "browser",
         }
         return mapping.get(ftype, "run")
 
