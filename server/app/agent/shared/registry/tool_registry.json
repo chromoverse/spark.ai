@@ -172,7 +172,7 @@
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 
+            "default_timeout_ms": 500
           }
         },
         {
@@ -738,6 +738,7 @@
           "output_schema": {
             "success": { "type": "boolean" },
             "data": {
+              "query": { "type": "string" },
               "results": { "type": "array" },
               "total_results": { "type": "integer" },
               "search_time_ms": { "type": "number" }

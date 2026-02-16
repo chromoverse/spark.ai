@@ -48,7 +48,11 @@ from app.agent.shared.tools.system.operations import (
 
     SystemInfoTool,
 
-    NotificationPushTool
+    NotificationPushTool,
+
+    NetworkStatusTool,
+
+    BatteryStatusTool
 )
 
 logger = logging.getLogger(__name__)

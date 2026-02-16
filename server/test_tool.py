@@ -23,7 +23,10 @@ from app.agent.shared.tools.system.operations import (
 
     SystemInfoTool,
 
-    NotificationPushTool
+    NotificationPushTool,
+    NetworkStatusTool,
+
+    BatteryStatusTool,
 )
 
 async def test_app_controls():
@@ -189,7 +192,7 @@ async def test_clipboard_controls():
 
     print("\n--- Test Finished ---")
 
-#TODO: Failed to capture screenshot on windows, need to debug
+
 async def test_screenshot_capture():
     print("--- Starting Screenshot Capture Test ---")
     
@@ -198,12 +201,13 @@ async def test_screenshot_capture():
     # 1. Capture screenshot
     print("\n[1] Capturing screenshot...")
     res = await capture_tool._execute({})
-    print(f"Result: {res.success}, Screenshot Path: {res.data.get('screenshot_path')}")
+    print(f"Result: {res.success}, Screenshot Path: {res.data.get('file_path')}")
     if not res.success:
         print(f"Error: {res.error}")
         return
 
     print("\n--- Test Finished ---")
+
 
 async def test_system_info():
     print("--- Starting System Info Test ---")
@@ -237,6 +241,38 @@ async def test_notification_push():
 
     print("\n--- Test Finished ---")
 
+
+async def test_network_status():
+    print("--- Starting Network Status Test ---")
+    
+    network_tool = NetworkStatusTool()
+    
+    # 1. Get network status
+    print("\n[1] Getting network status...")
+    res = await network_tool._execute({"check_internet": True})
+    print(f"Result: {res.success}, Network Status: {res.data}")
+    if not res.success:
+        print(f"Error: {res.error}")
+        return
+
+    print("\n--- Test Finished ---")
+
+
+async def test_battery_status():
+    print("--- Starting Battery Status Test ---")
+    
+    battery_tool = BatteryStatusTool()
+    
+    # 1. Get battery status
+    print("\n[1] Getting battery status...")
+    res = await battery_tool._execute({})
+    print(f"Result: {res.success}, Battery Status: {res.data}")
+    if not res.success:
+        print(f"Error: {res.error}")
+        return
+
+    print("\n--- Test Finished ---")
+
 if __name__ == "__main__":
     # asyncio.run(test_app_controls())
     # asyncio.run(test_brightness_controls())
@@ -244,4 +280,6 @@ if __name__ == "__main__":
     # asyncio.run(test_clipboard_controls())
     # asyncio.run(test_screenshot_capture())
     # asyncio.run(test_system_info())
-    asyncio.run(test_notification_push())
+    # asyncio.run(test_notification_push())
+    # asyncio.run(test_network_status())
+    asyncio.run(test_battery_status())

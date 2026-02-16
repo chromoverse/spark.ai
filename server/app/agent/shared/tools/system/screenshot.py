@@ -29,9 +29,15 @@ class ScreenshotCaptureTool(BaseTool):
             # Generate default save path if not provided
             if not save_path:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Base dir for screenshots
+                base_dir = r"C:\Users\Aanand\OneDrive\Pictures\Screenshots\spark-ai-screenshot"
+
+                screenshots_dir = os.path.join(base_dir)
+                os.makedirs(screenshots_dir, exist_ok=True)  
                 save_path = os.path.join(
-                    tempfile.gettempdir(),
-                    f"screenshot_{timestamp}.png"
+                    screenshots_dir,
+                    f"spark_screenshot_{timestamp}.png"
                 )
             
             # Capture screenshot
@@ -82,7 +88,7 @@ $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bound
 # Save
 $bitmap.Save("{save_path.replace(os.sep, '/')}")
 
-Write-Output "{width}x{height}"
+Write-Output "$width`x$height"
 
 '''
             result = subprocess.run(
