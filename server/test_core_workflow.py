@@ -12,13 +12,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from app.registry.loader import load_tool_registry
-from app.core.orchestrator import init_orchestrator
-from app.core.execution_engine import init_execution_engine
-from app.core.server_executor import init_server_executor
-from app.core.task_emitter import get_task_emitter
-from app.core.models import Task, LifecycleMessages
-from app.tools.loader import load_all_tools
+from app.agent.shared.registry.loader import load_tool_registry
+from app.agent.core.orchestrator import init_orchestrator
+from app.agent.core.execution_engine import init_execution_engine
+from app.agent.core.server_executor import init_server_executor
+from app.agent.core.task_emitter import get_task_emitter
+from app.agent.core.models import Task, LifecycleMessages
+from app.agent.shared.tools.loader import load_all_tools
 
 
 def print_section(title: str):

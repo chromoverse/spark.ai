@@ -39,7 +39,7 @@ async def test_app_controls():
     maximize_tool = AppMaximizeTool()
     focus_tool = AppFocusTool()
     
-    target_app = "vlc media player"  # Change this to an app you have installed for testing
+    target_app = "bluetooth"  # Change this to an app you have installed for testing
     
     # 1. Open Notepad
     # print(f"\n[1] Opening {target_app}...")
@@ -275,11 +275,11 @@ async def test_battery_status():
 
 if __name__ == "__main__":
     # asyncio.run(test_app_controls())
-    # asyncio.run(test_brightness_controls())
-    # asyncio.run(test_sound_controls())
+    asyncio.run(test_brightness_controls())
+    asyncio.run(test_sound_controls())
     # asyncio.run(test_clipboard_controls())
     # asyncio.run(test_screenshot_capture())
     # asyncio.run(test_system_info())
     # asyncio.run(test_notification_push())
     # asyncio.run(test_network_status())
-    asyncio.run(test_battery_status())
+    # asyncio.run(test_battery_status())

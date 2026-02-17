@@ -756,7 +756,8 @@
           "description": "Fetches and extracts readable content from a public webpage",
           "execution_target": "server",
           "params_schema": {
-            "query": { "type": "string", "required": true },
+            "base_links": { "type": "array", "required": true },
+            "query": { "type": "string", "required": false },
             "max_results": {
               "type": "integer",
               "required": false,
@@ -768,8 +769,7 @@
             "data": {
               "results": { "type": "array" },
               "total_results": { "type": "integer" },
-              "search_time_ms": { "type": "number" },
-              "summary": { "type": "string" }
+              "search_time_ms": { "type": "number" }
             },
             "error": { "type": "string" }
           },
@@ -777,6 +777,67 @@
             "default_confidence": 0.95,
             "default_requires_approval": false,
             "default_timeout_ms": 5000
+          }
+        }
+      ]
+    },
+
+
+    "ai" : {
+      "description": "AI and agent management tools",
+      "tools": [
+        {
+          "tool_name": "agent_status",
+          "description": "Get current status of the agent",
+          "execution_target": "server",
+          "params_schema": {},
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "uptime_seconds": { "type": "number" },
+              "current_tasks": { "type": "array" },
+              "resource_usage": {
+                "cpu_percent": { "type": "number" },
+                "ram_percent": { "type": "number" }
+              },
+              "last_updated": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
+        },
+        {
+          "tool_name": "ai_summarize",
+          "description": "Summarize AI-related content like logs, conversations, or documents",
+          "execution_target": "server",
+          "params_schema": {
+            "query": { "type": "string", "required": false },
+            "content": { "type": "string", "required": true },
+            "max_length": {
+              "type": "integer",
+              "required": false,
+              "default": 700
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "summary": { "type": "string", "description": "This must be max 2 3 sentences covering the main points of the content as this is for text to speech in humatic way." },
+              "formatted_content": { "type": "string", "description": "This can be upt max 10 sentences as this clears up and give information deep." },
+              "original_length": { "type": "integer" },
+              "summary_length": { "type": "integer" },
+              "summarized_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
           }
         }
       ]

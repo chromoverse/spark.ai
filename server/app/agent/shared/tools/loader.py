@@ -16,15 +16,22 @@ from app.agent.shared.tools.base import get_tool_instance_registry, BaseTool
 from app.agent.shared.registry.loader import get_tool_registry
 
 # Import all tool classes
-from app.agent.shared.tools.web.search import WebSearchTool
+from server.app.agent.shared.tools.web import (
+    WebSearchTool,
+    WebScrapeTool
+)
 from app.agent.shared.tools.file_system.operations import (
     FileCreateTool,
     FolderCreateTool,
     FileCopyTool,
     FileSearchTool,
     FileReadTool,
-
 )
+
+from app.agent.shared.tools.ai.init import (
+    AiSummarizeTool 
+)
+
 from app.agent.shared.tools.system.operations import (
      AppOpenTool,
     AppCloseTool,
@@ -81,6 +88,7 @@ def load_all_tools():
     tools = [
         # Web tools
         WebSearchTool(),
+        WebScrapeTool(),
         
         # File system tools
         FileCreateTool(),
@@ -97,25 +105,37 @@ def load_all_tools():
         AppMaximizeTool(),
         AppFocusTool(),
 
+        # Brightness tools
         BrightnessStatusTool(),
         BrightnessIncreaseTool(),
         BrightnessDecreaseTool(),
 
+        # Sound tools
         SoundStatusTool(),
         SoundIncreaseTool(),
         SoundDecreaseTool(),
 
+        # Clipboard tools
         ClipboardReadTool(),
         ClipboardWriteTool(),
 
+        # Screenshot tools
         ScreenshotCaptureTool(),
 
+        # System info
         SystemInfoTool(),
 
-        NotificationPushTool()
+        # Notification tools
+        NotificationPushTool(),
         
-        # Add more tools here
-        # etc.
+        # Network tools
+        NetworkStatusTool(),
+        
+        # Battery tools
+        BatteryStatusTool(),
+        
+        # AI tools
+        AiSummarizeTool(),
     ]
     
     # Register each tool and inject its schema
