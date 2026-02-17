@@ -16,10 +16,11 @@ from app.agent.shared.tools.base import get_tool_instance_registry, BaseTool
 from app.agent.shared.registry.loader import get_tool_registry
 
 # Import all tool classes
-from server.app.agent.shared.tools.web import (
+from app.agent.shared.tools.web import (
     WebSearchTool,
     WebScrapeTool
 )
+
 from app.agent.shared.tools.file_system.operations import (
     FileCreateTool,
     FolderCreateTool,
