@@ -2,10 +2,11 @@
 Streaming Chat Service - Real-time AI responses with TTS integration
 
 STREAMING VERSION: Uses llm_stream for real-time token streaming.
-Accumulates tokens into chunks of ~15 words before sending to TTS.
+Accumulates tokens and splits at natural sentence boundaries before sending to TTS.
 TTS starts speaking within 1-2 seconds instead of waiting for full response.
 """
 import logging
+import re
 import asyncio
 from typing import Optional, List, Any
 from app.ai.providers import llm_stream, llm_chat
@@ -15,16 +16,80 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Minimum words per TTS chunk — ensures natural-sounding speech
-MIN_CHUNK_WORDS = 15
+# ── Chunking thresholds ─────────────────────────────────────────────────────
+# MIN: don't flush until at least this many words (avoids tiny fragments)
+MIN_CHUNK_WORDS = 5
+# SOFT: try to flush at sentence boundaries once we reach this many words
+SOFT_CHUNK_WORDS = 12
+# MAX: force-flush even without a boundary to prevent long silences
+MAX_CHUNK_WORDS = 30
+
+# Sentence-ending punctuation that signals a strong break
+# Negative lookbehind (?<!\.) ensures "..." (ellipsis) is NOT treated as a period
+_SENTENCE_END_RE = re.compile(r'(?<!\.)(?<!…)[.!?][""\')]?\s*$')
+# Weaker break points (comma, semicolon, colon, em-dash) — only used
+# when the buffer already has enough words
+_CLAUSE_BREAK_RE = re.compile(r'[,;:\u2014]\s*$')
+
+
+def _find_split_point(buffer: str) -> int:
+    """
+    Find the best point to split a buffer for natural-sounding TTS.
+    
+    Returns the character index to split at (exclusive), or -1 if no
+    good split point is found yet.
+    
+    Priority:
+        1. Sentence end (.!?) if buffer has >= MIN_CHUNK_WORDS
+        2. Clause break (,;:—) if buffer has >= SOFT_CHUNK_WORDS
+        3. -1 (don't split yet)
+    """
+    words = buffer.split()
+    word_count = len(words)
+    
+    if word_count < MIN_CHUNK_WORDS:
+        return -1
+    
+    # Force-flush at MAX regardless
+    if word_count >= MAX_CHUNK_WORDS:
+        # Even here, try to find the last sentence-end before MAX
+        # Search backwards for a good break
+        for pattern in (_SENTENCE_END_RE, _CLAUSE_BREAK_RE):
+            # Search from the end of the buffer backwards
+            matches = list(pattern.finditer(buffer))
+            if matches:
+                last_match = matches[-1]
+                # Only use if it produces a chunk with >= MIN_CHUNK_WORDS
+                candidate = buffer[:last_match.end()]
+                if len(candidate.split()) >= MIN_CHUNK_WORDS:
+                    return last_match.end()
+        # No break found — force split at the last space before MAX words
+        forced = " ".join(words[:MAX_CHUNK_WORDS])
+        return len(forced)
+    
+    # Sentence end — always a good break after MIN words
+    match = _SENTENCE_END_RE.search(buffer)
+    if match and len(buffer[:match.end()].split()) >= MIN_CHUNK_WORDS:
+        return match.end()
+    
+    # Clause break — acceptable only after SOFT words
+    if word_count >= SOFT_CHUNK_WORDS:
+        matches = list(_CLAUSE_BREAK_RE.finditer(buffer))
+        if matches:
+            last_match = matches[-1]
+            candidate = buffer[:last_match.end()]
+            if len(candidate.split()) >= MIN_CHUNK_WORDS:
+                return last_match.end()
+    
+    return -1
 
 
 class StreamService:
     """
     Handles real-time AI responses with TTS.
     
-    STREAMING VERSION: Accumulates tokens from llm_stream into
-    ~15-word chunks and sends each to TTS as soon as ready.
+    STREAMING VERSION: Accumulates tokens from llm_stream and splits
+    at natural sentence/clause boundaries for human-sounding speech.
     First audio plays within 1-2 seconds.
     
     ✅ FAST: Only loads user + recent messages (cached, ~5ms).
@@ -47,7 +112,7 @@ class StreamService:
         Flow:
         1. Load user + recent messages (FAST, cached)
         2. Start llm_stream — tokens arrive in real-time
-        3. Accumulate tokens into ~15-word chunks
+        3. Accumulate tokens, split at sentence/clause boundaries
         4. Send each chunk to TTS immediately when ready
         """
         try:
@@ -77,7 +142,7 @@ class StreamService:
                     emotion, query, recent_context, query_context, user_details
                 )
             
-            # 3. Stream tokens and send TTS chunks in real-time
+            # 3. Stream tokens and send TTS chunks at sentence boundaries
             logger.info(f"🎤 Starting stream for user {user_id}")
             messages = [{"role": "user", "content": prompt}]
             
@@ -92,24 +157,25 @@ class StreamService:
                 buffer += token
                 full_response += token
                 
-                # Check if we have enough words for a chunk
-                words = buffer.split()
-                if len(words) >= MIN_CHUNK_WORDS:
-                    chunk = " ".join(words[:MIN_CHUNK_WORDS])
-                    buffer = " ".join(words[MIN_CHUNK_WORDS:])
-                    chunk_count += 1
+                # Try to find a natural split point
+                split_at = _find_split_point(buffer)
+                if split_at > 0:
+                    chunk = buffer[:split_at].strip()
+                    buffer = buffer[split_at:].lstrip()
                     
-                    logger.info(f"📝 TTS chunk [{chunk_count}]: {chunk[:50]}...")
-                    
-                    success = await tts_service.stream_to_socket(
-                        sio=sio,
-                        sid=sid,
-                        text=chunk,
-                        gender=gender
-                    )
-                    
-                    if not success:
-                        logger.warning(f"⚠️ TTS failed for chunk {chunk_count}")
+                    if chunk:
+                        chunk_count += 1
+                        logger.info(f"📝 TTS chunk [{chunk_count}]: {chunk[:60]}...")
+                        
+                        success = await tts_service.stream_to_socket(
+                            sio=sio,
+                            sid=sid,
+                            text=chunk,
+                            gender=gender
+                        )
+                        
+                        if not success:
+                            logger.warning(f"⚠️ TTS failed for chunk {chunk_count}")
                     
                     # Yield to event loop between chunks
                     await asyncio.sleep(0)

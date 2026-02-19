@@ -28,20 +28,9 @@ const PROCESSING_TIMEOUT_MS = 30_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Convert a Blob to a base64 string (without data-url prefix). */
-const blobToBase64 = (blob: Blob): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result.split(",")[1]);
-      } else {
-        reject(new Error("Failed to convert blob to base64"));
-      }
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+/** Convert a Blob to an ArrayBuffer for binary socket transport. */
+const blobToArrayBuffer = (blob: Blob): Promise<ArrayBuffer> =>
+  blob.arrayBuffer();
 
 /** Generate a unique session ID. */
 const createSessionId = (): string => crypto.randomUUID();
@@ -307,11 +296,12 @@ export function AudioInput() {
 
         if (blob.size >= MIN_CHUNK_SIZE_BYTES && sessionIdRef.current) {
           try {
-            const base64 = await blobToBase64(blob);
+            // Send raw binary — no base64 overhead (~33% smaller, no encode/decode CPU cost)
+            const buffer = await blobToArrayBuffer(blob);
             const seq = seqRef.current++;
 
             emit("user-speaking", {
-              audio: base64,
+              audio: buffer,
               mimeType: mimeTypeRef.current,
               sessionId: sessionIdRef.current,
               seq,
@@ -319,7 +309,7 @@ export function AudioInput() {
             });
 
             console.log(
-              `📤 Chunk #${seq} sent (${blob.size} bytes) ` +
+              `📤 Chunk #${seq} sent (${blob.size} bytes, binary) ` +
                 `session: ${sessionIdRef.current.slice(0, 8)}…`,
             );
           } catch (err) {

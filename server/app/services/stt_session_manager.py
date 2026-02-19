@@ -187,6 +187,15 @@ class STTSessionManager:
             session = self._sessions.get(session_id)
             return session.chunk_count if session else 0
 
+    async def get_last_chunk_text(self, session_id: str) -> str:
+        """Return the text of the most recent chunk for context continuity."""
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if not session or not session.chunks:
+                return ""
+            max_seq = max(session.chunks.keys())
+            return session.chunks[max_seq]
+
     @property
     def active_session_count(self) -> int:
         return len(self._sessions)

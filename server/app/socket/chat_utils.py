@@ -173,9 +173,13 @@ def register_chat_events():
         """
         Background coroutine — transcribes one audio chunk and stores
         the result.  Runs in parallel with other chunk transcriptions.
+        Uses previous chunk's text as context for better continuity.
         """
         try:
-            text = await transcribe_audio(audio_data, mime_type)
+            # Retrieve previous chunk text for context continuity (Fix 5)
+            previous_text = await stt_session_manager.get_last_chunk_text(session_id)
+
+            text = await transcribe_audio(audio_data, mime_type, previous_text=previous_text)
 
             if text and text not in _INVALID_TRANSCRIPTIONS:
                 await stt_session_manager.add_chunk(session_id, seq, text)
@@ -225,11 +229,12 @@ def register_chat_events():
             )
             return
 
-        # Log size only — never dump base64 payload
+        # Log size and transport format
         audio_len = len(audio_data) if isinstance(audio_data, (str, bytes)) else 0
+        transport = "bytes, binary" if isinstance(audio_data, bytes) else "chars, base64"
         logger.info(
             f"🎤 Chunk #{seq} received for session {session_id[:8]}… "
-            f"({audio_len} chars, {mime_type})"
+            f"({audio_len} {transport}, {mime_type})"
         )
 
         # Mark pending BEFORE spawning the task

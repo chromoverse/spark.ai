@@ -61,7 +61,7 @@ export interface UserQueryPayload {
 
 // Streaming STT payloads
 export interface UserSpeakingPayload {
-  audio: string; // base64 chunk
+  audio: ArrayBuffer | string; // raw binary (preferred) or base64 fallback
   mimeType: string;
   sessionId: string;
   seq: number;

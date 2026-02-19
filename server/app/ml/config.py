@@ -26,8 +26,8 @@ MODELS_CONFIG = {
         "max_seq_length": 512,
     },
     "whisper": {
-        "name": "openai/whisper-small",
-        "path": MODELS_DIR / "whisper-small",
+        "name": "openai/whisper-base.en",
+        "path": MODELS_DIR / "whisper-base.en",
         "type": "whisper",
         "device": "auto",
         "compute_type": "float16",  # or int8 for CPU

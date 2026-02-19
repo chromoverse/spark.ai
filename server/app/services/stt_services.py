@@ -3,13 +3,15 @@ Whisper Service - Speech-to-Text with auto GPU/CPU optimization
 Single source of truth for all STT operations
 """
 import base64
+import io
 import logging
-import tempfile
-import os
+import re
 import time
 from typing import Optional, Dict, Any
 
-from app.ml import model_loader,DEVICE
+import numpy as np
+
+from app.ml import model_loader, DEVICE
 from app.utils.async_utils import make_async
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,66 @@ MIME_TO_EXT = {
     "audio/mp4": ".mp4",
     "audio/ogg": ".ogg",
 }
+
+# Hallucination detection thresholds
+_MAX_WORDS_PER_SECOND = 8       # Normal speech ~2-3 words/sec
+_REPETITION_RATIO_THRESHOLD = 0.5  # If >50% of words are the same token → hallucination
+_MIN_UNIQUE_WORD_RATIO = 0.15   # At least 15% of words must be unique
+
+# Known Whisper phantom phrases (subtitle credits from training data)
+# These get appended to real speech and must be stripped out
+_PHANTOM_PHRASES = [
+    r"subs?\s+by\s+www\.\S+",             # "Subs by www.zeoranger.co.uk"
+    r"subtitles?\s+by\s+\S+",             # "Subtitles by ..."
+    r"translated\s+by\s+\S+",             # "Translated by ..."
+    r"captioned\s+by\s+\S+",              # "Captioned by ..."
+    r"www\.\S+\.(com|co\.uk|org|net)",     # bare URLs
+    r"thank\s+you\s+for\s+watching\.?$",   # "Thank you for watching"
+    r"please\s+subscribe\.?$",             # "Please subscribe"
+]
+_PHANTOM_RE = re.compile(
+    "|".join(_PHANTOM_PHRASES), re.IGNORECASE
+)
+
+
+def _clean_phantom_text(text: str) -> str:
+    """Strip known Whisper phantom/subtitle hallucinations from text."""
+    cleaned = _PHANTOM_RE.sub("", text).strip()
+    # Collapse any leftover double spaces
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    if cleaned != text.strip():
+        logger.info(f"🧹 Stripped phantom text: '{text.strip()}' → '{cleaned}'")
+    return cleaned
+
+
+def _is_hallucination(text: str, audio_duration: float) -> bool:
+    """Detect Whisper hallucination (repetitive garbage output)."""
+    words = text.split()
+    if not words:
+        return False
+    
+    word_count = len(words)
+    
+    # Check 1: Way too many words for the audio length
+    if audio_duration > 0 and word_count / audio_duration > _MAX_WORDS_PER_SECOND:
+        logger.warning(f"⚠️ Hallucination: {word_count} words in {audio_duration:.1f}s audio")
+        return True
+    
+    # Check 2: Single token dominates the output
+    from collections import Counter
+    counts = Counter(w.lower() for w in words)
+    most_common_word, most_common_count = counts.most_common(1)[0]
+    if word_count >= 6 and most_common_count / word_count > _REPETITION_RATIO_THRESHOLD:
+        logger.warning(f"⚠️ Hallucination: '{most_common_word}' repeated {most_common_count}/{word_count} times")
+        return True
+    
+    # Check 3: Too few unique words relative to total
+    unique_ratio = len(counts) / word_count
+    if word_count >= 10 and unique_ratio < _MIN_UNIQUE_WORD_RATIO:
+        logger.warning(f"⚠️ Hallucination: only {len(counts)} unique words in {word_count} total")
+        return True
+    
+    return False
 
 class WhisperService:
     """Unified Whisper service using ML model loader"""
@@ -88,6 +150,8 @@ class WhisperService:
             language: Language code (None for auto-detect)
             task: "transcribe" or "translate"
             **kwargs: Additional Whisper parameters
+                - previous_text: str — previous chunk text for context continuity
+                - vad_filter: bool — enable VAD (default False for streaming)
         
         Returns:
             Dict with text, segments, language, duration, etc.
@@ -97,21 +161,26 @@ class WhisperService:
         if not self.model:
             raise RuntimeError("Whisper model not available")
         
-        tmp_path = None
         try:
             # Decode and validate audio
             audio_bytes = self._decode_audio(audio_data)
-            ext = self._get_extension(mime_type)
             
-            # Write to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                tmp.write(audio_bytes)
-                tmp_path = tmp.name
+            logger.info(f"📝 Processing {len(audio_bytes)} bytes in-memory")
             
-            logger.info(f"📝 Processing {len(audio_bytes)} bytes ({ext})")
+            # Wrap bytes in a BytesIO buffer — avoids disk I/O entirely
+            audio_buffer = io.BytesIO(audio_bytes)
             
             # Transcribe with optimized settings
             start_time = time.time()
+            
+            # Build initial_prompt: use previous chunk text for streaming context,
+            # fall back to the default command hints.
+            previous_text = kwargs.get("previous_text", "")
+            default_prompt = "Spark, Siddthcoder, Siddhant Yadav, Creator, Search, Youtube"
+            initial_prompt = kwargs.get(
+                "initial_prompt",
+                f"{previous_text} {default_prompt}".strip() if previous_text else default_prompt,
+            )
             
             # Merge user kwargs with defaults
             transcribe_params = {
@@ -119,21 +188,14 @@ class WhisperService:
                 "task": task,
                 "beam_size": kwargs.get("beam_size", 1),
                 "best_of": kwargs.get("best_of", 1),
-                "vad_filter": kwargs.get("vad_filter", True),
-                "vad_parameters": kwargs.get("vad_parameters", {
-                    "threshold": 0.3,
-                    "min_speech_duration_ms": 250,
-                    "min_silence_duration_ms": 300,
-                }),
+                "vad_filter": kwargs.get("vad_filter", False),
                 "temperature": kwargs.get("temperature", 0.0),
-                "no_speech_threshold": kwargs.get("no_speech_threshold", 0.6),
+                "no_speech_threshold": kwargs.get("no_speech_threshold", 0.4),
                 "condition_on_previous_text": kwargs.get("condition_on_previous_text", False),
-                "initial_prompt": kwargs.get("initial_prompt", 
-                    "Commands: Spotify, WhatsApp, YouTube, notepad, Google, kholo, chalao, bajao, likho, bhejo, search"
-                ),
+                "initial_prompt": initial_prompt,
             }
             
-            segments, info = self.model.transcribe(tmp_path, **transcribe_params)
+            segments, info = self.model.transcribe(audio_buffer, **transcribe_params)
             
             # Extract segments
             text_segments = []
@@ -149,6 +211,7 @@ class WhisperService:
                     })
             
             full_text = " ".join(text_segments).strip()
+            full_text = _clean_phantom_text(full_text)
             elapsed = time.time() - start_time
             
             logger.info(f"✅ Transcribed: '{full_text}' ({elapsed:.2f}s)")
@@ -159,6 +222,16 @@ class WhisperService:
                     "success": False,
                     "text": "",
                     "message": "No speech detected",
+                    "duration": elapsed
+                }
+            
+            # Reject hallucinated output
+            if _is_hallucination(full_text, info.duration):
+                logger.warning(f"⚠️ Rejected hallucinated transcription ({len(full_text)} chars)")
+                return {
+                    "success": False,
+                    "text": "",
+                    "message": "Hallucination detected",
                     "duration": elapsed
                 }
             
@@ -179,13 +252,6 @@ class WhisperService:
                 "text": "",
                 "error": str(e)
             }
-        
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception as e:
-                    logger.warning(f"⚠️ Cleanup failed: {e}")
     
     @make_async
     def transcribe(
@@ -208,7 +274,8 @@ class WhisperService:
     def transcribe_simple(
         self,
         audio_data: Any,
-        mime_type: str = "audio/webm"
+        mime_type: str = "audio/webm",
+        **kwargs
     ) -> str:
         """
         Simple async transcription - returns only text
@@ -216,7 +283,7 @@ class WhisperService:
         Usage:
             text = await whisper_service.transcribe_simple(audio_data)
         """
-        result = self._transcribe_sync(audio_data, mime_type)
+        result = self._transcribe_sync(audio_data, mime_type, **kwargs)
         return result.get("text", "[Transcription failed]")
     
     @make_async
@@ -258,7 +325,7 @@ whisper_service = WhisperService()
 
 
 # Convenience functions (backward compatible with your old code)
-async def transcribe_audio(audio_data: Any, mime_type: str = "audio/webm") -> str:
+async def transcribe_audio(audio_data: Any, mime_type: str = "audio/webm", **kwargs) -> str:
     """
     Simple transcription - returns only text (backward compatible)
     
@@ -266,7 +333,7 @@ async def transcribe_audio(audio_data: Any, mime_type: str = "audio/webm") -> st
         from app.services.whisper_service import transcribe_audio
         text = await transcribe_audio(audio_data)
     """
-    return await whisper_service.transcribe_simple(audio_data, mime_type)
+    return await whisper_service.transcribe_simple(audio_data, mime_type, **kwargs)
 
 
 async def transcribe_audio_detailed(
