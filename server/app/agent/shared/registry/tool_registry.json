@@ -54,7 +54,7 @@
           }
         },
         {
-          "tool_name": "restart_app",
+          "tool_name": "app_restart",
           "description": "Restart apps safely",
           "execution_target": "client",
           "params_schema": {
@@ -778,10 +778,48 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000
           }
+        },
+        {
+          "tool_name": "web_research",
+          "description": "Performs deep web research by searching, scraping top results, and summarizing the findings.",
+          "execution_target": "server",
+          "params_schema": {
+            "query": { "type": "string", "required": true },
+            "max_results": {
+              "type": "integer",
+              "required": false,
+              "default": 3
+            },
+            "max_chars": {
+              "type": "integer",
+              "required": false,
+              "default": 5000
+            }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "summary": { "type": "string" },
+              "detailed_content": { "type": "string" },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "url": { "type": "string" },
+                  "title": { "type": "string" },
+                  "search_metadata": { "type": "object" }
+                }
+              }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 60000
+          }
         }
       ]
     },
-
 
     "ai" : {
       "description": "AI and agent management tools",
@@ -816,7 +854,7 @@
           "execution_target": "server",
           "params_schema": {
             "query": { "type": "string", "required": false },
-            "content": { "type": "string", "required": true },
+            "context": { "type": "string", "required": true },
             "max_length": {
               "type": "integer",
               "required": false,

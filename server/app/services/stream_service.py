@@ -10,6 +10,7 @@ from typing import Optional, AsyncGenerator, Any
 from app.ai.providers import llm_stream
 from app.cache import load_user, get_last_n_messages, process_query_and_get_context
 from app.prompts import stream_prompt
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ class StreamService:
 
         messages = [{"role": "user", "content": prompt}]
 
-        async for chunk in llm_stream(messages):
+        async for chunk in llm_stream(messages, model=settings.GROQ_REASONING_MODEL):
             buffer += chunk
 
             # Try to split on sentence-ending punctuation

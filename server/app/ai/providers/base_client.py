@@ -275,6 +275,15 @@ class BaseClient(ABC):
         """Override in subclass to add provider-specific quota keywords."""
         return []
 
+    def _is_auth_error(self, error: Exception) -> bool:
+        """Check if an error indicates invalid credentials (401)."""
+        status_code = getattr(error, "status_code", None)
+        if status_code == 401:
+            return True
+        
+        error_str = str(error).lower()
+        return "unauthorized" in error_str or "authentication" in error_str
+
     # ────────────────────────── Abstract Methods ──────────────────────────
 
     @abstractmethod
@@ -343,14 +352,29 @@ class BaseClient(ABC):
                 return response
 
             except Exception as e:
-                last_error = e
-                if self._is_quota_error(e):
-                    logger.warning(f"⚠️  {self.provider_name} quota hit on key {key[:8]}...: {e}")
+                # NEW SMART ERROR HANDLING:
+                # Only rotate keys on Quota/Rate Limit (429) or Auth (401) errors.
+                # Transient errors (500, empty response, etc.) should NOT burn the key.
+                is_quota = self._is_quota_error(e)
+                is_auth = self._is_auth_error(e)
+
+
+                if is_quota or is_auth:
+                    if is_quota:
+                        logger.warning(f"⚠️  {self.provider_name} quota hit on key {key[:8]}...: {e}")
+                    else:
+                        logger.error(f"❌ {self.provider_name} auth error on key {key[:8]}...: {e}")
+                    
+                    last_error = e
+                    async with self._lock:
+                        self._mark_key_failed(key)
+                        self._rotate_key()
                 else:
+                    # Transient error — all retries inside _do_chat already exhausted.
+                    # Don't burn the key. Just let it bubble up to LLMManager
+                    # which will try the next provider (Gemini).
                     logger.error(f"❌ {self.provider_name} error on key {key[:8]}...: {e}")
-                async with self._lock:
-                    self._mark_key_failed(key)
-                    self._rotate_key()
+                    raise
 
         raise AllKeysExhaustedError(
             f"All {len(self._keys)} keys exhausted for {self.provider_name}. "
@@ -393,16 +417,31 @@ class BaseClient(ABC):
                 return  # Stream completed successfully
 
             except Exception as e:
-                last_error = e
-                if self._is_quota_error(e):
-                    logger.warning(
-                        f"⚠️  {self.provider_name} stream quota hit on key {key[:8]}...: {e}"
-                    )
+                # NEW SMART ERROR HANDLING:
+                # Only rotate keys on Quota/Rate Limit (429) or Auth (401) errors.
+                # Transient errors (500, empty response, etc.) should NOT burn the key.
+                is_quota = self._is_quota_error(e)
+                is_auth = self._is_auth_error(e)
+
+                if is_quota or is_auth:
+                    if is_quota:
+                        logger.warning(
+                            f"⚠️  {self.provider_name} stream quota hit on key {key[:8]}...: {e}"
+                        )
+                    else:
+                        logger.error(
+                            f"❌ {self.provider_name} stream auth error on key {key[:8]}...: {e}"
+                        )
+                    
+                    last_error = e
+                    async with self._lock:
+                        self._mark_key_failed(key)
+                        self._rotate_key()
                 else:
-                    logger.error(f"❌ {self.provider_name} stream error on key {key[:8]}...: {e}")
-                async with self._lock:
-                    self._mark_key_failed(key)
-                    self._rotate_key()
+                    logger.error(
+                        f"❌ {self.provider_name} stream error on key {key[:8]}...: {e}"
+                    )
+                    raise
 
         raise AllKeysExhaustedError(
             f"All {len(self._keys)} keys exhausted for {self.provider_name} (stream). "

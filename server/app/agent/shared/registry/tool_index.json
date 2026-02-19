@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "total_tools": 19,
+  "total_tools": 20,
   "tools": [
     {
       "name": "app_open",
@@ -129,15 +129,21 @@
       "execution_target": "client"
     },
     {
-      "name": "web_search",
-      "description": "Search the web for information",
+      "name": "web_research",
+      "description": "Performs deep web research by searching, scraping top results, and summarizing the findings.",
       "category": "web",
       "execution_target": "server"
     },
     {
-      "name": "web_scrape",
-      "description": "Scrape web content for structured data",
-      "category": "web",
+      "name": "ai_summarize",
+      "description": "Summarize AI-related content like logs, conversations, or documents",
+      "category": "ai",
+      "execution_target": "server"
+    },
+    {
+      "name": "agent_status",
+      "description": "Get current status of the agent",
+      "category": "ai",
       "execution_target": "server"
     }
   ]

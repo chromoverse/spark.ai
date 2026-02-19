@@ -60,7 +60,7 @@ EXAMPLES:
 "chrome khol"           → {{"cognitive_state": {{"user_query": "chrome khol", "thought_process": "hindi | tool:open_app | open chrome browser", "answer": "ok", "answer_english": "ok"}}, "requested_tool": ["open_app"]}}
 "screenshot le"         → {{"cognitive_state": {{"user_query": "screenshot le", "thought_process": "hindi | tool:screenshot | capture current screen", "answer": "ok", "answer_english": "ok"}}, "requested_tool": ["screenshot"]}}
 "2+2 kitna hai"         → {{"cognitive_state": {{"user_query": "2+2 kitna hai", "thought_process": "hindi | tool:none | simple math calculation", "answer": "ok", "answer_english": "ok"}}, "requested_tool": []}}
-"open chrome search ai" → {{"cognitive_state": {{"user_query": "open chrome search ai", "thought_process": "english | tool:open_app,web_search | open browser and search", "answer": "ok", "answer_english": "ok"}}, "requested_tool": ["open_app", "web_search"]}}
+"search something ai" → {{"cognitive_state": {{"user_query": "open chrome search ai", "thought_process": "english | tool:open_app,web_research | open browser and search", "answer": "ok", "answer_english": "ok"}}, "requested_tool": ["web_research"]}}
 "yo what's up"          → {{"cognitive_state": {{"user_query": "yo what's up", "thought_process": "english | tool:none | casual greeting", "answer": "ok", "answer_english": "ok"}}, "requested_tool": []}}
 
 QUERY: {current_query}"""

@@ -137,3 +137,83 @@ def get_online_users() -> list[str]:
 def get_online_count() -> int:
     """Get count of currently connected users."""
     return len(connected_users)
+
+
+# ==================== TTS STREAMING ====================
+
+async def stream_tts_to_client(
+    text: str,
+    user_id: Optional[str] = None,
+    gender: str = "female"
+) -> bool:
+    """
+    Stream TTS audio to connected client(s) via socket.
+    
+    Falls back to printing if no client is connected (manual testing).
+    
+    How it works:
+    - connected_users is a Dict[str, Set[str]]  →  { user_id: {sid1, sid2, ...} }
+    - Each user can have multiple socket sessions (e.g. multiple browser tabs)
+    - If user_id is given, TTS streams only to THAT user's sessions
+    - If user_id is None, TTS broadcasts to ALL connected sessions
+    
+    Args:
+        text:     The text to convert to speech and stream
+        user_id:  Target a specific user (None = broadcast to all)
+        gender:   Voice gender for TTS ("male" or "female")
+    
+    Returns:
+        True if TTS was streamed, False if fell back to print
+    
+    Usage:
+        from app.socket.utils import stream_tts_to_client
+        
+        # Target specific user
+        await stream_tts_to_client("Hello!", user_id="user123")
+        
+        # Broadcast to everyone
+        await stream_tts_to_client("Hello everyone!")
+    """
+    import asyncio
+    
+    if not text:
+        return False
+
+    try:
+        from app.services.tts_services import tts_service
+
+        # Collect target SIDs
+        target_sids: set[str] = set()
+
+        if user_id:
+            # Target specific user's sessions
+            target_sids = connected_users.get(user_id, set())
+            if not target_sids:
+                logger.warning(f"⚠️ User '{user_id}' not connected, falling back to print")
+                print(f"\n🔊 [TTS would say]: {text}\n")
+                return False
+        else:
+            # Broadcast to all connected sessions
+            for user_sids in connected_users.values():
+                target_sids.update(user_sids)
+
+        if not target_sids:
+            logger.info("🔇 No socket clients connected (manual testing mode)")
+            print(f"\n🔊 [TTS would say]: {text}\n")
+            return False
+
+        # Stream TTS to each connected session (non-blocking)
+        for sid in target_sids:
+            logger.info(f"📡 Streaming TTS to socket {sid}")
+            asyncio.create_task(
+                tts_service.stream_to_socket(
+                    sio=sio, sid=sid, text=text, gender=gender
+                )
+            )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ TTS streaming failed: {e}")
+        print(f"\n🔊 [TTS fallback]: {text}\n")
+        return False

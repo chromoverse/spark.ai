@@ -49,33 +49,33 @@ async def scenario_1_server_chain():
     mock_emitter = get_task_emitter()
     execution_engine.set_client_emitter(mock_emitter)
     
-    user_id = "scenario_1"
+    user_id = "siddthecoder"
     
     tasks = [
         Task(
             task_id="search_company",
-            tool="web_search",
+            tool="web_research",
             execution_target="server",
             depends_on=[],
-            inputs={"query": "Anthropic AI company"},
+            inputs={"query": "what did balen shah said in speech at janakpur?"},
             lifecycle_messages=LifecycleMessages(
                 on_start="🔍 Searching for company info...",
                 on_success="✅ Found company information",
                 on_failure="❌ Search failed"
             )
         ),
-        Task(
-            task_id="fetch_details",
-            tool="web_search",
-            execution_target="server",
-            depends_on=["search_company"],
-            inputs={"query": "Anthropic Claude API pricing"},
-            lifecycle_messages=LifecycleMessages(
-                on_start="📡 Fetching additional details...",
-                on_success="✅ Details retrieved",
-                on_failure="❌ Fetch failed"
-            )
-        ),
+        # Task(
+        #     task_id="fetch_details",
+        #     tool="web_scrape",
+        #     execution_target="server",
+        #     depends_on=["search_company"],
+        #     inputs={"query": "Anthropic Claude API pricing"},
+        #     lifecycle_messages=LifecycleMessages(
+        #         on_start="📡 Fetching additional details...",
+        #         on_success="✅ Details retrieved",
+        #         on_failure="❌ Fetch failed"
+        #     )
+        # ),
     ]
     
     await orchestrator.register_tasks(user_id, tasks)
@@ -558,9 +558,9 @@ async def run_all_scenarios():
     
     # Run each scenario
     scenarios = [
-        # ("Scenario 1: S→S", scenario_1_server_chain),
+        ("Scenario 1: S→S", scenario_1_server_chain),
         # ("Scenario 2: S1, S2", scenario_2_parallel_servers),
-        ("Scenario 3: S→C→C", scenario_3_server_to_client_chain),
+        # ("Scenario 3: S→C→C", scenario_3_server_to_client_chain),
         # ("Scenario 4: C→C→C", scenario_4_pure_client_chain),
         # ("Scenario 5: C1, C2", scenario_5_parallel_clients),
         # ("Scenario 6: Complex", scenario_6_complex_mixed),

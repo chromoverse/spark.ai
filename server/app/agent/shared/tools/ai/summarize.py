@@ -1,97 +1,67 @@
-from datetime import datetime
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
 from app.ai.providers.manager import llm_chat
-
+import json
 
 class AiSummarizeTool(BaseTool):
-
     def get_tool_name(self) -> str:
         return "ai_summarize"
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
-        content = self.get_input(inputs, "content")
+        context = self.get_input(inputs, "context")
         query = self.get_input(inputs, "query", None)
-        max_length = self.get_input(inputs, "max_length", 700)
+        if not context:
+            print("No context provided")
+            return ToolOutput(success=False, data={}, error="No context provided")
+        
+        
+        prompt = f"""You are a summarization engine. Return ONLY valid JSON, no markdown, no extra text.
 
-        system_prompt = """You are an AI summarization engine used inside a production tool called "ai_summarize".
+        TASK:
+        1. ALWAYS extract relevant information from the CONTEXT first.
+        2. ONLY use your own knowledge to enrich or clarify — never to replace what's in the CONTEXT.
+        3. If the CONTEXT clearly contains the answer, use it. Do NOT say "no information available" if the CONTEXT has it.
+        - summary: 2-3 short natural sentences (for TTS).
+        - formatted_content: up to 10 clean sentences expanding on the summary.
 
-        Your job is to analyze the provided content and generate a structured JSON response.
+        QUERY: {query or "Summarize the key information."}
 
-        STRICT RULES:
+        CONTEXT:
+        {context}
 
-        1. You MUST return ONLY valid JSON.
-        2. You MUST follow the exact output schema structure.
-        3. Do NOT add explanations, markdown, or extra text.
-        4. If an error occurs, return success=false and populate the error field.
-        5. The summary must:
-          - Be maximum 2–3 sentences
-          - Be natural, human-like, and conversational (for text-to-speech)
-          - Cover the most important points relevant to the query
-        6. The formatted_content:
-          - Can be up to 10 sentences
-          - Should clarify and expand the main ideas cleanly
-          - Remove noise, logs, repeated lines, irrelevant data
-        7. If a query is provided:
-          - Focus ONLY on content relevant to the query
-          - Ignore unrelated sections
-        8. If no query is provided:
-          - Summarize the overall important information
-
-        OUTPUT FORMAT (MUST MATCH EXACTLY):
-
-        {
-          "success": boolean,
-          "data": {
-            "summary": string,
-            "formatted_content": string,
-            "original_length": integer,
-            "summary_length": integer,
-            "summarized_at": string
-          },
-          "error": string | null
-        }
-
-        The summarized_at field must be ISO 8601 format.
-        The summary_length must equal the length of the summary string in characters.
-        The original_length must equal the length of the original content in characters.
-
-        DO NOT include any fields outside this structure.
-        """
-
-        user_prompt = f"""
-        QUERY:
-        {query if query else "null"}
-
-        MAX_LENGTH:
-        {max_length}
-
-        CONTENT:
-        {content}
-        """
-
+        OUTPUT (strict):
+        {{"success":true,"data":{{"summary":"...","formatted_content":"...","original_length":{len(str(context))},"summary_length":0,"summarized_at":"<ISO8601>"}},"error":null}}"""
+    
         response_text, provider = await llm_chat(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=1000
         )
 
         try:
-            import json
-            parsed = json.loads(response_text)
+            # 1. Naive cleanup
+            clean = response_text.strip()
+            if clean.startswith("```json"):
+                clean = clean[7:]
+            if clean.startswith("```"):
+                clean = clean[3:]
+            if clean.endswith("```"):
+                clean = clean[:-3]
+            clean = clean.strip()
 
+            # 2. Robust extraction (find first { and last })
+            start = clean.find("{")
+            end = clean.rfind("}")
+            
+            if start != -1 and end != -1 and end > start:
+                 clean = clean[start : end + 1]
+
+            parsed = json.loads(clean)
             return ToolOutput(
                 success=parsed.get("success", False),
                 data=parsed.get("data", {}),
                 error=parsed.get("error")
             )
-
         except Exception as e:
-            return ToolOutput(
-                success=False,
-                data={},
-                error=f"Invalid JSON returned from LLM: {str(e)}"
-            )
+            print(f"Raw LLM response: {response_text!r}")
+            return ToolOutput(success=False, data={}, error=f"Invalid JSON: {str(e)}")

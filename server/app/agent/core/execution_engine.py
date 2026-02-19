@@ -272,6 +272,11 @@ class ExecutionEngine:
             
             # Resolve inputs (static + bindings)
             resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
+            
+            # ✅ Inject execution context (user_id) so tools can access it
+            # Convention: underscore-prefixed keys = execution metadata
+            resolved_inputs["_user_id"] = user_id
+            
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     hindi_voice_female : str = "hi-IN-SwaraNeural"
     eng_voice_male : str = "en-US-BrianNeural"
     eng_voice_female : str = "en-US-JennyNeural"
+    GROQ_DEFAULT_MODEL : str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    GROQ_REASONING_MODEL: str = "openai/gpt-oss-20b"
 
     HUGGINGFACE_API_ACCESS_TOKEN: str
 

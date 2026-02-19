@@ -15,8 +15,8 @@ from app.ai.providers.base_client import BaseClient
 logger = logging.getLogger(__name__)
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-GROQ_DEFAULT_MODEL = "openai/gpt-oss-20b"
-# GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_REASONING_MODEL = "openai/gpt-oss-20b"
 
 
 class GroqClient(BaseClient):
@@ -38,29 +38,33 @@ class GroqClient(BaseClient):
             timeout=30.0,
             max_retries=1,
         )
-
-    async def _do_chat(
-        self,
-        client: Any,
-        messages: List[Dict[str, str]],
-        model: str,
-        temperature: float,
-        max_tokens: int,
-    ) -> str:
-        """Run sync OpenAI call in thread to avoid blocking the event loop."""
+    
+    async def _do_chat(self, client, messages, model, temperature, max_tokens) -> str:
         def _call() -> str:
-            completion = client.chat.completions.create(
+            # Reasoning models (gpt-oss-*) don't support temperature
+            is_reasoning = "gpt-oss" in model or "reasoning" in model
+            
+            kwargs: Dict[str, Any] = dict(
                 model=model,
                 messages=messages,
-                temperature=temperature,
                 max_tokens=max_tokens,
             )
-            if not completion.choices or not completion.choices[0].message.content:
+            if not is_reasoning:
+                kwargs["temperature"] = temperature  # only add for non-reasoning models
+
+            completion = client.chat.completions.create(**kwargs)
+            
+            if not completion.choices:
                 raise ValueError("Groq returned empty response")
-            return str(completion.choices[0].message.content)
-
+            
+            msg = completion.choices[0].message
+            content = msg.content or getattr(msg, "reasoning_content", None)
+            
+            if not content:
+                raise ValueError("Groq returned empty response")
+            
+            return str(content)
         return await asyncio.to_thread(_call)
-
     async def _do_stream(
         self,
         client: Any,

@@ -165,15 +165,46 @@ async def main ():
   for item in result.data.get("results", []):
     content += item['text']
 
+  print(100*"-")
   print("content", content)  
 
   print(150*"-")
   # ai summarize
   ai_summarize_tool = init.AiSummarizeTool()
-  result = await ai_summarize_tool.execute({"content": content, "query": query})
+  result = await ai_summarize_tool.execute({"context": content, "query": query})
   print(json.dumps(result.data, indent=2))
 
 
+async def main_research():
+  query = input("Enter your research query: ")
+  
+  from app.agent.shared.tools.web.research import WebResearchTool
+  
+  print(f"Researching: {query}...")
+  research_tool = WebResearchTool()
+  result = await research_tool._execute({"query": query, "max_results": 3})
+  
+  print(json.dumps(result.data, indent=2))
+  
+  if result.success:
+      print("\n" + "="*50)
+      print("SUMMARY:")
+      print(result.data.get("summary"))
+      print("\n" + "="*50)
+      print("SOURCES:")
+      for source in result.data.get("sources", []):
+          print(f"- {source.get('title')} ({source.get('url')})")
+
+
 if __name__ == "__main__":
-  while True :
-    asyncio.run(main())
+  while True:
+    print("\n1. Legacy Search -> Scrape -> Summarize")
+    print("2. Unified Web Research Tool")
+    choice = input("Select mode (1/2): ")
+    
+    if choice == "1":
+        asyncio.run(main())
+    elif choice == "2":
+        asyncio.run(main_research())
+    else:
+        print("Invalid choice")

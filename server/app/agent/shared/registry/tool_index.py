@@ -14,3 +14,6 @@ def get_tools_index(registry_path: str = "registry/tool_index.json"):
 
     with open(path, "r") as f:
         return json.load(f).get("tools", [])
+    
+if __name__ == "__main__":
+    print(get_tools_index())    
