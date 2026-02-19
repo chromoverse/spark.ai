@@ -1,25 +1,35 @@
 """
 Streaming Chat Service - Real-time AI responses with TTS integration
 
-NATURAL VERSION: Removes artificial delays for smooth, natural-sounding speech.
+STREAMING VERSION: Uses llm_stream for real-time token streaming.
+Accumulates tokens into chunks of ~15 words before sending to TTS.
+TTS starts speaking within 1-2 seconds instead of waiting for full response.
 """
 import logging
 import asyncio
-import re
-from typing import Optional, AsyncGenerator, Any
-from app.ai.providers import llm_stream
-from app.cache import load_user, get_last_n_messages, process_query_and_get_context
+from typing import Optional, List, Any
+from app.ai.providers import llm_stream, llm_chat
+from app.cache import load_user, get_last_n_messages
 from app.prompts import stream_prompt
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Minimum words per TTS chunk — ensures natural-sounding speech
+MIN_CHUNK_WORDS = 15
+
 
 class StreamService:
     """
-    Handles real-time streaming responses with intelligent sentence chunking.
+    Handles real-time AI responses with TTS.
     
-    NATURAL VERSION: No artificial delays - let audio flow naturally!
+    STREAMING VERSION: Accumulates tokens from llm_stream into
+    ~15-word chunks and sends each to TTS as soon as ready.
+    First audio plays within 1-2 seconds.
+    
+    ✅ FAST: Only loads user + recent messages (cached, ~5ms).
+       Skips process_query_and_get_context (embed+search ~500ms)
+       since chat() already does that work.
     """
     
     async def stream_chat_with_tts(
@@ -32,23 +42,27 @@ class StreamService:
         gender: str = "female"
     ) -> bool:
         """
-        Stream AI response and convert to audio in real-time.
+        Stream AI response token-by-token and send TTS chunks in real-time.
         
-        NATURAL: No delays - streams flow as fast as they're generated.
-        Frontend handles timing to prevent overlap.
+        Flow:
+        1. Load user + recent messages (FAST, cached)
+        2. Start llm_stream — tokens arrive in real-time
+        3. Accumulate tokens into ~15-word chunks
+        4. Send each chunk to TTS immediately when ready
         """
         try:
-            # Load user details
-            user_details = await load_user(user_id)
+            # 1. ✅ FAST context — only cached data, no embedding/search
+            user_details, recent_context = await asyncio.gather(
+                load_user(user_id),
+                get_last_n_messages(user_id, n=10),
+            )
+            query_context = []  # Stream doesn't need semantic context
+            
             if not user_details:
                 logger.error(f"❌ User {user_id} not found")
                 return False
             
-            # Get context
-            recent_context = await get_last_n_messages(user_id, n=10)
-            query_context, _ = await process_query_and_get_context(user_id, query)
-            
-            # Build streaming prompt
+            # 2. Build prompt
             emotion = "neutral"
             if user_details["language"] == "ne":
                 prompt = stream_prompt.build_prompt_ne(
@@ -63,95 +77,61 @@ class StreamService:
                     emotion, query, recent_context, query_context, user_details
                 )
             
+            # 3. Stream tokens and send TTS chunks in real-time
             logger.info(f"🎤 Starting stream for user {user_id}")
+            messages = [{"role": "user", "content": prompt}]
             
-            # Start streaming - NO DELAYS
-            async for sentence in self._stream_with_sentence_chunking(prompt):
-                logger.info(f"📝 Sending sentence to TTS: {sentence[:50]}...")
+            buffer = ""
+            chunk_count = 0
+            full_response = ""
+            
+            async for token in llm_stream(messages=messages, model=settings.GROQ_REASONING_MODEL):
+                if not token:
+                    continue
+                    
+                buffer += token
+                full_response += token
                 
-                # Send to TTS service - let it send immediately
-                success = await tts_service.stream_to_socket(
+                # Check if we have enough words for a chunk
+                words = buffer.split()
+                if len(words) >= MIN_CHUNK_WORDS:
+                    chunk = " ".join(words[:MIN_CHUNK_WORDS])
+                    buffer = " ".join(words[MIN_CHUNK_WORDS:])
+                    chunk_count += 1
+                    
+                    logger.info(f"📝 TTS chunk [{chunk_count}]: {chunk[:50]}...")
+                    
+                    success = await tts_service.stream_to_socket(
+                        sio=sio,
+                        sid=sid,
+                        text=chunk,
+                        gender=gender
+                    )
+                    
+                    if not success:
+                        logger.warning(f"⚠️ TTS failed for chunk {chunk_count}")
+                    
+                    # Yield to event loop between chunks
+                    await asyncio.sleep(0)
+            
+            # 4. Flush remaining buffer (whatever is left)
+            if buffer.strip():
+                chunk_count += 1
+                logger.info(f"📝 TTS final chunk [{chunk_count}]: {buffer.strip()[:50]}...")
+                
+                await tts_service.stream_to_socket(
                     sio=sio,
                     sid=sid,
-                    text=sentence,
+                    text=buffer.strip(),
                     gender=gender
                 )
-                
-                if not success:
-                    logger.warning(f"⚠️ TTS failed for sentence: {sentence[:30]}...")
-                    continue
-                
-                # NO DELAY - continue immediately to next sentence
-                # Natural speech timing comes from:
-                # 1. TTS generation time (~1-2 seconds per sentence)
-                # 2. Frontend smart timing (only delays if needed)
             
-            logger.info(f"✅ Stream completed for user {user_id}")
+            logger.info(f"✅ Stream completed for {user_id}: {len(full_response)} chars, {chunk_count} TTS chunks")
             return True
             
         except Exception as e:
             logger.error(f"❌ Stream error: {e}", exc_info=True)
             return False
-    
-    async def _stream_with_sentence_chunking(
-        self,
-        prompt: str
-    ) -> AsyncGenerator[str, None]:
-        """
-        Stream AI response and yield chunks suitable for TTS.
-
-        Rules:
-        - Only split at sentence-ending punctuation:  . ! ?
-        - Collapse repeated punctuation (e.g. "..." or "!!!" count
-          as a single boundary).
-        - Keep delimiters attached to the preceding text so TTS can
-          use the punctuation for intonation.
-        - Enforce a minimum chunk length (MIN_CHUNK_LENGTH chars).
-          If the current split is too short, merge it into the next
-          chunk instead of yielding a tiny fragment.
-        """
-        MIN_CHUNK_LENGTH = 40  # characters — prevents tiny TTS calls
-
-        # Matches one or more sentence-ending punctuation chars,
-        # optionally followed by a closing quote/bracket.
-        # e.g.  .  ...  !!  ?!  ."  ?)
-        _split_re = re.compile(r'([.!?]+["\')»\]]*)')
-
-        buffer = ""
-        carry = ""  # short fragment waiting to be merged
-
-        messages = [{"role": "user", "content": prompt}]
-
-        async for chunk in llm_stream(messages, model=settings.GROQ_REASONING_MODEL):
-            buffer += chunk
-
-            # Try to split on sentence-ending punctuation
-            parts = _split_re.split(buffer)
-
-            # _split_re.split produces:
-            #   [text_before, delimiter, text_after, delimiter, …]
-            # We reconstruct "sentence + delimiter" pairs.
-            i = 0
-            while i < len(parts) - 2:
-                sentence = parts[i] + parts[i + 1]  # text + delimiter
-                sentence = (carry + " " + sentence).strip() if carry else sentence.strip()
-                carry = ""
-
-                if len(sentence) < MIN_CHUNK_LENGTH:
-                    # Too short — carry forward and merge with next
-                    carry = sentence
-                else:
-                    yield sentence
-
-                i += 2
-
-            # Whatever is left is the new incomplete buffer
-            buffer = parts[-1] if parts else ""
-
-        # Flush remaining buffer + carry
-        final = ((carry + " " if carry else "") + buffer).strip()
-        if final:
-            yield final
 
 
 
@@ -188,40 +168,45 @@ async def parallel_chat_execution(
     gender: str = "female"
 ) -> dict:
     """
-    Run both stream (TTS) and normal chat (tool execution) in parallel.
+    Run stream (TTS) and chat (tool execution) truly in parallel.
+    
+    IMPORTANT: Stream is FULLY INDEPENDENT — it runs as a background task
+    and can NEVER be blocked by chat or SQH. Chat returns its result
+    immediately without waiting for stream to finish.
     """
     from app.services.chat_service import chat
     
-    # Run both in parallel
-    stream_task = stream_chat_response(
-        query=query,
-        user_id=user_id,
-        sio=sio,
-        sid=sid,
-        tts_service=tts_service,
-        gender=gender
-    )
+    # ── 1. Launch stream as a fully independent background task ──
+    async def _independent_stream():
+        """Wrapper that catches all errors so the background task never crashes."""
+        try:
+            await stream_chat_response(
+                query=query,
+                user_id=user_id,
+                sio=sio,
+                sid=sid,
+                tts_service=tts_service,
+                gender=gender
+            )
+        except Exception as e:
+            logger.error(f"❌ Independent stream failed: {e}", exc_info=True)
     
-    chat_task = chat(
-        query=query,
-        user_id=user_id,
-        wait_for_execution=False
-    )
+    stream_bg_task = asyncio.create_task(_independent_stream())
+    logger.info(f"🎤 Stream launched as independent background task for {user_id}")
     
-    # Execute in parallel
-    stream_result, chat_result = await asyncio.gather(
-        stream_task,
-        chat_task,
-        return_exceptions=True
-    )
+    # ── 2. Run chat (PQH → SQH) — returns immediately after PQH ──
+    chat_result = None
+    try:
+        chat_result = await chat(
+            query=query,
+            user_id=user_id,
+            wait_for_execution=False
+        )
+    except Exception as e:
+        logger.error(f"❌ Chat failed: {e}", exc_info=True)
     
-    if isinstance(stream_result, Exception):
-        logger.error(f"Stream failed: {stream_result}")
-    
-    if isinstance(chat_result, Exception):
-        logger.error(f"Chat failed: {chat_result}")
-    
+    # ── 3. Return chat result immediately — stream continues in background ──
     return {
-        "stream_success": not isinstance(stream_result, Exception),
-        "chat_result": chat_result if not isinstance(chat_result, Exception) else None
+        "stream_success": not stream_bg_task.done() or not stream_bg_task.cancelled(),
+        "chat_result": chat_result
     }

@@ -2,14 +2,7 @@ from app.utils import  clean_pqh_response
 from app.models.pqh_response_model import CognitiveState, PQHResponse
 from app.cache import load_user 
 from app.ai.providers import llm_chat
-from typing import Optional
-from app.config import settings
-# from app.services.detect_emotion import detect_emotion
-from app.cache import get_last_n_messages,process_query_and_get_context,add_message as redis_add_message
 from app.prompts import pqh_prompt
-from app.agent.shared.registry.tool_index import get_tools_index
-import json
-from app.controllers.chat_controllers import ChatController,add_chat_message_to_mongo
 from app.services.sqh_service import process_sqh
 import asyncio
 import logging
@@ -58,13 +51,9 @@ async def chat(
         # ---  Emotion Detection (placeholder) ---
         emotion = "neutral"
 
-        # ---- get tools index ----
-        tools_index = get_tools_index()
-        print("BYPASS 2 -  tools index",len(tools_index))
-            
         # --- Build Prompt ---
-        prompt = pqh_prompt.build_prompt(query, tools_index)
-
+        prompt = pqh_prompt.build_prompt(query)
+        
         # --- Step 5: Call AI with Smart Fallback ---
         messages = [{"role": "user", "content": prompt}]
         

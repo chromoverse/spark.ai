@@ -498,10 +498,11 @@ class ChatCacheMixin(BaseRedisManager):
         if vector_client:
             from app.services.embedding_services import embedding_service
             
-            # Add message to both storages
-            await self.add_message(user_id, "user", current_query)
+            # ✅ FAST: Fire add_message as BACKGROUND task (don't await)
+            # Write doesn't need to finish before we search existing data
+            asyncio.create_task(self.add_message(user_id, "user", current_query))
             
-            # Search in LanceDB
+            # ✅ Only await the search
             query_vector = await embedding_service.embed_single(current_query)
             context = await vector_client.search_chat_messages(
                 user_id, 
@@ -513,17 +514,17 @@ class ChatCacheMixin(BaseRedisManager):
             logger.info(f"[Desktop/LanceDB] Found {len(context)} results")
             return context, False
         
-        # Production path: Semantic search + Pinecone fallback
+        # Production path: Semantic search + Pinecone fallback — PARALLEL
         is_pinecone_needed = False
         search_task = asyncio.create_task(
             self.semantic_search_messages(user_id, current_query)
         )
-        append_task = asyncio.create_task(
+        # ✅ Fire-and-forget: don't block search on the write
+        asyncio.create_task(
             self._append_message_to_local_and_cloud(user_id, current_query)
         )
         
         context = await search_task
-        await append_task
         
         if not context or len(context) == 0:
             from app.db.pinecone import config as pinecone_config

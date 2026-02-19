@@ -1,11 +1,14 @@
 from typing import Any, Dict, List
 import asyncio
 import json
+import logging
 
 from app.agent.shared.tools.base import BaseTool, ToolOutput
 from app.agent.shared.tools.web.search import WebSearchTool
 from app.agent.shared.tools.web.scrape import WebScrapeTool
 from app.agent.shared.tools.ai.summarize import AiSummarizeTool
+
+logger = logging.getLogger(__name__)
 
 class WebResearchTool(BaseTool):
     """
@@ -72,14 +75,33 @@ class WebResearchTool(BaseTool):
         summary_data = summary_result.data
         summary_text = summary_data.get("summary", "")
 
-        # 4. Stream TTS to the requesting client
+        # 4. Emit results to client (fire-and-forget — never blocks tool)
         if user_id:
             try:
-                from app.socket.utils import stream_tts_to_client
-                await stream_tts_to_client(text=summary_text, user_id=user_id)
+                from app.socket.utils import fire_socket_event, fire_tts
+                
+                # Emit the research result data to client
+                logger.info(f"📡 [WebResearch] Emitting result to user {user_id}")
+                fire_socket_event(
+                    "research-result",
+                    {
+                        "summary": summary_text,
+                        "sources": [s.get("url") for s in valid_sources],
+                        "query": query
+                    },
+                    user_id=user_id
+                )
+                
+                # Also speak the summary via TTS
+                if summary_text:
+                    logger.info(f"🔊 [WebResearch] Firing TTS for user {user_id}: {summary_text[:50]}...")
+                    fire_tts(text=summary_text, user_id=user_id)
+                
             except ImportError:
                 # Socket module not available — standalone testing
                 print(f"\n🔊 [TTS would say]: {summary_text}\n")
+            except Exception as e:
+                logger.error(f"❌ [WebResearch] Emission failed: {e}", exc_info=True)
 
         return ToolOutput(
             success=True,

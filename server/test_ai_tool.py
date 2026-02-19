@@ -15,5 +15,7 @@ async def main():
   print(tool_res.data)
 
 if __name__ == "__main__":
-  while True :
-    asyncio.run(main())
+  # while True :
+  #   asyncio.run(main())
+  from app.prompts import pqh_prompt
+  print(pqh_prompt.build_prompt("what is 15% of 340"))

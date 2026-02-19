@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "total_tools": 20,
+  "total_tools": 31,
   "tools": [
     {
       "name": "app_open",
@@ -81,6 +81,42 @@
       "execution_target": "client"
     },
     {
+      "name": "brightness_status",
+      "description": "Get current screen brightness level",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "brightness_increase",
+      "description": "Increase screen brightness by specified amount (default +1)",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "brightness_decrease",
+      "description": "Decrease screen brightness by specified amount (default -1)",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "sound_status",
+      "description": "Get current system volume level and mute status",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "sound_increase",
+      "description": "Increase system volume by specified amount (default +30)",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "sound_decrease",
+      "description": "Decrease system volume by specified amount (default -30)",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
       "name": "file_search",
       "description": "Locate files and folders",
       "category": "file_system",
@@ -113,6 +149,12 @@
     {
       "name": "file_copy",
       "description": "Copy files",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_read",
+      "description": "Read content from a file",
       "category": "file_system",
       "execution_target": "client"
     },

@@ -10,7 +10,7 @@ import AudioLevelProgress from "./AudioLevelProgress";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Minimum audio level (%) to count as a "speaking" sample */
-const SPEAKING_THRESHOLD = 35;
+const SPEAKING_THRESHOLD = 55;
 /** Audio level (%) below which we consider it absolute silence */
 const SILENCE_THRESHOLD = 20;
 /** How long silence must persist before we finalize (ms) */

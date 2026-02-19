@@ -71,15 +71,29 @@ def _reconstruct_pqh_response(raw_data: str, emotion: str) -> PQHResponse:
         # Remove markdown
         cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned).rstrip("`").strip()
         
-        # Fix common JSON errors
-        cleaned = cleaned.replace("'", '"')  # Single to double quotes
+        # Fix common JSON errors (but NOT single quotes — they break apostrophes like "it's")
         cleaned = re.sub(r',\s*}', '}', cleaned)  # Trailing commas
         cleaned = re.sub(r',\s*]', ']', cleaned)  # Trailing commas in arrays
         
-        data = json.loads(cleaned)
+        # Try json_repair as final attempt before regex
+        try:
+            repaired = repair_json(cleaned)
+            data = json.loads(repaired)
+        except Exception:
+            data = json.loads(cleaned)
+        
+        # ✅ FIX: Handle LLM returning a list instead of dict
+        if isinstance(data, list):
+            # Try to find a dict in the list
+            data = next((item for item in data if isinstance(item, dict)), None)
+            if data is None:
+                return _create_error_pqh_response(raw_data, emotion)
+        
+        if not isinstance(data, dict):
+            return _create_error_pqh_response(raw_data, emotion)
         
         # Extract fields with fallbacks
-        request_id = data.get("request_id", f"error_{int(time.time()*1000)}")  # ✅ FIXED: Now works correctly
+        request_id = data.get("request_id", f"error_{int(time.time()*1000)}")
         
         # Extract cognitive_state
         cog_state = data.get("cognitive_state", {})

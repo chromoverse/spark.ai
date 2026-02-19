@@ -217,3 +217,93 @@ async def stream_tts_to_client(
         logger.error(f"❌ TTS streaming failed: {e}")
         print(f"\n🔊 [TTS fallback]: {text}\n")
         return False
+
+
+# ==================== NON-BLOCKING HELPERS FOR TOOLS ====================
+# Any server tool can import these to emit events without blocking execution.
+#
+# Usage from any tool:
+#     from app.socket.utils import fire_socket_event, fire_tts
+#
+#     fire_socket_event("research-progress", {"step": "scraping"}, user_id=user_id)
+#     fire_tts("Here are the results!", user_id=user_id)
+
+def fire_socket_event(
+    event: str,
+    data: Any,
+    user_id: Optional[str] = None
+) -> None:
+    """
+    Non-blocking socket emit — fire-and-forget.
+    
+    Safe to call from inside tools, execution engine, or anywhere.
+    Never blocks the caller; errors are logged silently.
+    
+    Args:
+        event:   Socket event name (e.g. 'notification', 'research-progress')
+        data:    Payload dict
+        user_id: Target user (None = broadcast)
+    
+    Usage:
+        from app.socket.utils import fire_socket_event
+        fire_socket_event("status", {"msg": "Searching..."}, user_id="user123")
+    """
+    import asyncio
+    
+    async def _safe_emit():
+        try:
+            await socket_emit(event, data, user_id=user_id)
+        except Exception as e:
+            logger.error(f"❌ fire_socket_event('{event}') failed: {e}")
+    
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_safe_emit())
+    except RuntimeError:
+        logger.warning(f"⚠️ No running event loop — cannot fire '{event}'")
+
+
+def fire_tts(
+    text: str,
+    user_id: Optional[str] = None,
+    gender: str = "female"
+) -> None:
+    """
+    Non-blocking TTS streaming — fire-and-forget.
+    
+    Safe to call from inside tools. Never blocks the caller.
+    
+    Args:
+        text:     Text to speak
+        user_id:  Target user (None = broadcast)
+        gender:   Voice gender
+    
+    Usage:
+        from app.socket.utils import fire_tts
+        fire_tts("Research complete!", user_id=user_id)
+    """
+    import asyncio
+    
+    if not text:
+        logger.warning("⚠️ fire_tts called with empty text, skipping")
+        return
+    
+    logger.info(f"🔊 fire_tts called: user={user_id}, text={text[:50]}...")
+    
+    async def _safe_tts():
+        try:
+            result = await stream_tts_to_client(text=text, user_id=user_id, gender=gender)
+            if result:
+                logger.info(f"✅ fire_tts succeeded for user={user_id}")
+            else:
+                logger.warning(f"⚠️ fire_tts returned False for user={user_id} (user not connected?)")
+        except Exception as e:
+            logger.error(f"❌ fire_tts failed: {e}", exc_info=True)
+    
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_safe_tts())
+    except RuntimeError:
+        logger.warning("⚠️ No running event loop — cannot fire TTS")
+        print(f"\n🔊 [TTS fallback]: {text}\n")
+

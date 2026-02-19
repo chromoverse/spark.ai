@@ -1,162 +1,147 @@
-"""SQH - Secondary/Server Query Handler
+"""SQH - Secondary Query Handler
 Generates execution plans (Task arrays) based on PQH analysis.
 """
 
 import json
-from datetime import datetime
-from typing import List, Dict, Any
+from typing import Optional, Dict, Any
 
 from app.agent.shared.registry.loader import get_tool_registry
-from app.agent.core.models import Task
 from app.models.pqh_response_model import PQHResponse
-from app.prompts.common import NEPAL_TZ, LANGUAGE_CONFIG
 
-# NEPAL_TZ imported from common
 
-def get_tools_schema(tools_names: list[str]) -> dict[str, dict]:
-    """
-    Get the schemas for the specified tools
-    """
+def get_tools_schema(tool_names: list[str]) -> dict[str, dict]:
+    """Get schemas for the specified tools from registry."""
     tool_registry = get_tool_registry()
-    result = {}
-    
-    for tool_name in tools_names:
-        tool = tool_registry.get_tool(tool_name)
-        if tool:
-            result[tool_name] = tool.__dict__ 
-            
-    return result
+    return {
+        name: tool.__dict__
+        for name in tool_names
+        if (tool := tool_registry.get_tool(name))
+    }
+
 
 def build_sqh_prompt(
     pqh_response: PQHResponse,
-    user_details: Dict[str, Any]
+    user_lang: str = "en",                        # Primary lang for ack/lifecycle messages
+    user_preferences: Optional[Dict[str, Any]] = None       # {"movies": ["netflix"], "browser": ["chrome"], ...}
 ) -> str:
     """
     Builds the SQH system prompt.
-    
+
     Args:
-        pqh_response: The full response model from PQH.
-        user_details: Dict containing 'ai_gender', 'user_gender', 'timezone', 'name', 'language', etc.
+        pqh_response:      Full PQH response model.
+        user_lang:         Language code for output ("en", "hi", "ne").
+        user_preferences:  User's preferred apps/services per category.
+                           e.g. {"browser": ["chrome"], "movies": ["netflix", "youtube"]}
+                           Falls back to stable defaults if empty or missing.
     """
-    
-    # 1. Extract context from PQH (Using Pydantic model access)
-    c_state = pqh_response.cognitive_state
-    user_query = c_state.user_query
+
+    # ── 1. Unpack PQH context ──────────────────────────────────────────────
+    c_state        = pqh_response.cognitive_state
+    user_query     = c_state.user_query
     thought_process = c_state.thought_process
-    pqh_answer = c_state.answer
-    tool_names = pqh_response.requested_tool or []
-    
-    # 2. User Details & Time
-    user_name = user_details.get("name", "User")
-    ai_gender = user_details.get("ai_gender", "male")
-    user_gender = user_details.get("user_gender", "male")
-    user_lang_code = user_details.get("language", "en")  # e.g., "en", "hi", "ne"
+    pqh_answer     = c_state.answer
+    tool_names     = pqh_response.requested_tool or []
 
-    # Map language code to partial config key
-    lang_map = {
-        "hi": "hindi",
-        "ne": "nepali",
-        "en": "english"
+    # ── 2. Language config ─────────────────────────────────────────────────
+    LANG_MAP = {
+        "hi": "Hindi",
+        "ne": "Nepali",
+        "en": "English",
     }
-    lang_key = lang_map.get(user_lang_code, "english")
-    lang_config = LANGUAGE_CONFIG.get(lang_key, LANGUAGE_CONFIG["english"])
-    
-    # Honorific logic
-    if str(user_gender).lower() in ["female", "f", "woman"]:
-        honorifics = "Madam / Ma'am"
-    else:
-        honorifics = "Sir / Boss"
+    lang_label = LANG_MAP.get(user_lang, "English")
+    # Second language is always English as fallback for clarity
+    secondary_lang = "English" if user_lang != "en" else "Hindi"
 
-    # Time calculation
-    now = datetime.now(NEPAL_TZ) 
-    current_time_str = now.strftime("%A, %d %B %Y, %I:%M %p")
+    # ── 3. User preferences ────────────────────────────────────────────────
+    prefs = user_preferences or {}
+    prefs_json = json.dumps(prefs, indent=2) if prefs else "None provided"
 
-    # 3. Tool Schemas
-    tool_schemas = get_tools_schema(tool_names)
+    # ── 4. Tool schemas ────────────────────────────────────────────────────
+    tool_schemas     = get_tools_schema(tool_names)
     tool_schemas_json = json.dumps(tool_schemas, indent=2)
-    
-    system_prompt = f"""You are SQH (Secondary Query Handler).
-Your goal is to generate a precise JSON execution plan (Array of Tasks) based on the User's Query and the Primary Query Handler's (PQH) assessment.
 
-# CONTEXT
-**User:** {user_name} ({user_gender})
-**Time:** {current_time_str}
-**AI Identity:** Gender: {ai_gender}
-**Language:** {lang_key.capitalize()} ({lang_config['script']})
+    # ── 5. Prompt ──────────────────────────────────────────────────────────
+    return f"""You are SQH (Secondary Query Handler).
+Your job: read the PQH analysis, then return a precise JSON execution plan.
 
-# INPUT DATA
-**User Query:** "{user_query}"
+━━━ INPUT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+User Query        : "{user_query}"
+PQH Thought       : "{thought_process}"
+PQH Answer (sent) : "{pqh_answer}"
 
-**PQH Thought Process:**
-"{thought_process}"
+━━━ USER PREFERENCES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{prefs_json}
 
-**PQH Answer (Already sent to user):**
-"{pqh_answer}"
+PREFERENCE RULES:
+- When a task involves opening an app, browser, streaming service, or any
+  category-specific tool, CHECK preferences first.
+- Example: query = "play a movie" → check preferences["movies"] → use first
+  entry (e.g. "netflix"). If empty → default to the most universally stable
+  option (e.g. "youtube" for media, "chrome" for browser, "notepad" for text).
+- Never invent a preference. Only use what's listed or a safe default.
 
-# AVAILABLE TOOLS (Schemas)
-The following tools are requested for this task. Use ONLY these tools.
+━━━ AVAILABLE TOOLS (schemas) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {tool_schemas_json}
 
-# OUTPUT REQUIREMENT
-You must return a JSON Object with this structure:
-```json
+Use ONLY the tools listed above. Map every task to an exact tool name from this set.
+
+━━━ OUTPUT FORMAT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Return a raw JSON object — no markdown, no code fences:
 {{
-  "acknowledge_answer": "...",  // Confirmation in PAST TENSE e.g. 'Opened Chrome Sir'
-  "tasks": [...]                // List of Task objects
+  "acknowledge_answer": "...",
+  "tasks": [...]
 }}
-```
 
-## Acknowledge Answer Rules
-- **Tense:** STRICTLY use **PAST TENSE**.
-  - Example: "Opened Chrome Sir" is correct. "Opening Chrome Sir" is WRONG.
-  - Example: "Started the timer Boss" is correct.
-- **Tone:** Confirm that the action has been initiated/done.
-- **Language:** Use **{lang_key.capitalize()}**.
-- **Honorifics:** Address user as **{honorifics}**.
+━━━ ACKNOWLEDGE ANSWER RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Language  : {lang_label} (you may sprinkle {secondary_lang} naturally if it fits).
+Tone      : Warm, natural, conversational assistant — NOT robotic.
+Tense     : Completed/initiated action — treat it as done.
+Variation : Be RANDOM and human. Rotate between styles, for example:
+  • "Done, Sir! Anything else?"
+  • "Sir, I've taken care of it."
+  • "All set! Let me know if you need anything more."
+  • "Consider it done, Boss."
+  • "That's handled! What's next?"
+  • (or any natural equivalent in {lang_label})
+  Never repeat the same phrasing pattern twice in a session.
+Length    : 1–2 short sentences max.
 
-## Task Object Structure
-Each task in the list must follow this schema:
-```json
+━━━ TASK OBJECT SCHEMA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Each task must follow:
 {{
-  "task_id": "step_1",  // Unique ID (step_1, step_2...)
-  "tool": "tool_name",  // EXACT name from Available Tools
-  "execution_target": "client", // or "server" (usually 'client' for local tools)
-  "depends_on": [],     // List of task_ids this task waits for
-  "inputs": {{           // Static inputs matching tool schema
-    "arg_name": "value" 
+  "task_id"          : "step_1",          // Unique (step_1, step_2 ...)
+  "tool"             : "exact_tool_name", // From Available Tools only
+  "execution_target" : "client",          // or "server" per tool schema
+  "depends_on"       : [],               // task_ids this waits for
+  "inputs"           : {{                  // Static, schema-matched inputs
+    "arg_name": "value"
   }},
-  "input_bindings": {{   // Dynamic inputs from previous tasks (optional)
-    "arg_name": "$.tasks.step_1.output.data.some_field"
+  "input_bindings"   : {{                  // Dynamic from prior task output
+    "arg_name": "$.tasks.step_1.output.data.field"
   }},
-  "lifecycle_messages": {{ // Messages shown to user during execution
-    "on_start": "Starting...",
-    "on_success": "Done!",
-    "on_failure": "Failed."
+  "lifecycle_messages": {{
+    "on_start"  : "...",  // Action started  — {lang_label}, natural
+    "on_success": "...",  // Action done     — {lang_label}, natural
+    "on_failure": "..."   // Action failed   — {lang_label}, natural
   }},
-  "control": {{          // Execution control (optional)
-    "requires_approval": false, // Optional: if true, pauses for user confirmation
-    "on_failure": "abort"       // or "continue"
+  "control": {{
+    "requires_approval": false,
+    "on_failure": "abort"   // or "continue"
   }}
 }}
-```
 
-# LIFECYCLE MESSAGES RULES
-- **Language:** STRICTLY use **{lang_key.capitalize()}** for `lifecycle_messages`.
-- **Grammar (Self):** Adapt to **{ai_gender}** gender identity for yourself (e.g., in Hindi: "kar raha hu" (male) vs "kar rahi hu" (female)).
-- **Honorifics (User):** Address the user as **{honorifics}**.
-- **Format:** Start with Action + Honorific. 
-  - Example: "Opening Chrome Sir..." or "Searching web Madam..." or "File created Boss."
-- **Tone:** Natural, concise, keeping the user informed.
+━━━ LIFECYCLE MESSAGE RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Language   : {lang_label} (mix {secondary_lang} only if natural).
+- Tone       : Concise, action-oriented, friendly.
+- Format     : Action + optional filler — keep it short.
+  Examples   : "Opening Chrome...", "File banaya!", "Search ho gaya Boss."
 
-# INSTRUCTIONS
-1. **Analyze** the User Query and PQH Thought Process.
-2. **Formulate** the `acknowledge_answer` in PAST TENSE.
-3. **Break down** the request into atomic steps (Tasks).
-4. **Map** each step to a Tool from the provided schemas.
-5. **Construct** the JSON response.
-6. **Ensure** dependencies are correct.
-
-# JSON OUTPUT
-Return ONLY the raw JSON object. No markdown formatting, no code blocks.
+━━━ EXECUTION INSTRUCTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Analyze query + PQH thought to understand full intent.
+2. Resolve any app/service ambiguity using preferences (fallback to defaults).
+3. Break intent into atomic, ordered tasks — each mapped to one tool.
+4. Set correct depends_on chains for sequential steps.
+5. Build lifecycle_messages per task in {lang_label}.
+6. Write acknowledge_answer last, after confirming tasks are complete.
+7. Return ONLY the raw JSON. Nothing else.
 """
-    return system_prompt
