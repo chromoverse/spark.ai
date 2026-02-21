@@ -18,7 +18,8 @@ from app.agent.shared.registry.loader import get_tool_registry
 # Import all tool classes
 from app.agent.shared.tools.web import (
     WebSearchTool,
-    WebScrapeTool
+    WebScrapeTool,
+    WebResearchTool,
 )
 
 from app.agent.shared.tools.file_system.operations import (
@@ -90,6 +91,7 @@ def load_all_tools():
         # Web tools
         WebSearchTool(),
         WebScrapeTool(),
+        WebResearchTool(),
         
         # File system tools
         FileCreateTool(),

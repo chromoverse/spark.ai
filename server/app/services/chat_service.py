@@ -62,7 +62,6 @@ async def chat(
         )
 
         print("BYPASS  -  raw response", raw_response)
-        print("BYPASS  -  provider used", provider_used)
         
         print(f"✅ Response received from {provider_used}")
         
