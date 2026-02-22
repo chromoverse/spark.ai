@@ -24,6 +24,8 @@ class ChatCacheMixin(BaseRedisManager):
     """Conversation history and embedding logic"""
     
     _local_emb_cache: OrderedDict = OrderedDict()
+    _query_emb_cache: OrderedDict = OrderedDict()  # query text hash → vector
+    _QUERY_CACHE_MAX = 100
     _env: Optional[str] = None  # Cache environment type
 
     def _init_env(self) -> str:
@@ -480,17 +482,35 @@ class ChatCacheMixin(BaseRedisManager):
         if total_deleted > 0:
             logger.info(f"🗑️ Cleared all data for user {user_id}: {total_deleted} keys")
 
+    def _get_cached_query_embedding(self, text: str) -> Optional[List[float]]:
+        """Check in-memory LRU cache for query embedding — ~0ms on hit"""
+        text_hash = self._get_text_hash(text)
+        if text_hash in self._query_emb_cache:
+            self._query_emb_cache.move_to_end(text_hash)
+            return self._query_emb_cache[text_hash]
+        return None
+
+    def _cache_query_embedding(self, text: str, embedding: List[float]):
+        """Cache a query embedding in LRU"""
+        text_hash = self._get_text_hash(text)
+        self._query_emb_cache[text_hash] = embedding
+        self._query_emb_cache.move_to_end(text_hash)
+        if len(self._query_emb_cache) > self._QUERY_CACHE_MAX:
+            self._query_emb_cache.popitem(last=False)
+
     async def process_query_and_get_context(
         self, 
         user_id: str, 
         current_query: str
     ) -> tuple[List[Dict[str, Any]], bool]:
         """
-        This function gives you context for the current query and also add the current message to both vector and SQLite
-        Process query and get context intelligently:
-        - Desktop: Use LanceDB vector search directly
-        - Production: Use semantic search + fallback to Pinecone
+        FAST context retrieval for the current query.
+        Also adds the message to storage in the background.
+        
+        Desktop: LRU cache check → embed (if miss) → LanceDB vector search
+        Production: Semantic search + Pinecone fallback
         """
+        t0 = time.time()
         await self._ensure_client()
         vector_client = self._get_vector_client()
         
@@ -498,12 +518,19 @@ class ChatCacheMixin(BaseRedisManager):
         if vector_client:
             from app.services.embedding_services import embedding_service
             
-            # ✅ FAST: Fire add_message as BACKGROUND task (don't await)
-            # Write doesn't need to finish before we search existing data
+            # ✅ Fire add_message as BACKGROUND task (don't await)
             asyncio.create_task(self.add_message(user_id, "user", current_query))
             
-            # ✅ Only await the search
-            query_vector = await embedding_service.embed_single(current_query)
+            # ✅ Check LRU cache first — ~0ms on hit
+            cached = self._get_cached_query_embedding(current_query)
+            if cached:
+                query_vector = cached
+                cache_status = "HIT"
+            else:
+                query_vector = await embedding_service.embed_single(current_query)
+                self._cache_query_embedding(current_query, query_vector)
+                cache_status = "MISS"
+            
             context = await vector_client.search_chat_messages(
                 user_id, 
                 query_vector, 
@@ -511,7 +538,11 @@ class ChatCacheMixin(BaseRedisManager):
                 threshold=0.1
             )
             
-            logger.info(f"[Desktop/LanceDB] Found {len(context)} results")
+            elapsed = (time.time() - t0) * 1000
+            logger.info(
+                f"⚡ Context retrieval: {elapsed:.0f}ms "
+                f"(cache:{cache_status}, results:{len(context)})"
+            )
             return context, False
         
         # Production path: Semantic search + Pinecone fallback — PARALLEL
@@ -533,7 +564,8 @@ class ChatCacheMixin(BaseRedisManager):
             is_pinecone_needed = True
             return context, is_pinecone_needed
 
-        logger.info(f"[Local] High similarity - using local context ({len(context)} results)")
+        elapsed = (time.time() - t0) * 1000
+        logger.info(f"⚡ Context retrieval: {elapsed:.0f}ms (results:{len(context)})")
         return context, is_pinecone_needed
     
     async def _append_message_to_local_and_cloud(self, user_id: str, current_query: str):

@@ -44,8 +44,8 @@ class WhatsAppAutomation:
     """
 
     def __init__(self, confidence: float = 0.8, search_timeout: int = 3):
-        self.confidence     = confidence
-        self.search_timeout = search_timeout
+        self.confidence      = confidence
+        self.search_timeout  = search_timeout
         self.process_manager = ProcessManager()
 
     # ══════════════════════════════════════════════════════
@@ -63,23 +63,63 @@ class WhatsAppAutomation:
         time.sleep(0.5)
         return win
 
-    def _find_button(self, image_path: str) -> tuple | None:
-        """Scan screen for a button image, returns center (x, y) or None"""
+    def _get_wa_region(self, win):
+        """
+        Returns (left, top, width, height) of the WhatsApp window.
+        Used to restrict OpenCV search to ONLY inside WhatsApp —
+        prevents false matches on VS Code tabs, taskbar, browser, etc.
+        """
+        return (win.left, win.top, win.width, win.height)
+    def _find_button(self, image_path: str, confidence: float | None = None, region=None) -> tuple | None:
+        conf  = confidence if confidence is not None else self.confidence
+
+        # ── Safety: check needle fits inside region before passing ──
+        if region is not None:
+            try:
+                from PIL import Image
+                img = Image.open(image_path)
+                nw, nh = img.size
+                _, _, rw, rh = region
+                if nw > rw or nh > rh:
+                    print(f"  ⚠️  btn too large ({nw}x{nh}) for region ({rw}x{rh}) → full screen")
+                    region = None  # fall back to full screen
+            except Exception:
+                region = None  # if anything fails, just go full screen
+
         start = time.time()
         while time.time() - start < self.search_timeout:
             try:
-                loc = pyautogui.locateCenterOnScreen(image_path, confidence=self.confidence)
+                loc = pyautogui.locateCenterOnScreen(image_path, confidence=conf, region=region)
                 if loc:
                     return loc
             except pyautogui.ImageNotFoundException:
                 pass
+            except ValueError:
+                # needle bigger than region — drop region and retry full screen
+                print(f"  ⚠️  Region too small — retrying full screen...")
+                region = None
             time.sleep(0.2)
-        return None
 
-    def _click_button(self, image_name: str, label: str = "button") -> bool:
-        """Find button by icon filename and click it. Returns True if found."""
+        # ── Fallback: lower confidence ───────────────────────────────
+        if conf > 0.6:
+            print(f"  ⚠️  Not found at {conf} — retrying at 0.6...")
+            try:
+                loc = pyautogui.locateCenterOnScreen(image_path, confidence=0.6, region=region)
+                if loc:
+                    return loc
+            except (pyautogui.ImageNotFoundException, ValueError):
+                pass
+
+        return None
+    def _click_button(self, image_name: str, label: str = "button", confidence: float | None = None, region=None) -> bool:
+        """
+        Find a button by its icon filename and click it.
+        region    : (left, top, w, h) — restrict search area to avoid false matches.
+        confidence: override default confidence for this button only.
+        Returns True if found and clicked, False otherwise.
+        """
         path = icon(image_name)
-        loc  = self._find_button(path)
+        loc  = self._find_button(path, confidence=confidence, region=region)
         if loc:
             print(f"  ✅ Found [{label}] at {loc} → clicking")
             pyautogui.click(loc)
@@ -88,9 +128,8 @@ class WhatsAppAutomation:
         return False
 
     def _open_chat(self, contact_name: str):
-        """Search and open a chat by contact name"""
+        """Search and open a chat by contact name. Returns the WhatsApp window."""
         win = self._get_window()
-        wx, wy, ww, wh = win.left, win.top, win.width, win.height
 
         print(f"  🔍 Opening chat: '{contact_name}'")
         pyautogui.hotkey("ctrl", "f")
@@ -108,33 +147,33 @@ class WhatsAppAutomation:
         return win
 
     def _focus_input(self, win):
-        """Click the message input box"""
+        """Click the message input box at the bottom of the chat"""
         wx, wy, ww, wh = win.left, win.top, win.width, win.height
         pyautogui.click(wx + int(ww * 0.60), wy + int(wh * 0.95))
         time.sleep(0.3)
 
     def _paste_and_send(self, text: str):
-        """Paste text and press Enter"""
+        """Paste text from clipboard and press Enter to send"""
         pyperclip.copy(text)
         pyautogui.hotkey("ctrl", "v")
         time.sleep(0.2)
         pyautogui.press("enter")
 
     def _handle_file_dialog(self, file_path: str):
-        """Paste file path into OS file dialog and confirm"""
+        """Paste a file path into the OS file picker dialog and confirm"""
         pyperclip.copy(file_path)
         pyautogui.hotkey("ctrl", "a")
         pyautogui.hotkey("ctrl", "v")
         time.sleep(0.4)
         pyautogui.press("enter")
-        time.sleep(1.2)  # wait for preview to load
+        time.sleep(1.2)  # wait for WhatsApp preview to load
 
     # ══════════════════════════════════════════════════════
     #  PUBLIC API
     # ══════════════════════════════════════════════════════
 
     def send_message(self, contact_name: str, message: str):
-        """Send a text message to a contact"""
+        """Send a text message to a contact by name"""
         print(f"\n📨 send_message → '{contact_name}'")
         win = self._open_chat(contact_name)
         self._focus_input(win)
@@ -144,18 +183,20 @@ class WhatsAppAutomation:
     def send_file(self, contact_name: str, file_path: str, caption: str = ""):
         """
         Send any file (PDF, ZIP, DOCX, etc.) to a contact.
-        file_path : absolute path to the file e.g. r"C:/Users/You/report.pdf"
-        caption   : optional message shown with the file
+        file_path : absolute path  e.g. r"C:/Users/You/report.pdf"
+        caption   : optional text shown with the file (default: none)
         """
         print(f"\n📄 send_file → '{contact_name}' | {os.path.basename(file_path)}")
-        self._open_chat(contact_name)
+        win = self._open_chat(contact_name)
         time.sleep(0.3)
+        region = self._get_wa_region(win)
 
-        if not self._click_button("btn_plus.png", label="[ + ] button"):
+        # lower confidence for + button — it changes look based on hover/tooltip state
+        if not self._click_button("btn_plus.png", label="[ + ] button", confidence=0.6, region=region):
             return
         time.sleep(0.6)
 
-        if not self._click_button("btn_docs.png", label="[ Document ]"):
+        if not self._click_button("btn_docs.png", label="[ Document ]", region=region):
             return
         time.sleep(1.0)
 
@@ -172,18 +213,20 @@ class WhatsAppAutomation:
     def send_photo(self, contact_name: str, photo_path: str, caption: str = ""):
         """
         Send a photo or video to a contact.
-        photo_path : absolute path e.g. r"C:/Users/You/photo.jpg"
-        caption    : optional message shown with the photo
+        photo_path : absolute path  e.g. r"C:/Users/You/photo.jpg"
+        caption    : optional text shown with the photo (default: none)
         """
         print(f"\n🖼️  send_photo → '{contact_name}' | {os.path.basename(photo_path)}")
-        self._open_chat(contact_name)
+        win = self._open_chat(contact_name)
         time.sleep(0.3)
+        region = self._get_wa_region(win)
 
-        if not self._click_button("btn_plus.png", label="[ + ] button"):
+        # lower confidence for + button — it changes look based on hover/tooltip state
+        if not self._click_button("btn_plus.png", label="[ + ] button", confidence=0.6, region=region):
             return
         time.sleep(0.6)
 
-        if not self._click_button("btn_photos.png", label="[ Photos & Videos ]"):
+        if not self._click_button("btn_photos.png", label="[ Photos & Videos ]", region=region):
             return
         time.sleep(1.0)
 
@@ -199,18 +242,22 @@ class WhatsAppAutomation:
 
     def audio_call(self, contact_name: str):
         """
-        Start an audio call with a contact.
-        Flow: open chat → click 📞 call icon → click [ Audio Call ] in dropdown
+        Start a voice call with a contact.
+        Flow: open chat → click 📞 call icon → click [ Voice ] in dropdown.
+        Dropdown is searched ONLY inside WhatsApp window to avoid false matches.
         """
         print(f"\n📞 audio_call → '{contact_name}'")
-        self._open_chat(contact_name)
+        win = self._open_chat(contact_name)
         time.sleep(0.5)
+        region = self._get_wa_region(win)
 
+        # call icon lives in the chat header — full screen ok
         if not self._click_button("btn_call_icon.png", label="[ 📞 call icon ]"):
             return
-        time.sleep(0.6)
+        time.sleep(0.8)  # wait for dropdown to fully appear
 
-        if not self._click_button("btn_audio_call.png", label="[ Audio Call ]"):
+        # RESTRICT to WhatsApp window — stops matching VS Code tabs etc.
+        if not self._click_button("btn_audio_call.png", label="[ Voice ]", region=region):
             return
 
         print(f"  ✅ Audio call started with '{contact_name}'")
@@ -218,17 +265,21 @@ class WhatsAppAutomation:
     def video_call(self, contact_name: str):
         """
         Start a video call with a contact.
-        Flow: open chat → click 📞 call icon → click [ Video Call ] in dropdown
+        Flow: open chat → click 📞 call icon → click [ Video ] in dropdown.
+        Dropdown is searched ONLY inside WhatsApp window to avoid false matches.
         """
         print(f"\n📹 video_call → '{contact_name}'")
-        self._open_chat(contact_name)
+        win = self._open_chat(contact_name)
         time.sleep(0.5)
+        region = self._get_wa_region(win)
 
+        # call icon lives in the chat header — full screen ok
         if not self._click_button("btn_call_icon.png", label="[ 📞 call icon ]"):
             return
-        time.sleep(0.6)
+        time.sleep(0.8)  # wait for dropdown to fully appear
 
-        if not self._click_button("btn_video_call.png", label="[ Video Call ]"):
+        # RESTRICT to WhatsApp window — stops matching VS Code tabs etc.
+        if not self._click_button("btn_video_call.png", label="[ Video ]", region=region):
             return
 
         print(f"  ✅ Video call started with '{contact_name}'")
@@ -239,7 +290,7 @@ if __name__ == "__main__":
     wa = WhatsAppAutomation()
 
     wa.send_message("Kartik", "Hey! Automated message 🤖")
-    wa.send_file("Kartik",    r"C:\Users\Aanand\OneDrive\Desktop\Chromoverse_Vyoma.pdf", caption="Here's the file!")
-    wa.send_photo("Kartik",   r"C:\Users\Aanand\OneDrive\Desktop\blob.jpg",              caption="Check this out!")
+    wa.send_file("Kartik",  r"C:\Users\Aanand\OneDrive\Desktop\Chromoverse_Vyoma.pdf", caption="Here's the file!")
+    wa.send_photo("Kartik", r"C:\Users\Aanand\OneDrive\Desktop\blob.jpg",              caption="Check this out!")
     wa.audio_call("Kartik")
     wa.video_call("Kartik")

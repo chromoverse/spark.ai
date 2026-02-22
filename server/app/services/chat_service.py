@@ -1,6 +1,6 @@
 from app.utils import  clean_pqh_response
 from app.models.pqh_response_model import CognitiveState, PQHResponse
-from app.cache import load_user 
+from app.cache import load_user, get_last_n_messages
 from app.ai.providers import llm_chat
 from app.prompts import pqh_prompt
 from app.services.sqh_service import process_sqh
@@ -36,8 +36,11 @@ async def chat(
         return _create_error_response("Empty query received", "neutral")
     
     try:
-        # --- Load User Details ---
-        user_details = await load_user(user_id)
+        # --- Load User Details + Recent Context in PARALLEL ---
+        user_details, recent_context = await asyncio.gather(
+            load_user(user_id),
+            get_last_n_messages(user_id, n=5),  # last 5 for tool context
+        )
 
         if not user_details:
             logger.error(f"❌ Could not load user details for {user_id}")
@@ -51,8 +54,8 @@ async def chat(
         # ---  Emotion Detection (placeholder) ---
         emotion = "neutral"
 
-        # --- Build Prompt ---
-        prompt = pqh_prompt.build_prompt(query)
+        # --- Build Prompt with recent context ---
+        prompt = pqh_prompt.build_prompt(query, recent_context)
         
         # --- Step 5: Call AI with Smart Fallback ---
         messages = [{"role": "user", "content": prompt}]

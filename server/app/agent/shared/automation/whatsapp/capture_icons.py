@@ -4,7 +4,7 @@ import time
 import os
 
 # ── Config ────────────────────────────────────────────────
-SCRIPT_DIR = r"D:\siddhant-files\projects\ai_assistant\ai_local\server"
+ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 COUNTDOWN  = 5   # seconds to hover before capture
 
 # ── Core capture function ─────────────────────────────────
@@ -17,7 +17,7 @@ def capture(filename, instruction, w=160, h=100):
         time.sleep(1)
     x, y = pyautogui.position()
     shot = pyautogui.screenshot(region=(x - w//2, y - h//2, w, h))
-    path = os.path.join(SCRIPT_DIR, filename)
+    path = os.path.join(ICONS_DIR, filename)
     shot.save(path)
     print(f"\n  ✅ Saved → {filename}  (center: x={x}, y={y}, size: {w}x{h})\n")
 
@@ -57,7 +57,7 @@ pause("Now CLICK the 📞 phone icon to open the dropdown → come back and pres
 capture(
     "btn_audio_call.png",
     "Hover on [ Audio Call ] inside the dropdown menu",
-    w=200, h=70
+     w=120, h=45 
 )
 
 # 1c. Open dropdown again → hover Video Call
@@ -65,7 +65,7 @@ pause("CLICK the 📞 phone icon AGAIN to reopen dropdown → come back and pres
 capture(
     "btn_video_call.png",
     "Hover on [ Video Call ] inside the dropdown menu",
-    w=200, h=70
+    w=120, h=45 
 )
 
 
@@ -74,27 +74,26 @@ capture(
 # ════════════════════════════════════════════════════════
 section("SECTION 2 of 3 — ATTACHMENT [ + ] BUTTON (bottom of chat input)")
 
-# 2a. The + button
 capture(
     "btn_plus.png",
-    "Hover on the [ + ] PLUS / PAPERCLIP button (bottom left of message input bar)",
-    w=160, h=100
+    "Hover directly on the [ + ] plus button (bottom left of chat input)",
+    w=50, h=50  # tiny — just the icon itself
 )
 
-# 2b. Open + menu → hover Documents
-pause("Now CLICK the [ + ] button to open the menu → come back and press ENTER")
+# ── 2. Document ──────────────────────────────────────────
+pause("CLICK the [ + ] to open menu → come back → press ENTER")
 capture(
     "btn_docs.png",
-    "Hover on [ Document ] option inside the popup menu",
-    w=220, h=70
+    "Hover on [ Document ] in the popup menu",
+    w=140, h=50
 )
 
-# 2c. Close menu (press Escape), open again → hover Photos & Videos
-pause("Press ESC to close the menu → CLICK [ + ] again to reopen → come back and press ENTER")
+# ── 3. Photos & Videos ───────────────────────────────────
+pause("Press ESC → CLICK [ + ] again → come back → press ENTER")
 capture(
     "btn_photos.png",
-    "Hover on [ Photos & Videos ] option inside the popup menu",
-    w=220, h=70
+    "Hover on [ Photos & videos ] in the popup menu",
+    w=160, h=50
 )
 
 
@@ -114,7 +113,7 @@ expected = [
 
 all_good = True
 for fname in expected:
-    full_path = os.path.join(SCRIPT_DIR, fname)
+    full_path = os.path.join(ICONS_DIR, fname)
     if os.path.exists(full_path):
         size = os.path.getsize(full_path)
         print(f"  ✅  {fname}  ({size} bytes)")

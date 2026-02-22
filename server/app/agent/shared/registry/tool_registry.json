@@ -1,8 +1,8 @@
 {
-  "version": "2.1.0",
-  "last_updated": "2026-02-16",
+  "version": "2.2.0",
+  "last_updated": "2026-02-21",
   "phase": 1,
-  "total_tools": 26,
+  "total_tools": 38,
 
   "categories": {
     "system": {
@@ -876,6 +876,139 @@
             "default_confidence": 0.99,
             "default_requires_approval": false,
             "default_timeout_ms": 2000
+          }
+        }
+      ]
+    },
+
+    "messaging": {
+      "description": "Send messages, files, media and make calls across platforms (WhatsApp, Facebook, Slack). Platform resolved from user preferences or explicit override.",
+      "tools": [
+        {
+          "tool_name": "message_send",
+          "description": "Send a text message to a contact",
+          "execution_target": "server",
+          "params_schema": {
+            "contact": { "type": "string", "required": true, "description": "Contact name to send message to" },
+            "message": { "type": "string", "required": true, "description": "Text message content" },
+            "platform": { "type": "string", "required": false, "default": "auto", "description": "Platform: auto (from user prefs), whatsapp, facebook, slack" }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "contact": { "type": "string" },
+              "platform_used": { "type": "string" },
+              "sent_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "Send this message?",
+            "default_timeout_ms": 10000
+          }
+        },
+        {
+          "tool_name": "message_file",
+          "description": "Send a document or file (PDF, ZIP, DOCX, etc.) to a contact",
+          "execution_target": "server",
+          "params_schema": {
+            "contact": { "type": "string", "required": true, "description": "Contact name to send file to" },
+            "file_path": { "type": "string", "required": true, "description": "Absolute path to the file" },
+            "caption": { "type": "string", "required": false, "default": "", "description": "Optional caption with the file" },
+            "platform": { "type": "string", "required": false, "default": "auto" }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "contact": { "type": "string" },
+              "file_name": { "type": "string" },
+              "platform_used": { "type": "string" },
+              "sent_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.93,
+            "default_requires_approval": true,
+            "default_approval_question": "Send this file?",
+            "default_timeout_ms": 15000
+          }
+        },
+        {
+          "tool_name": "message_media",
+          "description": "Send a photo or video to a contact",
+          "execution_target": "server",
+          "params_schema": {
+            "contact": { "type": "string", "required": true, "description": "Contact name to send media to" },
+            "media_path": { "type": "string", "required": true, "description": "Absolute path to photo or video" },
+            "caption": { "type": "string", "required": false, "default": "", "description": "Optional caption with the media" },
+            "platform": { "type": "string", "required": false, "default": "auto" }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "contact": { "type": "string" },
+              "media_type": { "type": "string" },
+              "platform_used": { "type": "string" },
+              "sent_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.93,
+            "default_requires_approval": true,
+            "default_approval_question": "Send this media?",
+            "default_timeout_ms": 15000
+          }
+        },
+        {
+          "tool_name": "call_audio",
+          "description": "Start an audio call with a contact",
+          "execution_target": "server",
+          "params_schema": {
+            "contact": { "type": "string", "required": true, "description": "Contact name to call" },
+            "platform": { "type": "string", "required": false, "default": "auto" }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "contact": { "type": "string" },
+              "platform_used": { "type": "string" },
+              "started_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "Start this call?",
+            "default_timeout_ms": 10000
+          }
+        },
+        {
+          "tool_name": "call_video",
+          "description": "Start a video call with a contact",
+          "execution_target": "server",
+          "params_schema": {
+            "contact": { "type": "string", "required": true, "description": "Contact name to video call" },
+            "platform": { "type": "string", "required": false, "default": "auto" }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "contact": { "type": "string" },
+              "platform_used": { "type": "string" },
+              "started_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "Start this video call?",
+            "default_timeout_ms": 10000
           }
         }
       ]

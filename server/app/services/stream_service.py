@@ -10,7 +10,7 @@ import re
 import asyncio
 from typing import Optional, List, Any
 from app.ai.providers import llm_stream, llm_chat
-from app.cache import load_user, get_last_n_messages
+from app.cache import load_user, get_last_n_messages, process_query_and_get_context
 from app.prompts import stream_prompt
 from app.config import settings
 
@@ -92,9 +92,9 @@ class StreamService:
     at natural sentence/clause boundaries for human-sounding speech.
     First audio plays within 1-2 seconds.
     
-    ✅ FAST: Only loads user + recent messages (cached, ~5ms).
-       Skips process_query_and_get_context (embed+search ~500ms)
-       since chat() already does that work.
+    ✅ FAST: Loads user + recent messages + semantic context ALL IN PARALLEL.
+       Embedding + LanceDB search runs concurrently with cached lookups,
+       so total latency ≈ max(cache, embed) instead of cache + embed.
     """
     
     async def stream_chat_with_tts(
@@ -116,12 +116,12 @@ class StreamService:
         4. Send each chunk to TTS immediately when ready
         """
         try:
-            # 1. ✅ FAST context — only cached data, no embedding/search
-            user_details, recent_context = await asyncio.gather(
+            # 1. ✅ FAST context — ALL THREE run in parallel
+            user_details, recent_context, (query_context, _) = await asyncio.gather(
                 load_user(user_id),
                 get_last_n_messages(user_id, n=10),
+                process_query_and_get_context(user_id, query),
             )
-            query_context = []  # Stream doesn't need semantic context
             
             if not user_details:
                 logger.error(f"❌ User {user_id} not found")

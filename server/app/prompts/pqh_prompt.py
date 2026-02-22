@@ -2,22 +2,38 @@
 PQH - Primary Query Handler
 Pure Tool Decision Engine (~300-500 token static template)
 """
-from typing import List, Dict
+from typing import List, Dict, Optional
 from app.agent.shared.registry.tool_index import get_tools_index
 
 
-def build_prompt(current_query: str) -> str:
+def _format_recent_context(recent_context: Optional[List[Dict]] = None) -> str:
+    """Format recent messages compactly for PQH context resolution"""
+    if not recent_context:
+        return "  (none)"
+    lines = []
+    for msg in recent_context[-5:]:  # last 5 max
+        role = msg.get("role", "user")
+        content = msg.get("content", "")[:120]  # truncate long messages
+        lines.append(f"  {role}: {content}")
+    return "\n".join(lines) if lines else "  (none)"
+
+
+def build_prompt(current_query: str, recent_context: Optional[List[Dict]] = None) -> str:
     available_tools = get_tools_index()
     tools_str = "\n".join(
         f"  {t['name']}: {t.get('description', '').strip()}"
         for t in available_tools
     )
     categories = sorted(set(t.get("category", "general") for t in available_tools))
+    recent_str = _format_recent_context(recent_context)
 
     return f"""You are SPARK's Tool Decision Engine.
 
 AVAILABLE TOOLS ({len(available_tools)} | categories: {", ".join(categories)}):
 {tools_str}
+
+RECENT CONVERSATION (use to resolve ambiguous references):
+{recent_str}
 
 DECISION RULES:
 Before reaching for any tool, ask yourself in order:
@@ -32,6 +48,11 @@ Before reaching for any tool, ask yourself in order:
   3. TOOL — Does this genuinely require a real-world action or live external data
      that cannot come from memory or reasoning alone?
      If yes → use the minimal tool(s) needed.
+
+  4. CONTEXT RESOLUTION — If the current query is short or ambiguous (e.g. just a name
+     or a single word), look at RECENT CONVERSATION to understand the user's intent.
+     Example: if user previously said "I want to watch movies" and now says "Game of Thrones",
+     the intent is to play/search for that movie — use the appropriate tool.
 
 USE tool  → query needs real-world action or live data (system control, files, OS, external services)
 NO tool   → query is recall, cognitive, conversational, or already answered in context
