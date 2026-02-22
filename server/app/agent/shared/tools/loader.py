@@ -34,8 +34,16 @@ from app.agent.shared.tools.ai.init import (
     AiSummarizeTool 
 )
 
+from app.agent.shared.tools.messaging import (
+    MessageSendTool,
+    MessageFileTool,
+    MessageMediaTool,
+    CallAudioTool,
+    CallVideoTool,
+)
+
 from app.agent.shared.tools.system.operations import (
-     AppOpenTool,
+    AppOpenTool,
     AppCloseTool,
     AppRestartTool,
     AppMinimizeTool,
@@ -139,6 +147,13 @@ def load_all_tools():
         
         # AI tools
         AiSummarizeTool(),
+        
+        # Messaging tools
+        MessageSendTool(),
+        MessageFileTool(),
+        MessageMediaTool(),
+        CallAudioTool(),
+        CallVideoTool(),
     ]
     
     # Register each tool and inject its schema

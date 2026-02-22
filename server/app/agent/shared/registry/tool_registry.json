@@ -716,6 +716,29 @@
             "default_approval_question": "This will reorganize files in the folder. Continue?",
             "default_timeout_ms": 30000
           }
+        },
+        {
+          "tool_name": "folder_organize",
+          "description": "Organize folder structure ",
+          "execution_target": "client",
+          "params_schema": {
+            "path": { "type": "string", "required": true }
+          },
+          "output_schema": {
+            "success": { "type": "boolean" },
+            "data": {
+              "files_affected": { "type": "integer" },
+              "action_performed": { "type": "string" },
+              "organized_at": { "type": "string" }
+            },
+            "error": { "type": "string" }
+          },
+          "metadata": {
+            "default_confidence": 0.88,
+            "default_requires_approval": false,
+            "default_approval_question": "This will reorganize files in the folder. Continue?",
+            "default_timeout_ms": 30000
+          }
         }
       ]
     },
@@ -891,7 +914,7 @@
           "params_schema": {
             "contact": { "type": "string", "required": true, "description": "Contact name to send message to" },
             "message": { "type": "string", "required": true, "description": "Text message content" },
-            "platform": { "type": "string", "required": false, "default": "auto", "description": "Platform: auto (from user prefs), whatsapp, facebook, slack" }
+            "platform": { "type": "string", "required": false, "default": "auto", "description": "Platform: auto (from user prefs), whatsapp, facebook, slack. - (if user has no preference, default to whatsapp)" }
           },
           "output_schema": {
             "success": { "type": "boolean" },
@@ -904,7 +927,7 @@
           },
           "metadata": {
             "default_confidence": 0.95,
-            "default_requires_approval": true,
+            "default_requires_approval": false,
             "default_approval_question": "Send this message?",
             "default_timeout_ms": 10000
           }
