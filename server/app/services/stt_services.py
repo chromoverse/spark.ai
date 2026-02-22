@@ -329,10 +329,27 @@ async def transcribe_audio(audio_data: Any, mime_type: str = "audio/webm", **kwa
     """
     Simple transcription - returns only text (backward compatible)
     
+    Routes through Groq STT when groq_mode is enabled, otherwise
+    falls back to local Whisper.
+    
     Usage in your routes:
         from app.services.whisper_service import transcribe_audio
         text = await transcribe_audio(audio_data)
     """
+    from app.config import settings
+
+    if settings.groq_mode:
+        try:
+            from app.services.stt.groq_engine import groq_stt_engine
+            result = await groq_stt_engine.transcribe(audio_data, mime_type, **kwargs)
+            text = result.get("text", "")
+            if text:
+                return text
+            # Fall through to local Whisper if Groq returned nothing
+            logger.warning("⚠️ Groq STT returned no text, falling back to local Whisper")
+        except Exception as e:
+            logger.warning(f"⚠️ Groq STT failed ({e}), falling back to local Whisper")
+
     return await whisper_service.transcribe_simple(audio_data, mime_type, **kwargs)
 
 
@@ -348,4 +365,16 @@ async def transcribe_audio_detailed(
         result = await transcribe_audio_detailed(audio_data)
         print(result["text"], result["segments"])
     """
+    from app.config import settings
+
+    if settings.groq_mode:
+        try:
+            from app.services.stt.groq_engine import groq_stt_engine
+            result = await groq_stt_engine.transcribe(audio_data, mime_type, language)
+            if result.get("success"):
+                return result
+            logger.warning("⚠️ Groq STT failed, falling back to local Whisper")
+        except Exception as e:
+            logger.warning(f"⚠️ Groq STT failed ({e}), falling back to local Whisper")
+
     return await whisper_service.transcribe(audio_data, mime_type, language)

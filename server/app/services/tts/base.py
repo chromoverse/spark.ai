@@ -29,7 +29,7 @@ class TTSEngine(ABC):
         Yields:
             Audio chunks
         """
-        pass
+        yield b""  # abstract async generator stub
         
     @abstractmethod
     async def is_available(self) -> bool:

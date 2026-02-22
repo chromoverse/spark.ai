@@ -13,7 +13,7 @@ class RedisManager(GenericCacheMixin, ChatCacheMixin, UserCacheMixin, BaseRedisM
     pass
 
 # Singleton instance
-redis_manager = RedisManager()
+redis_manager: RedisManager = RedisManager()  # type: ignore[assignment]
 
 # ============ CONVENIENCE FUNCTIONS (backward compatibility) ============
 

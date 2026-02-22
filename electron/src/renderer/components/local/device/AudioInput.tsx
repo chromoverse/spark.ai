@@ -9,14 +9,20 @@ import AudioLevelProgress from "./AudioLevelProgress";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+/**
+ * Toggle between Groq mode (single full-session blob) and default mode
+ * (chunked segment streaming). Flip this one flag to switch behavior.
+ */
+const USE_GROQ = true;
+
 /** Minimum audio level (%) to count as a "speaking" sample */
-const SPEAKING_THRESHOLD = 55;
+const SPEAKING_THRESHOLD = 65;
 /** Audio level (%) below which we consider it absolute silence */
-const SILENCE_THRESHOLD = 20;
+const SILENCE_THRESHOLD = 15;
 /** How long silence must persist before we finalize (ms) */
-const SILENCE_DURATION = 2000;
+const SILENCE_DURATION = 2500;
 /** Consecutive frames above SPEAKING_THRESHOLD to confirm speech */
-const SPEAKING_CONFIRMATION_SAMPLES = 2;
+const SPEAKING_CONFIRMATION_SAMPLES = 5;
 /** Interval between chunk captures (ms) */
 const CHUNK_INTERVAL_MS = 2000;
 /** Minimum recording length to avoid false triggers (ms) */
@@ -92,8 +98,10 @@ export function AudioInput() {
   const sessionIdRef = useRef<string | null>(null);
   const seqRef = useRef(0);
   const mimeTypeRef = useRef<string>("audio/webm;codecs=opus");
-  /** Accumulated chunks for the current micro-recorder segment */
+  /** Accumulated chunks for the current micro-recorder segment (default mode) */
   const segmentChunksRef = useRef<Blob[]>([]);
+  /** Accumulated chunks for the entire speaking session (Groq mode) */
+  const fullSessionChunksRef = useRef<Blob[]>([]);
 
   // ── Auto-start listening ──────────────────────────────────────────────
 
@@ -262,11 +270,83 @@ export function AudioInput() {
     recordingStartTimeRef.current = Date.now();
 
     console.log(
-      `🎙️ Recording started — session: ${sessionId.slice(0, 8)}…`,
+      `🎙️ Recording started (${USE_GROQ ? "GROQ" : "DEFAULT"} mode) — session: ${sessionId.slice(0, 8)}…`,
     );
 
-    // Kick off the first micro-recorder segment
-    startSegmentRecorder();
+    if (USE_GROQ) {
+      // ── Groq mode: single recorder for the full session ──────────
+      fullSessionChunksRef.current = [];
+
+      try {
+        const recorder = new MediaRecorder(streamRef.current, {
+          mimeType: mimeTypeRef.current,
+          audioBitsPerSecond: 128000,
+        });
+
+        recorder.ondataavailable = (event: BlobEvent) => {
+          if (event.data.size > 0) {
+            fullSessionChunksRef.current.push(event.data);
+          }
+        };
+
+        recorder.onstop = async () => {
+          // Combine ALL accumulated data into one final blob
+          const blob = new Blob(fullSessionChunksRef.current, {
+            type: mimeTypeRef.current,
+          });
+          fullSessionChunksRef.current = [];
+
+          const duration = Date.now() - recordingStartTimeRef.current;
+          if (duration < MIN_RECORDING_DURATION_MS) {
+            console.log("⏭️ Recording too short, discarding session");
+            sessionIdRef.current = null;
+            seqRef.current = 0;
+            mediaRecorderRef.current = null;
+            return;
+          }
+
+          if (blob.size >= MIN_CHUNK_SIZE_BYTES && sessionIdRef.current) {
+            try {
+              const buffer = await blobToArrayBuffer(blob);
+              emit("user-speaking", {
+                audio: buffer,
+                mimeType: mimeTypeRef.current,
+                sessionId: sessionIdRef.current,
+                seq: 0,
+                timestamp: Date.now(),
+              });
+              console.log(
+                `📤 Full session blob sent (${blob.size} bytes, binary) ` +
+                  `session: ${sessionIdRef.current.slice(0, 8)}…`,
+              );
+
+              // Immediately finalize — only one chunk was sent
+              finalizeSession(sessionIdRef.current);
+            } catch (err) {
+              console.error("❌ Error sending full session blob:", err);
+            }
+          }
+
+          sessionIdRef.current = null;
+          seqRef.current = 0;
+          mediaRecorderRef.current = null;
+        };
+
+        recorder.onerror = (event: Event) => {
+          console.error("❌ MediaRecorder (Groq) error:", event);
+        };
+
+        // timeslice = 250ms so ondataavailable fires periodically to
+        // accumulate data, but we never emit until onstop
+        recorder.start(250);
+        mediaRecorderRef.current = recorder;
+      } catch (error) {
+        console.error("❌ Error starting Groq recorder:", error);
+      }
+    } else {
+      // ── Default mode: segment-based chunk streaming ──────────────
+      startSegmentRecorder();
+    }
   };
 
   /** Create a micro-recorder that captures one ~2 s segment. */
@@ -359,23 +439,35 @@ export function AudioInput() {
     isRecordingRef.current = false;
     setIsRecording(false);
 
-    // Clear the chunk timer
-    if (chunkTimerRef.current) {
-      clearTimeout(chunkTimerRef.current);
-      chunkTimerRef.current = null;
-    }
-
-    // Stop the current micro-recorder (triggers onstop → send + finalize)
-    const recorder = mediaRecorderRef.current;
-    if (
-      recorder &&
-      (recorder.state === "recording" || recorder.state === "paused")
-    ) {
-      recorder.stop();
-      console.log("⏹️ Recording stopped");
+    if (USE_GROQ) {
+      // ── Groq mode: just stop the single recorder ─────────────────
+      // The onstop handler (set up in startRecording) will combine all
+      // accumulated data, emit one user-speaking event, then finalize.
+      const recorder = mediaRecorderRef.current;
+      if (
+        recorder &&
+        (recorder.state === "recording" || recorder.state === "paused")
+      ) {
+        recorder.stop();
+        console.log("⏹️ Recording stopped (Groq mode)");
+      }
     } else {
-      // Recorder already inactive — finalize directly
-      handleRecordingFinished();
+      // ── Default mode: stop segment recorder + chunk timer ────────
+      if (chunkTimerRef.current) {
+        clearTimeout(chunkTimerRef.current);
+        chunkTimerRef.current = null;
+      }
+
+      const recorder = mediaRecorderRef.current;
+      if (
+        recorder &&
+        (recorder.state === "recording" || recorder.state === "paused")
+      ) {
+        recorder.stop();
+        console.log("⏹️ Recording stopped (default mode)");
+      } else {
+        handleRecordingFinished();
+      }
     }
   };
 

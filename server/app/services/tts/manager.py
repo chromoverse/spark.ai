@@ -1,20 +1,29 @@
 import logging
 import asyncio
-from typing import AsyncGenerator, List, Optional
+from typing import AsyncGenerator, List, Optional, cast, AsyncIterator
 from app.services.tts.base import TTSEngine
 from app.services.tts.kokoro_engine import KokoroEngine
 from app.services.tts.edge_engine import EdgeEngine
 from app.services.tts.gtts_engine import GTTSEngine
 from app.services.tts.voice_selector import VoiceSelector
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 class TTSManager:
     """
-    Manages TTS engines with fallback priority:
-    1. Kokoro (Local, Fast, High Quality)
-    2. Edge TTS (Cloud, High Quality, Free - currently unstable)
-    3. gTTS (Cloud, Standard Quality, Free)
+    Manages TTS engines with fallback priority.
+
+    When groq_mode is ON:
+        0. Groq TTS (Cloud, Fast, High Quality)
+        1. Kokoro  (Local, Fast, High Quality)
+        2. Edge TTS
+        3. gTTS
+
+    When groq_mode is OFF:
+        1. Kokoro
+        2. Edge TTS
+        3. gTTS
     """
     
     def __init__(self):
@@ -25,6 +34,17 @@ class TTSManager:
         """Initialize all engines"""
         if self._initialized:
             return
+
+        # Priority 0 — Groq (only when groq_mode is enabled)
+        if settings.groq_mode:
+            try:
+                from app.services.tts.groq_engine import GroqEngine
+                groq = GroqEngine()
+                if await groq.is_available():
+                    self.engines.append(groq)
+                    logger.info("✅ TTS: Groq engine enabled (priority 0)")
+            except Exception as e:
+                logger.warning(f"⚠️ TTS: Groq engine unavailable: {e}")
             
         # Priority 1: Kokoro
         kokoro = KokoroEngine()
@@ -78,7 +98,7 @@ class TTSManager:
             # For now we assume engines are versatile or will fail gracefully
             
             try:
-                # logger.debug(f"🔄 Attempting TTS with {engine_name}...")
+                logger.debug(f"🔄 Attempting TTS with {engine_name}...")
                 
                 async for chunk in engine.generate_stream(text, voice, speed, lang):
                     yield chunk

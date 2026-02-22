@@ -8,7 +8,7 @@ TTS starts speaking within 1-2 seconds instead of waiting for full response.
 import logging
 import re
 import asyncio
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Tuple
 from app.ai.providers import llm_stream, llm_chat
 from app.cache import load_user, get_last_n_messages, process_query_and_get_context
 from app.prompts import stream_prompt
@@ -117,11 +117,12 @@ class StreamService:
         """
         try:
             # 1. ✅ FAST context — ALL THREE run in parallel
-            user_details, recent_context, (query_context, _) = await asyncio.gather(
+            user_details, recent_context= await asyncio.gather(
                 load_user(user_id),
                 get_last_n_messages(user_id, n=10),
-                process_query_and_get_context(user_id, query),
             )
+
+            query_context = []
             
             if not user_details:
                 logger.error(f"❌ User {user_id} not found")
@@ -142,57 +143,83 @@ class StreamService:
                     emotion, query, recent_context, query_context, user_details
                 )
             
-            # 3. Stream tokens and send TTS chunks at sentence boundaries
-            logger.info(f"🎤 Starting stream for user {user_id}")
+            # 3. Generate response and send TTS
+            logger.info(f"🎤 Starting {'chat' if settings.groq_mode else 'stream'} for user {user_id}")
             messages = [{"role": "user", "content": prompt}]
             
-            buffer = ""
-            chunk_count = 0
-            full_response = ""
-            
-            async for token in llm_stream(messages=messages, model=settings.GROQ_REASONING_MODEL):
-                if not token:
-                    continue
-                    
-                buffer += token
-                full_response += token
-                
-                # Try to find a natural split point
-                split_at = _find_split_point(buffer)
-                if split_at > 0:
-                    chunk = buffer[:split_at].strip()
-                    buffer = buffer[split_at:].lstrip()
-                    
-                    if chunk:
-                        chunk_count += 1
-                        logger.info(f"📝 TTS chunk [{chunk_count}]: {chunk[:60]}...")
-                        
-                        success = await tts_service.stream_to_socket(
-                            sio=sio,
-                            sid=sid,
-                            text=chunk,
-                            gender=gender
-                        )
-                        
-                        if not success:
-                            logger.warning(f"⚠️ TTS failed for chunk {chunk_count}")
-                    
-                    # Yield to event loop between chunks
-                    await asyncio.sleep(0)
-            
-            # 4. Flush remaining buffer (whatever is left)
-            if buffer.strip():
-                chunk_count += 1
-                logger.info(f"📝 TTS final chunk [{chunk_count}]: {buffer.strip()[:50]}...")
-                
-                await tts_service.stream_to_socket(
-                    sio=sio,
-                    sid=sid,
-                    text=buffer.strip(),
-                    gender=gender
+            if settings.groq_mode:
+                # ── GROQ MODE: instant full response → single TTS call ──
+                # No token streaming — get the complete response at once,
+                # then send the entire text to Groq TTS as one chunk.
+                llm_result = await llm_chat(
+                    messages=messages,
+                    model=settings.GROQ_REASONING_MODEL,
                 )
+                full_response = (llm_result[0] or "").strip()
+                
+                if full_response:
+                    logger.info(f"📝 Groq chat response: {len(full_response)} chars")
+                    
+                    success = await tts_service.stream_to_socket(
+                        sio=sio,
+                        sid=sid,
+                        text=full_response,
+                        gender=gender,
+                    )
+                    if not success:
+                        logger.warning("⚠️ TTS failed for Groq response")
+                else:
+                    logger.warning("⚠️ Groq chat returned empty response")
+                    
+            else:
+                # ── DEFAULT MODE: token streaming + sentence-boundary TTS ──
+                buffer = ""
+                chunk_count = 0
+                full_response = ""
+                
+                async for token in llm_stream(messages=messages, model=settings.GROQ_REASONING_MODEL):
+                    if not token:
+                        continue
+                        
+                    buffer += token
+                    full_response += token
+                    
+                    # Try to find a natural split point
+                    split_at = _find_split_point(buffer)
+                    if split_at > 0:
+                        chunk = buffer[:split_at].strip()
+                        buffer = buffer[split_at:].lstrip()
+                        
+                        if chunk:
+                            chunk_count += 1
+                            logger.info(f"📝 TTS chunk [{chunk_count}]: {chunk[:60]}...")
+                            
+                            success = await tts_service.stream_to_socket(
+                                sio=sio,
+                                sid=sid,
+                                text=chunk,
+                                gender=gender
+                            )
+                            
+                            if not success:
+                                logger.warning(f"⚠️ TTS failed for chunk {chunk_count}")
+                        
+                        # Yield to event loop between chunks
+                        await asyncio.sleep(0)
+                
+                # Flush remaining buffer (whatever is left)
+                if buffer.strip():
+                    chunk_count += 1
+                    logger.info(f"📝 TTS final chunk [{chunk_count}]: {buffer.strip()[:50]}...")
+                    
+                    await tts_service.stream_to_socket(
+                        sio=sio,
+                        sid=sid,
+                        text=buffer.strip(),
+                        gender=gender
+                    )
             
-            logger.info(f"✅ Stream completed for {user_id}: {len(full_response)} chars, {chunk_count} TTS chunks")
+            logger.info(f"✅ {'Chat' if settings.groq_mode else 'Stream'} completed for {user_id}: {len(full_response)} chars")
             return True
             
         except Exception as e:
