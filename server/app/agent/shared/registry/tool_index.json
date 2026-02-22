@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "total_tools": 31,
+  "total_tools": 36,
   "tools": [
     {
       "name": "app_open",
@@ -186,6 +186,36 @@
       "name": "agent_status",
       "description": "Get current status of the agent",
       "category": "ai",
+      "execution_target": "server"
+    },
+    {
+      "name": "message_send",
+      "description": "Send a text message to a contact",
+      "category": "messaging",
+      "execution_target": "server"
+    },
+    {
+      "name": "message_file",
+      "description": "Send a document or file (PDF, ZIP, DOCX, etc.) to a contact",
+      "category": "messaging",
+      "execution_target": "server"
+    },
+    {
+      "name": "message_media",
+      "description": "Send a photo or video to a contact",
+      "category": "messaging",
+      "execution_target": "server"
+    },
+    {
+      "name": "call_audio",
+      "description": "Start an audio call with a contact",
+      "category": "messaging",
+      "execution_target": "server"
+    },
+    {
+      "name": "call_video",
+      "description": "Start a video call with a contact",
+      "category": "messaging",
       "execution_target": "server"
     }
   ]

@@ -33,7 +33,7 @@ class CallVideoTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = WhatsAppAutomation()
+            wa = await WhatsAppAutomation().create()
             
             # Start video call
             wa.video_call(contact)

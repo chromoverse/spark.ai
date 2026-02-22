@@ -42,7 +42,7 @@ class MessageSendTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = WhatsAppAutomation()
+            wa = await WhatsAppAutomation().create()
             
             # Send the message
             wa.send_message(contact, message)

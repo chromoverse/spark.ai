@@ -33,8 +33,8 @@ class CallAudioTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = WhatsAppAutomation()
-            
+            wa = await WhatsAppAutomation().create()
+           
             # Start audio call
             wa.audio_call(contact)
             

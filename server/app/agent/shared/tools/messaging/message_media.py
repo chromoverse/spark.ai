@@ -63,7 +63,7 @@ class MessageMediaTool(BaseTool):
                 media_type = "unknown"
             
             # Initialize WhatsApp automation
-            wa = WhatsAppAutomation()
+            wa = await WhatsAppAutomation().create()
             
             # Send the media (photo/video)
             wa.send_photo(contact, media_path, caption)

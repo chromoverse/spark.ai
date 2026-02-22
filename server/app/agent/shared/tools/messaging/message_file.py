@@ -51,7 +51,7 @@ class MessageFileTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = WhatsAppAutomation()
+            wa = await WhatsAppAutomation().create()
             
             # Send the file
             wa.send_file(contact, file_path, caption)
