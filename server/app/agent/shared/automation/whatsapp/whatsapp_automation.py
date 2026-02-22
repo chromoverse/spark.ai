@@ -8,6 +8,7 @@ import sys
 # Add the server directory to sys.path for imports to work when running directly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
 
+from app.agent.shared.tools.system.app import AppOpenTool
 from app.agent.shared.utils.process_manager.process_manager import ProcessManager
 
 pyautogui.PAUSE = 0.15
@@ -47,10 +48,24 @@ class WhatsAppAutomation:
         self.confidence      = confidence
         self.search_timeout  = search_timeout
         self.process_manager = ProcessManager()
+        self.app_open_tool   = AppOpenTool()
+        
 
     # ══════════════════════════════════════════════════════
     #  PRIVATE HELPERS
     # ══════════════════════════════════════════════════════
+
+    @classmethod
+    async def create(cls, confidence: float = 0.8, search_timeout: int = 3) -> "WhatsAppAutomation":
+        """
+        Async factory — opens WhatsApp and waits for it to be ready.
+        Usage:  wa = await WhatsAppAutomation.create()
+        """
+        self = cls(confidence=confidence, search_timeout=search_timeout)
+        await self.app_open_tool.execute({"target": "WhatsApp"})
+        print("  ⏳ Waiting for WhatsApp to be ready...")
+        time.sleep(3)   # let the app fully render before clicking
+        return self
 
     def _get_window(self):
         """Find and focus the WhatsApp Desktop window"""

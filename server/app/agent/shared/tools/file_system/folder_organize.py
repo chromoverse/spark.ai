@@ -2,7 +2,10 @@
 Folder Organize Tool
 
 Uses LLM to categorize files, builds PowerShell commands locally,
-and drops a double-clickable restore.bat in the folder for one-click rollback.
+and drops a double-clickable restore.bat for one-click rollback.
+
+Key fix: pauses OneDrive sync before moving files so operations are
+instant local moves — not slow cloud upload/download round-trips.
 """
 
 import os
@@ -17,15 +20,17 @@ from app.ai.providers.manager import llm_chat
 
 def _build_restore_bat(
     folder_path: str,
-    move_map: Dict[str, str],       # { "SubFolder/file.ext": "file.ext" }
+    move_map: Dict[str, str],
     created_dirs: List[str],
 ) -> str:
     """
-    Generate a Windows .bat file that:
-      - Prompts the user for confirmation
+    Generate a double-clickable Windows .bat that:
+      - Pauses OneDrive so moves are instant
+      - Prompts user for confirmation
       - Moves every file back to the folder root
-      - Removes any empty subfolders that were created
-    Double-click to run. No Python required.
+      - Removes empty subfolders
+      - Resumes OneDrive
+      - Keeps the window OPEN with cmd /k so user can read output
     """
     lines = [
         "@echo off",
@@ -40,12 +45,16 @@ def _build_restore_bat(
         'choice /M "Undo the folder organization and restore all files?"',
         "if errorlevel 2 goto :cancel",
         "",
+        "rem -- Pause OneDrive so file moves are instant (not cloud synced) --",
+        'set ONEDRIVE=%LOCALAPPDATA%\\Microsoft\\OneDrive\\OneDrive.exe',
+        'if exist "%ONEDRIVE%" start "" "%ONEDRIVE%" /pause',
+        "timeout /t 2 /nobreak >nul",
+        "",
         "echo.",
         "echo Restoring files...",
         "echo.",
     ]
 
-    # Move each file back to root
     for dest_rel, orig_name in move_map.items():
         src = os.path.join(folder_path, dest_rel.replace("/", "\\"))
         dst = os.path.join(folder_path, orig_name)
@@ -53,38 +62,44 @@ def _build_restore_bat(
             f'if exist "{src}" (',
             f'    move /Y "{src}" "{dst}" >nul',
             f'    echo   [OK] {orig_name}',
-            f') else (',
-            f'    echo   [--] skipped ^(not found^): {orig_name}',
+             ') else (',
+            f'    echo   [--] Already gone: {orig_name}',
              ')',
         ]
-
-    # Remove empty created dirs — longest path first so children go before parents
-    lines += ["", "echo.", "echo Removing empty folders..."]
-    for d in sorted(created_dirs, key=lambda x: x.count(os.sep), reverse=True):
-        abs_d = os.path.join(folder_path, d)
-        # `rd` without /s only removes empty dirs — inherently safe
-        lines.append(
-            f'rd "{abs_d}" 2>nul && echo   [OK] Removed: {d} || echo   [--] Not empty or missing: {d}'
-        )
 
     lines += [
         "",
         "echo.",
+        "echo Removing empty folders...",
+    ]
+    for d in sorted(created_dirs, key=lambda x: x.count(os.sep), reverse=True):
+        abs_d = os.path.join(folder_path, d)
+        lines.append(
+            f'rd "{abs_d}" 2>nul && echo   [OK] Removed: {d}'
+        )
+
+    lines += [
+        "",
+        "rem -- Resume OneDrive --",
+        'if exist "%ONEDRIVE%" start "" "%ONEDRIVE%" /resume',
+        "",
+        "echo.",
         "echo ============================================",
-        "echo  Restore complete! You can close this window.",
+        "echo  All done! Files restored.",
+        "echo  You can close this window.",
         "echo ============================================",
         "echo.",
-        "cmd /k",   # keeps the window OPEN until user manually closes it
+        "cmd /k",
         "goto :eof",
         "",
         ":cancel",
         "echo.",
         "echo Restore cancelled. Nothing was changed.",
         "echo.",
-        "cmd /k",   # keep open here too so user can read the message
+        "cmd /k",
     ]
 
-    return "\r\n".join(lines)   # Windows line endings so Notepad is happy
+    return "\r\n".join(lines)
 
 
 class FolderOrganizeTool(BaseTool):
@@ -93,18 +108,15 @@ class FolderOrganizeTool(BaseTool):
       1. Lists files, sends ONLY filenames to LLM.
       2. LLM returns a compact { filename: subfolder } map.
       3. PowerShell commands are built locally (no truncation risk).
-      4. restore.bat is written BEFORE any files are moved.
-      5. PowerShell executes the move commands.
+      4. restore.bat written BEFORE any files are moved.
+      5. OneDrive paused → files moved instantly → OneDrive resumed.
     """
 
     def get_tool_name(self) -> str:
         return "folder_organize"
 
-    # ── helpers ───────────────────────────────────────────────────────────────
-
     @staticmethod
     def _ps_path(path: str) -> str:
-        """Safely quote a Windows path for PowerShell."""
         return '"' + path.replace('"', '`"') + '"'
 
     def _build_ps_commands(
@@ -112,17 +124,14 @@ class FolderOrganizeTool(BaseTool):
         folder: str,
         category_map: Dict[str, str],
     ) -> tuple:
-        """
-        Build mkdir + Move-Item commands from the LLM category map.
-        Returns (commands, move_map, created_dirs).
-        """
         subfolders = sorted(set(category_map.values()))
-        commands   : List[str]       = []
-        move_map   : Dict[str, str]  = {}
+        commands: List[str] = []
+        move_map: Dict[str, str] = {}
 
         for sf in subfolders:
+            sf_path = os.path.join(folder, sf)
             commands.append(
-                f"New-Item -ItemType Directory -Force -Path {self._ps_path(os.path.join(folder, sf))} | Out-Null"
+                f"New-Item -ItemType Directory -Force -Path {self._ps_path(sf_path)} | Out-Null"
             )
 
         for filename, subfolder in category_map.items():
@@ -134,8 +143,6 @@ class FolderOrganizeTool(BaseTool):
             move_map[f"{subfolder}/{filename}"] = filename
 
         return commands, move_map, subfolders
-
-    # ── main execute ──────────────────────────────────────────────────────────
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         folder_path = self.get_input(inputs, "path", "")
@@ -153,7 +160,7 @@ class FolderOrganizeTool(BaseTool):
             files = [
                 e for e in os.listdir(folder_path)
                 if os.path.isfile(os.path.join(folder_path, e))
-                and e not in ("restore.bat",)   # never touch the restore script itself
+                and e != "restore.bat"
             ]
         except Exception as e:
             return ToolOutput(success=False, data={}, error=f"Cannot read folder: {e}")
@@ -162,20 +169,19 @@ class FolderOrganizeTool(BaseTool):
             return ToolOutput(
                 success=True,
                 data={
-                    "files_affected"  : 0,
+                    "files_affected": 0,
                     "action_performed": "No files to organize",
-                    "organized_at"    : datetime.now().isoformat(),
+                    "organized_at": datetime.now().isoformat(),
                 },
             )
 
-        # ── 2. Ask LLM for ONLY { filename: subfolder } ───────────────────────
-        #    No paths, no commands — keeps the response tiny (no truncation).
+        # ── 2. LLM categorization (filenames only — tiny response, no truncation) ──
         prompt = f"""You are a file organization assistant. Assign each file below to the most appropriate subfolder.
 
 FILES:
 {chr(10).join(files)}
 
-SUBFOLDER OPTIONS (use these or create sensible new ones):
+SUBFOLDER OPTIONS (use these or invent sensible ones):
 Images, Videos, Audio, PDFs, Documents, Archives, Executables
 
 RULES:
@@ -201,7 +207,7 @@ OUTPUT FORMAT:
         except Exception as e:
             return ToolOutput(success=False, data={}, error=f"LLM call failed: {e}")
 
-        # ── 3. Parse LLM response ─────────────────────────────────────────────
+        # ── 3. Parse ──────────────────────────────────────────────────────────
         try:
             clean = response_text.strip()
             for fence in ("```json", "```"):
@@ -210,13 +216,12 @@ OUTPUT FORMAT:
             if clean.endswith("```"):
                 clean = clean[:-3]
             clean = clean.strip()
-
             start, end = clean.find("{"), clean.rfind("}")
             if start == -1 or end <= start:
                 raise ValueError("No JSON object found")
-            llm_data     = json.loads(clean[start : end + 1])
-            category_map : Dict[str, str] = llm_data.get("categories", {})
-            summary      : str            = llm_data.get("summary", "Folder organized")
+            llm_data = json.loads(clean[start:end + 1])
+            category_map: Dict[str, str] = llm_data.get("categories", {})
+            summary: str = llm_data.get("summary", "Folder organized")
         except Exception as e:
             self.logger.error(f"LLM parse error: {e}\nRaw: {response_text!r}")
             return ToolOutput(success=False, data={}, error=f"LLM returned invalid JSON: {e}")
@@ -224,37 +229,54 @@ OUTPUT FORMAT:
         if not category_map:
             return ToolOutput(success=False, data={}, error="LLM returned empty categories")
 
-        # Guard: only keep files that actually exist (drop LLM hallucinations)
+        # Drop hallucinated filenames
         category_map = {
             fname: sf
             for fname, sf in category_map.items()
             if os.path.isfile(os.path.join(folder_path, fname))
         }
 
-        # ── 4. Build PS commands locally ──────────────────────────────────────
+        # ── 4. Build commands ─────────────────────────────────────────────────
         commands, move_map, created_dirs = self._build_ps_commands(folder_path, category_map)
 
         # ── 5. Write restore.bat BEFORE touching any files ────────────────────
         restore_path = os.path.join(folder_path, "restore.bat")
         try:
-            bat_content = _build_restore_bat(folder_path, move_map, created_dirs)
             with open(restore_path, "w", encoding="utf-8") as f:
-                f.write(bat_content)
+                f.write(_build_restore_bat(folder_path, move_map, created_dirs))
             self.logger.info(f"restore.bat written: {restore_path}")
         except Exception as e:
             return ToolOutput(success=False, data={}, error=f"Failed to write restore.bat: {e}")
 
-        # ── 6. Execute PowerShell ─────────────────────────────────────────────
+        # ── 6. Pause OneDrive → move files → resume OneDrive ─────────────────
+        # Without this, every Move-Item on an OneDrive folder triggers a cloud
+        # sync cycle, making 50 moves take 5-8 minutes instead of 2 seconds.
         self.logger.info(f"Running {len(commands)} PowerShell command(s)…")
+
+        onedrive = "$env:LOCALAPPDATA\\Microsoft\\OneDrive\\OneDrive.exe"
+        full_script = "\n".join([
+            # Pause OneDrive if installed
+            f'if (Test-Path "{onedrive}") {{',
+            f'    Start-Process "{onedrive}" -ArgumentList "/pause" -ErrorAction SilentlyContinue',
+            '    Start-Sleep -Seconds 1',
+            '}',
+            # Move all files
+            *commands,
+            # Resume OneDrive
+            f'if (Test-Path "{onedrive}") {{',
+            f'    Start-Process "{onedrive}" -ArgumentList "/resume" -ErrorAction SilentlyContinue',
+            '}',
+        ])
+
         try:
             result = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", "\n".join(commands)],
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", full_script],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=120,
             )
         except subprocess.TimeoutExpired:
-            return ToolOutput(success=False, data={}, error="PowerShell timed out after 60s")
+            return ToolOutput(success=False, data={}, error="PowerShell timed out after 120s")
         except FileNotFoundError:
             return ToolOutput(success=False, data={}, error="PowerShell not found on PATH")
         except Exception as e:
@@ -275,11 +297,11 @@ OUTPUT FORMAT:
         return ToolOutput(
             success=True,
             data={
-                "files_affected"   : files_affected,
-                "action_performed" : summary,
-                "organized_at"     : datetime.now().isoformat(),
-                "restore_script"   : restore_path,
-                "created_dirs"     : created_dirs,
+                "files_affected": files_affected,
+                "action_performed": summary,
+                "organized_at": datetime.now().isoformat(),
+                "restore_script": restore_path,
+                "created_dirs": created_dirs,
                 "powershell_output": result.stdout.strip() or None,
             },
             error=None,
