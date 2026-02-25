@@ -29,7 +29,7 @@ GROQ_VOICE_MAP = {
     "male":   "daniel",
     "female": "autumn",
 }
-GROQ_DEFAULT_VOICE = "autumn"
+GROQ_DEFAULT_VOICE = "daniel"
 
 # Errors that mean this key is done → rotate
 _QUOTA_KEYWORDS = frozenset({
@@ -142,7 +142,7 @@ class GroqEngine(TTSEngine):
         hint = (voice_hint or "").strip().lower()
 
         # Direct match?
-        if hint in {"autumn", "diana", "hannah", "austin", "daniel", "troy"}:
+        if hint in {"austin", "diana", "hannah", "autumn", "daniel", "troy"}:
             return hint
 
         # Gender-based?

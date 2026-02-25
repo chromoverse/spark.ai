@@ -7,7 +7,35 @@ import { toggleMicrophoneListening } from "@/store/features/localState/localSlic
 import { useSocket } from "@/context/socketContextProvider";
 import AudioLevelProgress from "./AudioLevelProgress";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── 🎛️ UNIVERSAL REACTIVITY CONTROL ─────────────────────────────────────────
+//
+//  Tweak ONE number (REACTIVITY) to control the whole component's sensitivity.
+//
+//  Range : 0.0 → 1.0
+//    0.2  = very lazy  — only reacts to loud, sustained speech
+//    0.5  = balanced   — good for quiet rooms (recommended default)
+//    0.7  = sensitive  — picks up soft/distant voices easily
+//    1.0  = hair-trigger — reacts to almost any sound
+//
+const REACTIVITY = 0.5;
+
+// ── Derived thresholds (do NOT edit these manually — change REACTIVITY above) ──
+
+/** Audio level (%) needed to start/confirm speaking */
+const SPEAKING_THRESHOLD = 35 - REACTIVITY * 22; // 35 → 13
+
+/** Audio level (%) considered absolute silence */
+const SILENCE_THRESHOLD = 3 + REACTIVITY * 10; // 3  → 8
+
+/** How many consecutive frames above threshold before we confirm speech */
+const SPEAKING_CONFIRMATION_SAMPLES = Math.round(3 - REACTIVITY * 2); // 3 → 1
+
+/** How long (ms) of continuous silence before we finalize the recording.
+ *  Higher REACTIVITY = shorter patience = faster cutoff after speech ends.
+ *  But we never cut below 1800 ms so real speech isn't chopped. */
+const SILENCE_DURATION = Math.round(2500 - REACTIVITY * 1400); // 3200 → 1800
+
+// ─── Other Constants (tune freely) ───────────────────────────────────────────
 
 /**
  * Toggle between Groq mode (single full-session blob) and default mode
@@ -15,14 +43,6 @@ import AudioLevelProgress from "./AudioLevelProgress";
  */
 const USE_GROQ = true;
 
-/** Minimum audio level (%) to count as a "speaking" sample */
-const SPEAKING_THRESHOLD = 65;
-/** Audio level (%) below which we consider it absolute silence */
-const SILENCE_THRESHOLD = 15;
-/** How long silence must persist before we finalize (ms) */
-const SILENCE_DURATION = 2500;
-/** Consecutive frames above SPEAKING_THRESHOLD to confirm speech */
-const SPEAKING_CONFIRMATION_SAMPLES = 5;
 /** Interval between chunk captures (ms) */
 const CHUNK_INTERVAL_MS = 2000;
 /** Minimum recording length to avoid false triggers (ms) */
@@ -153,8 +173,7 @@ export function AudioInput() {
       const tick = () => {
         if (analyserRef.current) {
           analyserRef.current.getByteFrequencyData(dataArray);
-          const average =
-            dataArray.reduce((a, b) => a + b) / dataArray.length;
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
           setAudioLevel(average);
           handleVoiceActivity(average);
           animationRef.current = requestAnimationFrame(tick);
@@ -173,45 +192,66 @@ export function AudioInput() {
   const handleVoiceActivity = (level: number) => {
     const pct = (level / 128) * 100;
 
+    // While waiting for server response, freeze VAD entirely
     if (isProcessingRef.current) {
       speakingSamplesRef.current = 0;
       return;
     }
 
     if (pct > SPEAKING_THRESHOLD) {
+      // ── User is clearly speaking ──────────────────────────────────
       speakingSamplesRef.current++;
 
       if (
         speakingSamplesRef.current >= SPEAKING_CONFIRMATION_SAMPLES &&
         !isSpeakingRef.current
       ) {
+        // Confirmed: speech has started
         isSpeakingRef.current = true;
         setIsSpeaking(true);
+      }
 
+      if (isSpeakingRef.current) {
+        // CRITICAL: Every active speech frame resets the silence countdown.
+        // This is what prevents mid-speech cutoffs.
         if (silenceTimeoutRef.current) {
           clearTimeout(silenceTimeoutRef.current);
           silenceTimeoutRef.current = null;
         }
 
+        // Kick off recording if not already running
         if (!isRecordingRef.current) {
           startRecording();
         }
-      }
 
-      if (isSpeakingRef.current) {
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-        }
+        // Arm the silence timer — it will fire only if no speech comes
         silenceTimeoutRef.current = setTimeout(
           handleSilenceDetected,
           SILENCE_DURATION,
         );
       }
     } else {
+      // ── Below speaking threshold ──────────────────────────────────
       speakingSamplesRef.current = 0;
 
-      if (pct <= SILENCE_THRESHOLD && isSpeakingRef.current) {
-        if (!silenceTimeoutRef.current) {
+      if (isSpeakingRef.current) {
+        if (pct <= SILENCE_THRESHOLD) {
+          // True silence: start the countdown only if not already running
+          if (!silenceTimeoutRef.current) {
+            silenceTimeoutRef.current = setTimeout(
+              handleSilenceDetected,
+              SILENCE_DURATION,
+            );
+          }
+        } else {
+          // Dead zone (between SILENCE_THRESHOLD and SPEAKING_THRESHOLD).
+          // This happens constantly during natural speech — between syllables,
+          // breaths, pauses. We treat it like a speech continuation: reset
+          // the silence clock so the recording is NEVER cut mid-sentence.
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
           silenceTimeoutRef.current = setTimeout(
             handleSilenceDetected,
             SILENCE_DURATION,
@@ -231,23 +271,13 @@ export function AudioInput() {
       silenceTimeoutRef.current = null;
     }
 
-    // Signal that the overall recording should end.
-    // stopRecording will stop the current micro-recorder and finalize.
     if (isRecordingRef.current) {
       stopRecording();
     }
   };
 
-  // ── Recording lifecycle (stop-restart approach) ───────────────────────
-  //
-  // Instead of using MediaRecorder.start(timeslice)  — which produces
-  // WebM *fragments* that can't be decoded individually — we create a
-  // fresh MediaRecorder for each ~2 s segment, stop it to get a complete
-  // self-contained audio blob, send it, then start a new one.
-  //
-  // The MediaStream stays alive throughout; only the recorder rotates.
+  // ── Recording lifecycle ───────────────────────────────────────────────
 
-  /** Start a brand-new recording session. */
   const startRecording = () => {
     if (
       !streamRef.current ||
@@ -260,7 +290,6 @@ export function AudioInput() {
     const mimeType = getRecordingMimeType();
     mimeTypeRef.current = mimeType;
 
-    // Fresh session
     const sessionId = createSessionId();
     sessionIdRef.current = sessionId;
     seqRef.current = 0;
@@ -270,11 +299,10 @@ export function AudioInput() {
     recordingStartTimeRef.current = Date.now();
 
     console.log(
-      `🎙️ Recording started (${USE_GROQ ? "GROQ" : "DEFAULT"} mode) — session: ${sessionId.slice(0, 8)}…`,
+      `🎙️ Recording started (${USE_GROQ ? "GROQ" : "DEFAULT"} mode) — session: ${sessionId.slice(0, 8)}… | REACTIVITY=${REACTIVITY} | THRESHOLD=${SPEAKING_THRESHOLD.toFixed(1)}% | SILENCE=${SILENCE_DURATION}ms`,
     );
 
     if (USE_GROQ) {
-      // ── Groq mode: single recorder for the full session ──────────
       fullSessionChunksRef.current = [];
 
       try {
@@ -290,7 +318,6 @@ export function AudioInput() {
         };
 
         recorder.onstop = async () => {
-          // Combine ALL accumulated data into one final blob
           const blob = new Blob(fullSessionChunksRef.current, {
             type: mimeTypeRef.current,
           });
@@ -316,11 +343,8 @@ export function AudioInput() {
                 timestamp: Date.now(),
               });
               console.log(
-                `📤 Full session blob sent (${blob.size} bytes, binary) ` +
-                  `session: ${sessionIdRef.current.slice(0, 8)}…`,
+                `📤 Full session blob sent (${blob.size} bytes) session: ${sessionIdRef.current.slice(0, 8)}…`,
               );
-
-              // Immediately finalize — only one chunk was sent
               finalizeSession(sessionIdRef.current);
             } catch (err) {
               console.error("❌ Error sending full session blob:", err);
@@ -336,20 +360,16 @@ export function AudioInput() {
           console.error("❌ MediaRecorder (Groq) error:", event);
         };
 
-        // timeslice = 250ms so ondataavailable fires periodically to
-        // accumulate data, but we never emit until onstop
         recorder.start(250);
         mediaRecorderRef.current = recorder;
       } catch (error) {
         console.error("❌ Error starting Groq recorder:", error);
       }
     } else {
-      // ── Default mode: segment-based chunk streaming ──────────────
       startSegmentRecorder();
     }
   };
 
-  /** Create a micro-recorder that captures one ~2 s segment. */
   const startSegmentRecorder = () => {
     if (!streamRef.current || !isRecordingRef.current) return;
 
@@ -368,7 +388,6 @@ export function AudioInput() {
       };
 
       recorder.onstop = async () => {
-        // Build a complete, self-contained audio blob from the segment
         const blob = new Blob(segmentChunksRef.current, {
           type: mimeTypeRef.current,
         });
@@ -376,7 +395,6 @@ export function AudioInput() {
 
         if (blob.size >= MIN_CHUNK_SIZE_BYTES && sessionIdRef.current) {
           try {
-            // Send raw binary — no base64 overhead (~33% smaller, no encode/decode CPU cost)
             const buffer = await blobToArrayBuffer(blob);
             const seq = seqRef.current++;
 
@@ -389,15 +407,13 @@ export function AudioInput() {
             });
 
             console.log(
-              `📤 Chunk #${seq} sent (${blob.size} bytes, binary) ` +
-                `session: ${sessionIdRef.current.slice(0, 8)}…`,
+              `📤 Chunk #${seq} sent (${blob.size} bytes) session: ${sessionIdRef.current.slice(0, 8)}…`,
             );
           } catch (err) {
             console.error("❌ Error sending audio chunk:", err);
           }
         }
 
-        // If still recording, start the next segment. Otherwise finalize.
         if (isRecordingRef.current) {
           startSegmentRecorder();
         } else {
@@ -407,21 +423,16 @@ export function AudioInput() {
 
       recorder.onerror = (event: Event) => {
         console.error("❌ MediaRecorder segment error:", event);
-        // Try to continue with a new segment
         if (isRecordingRef.current) {
           startSegmentRecorder();
         }
       };
 
-      recorder.start(); // no timeslice — we'll stop it ourselves
+      recorder.start();
       mediaRecorderRef.current = recorder;
 
-      // Schedule a stop after CHUNK_INTERVAL_MS
       chunkTimerRef.current = setTimeout(() => {
-        if (
-          recorder.state === "recording" ||
-          recorder.state === "paused"
-        ) {
+        if (recorder.state === "recording" || recorder.state === "paused") {
           recorder.stop();
         }
       }, CHUNK_INTERVAL_MS);
@@ -430,19 +441,13 @@ export function AudioInput() {
     }
   };
 
-  /** Stop the current recording session. */
   const stopRecording = () => {
     if (!isRecordingRef.current) return;
 
-    // Mark as no longer recording so the onstop callback won't start
-    // another segment and will instead call handleRecordingFinished().
     isRecordingRef.current = false;
     setIsRecording(false);
 
     if (USE_GROQ) {
-      // ── Groq mode: just stop the single recorder ─────────────────
-      // The onstop handler (set up in startRecording) will combine all
-      // accumulated data, emit one user-speaking event, then finalize.
       const recorder = mediaRecorderRef.current;
       if (
         recorder &&
@@ -452,7 +457,6 @@ export function AudioInput() {
         console.log("⏹️ Recording stopped (Groq mode)");
       }
     } else {
-      // ── Default mode: stop segment recorder + chunk timer ────────
       if (chunkTimerRef.current) {
         clearTimeout(chunkTimerRef.current);
         chunkTimerRef.current = null;
@@ -471,7 +475,6 @@ export function AudioInput() {
     }
   };
 
-  /** Called after the final segment's onstop fires. */
   const handleRecordingFinished = () => {
     const duration = Date.now() - recordingStartTimeRef.current;
 
@@ -492,7 +495,7 @@ export function AudioInput() {
     mediaRecorderRef.current = null;
   };
 
-  // ── Finalize session — tell server we're done speaking ────────────────
+  // ── Finalize session ──────────────────────────────────────────────────
 
   const finalizeSession = (sessionId: string) => {
     if (!socket || !isConnected) {
@@ -524,7 +527,7 @@ export function AudioInput() {
     );
   };
 
-  // ── Listen for server response to reset processing lock ───────────────
+  // ── Server response listeners ─────────────────────────────────────────
 
   useEffect(() => {
     if (socket && isConnected) {
@@ -778,6 +781,28 @@ export function AudioInput() {
               </option>
             ))}
           </select>
+          {/* Reactivity debug info */}
+          <div className="mt-2 pt-2 border-t border-gray-700 text-[10px] text-gray-500 space-y-0.5">
+            <div>
+              Reactivity: <span className="text-gray-300">{REACTIVITY}</span>
+            </div>
+            <div>
+              Speech threshold:{" "}
+              <span className="text-gray-300">
+                {SPEAKING_THRESHOLD.toFixed(1)}%
+              </span>
+            </div>
+            <div>
+              Silence threshold:{" "}
+              <span className="text-gray-300">
+                {SILENCE_THRESHOLD.toFixed(1)}%
+              </span>
+            </div>
+            <div>
+              Silence timeout:{" "}
+              <span className="text-gray-300">{SILENCE_DURATION}ms</span>
+            </div>
+          </div>
         </div>
       )}
 

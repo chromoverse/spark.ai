@@ -10,82 +10,77 @@ import {
   setSelectedInputDeviceId, 
   setSelectedOutputDeviceId 
 } from "@/store/features/device/deviceSlice";
+import { toggleMicrophoneListening, toggleCameraOn } from "@/store/features/localState/localSlice";
 import { tokenRefreshManager } from "@/lib/auth/tokenRefreshManager";
 import { getCurrentUser } from "@/store/features/auth/authThunks";
 import Welcome from "@/pages/Welcome";
+import { useAuthRouting } from "@/hooks/useAuthRouting";
 
 export default function AppInitializer({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Use local state for initialization to avoid redux updates causing re-renders of this component
-  const [isInitializing, setIsInitializing] = useState(true);
-  const { isDevicesAlreadyFetched } = useAppSelector((state) => state.device);
+  const { isLoading, isAuthenticated } = useAuthRouting();
+  const { 
+    isDevicesAlreadyFetched, 
+    audioInputDevices, 
+    videoInputDevices, 
+    selectedInputDeviceId, 
+    selectedCameraDeviceId 
+  } = useAppSelector((state) => state.device);
+  const { isMicrophoneListening, isCameraOn } = useAppSelector((state) => state.localState);
   const { devices, hasPermissions, isLoading: isDeviceLoading } = useMediaDevices();
-  
-  // Prevent double initialization in strict mode or rapid re-mounts
-  const initializationStarted = useRef(false);
 
-  // Check if we are on a "public" looking URL
-  const isPublicRoute = useMemo(() => {
-    return ["/welcome", "/auth/sign-in", "/auth/sign-up"].some(
-      path => location.pathname.startsWith(path)
-    );
-  }, [location.pathname]);
-
-  // Main initialization logic
+  // Sync Media State to Tray
   useEffect(() => {
-    if (initializationStarted.current) return;
-    initializationStarted.current = true;
+    window.electronApi.updateMediaState({
+      micOn: isMicrophoneListening,
+      cameraOn: isCameraOn,
+      audioInputs: audioInputDevices,
+      videoInputs: videoInputDevices,
+      selectedInputDeviceId: selectedInputDeviceId,
+      selectedCameraDeviceId: selectedCameraDeviceId,
+    });
+  }, [
+    isMicrophoneListening, 
+    isCameraOn, 
+    audioInputDevices, 
+    videoInputDevices, 
+    selectedInputDeviceId, 
+    selectedCameraDeviceId
+  ]);
 
-    const initializeApp = async () => {
-      console.log("🚀 Starting App Initialization...");
-      const startTime = Date.now();
-
-      try {
-        // 1. Check Authentication
-        const token = await tokenRefreshManager.getValidAccessToken();
-        
-        if (!token) {
-          console.log("❌ No valid token found.");
-          setIsInitializing(false);
-          // Only redirect if we are at root or a protected route that shouldn't be accessed directly
-          // We let the router guards handle the actual redirection logic mostly, 
-          // but if we are at root '/' we should go to public welcome
-          if (location.pathname === '/') {
-             navigate('/welcome', { replace: true });
-          }
-          return;
-        }
-
-        console.log("✅ Token found, fetching user...");
-        await dispatch(getCurrentUser());
-
-        // 2. Device Initialization (only if not already fetched)
-        if (!isDevicesAlreadyFetched) {
-           console.log("🎧 Waiting for devices...");
-           // We rely on the useMediaDevices hook which runs in parallel.
-           // We just wait a tick to ensure the hook has had a chance to start working if needed
-           // or we can just proceed and let the device state update asynchronously.
-           // However, for a "smooth" feel, we might want to wait for device permission check at least.
-        } else {
-            console.log("✅ Devices already fetched earlier.");
-        }
-
-        // 3. Maximize window if authenticated
-        window.electronApi.sendFrameAction("MAXIMIZE");
-
-        console.log(`✨ Initialization completed in ${Date.now() - startTime}ms`);
-      } catch (error) {
-        console.error("❌ Initialization failed:", error);
-      } finally {
-        setIsInitializing(false);
+  // Listen to Tray Media Toggles
+  useEffect(() => {
+    const unsub = window.electronApi.onTrayMediaToggle(({ type }) => {
+      if (type === "MIC") {
+        dispatch(toggleMicrophoneListening());
+      } else if (type === "CAMERA") {
+        dispatch(toggleCameraOn());
       }
-    };
+    });
 
-    initializeApp();
-  }, [dispatch, isDevicesAlreadyFetched, navigate, location.pathname]);
+    const unsubDeviceSelect = window.electronApi.onTrayDeviceSelect(({ type, deviceId }) => {
+      if (type === "MIC") {
+        dispatch(setSelectedInputDeviceId(deviceId));
+      } else if (type === "CAMERA") {
+        dispatch(setSelectedCameraDeviceId(deviceId));
+      }
+    });
+
+    return () => {
+      unsub();
+      unsubDeviceSelect();
+    };
+  }, [dispatch]);
+
+  // Device Initialization logic (only if not already fetched)
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && !isDevicesAlreadyFetched) {
+      console.log("🎧 Waiting for devices...");
+    }
+  }, [isLoading, isAuthenticated, isDevicesAlreadyFetched]);
 
   // Effect to sync device state to Redux when it becomes available
   // This runs whenever the useMediaDevices hook updates
@@ -109,7 +104,11 @@ export default function AppInitializer({ children }: { children: React.ReactNode
 
 
   // Show loading screen while initializing
-  if (isInitializing) {
+  if (isLoading) {
+    if (location.pathname === "/ai-panel") {
+      // The AI Panel should be empty/transparent while loading, not showing the full AuthLander bg
+      return null;
+    }
     return <Welcome isLoading={true} />;
   }
 

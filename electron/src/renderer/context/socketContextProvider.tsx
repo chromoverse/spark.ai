@@ -87,7 +87,7 @@ export const SocketProvider = ({
       // ✅ Get valid token from token manager
       const validToken = await tokenRefreshManager.getValidAccessToken();
       console.log("✅ Got valid token, connecting to socket...");
-
+      
       // ========= CREATE SOCKET.IO INSTANCE =========
       const newSocket = io(socketUrl, {
         path: "/socket.io",
@@ -98,7 +98,7 @@ export const SocketProvider = ({
         reconnectionDelay: 1000,
         autoConnect: true,
         auth: {
-          token: validToken, // ✅ Fresh token from token manager
+          token: validToken, 
         },
       });
 

@@ -1,18 +1,24 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IEventPayloadMapping, IFrameWindowAction, IDeviceUsageStatusManager } from "@root/types";
+import {
+  IEventPayloadMapping,
+  IFrameWindowAction,
+  IDeviceUsageStatusManager,
+} from "@root/types";
 import type { TaskRecord } from "@shared/socket.types.js";
 
 (() => {
   console.log("Preload Loaded");
-})()
+})();
 
 contextBridge.exposeInMainWorld("electronApi", {
   //frameWindowAction Apis
-  sendFrameAction: (payload: IFrameWindowAction) => ipcSend("frameWindowAction", payload),
+  sendFrameAction: (payload: IFrameWindowAction) =>
+    ipcSend("frameWindowAction", payload),
   getFrameState: () => ipcInvoke("getFrameState", {}),
   isMainWindowMaximized: () => ipcInvoke("isMainWindowMaximized", {}),
-  onWindowMaximizeStateChange: (callback: (payload: boolean) => void) => ipcOn("isMainWindowMaximized", callback),
-  
+  onWindowMaximizeStateChange: (callback: (payload: boolean) => void) =>
+    ipcOn("isMainWindowMaximized", callback),
+
   //media APIs
   getMediaDevices: () => ipcInvoke("getMediaDevices"),
   getMediaPermissions: () => ipcInvoke("getMediaPermissions"),
@@ -21,36 +27,53 @@ contextBridge.exposeInMainWorld("electronApi", {
   checkSystemPermissions: () => ipcInvoke("checkSystemPermissions"),
 
   //token Management APIs
-  saveToken: (ACCOUNT_NAME: string, token: string) => ipcInvoke("saveToken", { ACCOUNT_NAME, token }),
+  saveToken: (ACCOUNT_NAME: string, token: string) =>
+    ipcInvoke("saveToken", { ACCOUNT_NAME, token }),
   getToken: (ACCOUNT_NAME: string) => ipcInvoke("getToken", { ACCOUNT_NAME }),
-  deleteToken: (ACCOUNT_NAME: string) => ipcInvoke("deleteToken", { ACCOUNT_NAME }),
+  deleteToken: (ACCOUNT_NAME: string) =>
+    ipcInvoke("deleteToken", { ACCOUNT_NAME }),
 
   //Device Usage Status APIs
   getDeviceUsageStatus: () => ipcInvoke("getDeviceUsageStatus"),
-  onDeviceUsageStatusChange: (callback : (payload:IDeviceUsageStatusManager ) => void) => ipcOn("getDeviceUsageStatus", callback),
+  onDeviceUsageStatusChange: (
+    callback: (payload: IDeviceUsageStatusManager) => void,
+  ) => ipcOn("getDeviceUsageStatus", callback),
 
   //python Automation API
   executeTasks: (payload: TaskRecord[]) => ipcInvoke("executeTasks", payload),
 
   //Secondary Window API
   openSecondaryWindow: () => ipcInvoke("openSecondaryWindow"),
-  resizeSecondaryWindow: (width: number, height: number) => ipcInvoke("resizeSecondaryWindow", { width, height }),
-  onCloseAiPanelExpansion: (callback: () => void) => ipcOn("closeAiPanelExpansion", callback),
+  resizeSecondaryWindow: (width: number, height: number) =>
+    ipcInvoke("resizeSecondaryWindow", { width, height }),
+  onCloseAiPanelExpansion: (callback: () => void) =>
+    ipcOn("closeAiPanelExpansion", callback),
 
+  // Tray API
+  updateMediaState: async (state) => { 
+    await ipcInvoke("updateMediaState", state); 
+  },
+  onTrayMediaToggle: (callback: (payload: { type: "MIC" | "CAMERA" }) => void) =>
+    ipcOn("onTrayMediaToggle", callback),
+  onTrayDeviceSelect: (callback: (payload: { type: "MIC" | "CAMERA"; deviceId: string }) => void) =>
+    ipcOn("onTrayDeviceSelect", callback),
+
+  //Authentication API
+  onAuthSuccess: () => ipcInvoke("onAuthSuccess"),
+  onAuthFailure: () => ipcInvoke("onAuthFailure"),
 } satisfies Window["electronApi"]);
-
 
 // ipc-preload-utils
 function ipcInvoke<Key extends keyof IEventPayloadMapping>(
   key: Key,
-  payload?: any
+  payload?: any,
 ): Promise<IEventPayloadMapping[Key]> {
   return ipcRenderer.invoke(key, payload);
 }
 
 function ipcOn<Key extends keyof IEventPayloadMapping>(
   key: Key,
-  callback: (payload: IEventPayloadMapping[Key]) => void
+  callback: (payload: IEventPayloadMapping[Key]) => void,
 ) {
   //cbfun callbackFunction
   const cbfun = (_event: any, payload: IEventPayloadMapping[Key]) =>
@@ -61,7 +84,7 @@ function ipcOn<Key extends keyof IEventPayloadMapping>(
 
 function ipcSend<Key extends keyof IEventPayloadMapping>(
   key: Key,
-  payload: IEventPayloadMapping[Key]
+  payload: IEventPayloadMapping[Key],
 ) {
   ipcRenderer.send(key, payload);
 }

@@ -30,7 +30,6 @@ export interface IMediaStream {
   cameraDeviceiId?: string;
 }
 
-
 interface IActionExecutorResponseResults {
   taskId: string;
   success: boolean;
@@ -81,6 +80,22 @@ export type IEventPayloadMapping = {
   openSecondaryWindow: void;
   resizeSecondaryWindow: void;
   closeAiPanelExpansion: void;
+  
+  // Tray Synchronization
+  onTrayMediaToggle: { type: "MIC" | "CAMERA" };
+  onTrayDeviceSelect: { type: "MIC" | "CAMERA"; deviceId: string };
+  updateMediaState: { 
+    micOn?: boolean; 
+    cameraOn?: boolean;
+    audioInputs?: IMediaDevice[];
+    videoInputs?: IMediaDevice[];
+    selectedInputDeviceId?: string | null;
+    selectedCameraDeviceId?: string | null;
+  };
+
+  // Authentication API
+  onAuthSuccess: { success: boolean };
+  onAuthFailure: { success: boolean };
 };
 
 declare global {
@@ -118,6 +133,22 @@ declare global {
       openSecondaryWindow: () => Promise<void>;
       resizeSecondaryWindow: (width: number, height: number) => Promise<void>;
       onCloseAiPanelExpansion: (callback: () => void) => () => void;
+
+      // Tray Synchronization
+      updateMediaState: (state: { 
+        micOn?: boolean; 
+        cameraOn?: boolean;
+        audioInputs?: IMediaDevice[];
+        videoInputs?: IMediaDevice[];
+        selectedInputDeviceId?: string | null;
+        selectedCameraDeviceId?: string | null;
+      }) => Promise<void>;
+      onTrayMediaToggle: (callback: (payload: { type: "MIC" | "CAMERA" }) => void) => () => void;
+      onTrayDeviceSelect: (callback: (payload: { type: "MIC" | "CAMERA"; deviceId: string }) => void) => () => void;
+
+      // Authentication API
+      onAuthSuccess: () => Promise<{ success: boolean }>;
+      onAuthFailure: () => Promise<{ success: boolean }>;
     };
   }
 }

@@ -88,7 +88,7 @@ Use ONLY the tools listed above. Map every task to an exact tool name from this 
 ━━━ OUTPUT FORMAT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Return a raw JSON object — no markdown, no code fences:
 {{
-  "acknowledge_answer": "...",
+  "acknowledge_answer": "..." (it must be in past tense - short 3, or 4 words.),
   "tasks": [...]
 }}
 
@@ -130,18 +130,4 @@ Each task must follow:
   }}
 }}
 
-━━━ LIFECYCLE MESSAGE RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Language   : {lang_label} (mix {secondary_lang} only if natural).
-- Tone       : Concise, action-oriented, friendly.
-- Format     : Action + optional filler — keep it short.
-  Examples   : "Opening Chrome...", "File banaya!", "Search ho gaya Boss."
-
-━━━ EXECUTION INSTRUCTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Analyze query + PQH thought to understand full intent.
-2. Resolve any app/service ambiguity using preferences (fallback to defaults).
-3. Break intent into atomic, ordered tasks — each mapped to one tool.
-4. Set correct depends_on chains for sequential steps.
-5. Build lifecycle_messages per task in {lang_label}.
-6. Write acknowledge_answer last, after confirming tasks are complete.
-7. Return ONLY the raw JSON. Nothing else.
 """

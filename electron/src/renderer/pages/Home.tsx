@@ -6,11 +6,12 @@ import RightPanel from "@/components/local/home/RightPanel";
 import TerminalShower from "@/components/local/terminals/TerminalShower";
 import { useAiResponseHandler } from "@/hooks/useAiResponseHandler";
 import { useAppSelector } from "@/store/hooks";
+import { useEffect } from "react";
 
 function Home() {
-  const {user} = useAppSelector((state) => state.auth)
-  console.log("user fomr state", user)
-   useAiResponseHandler({
+  const { user } = useAppSelector((state) => state.auth);
+  console.log("user fomr state", user);
+  useAiResponseHandler({
     autoListen: true,
     onPQHSuccess: (payload) => {
       console.log("PQH completed:", payload);
@@ -22,8 +23,9 @@ function Home() {
     onTaskBatchError: (error) => {
       console.error("Tasks failed:", error);
       // Show error toast
-    }
+    },
   });
+
 
   return (
     <div className="h-screen w-screen bg-[#070818] text-white overflow-hidden flex flex-col justify-between">

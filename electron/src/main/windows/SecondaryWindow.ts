@@ -50,10 +50,11 @@ export class SecondaryWindow {
     });
 
     if (isDevMode()) {
-      this.window.loadURL("http://localhost:5123/ai-panel");
+      this.window.loadURL("http://localhost:5123/#/ai-panel");
     } else {
       this.window.loadFile(
-        path.join(app.getAppPath(), "/dist-react/index.html#ai-panel"),
+        path.join(app.getAppPath(), "/dist-react/index.html"),
+        { hash: "ai-panel" }
       );
     }
 

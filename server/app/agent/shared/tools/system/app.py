@@ -26,7 +26,7 @@ class AppOpenTool(BaseTool):
         super().__init__()
         self.searcher = SystemSearcher()
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Find and open an application, tool, or URL."""
         target: str = inputs.get("target", "")
         args: list = inputs.get("args", [])
@@ -38,8 +38,9 @@ class AppOpenTool(BaseTool):
             )
 
         try:
-            # Resolve the target
-            result = self.searcher.search_app(target, include_icon=False)
+            # SystemSearcher rebuilds cache via AppSearcher which takes ~4s
+            # BaseTool handles wrapping this sync execution in a thread!
+            result = self.searcher.search_app(target, False)
 
             if not result:
                 return ToolOutput(
@@ -185,7 +186,7 @@ class AppCloseTool(BaseTool):
         super().__init__()
         self.pm = ProcessManager()
     
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Close/Kill an application."""
         target = inputs.get("target", "")
         
@@ -237,7 +238,7 @@ class AppRestartTool(BaseTool):
         self.pm = ProcessManager()
         self.app_open_tool = AppOpenTool()
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Restart an application."""
         target = inputs.get("target", "")
         if not target:
@@ -249,11 +250,13 @@ class AppRestartTool(BaseTool):
             # Close the app
             self.pm.close_process(target)
             
-            # Wait for it to close completely
-            await asyncio.sleep(2)
+            # Since this is now completely synchronous inside to_thread, using sleep isn't strictly necessary,
+            # but we can use time.sleep to stall the thread safely.
+            import time
+            time.sleep(2)
 
             # Open the app
-            open_result = await self.app_open_tool._execute(inputs)
+            open_result = self.app_open_tool._execute(inputs)
 
             if open_result.success:
                 return ToolOutput(
@@ -287,7 +290,7 @@ class AppMinimizeTool(BaseTool):
         super().__init__()
         self.pm = ProcessManager()
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         target = inputs.get("target", "")
         if not target:
             return ToolOutput(success=False, data={}, error="Target app name is required")
@@ -319,7 +322,7 @@ class AppMaximizeTool(BaseTool):
         super().__init__()
         self.pm = ProcessManager()
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         target = inputs.get("target", "")
         if not target:
             return ToolOutput(success=False, data={}, error="Target app name is required")
@@ -351,7 +354,7 @@ class AppFocusTool(BaseTool):
         super().__init__()
         self.pm = ProcessManager()
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         target = inputs.get("target", "")
         if not target:
             return ToolOutput(success=False, data={}, error="Target app name is required")

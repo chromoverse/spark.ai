@@ -7,6 +7,7 @@ import { ControllerDots } from "./components/ControllerDots";
 import { ExpansionArea } from "./components/ExpansionArea";
 import { ThemeProvider } from "./context/ThemeContext";
 import type { SwipeDirection, ControllerPlugin } from "./types";
+import { useAiResponseHandler } from "@/hooks/useAiResponseHandler";
 
 // Panel size constants
 const COLLAPSED_SIZE = { width: 200, height: 60 };
@@ -42,6 +43,20 @@ export default function AiPanel() {
   const [expansionVisible, setExpansionVisible] = useState(false);
   const [expansionData, setExpansionData] = useState<unknown>(null);
   const [isDragMode, setIsDragMode] = useState(false);
+
+  // Initialize AI response handler for the AI Panel window
+  useAiResponseHandler({
+    autoListen: true,
+    onPQHSuccess: (payload) => {
+      console.log("PQH completed in AI Panel:", payload);
+    },
+    onTaskBatchComplete: (results) => {
+      console.log("Tasks completed in AI Panel:", results);
+    },
+    onTaskBatchError: (error) => {
+      console.error("Tasks failed in AI Panel:", error);
+    },
+  });
 
   const hoverTimeout = useRef<NodeJS.Timeout | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);

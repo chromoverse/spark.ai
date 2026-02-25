@@ -10,13 +10,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+import inspect
+import asyncio
+
 class ToolOutput:
     """Tool output (matches TaskOutput structure)"""
     def __init__(self, success: bool, data: Dict[str, Any], error: Optional[str] = None):
         self.success = success
         self.data = data
         self.error = error
-
 
 class BaseTool(ABC):
     """
@@ -27,6 +29,7 @@ class BaseTool(ABC):
     - Automatic output validation
     - Error handling
     - Logging
+    - Automatic async execution for sync tools
     """
     
     def __init__(self):
@@ -43,15 +46,11 @@ class BaseTool(ABC):
         pass
     
     @abstractmethod
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """
         Execute the tool (implement this in child classes)
-        
-        Args:
-            inputs: Validated inputs (guaranteed to match schema)
-            
-        Returns:
-            ToolOutput with results
+        Can be synchronous (`def`) or asynchronous (`async def`).
+        Synchronous implementations are automatically wrapped in asyncio.to_thread.
         """
         pass
     
@@ -82,7 +81,15 @@ class BaseTool(ABC):
             
             # 2. Execute actual tool
             self.logger.info(f"Executing {self.tool_name}")
-            result = await self._execute(inputs)
+            
+            # Dynamically handle both async and sync tools
+            # Sync tools are pushed to a background thread to prevent blocking
+            # the main asyncio event loop (which would delay streams/socket)
+            if inspect.iscoroutinefunction(self._execute):
+                result = await self._execute(inputs)
+            else:
+                self.logger.debug(f"{self.tool_name} is synchronous, running in thread...")
+                result = await asyncio.to_thread(self._execute, inputs)
             
             # 3. Validate output against schema
             if self._output_schema and result.success:

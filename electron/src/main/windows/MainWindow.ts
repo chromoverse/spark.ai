@@ -24,7 +24,9 @@ export class MainWindow {
     });
 
     this.window.once("ready-to-show", () => {
-      this.window?.show();
+      // Visibility is now controlled by React frontend.
+      // The Main Window stays hidden here until `onAuthFailure` IPC is triggered.
+      console.log("Main Window is ready to show (waiting for Auth check)");
     });
 
     if (isDevMode()) {

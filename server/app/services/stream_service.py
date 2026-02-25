@@ -153,7 +153,7 @@ class StreamService:
                 # then send the entire text to Groq TTS as one chunk.
                 llm_result = await llm_chat(
                     messages=messages,
-                    model=settings.GROQ_REASONING_MODEL,
+                    # model=settings.GROQ_REASONING_MODEL,
                 )
                 full_response = (llm_result[0] or "").strip()
                 
@@ -177,7 +177,7 @@ class StreamService:
                 chunk_count = 0
                 full_response = ""
                 
-                async for token in llm_stream(messages=messages, model=settings.GROQ_REASONING_MODEL):
+                async for token in llm_stream(messages=messages):
                     if not token:
                         continue
                         
