@@ -5,9 +5,9 @@ import { PanelHeader } from "./components/PanelHeader";
 import { SwipeContainer } from "./components/SwipeContainer";
 import { ControllerDots } from "./components/ControllerDots";
 import { ExpansionArea } from "./components/ExpansionArea";
-import { ThemeProvider } from "./context/ThemeContext";
 import type { SwipeDirection, ControllerPlugin } from "./types";
 import { useAiResponseHandler } from "@/hooks/useAiResponseHandler";
+import { useSparkTTS } from "@/context/sparkTTSContext";
 
 // Panel size constants
 const COLLAPSED_SIZE = { width: 200, height: 60 };
@@ -37,8 +37,8 @@ const resizeWindow = (() => {
 
 export default function AiPanel() {
   const [isHovered, setIsHovered] = useState(false);
-  // TODO : merge this audio level with real audio input level and also #TODO add the ai audio level
-  const [audioLevel, setAudioLevel] = useState(0);
+  // Using real audio level from TTS context
+  const { audioLevel: ttsAudioLevel } = useSparkTTS();
   const [activeIndex, setActiveIndex] = useState(0);
   const [expansionVisible, setExpansionVisible] = useState(false);
   const [expansionData, setExpansionData] = useState<unknown>(null);
@@ -64,14 +64,6 @@ export default function AiPanel() {
 
   // Memoize controllers to prevent re-fetching
   const controllers = useMemo(() => getControllers(), []);
-
-  // Simulate audio level
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAudioLevel(Math.random() * 100);
-    }, 80);
-    return () => clearInterval(interval);
-  }, []);
 
   // Listen for click-outside events
   useEffect(() => {
@@ -329,7 +321,7 @@ export default function AiPanel() {
       controllers.map((controller: ControllerPlugin) => (
         <div
           key={controller.id}
-          className="flex-shrink-0 w-[340px] flex items-center justify-center"
+          className="shrink-0 w-[340px] flex items-center justify-center"
         >
           <controller.component
             isActive={controller.id === activeController?.id}
@@ -377,7 +369,7 @@ export default function AiPanel() {
             } as any
           }
         >
-          <PanelHeader audioLevel={audioLevel} />
+          <PanelHeader audioLevel={ttsAudioLevel} />
         </div>
 
         {/* Controls Area (No Drag) */}

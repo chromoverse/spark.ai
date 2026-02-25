@@ -13,6 +13,7 @@ interface SparkTTSContextProps {
   stop: () => void;
   isSpeaking: boolean;
   queueLength: number;
+  audioLevel: number;
 }
 
 const SparkTTSContext = createContext<SparkTTSContextProps | null>(null);
@@ -54,6 +55,7 @@ export const SparkTTSProvider = ({
   // ── state ──
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [queueLength, setQueueLength] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
 
   // Current stream's chunks
   const chunkQueueRef = useRef<Uint8Array[]>([]);
@@ -74,6 +76,11 @@ export const SparkTTSProvider = ({
 
   // Track when last audio ended to prevent overlap
   const lastAudioEndTimeRef = useRef<number>(0);
+
+  // For audio level
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaElementSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   // ── Initialize AudioContext ──
   useEffect(() => {
@@ -198,6 +205,47 @@ export const SparkTTSProvider = ({
 
       audio.preload = "auto";
       audio.volume = 1.0;
+      audio.crossOrigin = "anonymous";
+
+      // Setup audio analyzer
+      if (audioContextRef.current) {
+        if (mediaElementSourceRef.current) {
+          mediaElementSourceRef.current.disconnect();
+          mediaElementSourceRef.current = null;
+        }
+
+        try {
+          const source = audioContextRef.current.createMediaElementSource(audio);
+          mediaElementSourceRef.current = source;
+
+          if (!analyserRef.current) {
+            const analyser = audioContextRef.current.createAnalyser();
+            analyser.fftSize = 256;
+            analyserRef.current = analyser;
+            analyser.connect(audioContextRef.current.destination);
+          }
+
+          source.connect(analyserRef.current);
+
+          if (!animationFrameRef.current) {
+            const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+            const updateLevel = () => {
+              if (analyserRef.current && isPlayingChunkRef.current) {
+                analyserRef.current.getByteFrequencyData(dataArray);
+                const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+                setAudioLevel(avg);
+                animationFrameRef.current = requestAnimationFrame(updateLevel);
+              } else {
+                setAudioLevel(0);
+                animationFrameRef.current = null;
+              }
+            };
+            updateLevel();
+          }
+        } catch (err) {
+          console.warn("Failed to setup audio analyzer:", err);
+        }
+      }
 
       // Resume AudioContext if suspended
       if (audioContextRef.current?.state === "suspended") {
@@ -440,6 +488,7 @@ export const SparkTTSProvider = ({
         stop,
         isSpeaking,
         queueLength,
+        audioLevel,
       }}
     >
       {children}

@@ -13,7 +13,7 @@ export function AudioVisualizer({ audioLevel }: AudioVisualizerProps) {
         return (
           <div
             key={i}
-            className="w-[3px] rounded-sm bg-gradient-to-t from-indigo-500 to-indigo-300 transition-[height] duration-75 ease-out"
+            className="w-[3px] rounded-sm bg-linear-to-t from-indigo-500 to-indigo-300 transition-[height] duration-75 ease-out"
             style={{ height: `${height}%` }}
           />
         );

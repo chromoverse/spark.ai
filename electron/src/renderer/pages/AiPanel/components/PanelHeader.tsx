@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { PanelHeaderProps } from "../types";
 import { VoiceBubble } from "./VoiceBubble";
 import { AudioVisualizer } from "./AudioVisualizer";
+import AudioInput from "./AudioInput";
 
 export const PanelHeader = memo(
   ({ audioLevel }: PanelHeaderProps) => {
@@ -20,7 +21,7 @@ export const PanelHeader = memo(
           </div>
         </div>
         {/* Visualizer */}
-        <AudioVisualizer audioLevel={audioLevel} />
+        <AudioInput />
       </div>
     );
   },

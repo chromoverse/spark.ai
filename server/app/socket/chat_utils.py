@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Results that mean "no useful speech"
 _INVALID_TRANSCRIPTIONS = frozenset(
-    {"", "[No speech detected]", "[Transcription failed]", "[Empty audio file]"}
+    {"", "[No speech detected]", "[Thank you.]", "[Transcription failed]", "[Empty audio file]"}
 )
 
 
