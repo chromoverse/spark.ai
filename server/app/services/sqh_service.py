@@ -12,7 +12,8 @@ Handles Secondary Query Handler logic:
 import logging
 import json
 import asyncio
-from typing import List, Dict, Any
+import re
+from typing import List, Dict, Any, Union
 
 from app.agent.core.models import LifecycleMessages, Task
 from app.models.pqh_response_model import PQHResponse
@@ -23,6 +24,102 @@ from app.agent.core.execution_engine import get_execution_engine
 from app.agent.core.server_executor import get_server_executor
 
 logger = logging.getLogger(__name__)
+
+def extract_json_from_response(response: str) -> Union[dict, list, None]:
+    """
+    Smart JSON extraction from LLM responses.
+    
+    Handles:
+    - Plain JSON: { ... } or [ ... ]
+    - Markdown code blocks: ```json ... ``` or ``` ... ```
+    - Explanatory text before/after JSON
+    - Partial JSON with trailing text
+    - Nested structures
+    
+    Returns:
+        Parsed JSON (dict or list) or None if parsing fails
+    """
+    if not response:
+        return None
+    
+    cleaned = response.strip()
+    
+    # Method 1: Try direct parse (already clean JSON)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    
+    # Method 2: Extract from ```json ... ``` blocks
+    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', cleaned)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+    
+    # Method 3: Extract from plain ``` ... ``` blocks
+    json_match = re.search(r'```\s*([\s\S]*?)\s*```', cleaned)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+    
+    # Method 4: Find first { or [ and try to match brackets to extract full JSON
+    # This handles explanatory text before the JSON
+    first_brace = cleaned.find('{')
+    first_bracket = cleaned.find('[')
+    
+    start_pos = -1
+    start_char = ''
+    
+    if first_brace != -1 and first_bracket != -1:
+        start_pos = min(first_brace, first_bracket)
+        start_char = cleaned[start_pos]
+    elif first_brace != -1:
+        start_pos = first_brace
+        start_char = '{'
+    elif first_bracket != -1:
+        start_pos = first_bracket
+        start_char = '['
+    
+    if start_pos != -1:
+        # Use a bracket-matching approach to find the complete JSON
+        json_candidate = cleaned[start_pos:]
+        
+        # Try to parse from start_pos to find the complete JSON
+        for end_pos in range(len(json_candidate), 0, -1):
+            try:
+                result = json.loads(json_candidate[:end_pos])
+                return result
+            except json.JSONDecodeError:
+                continue
+    
+    # Method 5: Try to fix common JSON issues (trailing commas, single quotes, etc.)
+    # Remove trailing commas before } or ]
+    fixed = re.sub(r',(\s*[\]}])', r'\1', cleaned)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+    
+    # Method 6: Last resort - try to find and extract any valid JSON object/array
+    # Look for any {...} or [...] pattern that might be valid
+    all_matches = re.findall(r'(\{[\s\S]*\}|[[\s\S]*\])', cleaned)
+    for match in all_matches:
+        try:
+            result = json.loads(match)
+            # Only return if it has expected keys (for task plans)
+            if isinstance(result, dict) and ('tasks' in result or 'acknowledge_answer' in result):
+                return result
+            elif isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            continue
+    
+    return None
+
 
 async def process_sqh(
     pqh_response: PQHResponse,
@@ -63,15 +160,16 @@ async def process_sqh(
             logger.error(f"❌ [SQH] {error_msg}")
             raise ValueError(error_msg)
         
-        # 3. Parse Response
+        # 3. Parse Response using smart extraction
         try:
-            cleaned_json = raw_response.strip()
-            if cleaned_json.startswith("```json"):
-                cleaned_json = cleaned_json.split("\n", 1)[1]
-            if cleaned_json.endswith("```"):
-                cleaned_json = cleaned_json.rsplit("\n", 1)[0]
+            # Use smart JSON extraction that handles all LLM response formats
+            data = extract_json_from_response(raw_response)
             
-            data = json.loads(cleaned_json)
+            if data is None:
+                error_msg = "Failed to extract valid JSON from LLM response"
+                logger.error(f"❌ [SQH] {error_msg}")
+                logger.debug(f"Raw response: {raw_response}")
+                raise ValueError(error_msg)
             
             tasks_data = []
             ack_msg = None

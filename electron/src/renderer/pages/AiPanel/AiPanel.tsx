@@ -37,8 +37,6 @@ const resizeWindow = (() => {
 
 export default function AiPanel() {
   const [isHovered, setIsHovered] = useState(false);
-  // Using real audio level from TTS context
-  const { audioLevel: ttsAudioLevel } = useSparkTTS();
   const [activeIndex, setActiveIndex] = useState(0);
   const [expansionVisible, setExpansionVisible] = useState(false);
   const [expansionData, setExpansionData] = useState<unknown>(null);
@@ -369,7 +367,7 @@ export default function AiPanel() {
             } as any
           }
         >
-          <PanelHeader audioLevel={ttsAudioLevel} />
+          <PanelHeader />
         </div>
 
         {/* Controls Area (No Drag) */}

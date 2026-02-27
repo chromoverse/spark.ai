@@ -1,7 +1,8 @@
+import { useSparkTTS } from '@/context/sparkTTSContext';
 import { useState, useEffect, useMemo } from 'react';
-import type { VoiceBubbleProps } from '../types';
 
-export function VoiceBubble({ audioLevel }: VoiceBubbleProps) {
+export function VoiceBubble() {
+  const {audioLevel} = useSparkTTS()
   const [hueRotation, setHueRotation] = useState(0);
 
   useEffect(() => {

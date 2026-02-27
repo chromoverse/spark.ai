@@ -71,7 +71,7 @@ const getRecordingMimeType = (): string => {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AudioInput() {
+export function AudioInput({isAiPanel}: {isAiPanel?: boolean}) {
   const dispatch = useAppDispatch();
   const { socket, isConnected, emit, on, off } = useSocket();
 
@@ -724,6 +724,42 @@ export function AudioInput() {
             Grant Permission
           </Button>
         </div>
+      </div>
+    );
+  }
+
+
+  if (isAiPanel) {
+    // Render for AI panel
+    return (
+      <div className="relative flex items-center gap-0.5 h-7">
+        {!isMicrophoneListening && (
+          <div
+            className="absolute -top-1 -right-2 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)] z-10"
+            title="Microphone Muted"
+          />
+        )}
+        {isProcessing && (
+          <div
+            className="absolute -top-1 -right-2 w-2 h-2 rounded-full border-[1.5px] border-blue-400 border-t-transparent animate-spin z-10"
+            title="Processing Query"
+          />
+        )}
+        {Array.from({ length: 4 }).map((_, i) => {
+          const height = Math.max(
+            20,
+            (audioLevel / 100) *
+              100 *
+              (0.5 + Math.sin(Date.now() / 200 + i) * 0.5),
+          );
+          return (
+            <div
+              key={i}
+              className="w-[3px] rounded-sm bg-linear-to-t from-indigo-500 to-indigo-300 transition-[height] duration-75 ease-out"
+              style={{ height: `${height}%` }}
+            />
+          );
+        })}
       </div>
     );
   }

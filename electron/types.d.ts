@@ -80,12 +80,13 @@ export type IEventPayloadMapping = {
   openSecondaryWindow: void;
   resizeSecondaryWindow: void;
   closeAiPanelExpansion: void;
-  
+
   // Tray Synchronization
   onTrayMediaToggle: { type: "MIC" | "CAMERA" };
   onTrayDeviceSelect: { type: "MIC" | "CAMERA"; deviceId: string };
-  updateMediaState: { 
-    micOn?: boolean; 
+  onMicMuteToggle: Record<string, never>; // Global shortcut for mic mute/unmute
+  updateMediaState: {
+    micOn?: boolean;
     cameraOn?: boolean;
     audioInputs?: IMediaDevice[];
     videoInputs?: IMediaDevice[];
@@ -96,6 +97,12 @@ export type IEventPayloadMapping = {
   // Authentication API
   onAuthSuccess: { success: boolean };
   onAuthFailure: { success: boolean };
+
+  // // Socket IPC Bridge
+  // "socket:emit": void;
+  // "socket:connected": { connected: boolean; socketId?: string };
+  // "socket:disconnected": { connected: boolean; reason?: string };
+  // // socket:event:<name> channels are dynamic strings — handled via ipcRenderer.on directly
 };
 
 declare global {
@@ -135,20 +142,35 @@ declare global {
       onCloseAiPanelExpansion: (callback: () => void) => () => void;
 
       // Tray Synchronization
-      updateMediaState: (state: { 
-        micOn?: boolean; 
+      updateMediaState: (state: {
+        micOn?: boolean;
         cameraOn?: boolean;
         audioInputs?: IMediaDevice[];
         videoInputs?: IMediaDevice[];
         selectedInputDeviceId?: string | null;
         selectedCameraDeviceId?: string | null;
       }) => Promise<void>;
-      onTrayMediaToggle: (callback: (payload: { type: "MIC" | "CAMERA" }) => void) => () => void;
-      onTrayDeviceSelect: (callback: (payload: { type: "MIC" | "CAMERA"; deviceId: string }) => void) => () => void;
+      onTrayMediaToggle: (
+        callback: (payload: { type: "MIC" | "CAMERA" }) => void,
+      ) => () => void;
+      onTrayDeviceSelect: (
+        callback: (payload: {
+          type: "MIC" | "CAMERA";
+          deviceId: string;
+        }) => void,
+      ) => () => void;
+      // Global shortcut for mic mute/unmute
+      onMicMuteToggle: (callback: () => void) => () => void;
 
       // Authentication API
       onAuthSuccess: () => Promise<{ success: boolean }>;
       onAuthFailure: () => Promise<{ success: boolean }>;
+
+      // // Socket IPC Bridge
+      // socketEmit: (event: string, data?: any) => Promise<void>;
+      // onSocketConnected: (callback: (payload: { connected: boolean; socketId?: string }) => void) => () => void;
+      // onSocketDisconnected: (callback: (payload: { connected: boolean; reason?: string }) => void) => () => void;
+      // onSocketEvent: (event: string, callback: (data: any) => void) => () => void;
     };
   }
 }

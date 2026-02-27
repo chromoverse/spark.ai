@@ -64,6 +64,7 @@ class WhatsAppAutomation:
         self = cls(confidence=confidence, search_timeout=search_timeout)
         await self.app_open_tool.execute({"target": "WhatsApp"})
         print("  ⏳ Waiting for WhatsApp to be ready...")
+        self.process_manager.bring_to_focus("WhatsApp")
         time.sleep(3)   # let the app fully render before clicking
         return self
 

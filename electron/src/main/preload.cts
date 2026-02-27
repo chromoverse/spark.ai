@@ -50,17 +50,43 @@ contextBridge.exposeInMainWorld("electronApi", {
     ipcOn("closeAiPanelExpansion", callback),
 
   // Tray API
-  updateMediaState: async (state) => { 
-    await ipcInvoke("updateMediaState", state); 
+  updateMediaState: async (state) => {
+    await ipcInvoke("updateMediaState", state);
   },
-  onTrayMediaToggle: (callback: (payload: { type: "MIC" | "CAMERA" }) => void) =>
-    ipcOn("onTrayMediaToggle", callback),
-  onTrayDeviceSelect: (callback: (payload: { type: "MIC" | "CAMERA"; deviceId: string }) => void) =>
-    ipcOn("onTrayDeviceSelect", callback),
+  onTrayMediaToggle: (
+    callback: (payload: { type: "MIC" | "CAMERA" }) => void,
+  ) => ipcOn("onTrayMediaToggle", callback),
+  onTrayDeviceSelect: (
+    callback: (payload: { type: "MIC" | "CAMERA"; deviceId: string }) => void,
+  ) => ipcOn("onTrayDeviceSelect", callback),
+  onMicMuteToggle: (callback: () => void) => ipcOn("onMicMuteToggle", callback),
 
   //Authentication API
   onAuthSuccess: () => ipcInvoke("onAuthSuccess"),
   onAuthFailure: () => ipcInvoke("onAuthFailure"),
+
+  // // Socket IPC Bridge
+  // // Renderer → main → socket
+  // socketEmit: (event: string, data?: any) =>
+  //   ipcRenderer.invoke("socket:emit", event, data),
+  // // main → renderer: connection state pushes
+  // onSocketConnected: (callback: (payload: { connected: boolean; socketId?: string }) => void) => {
+  //   const cbfun = (_e: any, payload: any) => callback(payload);
+  //   ipcRenderer.on("socket:connected", cbfun);
+  //   return () => ipcRenderer.off("socket:connected", cbfun);
+  // },
+  // onSocketDisconnected: (callback: (payload: { connected: boolean; reason?: string }) => void) => {
+  //   const cbfun = (_e: any, payload: any) => callback(payload);
+  //   ipcRenderer.on("socket:disconnected", cbfun);
+  //   return () => ipcRenderer.off("socket:disconnected", cbfun);
+  // },
+  // // main → renderer: forwarded socket events (e.g. "socket:event:query-result")
+  // onSocketEvent: (event: string, callback: (data: any) => void) => {
+  //   const channel = `socket:event:${event}`;
+  //   const cbfun = (_e: any, payload: any) => callback(payload);
+  //   ipcRenderer.on(channel, cbfun);
+  //   return () => ipcRenderer.off(channel, cbfun);
+  // },
 } satisfies Window["electronApi"]);
 
 // ipc-preload-utils

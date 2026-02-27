@@ -19,7 +19,7 @@ export class SecondaryWindow {
       resizable: false,
       minimizable: false,
       maximizable: false,
-      closable: false,
+      // closable: false,
       alwaysOnTop: true, // 🧲 stay above apps
       skipTaskbar: true,
       hasShadow: true,
