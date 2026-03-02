@@ -1,15 +1,27 @@
 import path from "path";
+import fs from "node:fs";
 import { app } from "electron";
 import { isDevMode } from "./isDevMode.js"
 
+function firstExistingPath(candidates: string[]): string {
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
 export function getPreloadPath() {
-  return path.join(
-    app.getAppPath(),
-    isDevMode() ? "." : "..",
-    "dist-electron",
-    "main",
-    "preload.cjs"
-  );
+  const appPath = app.getAppPath();
+  const cwd = process.cwd();
+
+  return firstExistingPath([
+    path.join(appPath, "dist-electron", "main", "preload.cjs"),
+    path.join(appPath, "electron", "dist-electron", "main", "preload.cjs"),
+    path.join(cwd, "dist-electron", "main", "preload.cjs"),
+    path.join(cwd, "electron", "dist-electron", "main", "preload.cjs"),
+  ]);
 }
 
 export function getUIPath(): string {
@@ -24,5 +36,13 @@ export function getUIPath(): string {
 }
 
 export function getAssetPath() {
-  return path.join(app.getAppPath(), isDevMode() ? "." : "..", "src", "assets");
+  const appPath = app.getAppPath();
+  const cwd = process.cwd();
+
+  return firstExistingPath([
+    path.join(appPath, "src", "assets"),
+    path.join(appPath, "electron", "src", "assets"),
+    path.join(cwd, "src", "assets"),
+    path.join(cwd, "electron", "src", "assets"),
+  ]);
 }

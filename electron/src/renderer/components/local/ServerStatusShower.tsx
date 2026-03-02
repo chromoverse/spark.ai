@@ -91,7 +91,7 @@ const flagStyles = {
 function ServerStatusShower() {
   const [statusArr, setStatusArr] = React.useState<ServerStatus[]>([]);
   const [order, setOrder] = React.useState<"asc" | "desc">("desc");
-  const { isConnected, socket, on } = useSocket();
+  const { isConnected, socket, on, off } = useSocket();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -102,9 +102,9 @@ function ServerStatusShower() {
     on("server-status", handleServerStatus);
 
     return () => {
-      socket.off("server-status", handleServerStatus);
+      off("server-status", handleServerStatus);
     };
-  }, [isConnected, socket, on]);
+  }, [isConnected, socket, on, off]);
 
   // Auto-scroll to bottom when new logs arrive (only in desc mode)
   useEffect(() => {

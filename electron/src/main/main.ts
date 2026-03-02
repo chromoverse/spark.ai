@@ -3,7 +3,6 @@ import { trayManager } from "./windows/TrayManager.js";
 import { windowManager } from "./services/WindowManager.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { ipcWebContentSend } from "./utils/ipcUtils.js";
-// import { socketService } from "./services/SocketService.js";
 
 function registerGlobalShortcuts(mainWindow: BrowserWindow) {
   // Register Ctrl/Cmd + Shift + M for mic mute/unmute toggle
@@ -29,7 +28,7 @@ function registerGlobalShortcuts(mainWindow: BrowserWindow) {
   }
 }
 
-app.on("ready", async () => {
+void app.whenReady().then(async () => {
   console.log("App Ready - Initializing Application");
 
   // 2. Create Main Window via WindowManager
@@ -45,8 +44,5 @@ app.on("ready", async () => {
   // 5. Register Global Shortcuts
   registerGlobalShortcuts(browserWindow);
 
-  // 6. Start the single shared socket connection (main process only)
-  // //    Register the main window so it receives forwarded socket events.
-  // socketService.registerWindow(browserWindow);
-  // await socketService.init();
+  // Socket connection is initialized lazily from onAuthSuccess.
 });

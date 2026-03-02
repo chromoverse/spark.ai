@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import {
+import type {
   IEventPayloadMapping,
   IFrameWindowAction,
   IDeviceUsageStatusManager,
+  ISocketConnectionState,
+  ISocketEventForwardPayload,
 } from "@root/types";
 import type { TaskRecord } from "@shared/socket.types.js";
 
@@ -65,28 +67,14 @@ contextBridge.exposeInMainWorld("electronApi", {
   onAuthSuccess: () => ipcInvoke("onAuthSuccess"),
   onAuthFailure: () => ipcInvoke("onAuthFailure"),
 
-  // // Socket IPC Bridge
-  // // Renderer → main → socket
-  // socketEmit: (event: string, data?: any) =>
-  //   ipcRenderer.invoke("socket:emit", event, data),
-  // // main → renderer: connection state pushes
-  // onSocketConnected: (callback: (payload: { connected: boolean; socketId?: string }) => void) => {
-  //   const cbfun = (_e: any, payload: any) => callback(payload);
-  //   ipcRenderer.on("socket:connected", cbfun);
-  //   return () => ipcRenderer.off("socket:connected", cbfun);
-  // },
-  // onSocketDisconnected: (callback: (payload: { connected: boolean; reason?: string }) => void) => {
-  //   const cbfun = (_e: any, payload: any) => callback(payload);
-  //   ipcRenderer.on("socket:disconnected", cbfun);
-  //   return () => ipcRenderer.off("socket:disconnected", cbfun);
-  // },
-  // // main → renderer: forwarded socket events (e.g. "socket:event:query-result")
-  // onSocketEvent: (event: string, callback: (data: any) => void) => {
-  //   const channel = `socket:event:${event}`;
-  //   const cbfun = (_e: any, payload: any) => callback(payload);
-  //   ipcRenderer.on(channel, cbfun);
-  //   return () => ipcRenderer.off(channel, cbfun);
-  // },
+  // Socket IPC Bridge
+  socketEmit: (event: string, ...args: unknown[]) =>
+    ipcInvoke("socketEmit", { event, args }),
+  getSocketConnectionState: () => ipcInvoke("getSocketConnectionState"),
+  onSocketConnectionState: (callback: (payload: ISocketConnectionState) => void) =>
+    ipcOn("socketConnectionState", callback),
+  onSocketEventForward: (callback: (payload: ISocketEventForwardPayload) => void) =>
+    ipcOn("socketEventForward", callback),
 } satisfies Window["electronApi"]);
 
 // ipc-preload-utils

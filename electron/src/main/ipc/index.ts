@@ -5,6 +5,7 @@ import { registerDeviceHandlers } from "./deviceHandlers.js";
 import { registerWindowHandlers } from "./windowHandlers.js";
 import { registerTaskHandlers } from "./taskHandlers.js";
 import { registerSecondaryWindowHandlers } from "./secondaryWindowHandlers.js";
+import { registerSocketHandlers } from "./socketHandlers.js";
 
 export function registerAllHandlers(mainWindow: MainWindow) {
   const browserWindow = mainWindow.getBrowserWindow();
@@ -15,4 +16,5 @@ export function registerAllHandlers(mainWindow: MainWindow) {
   registerWindowHandlers(mainWindow);
   registerTaskHandlers();
   registerSecondaryWindowHandlers();
+  registerSocketHandlers();
 }

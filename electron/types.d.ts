@@ -49,6 +49,17 @@ export interface IDeviceUsageStatusManager {
   storageData: { total: number; free: number; usage: number };
 }
 
+export interface ISocketConnectionState {
+  connected: boolean;
+  socketId?: string;
+  reason?: string;
+}
+
+export interface ISocketEventForwardPayload {
+  event: string;
+  data: unknown;
+}
+
 // Payload Mapper - FIXED: Now includes parameters
 export type IEventPayloadMapping = {
   frameWindowAction: IFrameWindowAction;
@@ -98,11 +109,11 @@ export type IEventPayloadMapping = {
   onAuthSuccess: { success: boolean };
   onAuthFailure: { success: boolean };
 
-  // // Socket IPC Bridge
-  // "socket:emit": void;
-  // "socket:connected": { connected: boolean; socketId?: string };
-  // "socket:disconnected": { connected: boolean; reason?: string };
-  // // socket:event:<name> channels are dynamic strings — handled via ipcRenderer.on directly
+  // Socket IPC Bridge
+  socketEmit: { success: boolean; error?: string };
+  getSocketConnectionState: ISocketConnectionState;
+  socketConnectionState: ISocketConnectionState;
+  socketEventForward: ISocketEventForwardPayload;
 };
 
 declare global {
@@ -166,11 +177,18 @@ declare global {
       onAuthSuccess: () => Promise<{ success: boolean }>;
       onAuthFailure: () => Promise<{ success: boolean }>;
 
-      // // Socket IPC Bridge
-      // socketEmit: (event: string, data?: any) => Promise<void>;
-      // onSocketConnected: (callback: (payload: { connected: boolean; socketId?: string }) => void) => () => void;
-      // onSocketDisconnected: (callback: (payload: { connected: boolean; reason?: string }) => void) => () => void;
-      // onSocketEvent: (event: string, callback: (data: any) => void) => () => void;
+      // Socket IPC Bridge
+      socketEmit: (
+        event: string,
+        ...args: unknown[]
+      ) => Promise<{ success: boolean; error?: string }>;
+      getSocketConnectionState: () => Promise<ISocketConnectionState>;
+      onSocketConnectionState: (
+        callback: (payload: ISocketConnectionState) => void,
+      ) => () => void;
+      onSocketEventForward: (
+        callback: (payload: ISocketEventForwardPayload) => void,
+      ) => () => void;
     };
   }
 }

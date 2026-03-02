@@ -1,3 +1,5 @@
+import { app } from "electron";
+
 export function isDevMode(): boolean {
-  return process.env.NODE_ENV === "development";
+  return !app.isPackaged;
 }

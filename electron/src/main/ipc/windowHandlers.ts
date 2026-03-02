@@ -1,6 +1,7 @@
 import { ipcMainHandle, ipcMainOn } from "../utils/ipcUtils.js";
 import { MainWindow } from "../windows/MainWindow.js";
 import { windowManager } from "../services/WindowManager.js";
+import { socketService } from "../services/SocketService.js";
 import type { IMediaDevice } from "@root/types";
 
 export function registerWindowHandlers(mainWindow: MainWindow) {
@@ -33,6 +34,9 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   ipcMainHandle("onAuthSuccess", async () => {
     console.log("Authentication successful - switching to AI Panel window");
 
+    // Initialize shared socket (single connection in main process).
+    void socketService.connect();
+
     // Close the main window
     mainWindow.close();
 
@@ -45,6 +49,7 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   // Authentication failure handler - show main window for login
   ipcMainHandle("onAuthFailure", async () => {
     console.log("Authentication failed/missing - showing Main window for login");
+    socketService.disconnect("unauthenticated");
     mainWindow.getBrowserWindow().show();
     return { success: true };
   });
