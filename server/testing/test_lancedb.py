@@ -4,7 +4,7 @@ WITH MODEL PRELOADING - Load models once, run tests multiple times
 """
 import asyncio
 import json
-from app.cache import RedisManager
+from app.cache import CacheManager
 
 # Global flag to track if models are loaded
 _MODELS_LOADED = False
@@ -38,7 +38,7 @@ async def ensure_models_loaded():
 
 async def inspect_all_data():
     """Show all data in LanceDB"""
-    config = RedisManager()
+    config = CacheManager()
     
     print("\n" + "=" * 80)
     print("INSPECTING LANCEDB DATA")
@@ -84,7 +84,7 @@ async def inspect_all_data():
 
 async def clear_all_user123_data():
     """Clear all data for user123"""
-    config = RedisManager()
+    config = CacheManager()
      
     print("\n" + "=" * 80)
     print("🗑️  CLEARING ALL DATA FOR user123")
@@ -104,7 +104,7 @@ async def clear_all_user123_data():
 
 async def add_test_messages():
     """Add clean test messages"""
-    config = RedisManager()
+    config = CacheManager()
     
     print("\n" + "=" * 80)
     print("📝 ADDING TEST MESSAGES")
@@ -140,7 +140,7 @@ async def add_test_messages():
 
 async def test_semantic_search():
     """Test semantic search functionality"""
-    config = RedisManager()
+    config = CacheManager()
     
     print("\n" + "=" * 80)
     print("🔍 TESTING SEMANTIC SEARCH")
@@ -181,7 +181,7 @@ async def test_semantic_search():
 
 async def custom_search():
     """Run a custom search query"""
-    config = RedisManager()
+    config = CacheManager()
     
     print("\n" + "=" * 80)
     print("🔍 CUSTOM SEMANTIC SEARCH")

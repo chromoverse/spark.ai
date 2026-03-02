@@ -4,12 +4,12 @@ import logging
 from datetime import datetime, timedelta
 from bson import ObjectId
 from typing import Any, Optional, Dict, Tuple
-from app.cache.base_manager import BaseRedisManager
+from app.cache.base_manager import BaseCacheManager
 from app.utils.serialize_mongo_doc import serialize_doc
 
 logger = logging.getLogger(__name__)
 
-class UserCacheMixin(BaseRedisManager):
+class UserCacheMixin(BaseCacheManager):
     """User-specific Redis operations"""
 
     async def set_user_details(self, user_id: str, details: Dict[str, Any]) -> None:
@@ -53,7 +53,7 @@ class UserCache:
     
     @classmethod
     async def get_user(cls, user_id: str) -> Optional[Dict[str, Any]]:
-        from app.cache import redis_manager
+        from app.cache import cache_manager
         now = datetime.utcnow()
         
         if user_id in cls._memory_cache:
@@ -64,7 +64,7 @@ class UserCache:
             del cls._memory_cache[user_id]
         
         logger.debug(f"🔍 Memory cache MISS, checking Redis for user {user_id}")
-        details = await redis_manager.get_user_details(user_id)
+        details = await cache_manager.get_user_details(user_id)
         
         if details:
             cls._memory_cache[user_id] = (details, now)
@@ -91,8 +91,8 @@ class UserCache:
                 return {}
             
             details = serialize_doc(details)
-            from app.cache import redis_manager
-            await redis_manager.set_user_details(user_id, details)
+            from app.cache import cache_manager
+            await cache_manager.set_user_details(user_id, details)
             cls._memory_cache[user_id] = (details, datetime.utcnow())
             
             return details
@@ -104,8 +104,8 @@ class UserCache:
     async def invalidate_user(cls, user_id: str):
         if user_id in cls._memory_cache:
             del cls._memory_cache[user_id]
-        from app.cache import redis_manager
-        await redis_manager.clear_user_details(user_id)
+        from app.cache import cache_manager
+        await cache_manager.clear_user_details(user_id)
         logger.info(f"🧹 Cache cleared for user {user_id}")
 
     @classmethod
@@ -115,11 +115,11 @@ class UserCache:
             details[field] = value
             cls._memory_cache[user_id] = (details, cached_at)
         
-        from app.cache import redis_manager
-        redis_details = await redis_manager.get_user_details(user_id)
+        from app.cache import cache_manager
+        redis_details = await cache_manager.get_user_details(user_id)
         if redis_details:
             redis_details[field] = value
-            await redis_manager.set_user_details(user_id, redis_details)
+            await cache_manager.set_user_details(user_id, redis_details)
 
     @classmethod
     def get_cache_stats(cls) -> Dict[str, Any]:

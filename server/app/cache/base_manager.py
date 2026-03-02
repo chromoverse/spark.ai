@@ -37,9 +37,9 @@ class UpstashMockPipeline:
         return results
 
 
-class BaseRedisManager:
+class BaseCacheManager:
     """Core Redis/LocalKV connection"""
-    _instance: Optional['BaseRedisManager'] = None
+    _instance: Optional['BaseCacheManager'] = None
     _initialized: bool = False
     
     def __new__(cls):
@@ -49,9 +49,9 @@ class BaseRedisManager:
     
     def __init__(self):
         # Prevent re-initialization if already initialized
-        if BaseRedisManager._initialized:
+        if BaseCacheManager._initialized:
             return
-        BaseRedisManager._initialized = True
+        BaseCacheManager._initialized = True
         self.client: Union[redis.Redis, UpstashRedis, 'LocalKVManager', None] = None
         self.vector_client: Optional['LanceDBManager'] = None
         self._is_upstash = False
@@ -91,7 +91,7 @@ class BaseRedisManager:
                     socket_connect_timeout=3,
                     socket_timeout=3
                 )
-                await self.client.ping()
+                await self.client.ping() #type:ignore
                 logger.info("🐳 Connected to Local Redis (Dev)")
         except Exception as e:
             logger.error(f"❌ Initialization failed: {e}")
@@ -149,7 +149,7 @@ class BaseRedisManager:
             await self._ensure_client()
             if self.client is None:
                 return False
-            await self.client.rpush(key, *values)
+            await self.client.rpush(key, *values) #type:ignore
             return True
         except Exception as e:
             self._safe_warn(f"Failed to rpush to '{key}': {e}")
@@ -160,7 +160,7 @@ class BaseRedisManager:
             await self._ensure_client()
             if self.client is None:
                 return []
-            result = await self.client.lrange(key, start, end)
+            result = await self.client.lrange(key, start, end) #type:ignore
             if result is None:
                 return []
             if isinstance(result, list):
@@ -194,7 +194,7 @@ class BaseRedisManager:
             raise RuntimeError("Client not initialized")
         
         if self._is_upstash:
-            return UpstashMockPipeline(self.client)
+            return UpstashMockPipeline(self.client)  # type: ignore
         
         if isinstance(self.client, redis.Redis):
             return self.client.pipeline()

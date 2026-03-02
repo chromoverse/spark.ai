@@ -5,7 +5,7 @@ Tests all functionality with both local and Upstash Redis
 import asyncio
 import json
 from app.cache.redis.config import (
-    redis_manager,
+    cache_manager,
     # Cache functions
     set_cache, get_cache, delete_cache, clear_cache,
     # Conversation functions
@@ -26,20 +26,20 @@ async def test_basic_operations():
     user_id = "test_user_123"
     
     # Test set/get
-    await redis_manager.set(f"test:{user_id}:key1", "value1")
-    value = await redis_manager.get(f"test:{user_id}:key1")
+    await cache_manager.set(f"test:{user_id}:key1", "value1")
+    value = await cache_manager.get(f"test:{user_id}:key1")
     print(f"✓ Set/Get: {value}")
     assert value == "value1"
     
     # Test delete
-    await redis_manager.delete(f"test:{user_id}:key1")
-    value = await redis_manager.get(f"test:{user_id}:key1")
+    await cache_manager.delete(f"test:{user_id}:key1")
+    value = await cache_manager.get(f"test:{user_id}:key1")
     print(f"✓ Delete: {value}")
     assert value is None
     
     # Test with expiration
-    await redis_manager.set(f"test:{user_id}:key2", "value2", ex=60)
-    value = await redis_manager.get(f"test:{user_id}:key2")
+    await cache_manager.set(f"test:{user_id}:key2", "value2", ex=60)
+    value = await cache_manager.get(f"test:{user_id}:key2")
     print(f"✓ Set with expiration: {value}")
     assert value == "value2"
     
@@ -292,7 +292,7 @@ async def test_pipeline_operations():
     user_id = "test_user_123"
     
     # Test batch set using pipeline
-    pipeline = await redis_manager.pipeline()
+    pipeline = await cache_manager.pipeline()
     
     for i in range(5):
         pipeline.setex(f"test:{user_id}:batch_{i}", 60, f"value_{i}")
@@ -301,7 +301,7 @@ async def test_pipeline_operations():
     print(f"✓ Batch set: {len(results)} operations")
     
     # Test batch get using pipeline
-    pipeline = await redis_manager.pipeline()
+    pipeline = await cache_manager.pipeline()
     
     for i in range(5):
         pipeline.get(f"test:{user_id}:batch_{i}")
@@ -312,7 +312,7 @@ async def test_pipeline_operations():
     
     # Cleanup
     keys = [f"test:{user_id}:batch_{i}" for i in range(5)]
-    await redis_manager.delete(*keys)
+    await cache_manager.delete(*keys)
     
     print("✅ Pipeline operations passed!")
 
@@ -352,14 +352,14 @@ async def test_connection_info():
     print("\n=== Connection Information ===")
     
     # Initialize the client
-    await redis_manager.initialize()
+    await cache_manager.initialize()
     
-    print(f"✓ Redis Type: {'Upstash' if redis_manager._is_upstash else 'Local Docker'}")
-    print(f"✓ Client initialized: {redis_manager.client is not None}")
+    print(f"✓ Redis Type: {'Upstash' if cache_manager._is_upstash else 'Local Docker'}")
+    print(f"✓ Client initialized: {cache_manager.client is not None}")
     
     # Test ping
     try:
-        await redis_manager._ensure_client()
+        await cache_manager._ensure_client()
         print("✓ Connection: Active")
     except Exception as e:
         print(f"✗ Connection: Failed - {e}")

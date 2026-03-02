@@ -3,18 +3,18 @@ import asyncio
 import os
 from datetime import datetime
 
-async def test_redis_manager():
-    print("🚀 Starting RedisManager Integration Test")
+async def test_cache_manager():
+    print("🚀 Starting CacheManager Integration Test")
   
-    from app.cache import redis_manager
+    from app.cache import cache_manager
     
     # Ensure initialization
-    await redis_manager._ensure_client()
+    await cache_manager._ensure_client()
     
-    if redis_manager:
-        print("✅ RedisManager successfully initialized with LanceDB")
+    if cache_manager:
+        print("✅ CacheManager successfully initialized with LanceDB")
     else:
-        print("❌ RedisManager failed to initialize with LanceDB")
+        print("❌ CacheManager failed to initialize with LanceDB")
         return
 
     # 3. Test User Details (KV Store)
@@ -26,8 +26,8 @@ async def test_redis_manager():
         "quota_reached": False
     }
     
-    await redis_manager.set_user_details(user_id, user_details)
-    retrieved = await redis_manager.get_user_details(user_id)
+    await cache_manager.set_user_details(user_id, user_details)
+    retrieved = await cache_manager.get_user_details(user_id)
     print(f"Set/Get User Details: {retrieved}")
     
     if retrieved and retrieved.get("name") == "Test User":
@@ -39,25 +39,25 @@ async def test_redis_manager():
     print("\n--- Testing Chat History ---")
     
     # Clear previous data
-    await redis_manager.clear_conversation_history(user_id)
+    await cache_manager.clear_conversation_history(user_id)
     
-    # Add messages using RedisManager
-    print("Adding messages via redis_manager.add_message()...")
-    await redis_manager.add_message(user_id, "user", "I love artificial intelligence")
-    await redis_manager.add_message(user_id, "assistant", "That's great! AI is fascinating.")
-    await redis_manager.add_message(user_id, "assistant", "Artificial intelligence can solve complex problems.")
-    await redis_manager.add_message(user_id, "assistant", "LLMs can do amazing things.")
-    await redis_manager.add_message(user_id, "user", "What is your favorite programming language?")
-    await redis_manager.add_message(user_id, "user", "I loved myself so much.")
-    await redis_manager.add_message(user_id, "user", "I was sick and tired.")
-    await redis_manager.add_message(user_id, "user", "Girl is the best")
-    await redis_manager.add_message(user_id, "user", "Snacks are best.")
+    # Add messages using CacheManager
+    print("Adding messages via cache_manager.add_message()...")
+    await cache_manager.add_message(user_id, "user", "I love artificial intelligence")
+    await cache_manager.add_message(user_id, "assistant", "That's great! AI is fascinating.")
+    await cache_manager.add_message(user_id, "assistant", "Artificial intelligence can solve complex problems.")
+    await cache_manager.add_message(user_id, "assistant", "LLMs can do amazing things.")
+    await cache_manager.add_message(user_id, "user", "What is your favorite programming language?")
+    await cache_manager.add_message(user_id, "user", "I loved myself so much.")
+    await cache_manager.add_message(user_id, "user", "I was sick and tired.")
+    await cache_manager.add_message(user_id, "user", "Girl is the best")
+    await cache_manager.add_message(user_id, "user", "Snacks are best.")
     
     # Small delay for embeddings
     await asyncio.sleep(1)
     
-    # Get History using RedisManager
-    history = await redis_manager.get_last_n_messages(user_id, 10)
+    # Get History using CacheManager
+    history = await cache_manager.get_last_n_messages(user_id, 10)
     print(f"\nHistory Retrieved: {len(history)} messages")
     for msg in history:
         print(f" - [{msg['role']}] {msg['content']}")
@@ -67,10 +67,10 @@ async def test_redis_manager():
     else:
         print(f"⚠️ Chat history returned {len(history)} messages (expected 5)")
 
-    # 5. Semantic Search using RedisManager
+    # 5. Semantic Search using CacheManager
     print("\n--- Testing Semantic Search ---")
     query = "how does it feel to get sick girl ?"
-    results = await redis_manager.semantic_search_messages(user_id, query, top_k=5, threshold=0.2)
+    results = await cache_manager.semantic_search_messages(user_id, query, top_k=5, threshold=0.2)
     
     print(f"\nSearch results for '{query}':")
     found_love = False
@@ -86,8 +86,8 @@ async def test_redis_manager():
 
     # # 6. Test Generic Cache
     # print("\n--- Testing Generic Cache ---")
-    # await redis_manager.set_cache(user_id, "test_key", {"data": "test_value"}, expire=300)
-    # cached_data = await redis_manager.get_cache(user_id, "test_key")
+    # await cache_manager.set_cache(user_id, "test_key", {"data": "test_value"}, expire=300)
+    # cached_data = await cache_manager.get_cache(user_id, "test_key")
     # print(f"Generic cache result: {cached_data}")
     
     # if cached_data and cached_data.get("data") == "test_value":
@@ -103,7 +103,7 @@ async def test_redis_manager():
     #     ("user", "Do you like coffee?"),
     # ]
     
-    # added_count = await redis_manager.add_messages_batch(user_id, batch_messages)
+    # added_count = await cache_manager.add_messages_batch(user_id, batch_messages)
     # print(f"Batch added {added_count} messages")
     
     # if added_count == 3:
@@ -112,13 +112,13 @@ async def test_redis_manager():
     #     print(f"⚠️ Batch add returned {added_count} (expected 3)")
 
     # # 8. Get updated history
-    # all_history = await redis_manager.get_last_n_messages(user_id, 20)
+    # all_history = await cache_manager.get_last_n_messages(user_id, 20)
     # print(f"\n📊 Total messages in history: {len(all_history)}")
 
     # # 9. Test Clear All User Data
     # print("\n--- Testing Clear All User Data ---")
-    # await redis_manager.clear_all_user_data(user_id)
-    # history_after_clear = await redis_manager.get_last_n_messages(user_id, 10)
+    # await cache_manager.clear_all_user_data(user_id)
+    # history_after_clear = await cache_manager.get_last_n_messages(user_id, 10)
     # print(f"Messages after clear: {len(history_after_clear)}")
     
     # if len(history_after_clear) == 0:
@@ -126,7 +126,7 @@ async def test_redis_manager():
     # else:
     #     print(f"⚠️ Still {len(history_after_clear)} messages remain after clear")
 
-    print("\n✅ RedisManager Integration Test Completed")
+    print("\n✅ CacheManager Integration Test Completed")
 
 
 async def test_convenience_functions():
@@ -137,7 +137,7 @@ async def test_convenience_functions():
         get_last_n_messages,
         semantic_search_messages,
         set_user_details,
-        redis_manager,
+        cache_manager,
         get_user_details, load_user, clear_user_details
     )
 
@@ -165,5 +165,5 @@ async def test_convenience_functions():
 
 
 if __name__ == "__main__":
-    # asyncio.run(test_redis_manager())
+    # asyncio.run(test_cache_manager())
     asyncio.run(test_convenience_functions())

@@ -1,4 +1,4 @@
-from app.cache import RedisManager 
+from app.cache import CacheManager 
 import asyncio
 import json
 import logging
@@ -19,7 +19,7 @@ async def main():
     based on the wait_for_execution parameter
     """
     
-    config = RedisManager()
+    config = CacheManager()
     
     # Connect to database
     from app.db.mongo import connect_to_mongo

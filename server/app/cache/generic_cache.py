@@ -1,9 +1,9 @@
 
 import json
 from typing import Any, Optional
-from app.cache.base_manager import BaseRedisManager
+from app.cache.base_manager import BaseCacheManager
 
-class GenericCacheMixin(BaseRedisManager):
+class GenericCacheMixin(BaseCacheManager):
     """Generic key-value caching logic"""
     
     async def set_cache(self, user_id: str, key: str, value: Any, expire: Optional[int] = None) -> None:

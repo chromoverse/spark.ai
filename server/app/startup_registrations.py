@@ -24,8 +24,8 @@ register("KeyCache (API keys)", _warmup_key_cache)
 
 # ── 2. Cache client (LocalKV / LanceDB / Redis) ──
 async def _warmup_cache_client() -> None:
-    from app.cache import redis_manager
-    await redis_manager._ensure_client()
+    from app.cache import cache_manager
+    await cache_manager._ensure_client()
 
 
 register("Cache client (LocalKV/Redis)", _warmup_cache_client)

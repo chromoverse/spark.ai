@@ -185,11 +185,11 @@ def test_simple_json():
 
 async def get_prompt():
     from app.prompts import stream_prompt, pqh_prompt
-    from app.cache import redis_manager
+    from app.cache import cache_manager
     user_id = "695e2bbaf8efc966aaf9f218"
     prompt = input("Enter a query to test prompt building: ")
-    recent_context = await redis_manager.get_last_n_messages(user_id, 10)
-    query_based_context, _ = await redis_manager.process_query_and_get_context(user_id, prompt)
+    recent_context = await cache_manager.get_last_n_messages(user_id, 10)
+    query_based_context, _ = await cache_manager.process_query_and_get_context(user_id, prompt)
     tools_index = get_tools_index()
     print("tools index",tools_index)
     # prompt =  pqh_prompt.build_prompt_en(prompt, tools_index)

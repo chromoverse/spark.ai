@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional, List, Dict, TYPE_CHECKING
 from collections import OrderedDict
-from app.cache.base_manager import BaseRedisManager
+from app.cache.base_manager import BaseCacheManager
 
 if TYPE_CHECKING:
     from app.cache.lancedb_manager import LanceDBManager
@@ -20,7 +20,7 @@ NEPAL_TZ = timezone(timedelta(hours=5, minutes=45))
 EMBEDDING_TTL = 86400 * 7
 LOCAL_CACHE_SIZE = 500
 
-class ChatCacheMixin(BaseRedisManager):
+class ChatCacheMixin(BaseCacheManager):
     """Conversation history and embedding logic"""
     
     _local_emb_cache: OrderedDict = OrderedDict()

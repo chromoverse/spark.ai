@@ -1,11 +1,11 @@
-from app.cache import RedisManager 
+from app.cache import CacheManager 
 import asyncio
 import json
 from app.cache import load_user
 from app.utils.format_context import format_context
 
 async def main():
-    config = RedisManager()
+    config = CacheManager()
   
     # await config.add_message("user123", "user", "Hello, World!")
     # await config.add_message("user123", "user", "I loved the movie Inception.")
