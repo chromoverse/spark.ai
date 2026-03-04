@@ -13,10 +13,12 @@ import asyncio
 from app.socket.server import sio
 from app.socket.user_utils import get_user_from_session, serialize_response
 from app.socket.utils import emit_server_status
-from app.services import transcribe_audio
-from app.schemas.schemae import RequestTTS
-from app.services.tts_services import tts_service
-from app.services.stt_session_manager import stt_session_manager
+from app.services import (
+    parallel_chat_execution,
+    stt_session_manager,
+    transcribe_audio,
+    tts_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +54,6 @@ def register_chat_events():
                 raise ValueError("No query provided")
 
             await emit_server_status("Processing your query...", "INFO", sid)
-
-            # Run stream + chat in parallel
-            from app.services.stream_service import parallel_chat_execution
 
             result = await parallel_chat_execution(
                 query=query,
@@ -131,9 +130,6 @@ def register_chat_events():
             # Validate transcription
             if text and text not in _INVALID_TRANSCRIPTIONS:
                 await sio.emit("processing", {"status": "Getting response..."}, to=sid)
-
-                # Run stream + chat in parallel
-                from app.services.stream_service import parallel_chat_execution
 
                 result = await parallel_chat_execution(
                     query=text,
@@ -289,9 +285,6 @@ def register_chat_events():
                 await sio.emit(
                     "processing", {"status": "Getting response..."}, to=sid
                 )
-
-                # Run stream + chat in parallel — exact same as legacy handler
-                from app.services.stream_service import parallel_chat_execution
 
                 result = await parallel_chat_execution(
                     query=text,

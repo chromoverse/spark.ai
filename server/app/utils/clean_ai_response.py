@@ -3,9 +3,7 @@ import re
 import logging
 from typing import Any
 from json_repair import repair_json
-from app.schemas.chat_schema import (
-    ActionDetails, ChatResponse, Confirmation, AnswerDetails
-)
+from app.schemas import ActionDetails, ChatResponse, Confirmation, AnswerDetails
 
 logger = logging.getLogger(__name__)
 

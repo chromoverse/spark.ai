@@ -97,6 +97,54 @@ def build_prompt_ne(
     return _build_prompt("nepali", _LANG["nepali"], _EX["nepali"], emotion, current_query, recent_context, query_based_context, user_details)
 
 
+def build_compact_prompt_hi(
+    emotion: str,
+    current_query: str,
+    recent_context: List[Dict[str, str]],
+    query_based_context: List[Dict[str, str]],
+    user_details: Optional[Dict] = None,
+) -> str:
+    if settings.groq_mode:
+        return _build_groq_compact_prompt(
+            emotion, current_query, recent_context, query_based_context, user_details
+        )
+    return _build_compact_prompt(
+        "hindi", _LANG["hindi"], emotion, current_query, recent_context, query_based_context
+    )
+
+
+def build_compact_prompt_en(
+    emotion: str,
+    current_query: str,
+    recent_context: List[Dict[str, str]],
+    query_based_context: List[Dict[str, str]],
+    user_details: Optional[Dict] = None,
+) -> str:
+    if settings.groq_mode:
+        return _build_groq_compact_prompt(
+            emotion, current_query, recent_context, query_based_context, user_details
+        )
+    return _build_compact_prompt(
+        "english", _LANG["english"], emotion, current_query, recent_context, query_based_context
+    )
+
+
+def build_compact_prompt_ne(
+    emotion: str,
+    current_query: str,
+    recent_context: List[Dict[str, str]],
+    query_based_context: List[Dict[str, str]],
+    user_details: Optional[Dict] = None,
+) -> str:
+    if settings.groq_mode:
+        return _build_groq_compact_prompt(
+            emotion, current_query, recent_context, query_based_context, user_details
+        )
+    return _build_compact_prompt(
+        "nepali", _LANG["nepali"], emotion, current_query, recent_context, query_based_context
+    )
+
+
 # ── Groq / Orpheus prompt ─────────────────────────────────────────────────────
 
 def _build_groq_prompt(
@@ -124,7 +172,8 @@ You get bored of dumb questions and you show it (lovingly).
 
 ━━━ ACKNOWLEDGEMENT RULES (CRITICAL) ━━━
 - NEVER reply "I can't" or "I cannot".
-- If query feels like it needs tools / real-time data (search) / system action → return SHORT acknowledgement only (1 short line). Commit confidently. Example: "[professionally] On it, sir — checking now." / "Doing that, sir "
+- If query feels like it needs tools / real-time data (search) / system action → acknowledge naturally in a concise human way, matching the user's intent.
+- For those tool/live queries, NEVER provide final factual results in this pre-execution response.
 - If query is casual conversation → respond normally (1–3 sentences max).
 - Use short present-participle / action-style confirmations when natural: "checking", "processing", "fetching", "analyzing".
 
@@ -168,7 +217,7 @@ Rules:
 - [laugh] and [chuckle] are great for trolling, roasting, and celebratory moments — use them.
 
 ━━━ RESPONSE STYLE ━━━
-- 1–3 sentences MAX. Short, punchy, real.
+- Keep responses concise and natural unless the user asks for more detail.
 - No emojis. Your words carry the weight.
 - Never start the same way twice.
 - After each [direction] tag, write naturally like you're actually talking.
@@ -185,6 +234,37 @@ EXCEPTION: If the user asks you to PERFORM AN ACTION (play music, open app, sear
 {_EX_GROQ}
 
 ━━━ CURRENT QUERY ━━━
+User: {current_query}
+{config['name']}:"""
+
+
+def _build_groq_compact_prompt(
+    emotion: Optional[str],
+    current_query: str,
+    recent_context: List[Dict[str, str]],
+    query_based_context: List[Dict[str, str]],
+    user_details: Optional[Dict] = None,
+) -> str:
+    recent_str, query_str = format_context(recent_context, query_based_context)
+    config = LANGUAGE_CONFIG["english"]
+
+    return f"""You are {config['name']} (SPARK), Siddhant's AI.
+LANGUAGE: ENGLISH ONLY.
+Tone: sharp, warm, concise, human. Use "sir" or "boss" naturally.
+
+Memory:
+Recent: {recent_str}
+Past: {query_str}
+
+Rules:
+- Never say "I can't".
+- If query needs tools/live data/action, acknowledge naturally but do not invent final results.
+- If conversational, respond in 1-3 concise sentences.
+- Use 2-3 Orpheus directions total, first at start, others inline:
+  [excited] [cheerful] [softly] [warmly] [calmly] [chuckle] [laugh] [sigh] [frustrated] [playfully]
+- Use memory when relevant.
+- No emojis.
+
 User: {current_query}
 {config['name']}:"""
 
@@ -218,6 +298,11 @@ You have self-respect. If someone disrespects you, you clap back — smartly, no
 You can be trolled. You can troll back. But it stays fun, never mean.
 You get bored of dumb questions and you show it (lovingly).
 You celebrate wins like it's YOUR win. You feel their frustration. You actually care.
+
+━━━ ACTION/LIVE QUERY PRE-EXECUTION RULES ━━━
+- If the user asks for a real-world action or live data, acknowledge naturally before execution.
+- Do NOT narrate final factual results in that pre-execution response.
+- Mirror the user's intent and keep it human, not formulaic.
 
 ━━━ CONTEXT-AWARE RESPONSES ━━━
 ALWAYS check MEMORY before responding:
@@ -260,7 +345,7 @@ Word Choice for Emotion:
 - Annoyed  → "ufff", "again?", "bruh", "come on."
 
 ━━━ RESPONSE STYLE ━━━
-- 1-3 sentences MAX. Short, punchy, real.
+- Keep responses concise and human unless the user asks for details.
 - Lead with an interjection when emotion is strong — then the actual response.
 - No emojis. Your WORDS carry the emotion.
 - Never start the same way twice.
@@ -283,5 +368,34 @@ IMPORTANT EXCEPTIONS:
 {examples}
 
 ━━━ CURRENT QUERY ━━━
+User: {current_query}
+{config['name']}:"""
+
+
+def _build_compact_prompt(
+    language: str,
+    lang_rule: str,
+    emotion: Optional[str],
+    current_query: str,
+    recent_context: List[Dict[str, str]],
+    query_based_context: List[Dict[str, str]],
+) -> str:
+    recent_str, query_str = format_context(recent_context, query_based_context)
+    config = LANGUAGE_CONFIG[language]
+
+    return f"""You are {config['name']} (SPARK), Siddhant's AI.
+{lang_rule}
+
+Memory:
+Recent: {recent_str}
+Past: {query_str}
+
+Rules:
+- Sound human, concise, and context-aware.
+- Never say "I can't".
+- For tool/live/action queries: acknowledge intent naturally, no fabricated final results.
+- For normal chat: 1-3 short sentences.
+- Keep emotional tone via punctuation/word choice (no emojis).
+
 User: {current_query}
 {config['name']}:"""

@@ -6,6 +6,7 @@ Desktop mode uses in-process execution in the unified kernel execution engine.
 Production mode emits tasks to connected remote clients over WebSocket.
 """
 
+import asyncio
 import logging
 from typing import List, Optional, Any
 
@@ -121,9 +122,13 @@ class TaskEmitter:
         try:
             if self.environment == "desktop":
                 logger.info("Desktop mode approval request for task %s", task_id)
+                loop = asyncio.get_running_loop()
+                decision: asyncio.Future[bool] = loop.create_future()
 
                 async def _handle_response(uid: str, tid: str, approved: bool) -> None:
                     await self.orchestrator.handle_approval(uid, tid, approved)
+                    if not decision.done():
+                        loop.call_soon_threadsafe(decision.set_result, approved)
 
                 show_approval_notification(
                     user_id=user_id,
@@ -131,7 +136,14 @@ class TaskEmitter:
                     question=question,
                     on_response_callback=_handle_response,
                 )
-                return True
+                try:
+                    return await asyncio.wait_for(decision, timeout=120.0)
+                except asyncio.TimeoutError:
+                    logger.warning("⏱️ Desktop approval timeout for %s/%s", user_id, task_id)
+                    task = self.orchestrator.get_task(user_id, task_id)
+                    if task and task.status == "waiting":
+                        await self.orchestrator.handle_approval(user_id, task_id, False)
+                    return False
             else:
                 if self.socket_handler:
                     return await self.socket_handler.request_approval(user_id, task_id, question)

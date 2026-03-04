@@ -1,4 +1,4 @@
-from app.services.chat_service import chat
+from app.services import chat
 import asyncio
 
 

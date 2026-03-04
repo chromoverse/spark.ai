@@ -8,6 +8,8 @@ import subprocess
 import webbrowser
 import asyncio
 import logging
+import uuid
+import importlib
 from typing import Dict, Any
 from datetime import datetime
 
@@ -26,10 +28,15 @@ class AppOpenTool(BaseTool):
         super().__init__()
         self.searcher = SystemSearcher()
 
-    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Find and open an application, tool, or URL."""
-        target: str = inputs.get("target", "")
-        args: list = inputs.get("args", [])
+        target: str = str(inputs.get("target", "")).strip()
+        raw_args = inputs.get("args", [])
+        args: list = raw_args if isinstance(raw_args, list) else []
+        user_id_raw = inputs.get("_user_id")
+        user_id = str(user_id_raw).strip() if user_id_raw else ""
+        task_id_raw = inputs.get("_task_id")
+        task_id = str(task_id_raw).strip() if task_id_raw else ""
 
         if not target:
             return ToolOutput(
@@ -38,9 +45,8 @@ class AppOpenTool(BaseTool):
             )
 
         try:
-            # SystemSearcher rebuilds cache via AppSearcher which takes ~4s
-            # BaseTool handles wrapping this sync execution in a thread!
-            result = self.searcher.search_app(target, False)
+            # App search can be expensive; keep it off the asyncio event loop.
+            result = await asyncio.to_thread(self.searcher.search_app, target, False)
 
             if not result:
                 return ToolOutput(
@@ -56,24 +62,61 @@ class AppOpenTool(BaseTool):
                 f"Opening '{target}' -> {path} ({app_type}) via {launch_method}"
             )
 
+            browser_fallback = (
+                self._is_browser_fallback(result)
+                and not self._is_explicit_web_target(target)
+            )
+            if browser_fallback:
+                if not user_id:
+                    return ToolOutput(
+                        success=False,
+                        data={
+                            "target": target,
+                            "resolved_path": path,
+                            "status": "approval_required",
+                        },
+                        error=(
+                            f"'{target}' app not found locally. Browser fallback needs user approval, "
+                            "but no user context was provided."
+                        ),
+                    )
+
+                approved = await self._request_browser_fallback_approval(
+                    user_id=user_id,
+                    task_id=task_id,
+                    target=target,
+                )
+                if not approved:
+                    return ToolOutput(
+                        success=False,
+                        data={
+                            "target": target,
+                            "resolved_name": result.get("name"),
+                            "resolved_path": path,
+                            "type": app_type,
+                            "status": "cancelled_by_user",
+                        },
+                        error=f"'{target}' app not found on system and browser fallback was not approved.",
+                    )
+
             # Dispatch based on type
             pid = 0
             status = "launched"
 
             if launch_method == "browser" or app_type in ("url", "website"):
-                webbrowser.open(path)
+                await asyncio.to_thread(webbrowser.open, path)
                 status = "opened_in_browser"
 
             elif launch_method in ("shell", "run") or app_type in (
                 "protocol", "open_file", "rundll32", "cpl", "lnk",
             ):
-                self._shell_open(path)
+                await asyncio.to_thread(self._shell_open, path)
 
             elif launch_method == "run_admin":
-                pid = self._run_admin(path)
+                pid = await asyncio.to_thread(self._run_admin, path)
 
             else:
-                pid = self._launch_executable(path, args, app_type)
+                pid = await asyncio.to_thread(self._launch_executable, path, args, app_type)
 
             return ToolOutput(
                 success=True,
@@ -91,6 +134,67 @@ class AppOpenTool(BaseTool):
         except Exception as e:
             self.logger.error(f"Failed to open '{target}': {e}")
             return ToolOutput(success=False, data={}, error=str(e))
+
+    @staticmethod
+    def _is_explicit_web_target(target: str) -> bool:
+        normalized = target.strip().lower()
+        return (
+            normalized.startswith("http://")
+            or normalized.startswith("https://")
+            or normalized.startswith("www.")
+        )
+
+    @staticmethod
+    def _is_browser_fallback(result: Dict[str, Any]) -> bool:
+        launch_method = str(result.get("launch_method", "")).strip().lower()
+        app_type = str(result.get("type", "")).strip().lower()
+        source = str(result.get("source", "")).strip().lower()
+
+        return (
+            launch_method == "browser"
+            and app_type in {"website", "url"}
+            and source in {"web", "web_fallback"}
+        )
+
+    async def _request_browser_fallback_approval(
+        self,
+        user_id: str,
+        task_id: str,
+        target: str,
+    ) -> bool:
+        approval_task_id = (
+            f"{task_id}::web_fallback::{uuid.uuid4().hex[:8]}"
+            if task_id
+            else f"app_open_web_fallback::{uuid.uuid4().hex[:12]}"
+        )
+        question = (
+            f"'{target}' app was not found on your system. "
+            "Do you want me to open its website in your browser?"
+        )
+
+        try:
+            gateway = importlib.import_module("app.agent.execution_gateway")
+            get_task_emitter = getattr(gateway, "get_task_emitter", None)
+            if not callable(get_task_emitter):
+                self.logger.warning("Approval unavailable: get_task_emitter not found.")
+                return False
+
+            emitter = get_task_emitter()
+            approved = await emitter.request_approval(
+                user_id=user_id,
+                task_id=approval_task_id,
+                question=question,
+            )
+            self.logger.info(
+                "Browser fallback approval for '%s' (user=%s): %s",
+                target,
+                user_id,
+                approved,
+            )
+            return bool(approved)
+        except Exception as exc:
+            self.logger.error("Failed to request browser fallback approval: %s", exc)
+            return False
 
     @staticmethod
     def _shell_open(path: str) -> None:
@@ -255,8 +359,8 @@ class AppRestartTool(BaseTool):
             import time
             time.sleep(2)
 
-            # Open the app
-            open_result = self.app_open_tool._execute(inputs)
+            # Open the app (AppOpenTool is async).
+            open_result = asyncio.run(self.app_open_tool.execute(inputs))
 
             if open_result.success:
                 return ToolOutput(

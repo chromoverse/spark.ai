@@ -3,12 +3,20 @@ from app.models.pqh_response_model import CognitiveState, PQHResponse
 from app.cache import load_user, get_last_n_messages
 from app.ai.providers import llm_chat
 from app.prompts import pqh_prompt
-from app.services.sqh_service import process_sqh
+from .sqh_service import process_sqh
 import asyncio
 import logging
 from app.agent.runtime import is_meta_query, try_handle_meta_query
 
 logger = logging.getLogger(__name__)
+
+
+async def _run_sqh_background(cleaned_response: PQHResponse, user_details: dict, user_id: str) -> None:
+    """Run SQH safely in background so task exceptions are always captured."""
+    try:
+        await process_sqh(cleaned_response, user_details)
+    except Exception as exc:
+        logger.error("❌ [SQH] Background failure for user %s: %s", user_id, exc, exc_info=True)
 
 async def chat(
     query: str,
@@ -115,7 +123,7 @@ async def chat(
             else:
                 # Original behavior: fire-and-forget
                 asyncio.create_task(
-                    process_sqh(cleaned_response, user_details)
+                    _run_sqh_background(cleaned_response, user_details, user_id)
                 )
         
         return cleaned_response

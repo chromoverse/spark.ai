@@ -7,9 +7,10 @@ import numpy as np
 import base64
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Any, Optional, List, Dict, TYPE_CHECKING
+from typing import Any, Optional, List, Dict, Tuple, TYPE_CHECKING
 from collections import OrderedDict
 from app.cache.base_manager import BaseCacheManager
+from app.config import settings
 
 if TYPE_CHECKING:
     from app.cache.lancedb_manager import LanceDBManager
@@ -19,13 +20,16 @@ logger = logging.getLogger(__name__)
 NEPAL_TZ = timezone(timedelta(hours=5, minutes=45))
 EMBEDDING_TTL = 86400 * 7
 LOCAL_CACHE_SIZE = 500
+QUERY_CONTEXT_TTL_SECONDS = 20
+QUERY_CONTEXT_CACHE_SIZE = 256
 
 class ChatCacheMixin(BaseCacheManager):
     """Conversation history and embedding logic"""
     
     _local_emb_cache: OrderedDict = OrderedDict()
     _query_emb_cache: OrderedDict = OrderedDict()  # query text hash → vector
-    _QUERY_CACHE_MAX = 100
+    _query_context_cache: OrderedDict = OrderedDict()  # (user:query) -> (ts, context, pinecone_flag)
+    _QUERY_CACHE_MAX = 400
     _env: Optional[str] = None  # Cache environment type
 
     def _init_env(self) -> str:
@@ -35,6 +39,20 @@ class ChatCacheMixin(BaseCacheManager):
             self._env = settings.environment
             logger.info(f"🌍 Environment initialized: {self._env}")
         return self._env
+
+    @staticmethod
+    def _query_context_ttl_seconds() -> int:
+        return max(
+            1,
+            int(getattr(settings, "STREAM_QUERY_CONTEXT_TTL_SECONDS", QUERY_CONTEXT_TTL_SECONDS)),
+        )
+
+    @staticmethod
+    def _query_context_cache_limit() -> int:
+        return max(
+            32,
+            int(getattr(settings, "STREAM_QUERY_CONTEXT_CACHE_SIZE", QUERY_CONTEXT_CACHE_SIZE)),
+        )
     
     def _is_desktop_env(self) -> bool:
         """Check if running in desktop environment"""
@@ -55,6 +73,20 @@ class ChatCacheMixin(BaseCacheManager):
         return None
 
     async def add_message(self, user_id: str, role: str, content: str) -> None:
+        await self.add_message_with_embedding(
+            user_id=user_id,
+            role=role,
+            content=content,
+            embedding=None,
+        )
+
+    async def add_message_with_embedding(
+        self,
+        user_id: str,
+        role: str,
+        content: str,
+        embedding: Optional[List[float]] = None,
+    ) -> None:
         """
         Add message to BOTH storages:
         1. SQLite (for fast retrieval of chat history)
@@ -69,14 +101,15 @@ class ChatCacheMixin(BaseCacheManager):
         if kv_client and vector_client:
             from app.services.embedding_services import embedding_service
             try:
-                # Generate embedding
-                embedding = await embedding_service.embed_single(content)
+                final_embedding = embedding
+                if not final_embedding:
+                    final_embedding = await embedding_service.embed_single(content)
                 
                 # 1. Add to SQLite (messages table)
                 await kv_client.add_message(user_id, role, content, timestamp, message_id)
                 
                 # 2. Add to LanceDB (vectors table)
-                await vector_client.add_chat_message(user_id, role, content, embedding, timestamp)
+                await vector_client.add_chat_message(user_id, role, content, final_embedding, timestamp)
                 
                 logger.debug(f"✅ Message added to both SQLite + LanceDB: [{role}] {content[:50]}...")
                 return
@@ -92,7 +125,10 @@ class ChatCacheMixin(BaseCacheManager):
             "timestamp": timestamp
         }
         await self.rpush(key, json.dumps(message))
-        asyncio.create_task(self._cache_embedding_with_user(content, user_id))
+        if embedding:
+            await self._set_embedding_cache(user_id, content, embedding)
+        else:
+            asyncio.create_task(self._cache_embedding_with_user(content, user_id))
     
     async def add_messages_batch(
         self, 
@@ -401,7 +437,12 @@ class ChatCacheMixin(BaseCacheManager):
         if vector_client:
             from app.services.embedding_services import embedding_service
             query_vector = await embedding_service.embed_single(query)
-            return await vector_client.search_chat_messages(user_id, query_vector, top_k, 0.1)
+            return await vector_client.search_chat_messages(
+                user_id=user_id,
+                query_vector=query_vector,
+                limit=top_k,
+                threshold=threshold,
+            )
 
         # Redis path (production/dev)
         start = time.time()
@@ -498,10 +539,57 @@ class ChatCacheMixin(BaseCacheManager):
         if len(self._query_emb_cache) > self._QUERY_CACHE_MAX:
             self._query_emb_cache.popitem(last=False)
 
+    @staticmethod
+    def _normalize_query(text: str) -> str:
+        return " ".join((text or "").strip().lower().split())
+
+    def _get_query_context_cache(
+        self,
+        user_id: str,
+        query: str,
+    ) -> Optional[Tuple[List[Dict[str, Any]], bool]]:
+        normalized = self._normalize_query(query)
+        if not normalized:
+            return None
+
+        key = f"{user_id}:{normalized}"
+        item = self._query_context_cache.get(key)
+        if not item:
+            return None
+
+        ts, context, pinecone_flag = item
+        if (time.time() - ts) > self._query_context_ttl_seconds():
+            del self._query_context_cache[key]
+            return None
+
+        self._query_context_cache.move_to_end(key)
+        return context, pinecone_flag
+
+    def _set_query_context_cache(
+        self,
+        user_id: str,
+        query: str,
+        context: List[Dict[str, Any]],
+        pinecone_flag: bool,
+    ) -> None:
+        normalized = self._normalize_query(query)
+        if not normalized:
+            return
+
+        key = f"{user_id}:{normalized}"
+        self._query_context_cache[key] = (time.time(), context, pinecone_flag)
+        self._query_context_cache.move_to_end(key)
+        while len(self._query_context_cache) > self._query_context_cache_limit():
+            self._query_context_cache.popitem(last=False)
+
     async def process_query_and_get_context(
         self, 
         user_id: str, 
-        current_query: str
+        current_query: str,
+        budget_ms: Optional[int] = None,
+        top_k: int = 10,
+        threshold: float = 0.1,
+        fast_lane: bool = False,
     ) -> tuple[List[Dict[str, Any]], bool]:
         """
         FAST context retrieval for the current query.
@@ -510,66 +598,216 @@ class ChatCacheMixin(BaseCacheManager):
         Desktop: LRU cache check → embed (if miss) → LanceDB vector search
         Production: Semantic search + Pinecone fallback
         """
-        t0 = time.time()
+        t0 = time.perf_counter()
         await self._ensure_client()
         vector_client = self._get_vector_client()
+        normalized_query = self._normalize_query(current_query)
+        effective_budget_ms = budget_ms if budget_ms is not None else (200 if fast_lane else 0)
+        limit = max(1, top_k)
+        deadline = (t0 + (effective_budget_ms / 1000.0)) if effective_budget_ms > 0 else None
+
+        cached_context = self._get_query_context_cache(user_id, normalized_query)
+        if cached_context:
+            context, pinecone_flag = cached_context
+            if vector_client:
+                cached_embedding = self._get_cached_query_embedding(normalized_query)
+                write_task = asyncio.create_task(
+                    self.add_message_with_embedding(
+                        user_id=user_id,
+                        role="user",
+                        content=current_query,
+                        embedding=cached_embedding,
+                    )
+                )
+                write_task.add_done_callback(
+                    lambda t: _on_background_done(t, "add_message_with_embedding(cache_hit)")
+                )
+            else:
+                write_task = asyncio.create_task(
+                    self._append_message_to_local_and_cloud(user_id, current_query, embedding=None)
+                )
+                write_task.add_done_callback(
+                    lambda t: _on_background_done(t, "append_message_to_local_and_cloud(cache_hit)")
+                )
+            logger.info(
+                "⚡ Context retrieval: 0ms (query-cache:HIT, results:%d)",
+                len(context),
+            )
+            return context, pinecone_flag
         
         # Desktop path: Use LanceDB directly
         if vector_client:
             from app.services.embedding_services import embedding_service
             
-            # ✅ Fire add_message as BACKGROUND task (don't await)
-            asyncio.create_task(self.add_message(user_id, "user", current_query))
-            
             # ✅ Check LRU cache first — ~0ms on hit
-            cached = self._get_cached_query_embedding(current_query)
+            cached = self._get_cached_query_embedding(normalized_query)
             if cached:
                 query_vector = cached
                 cache_status = "HIT"
             else:
-                query_vector = await embedding_service.embed_single(current_query)
-                self._cache_query_embedding(current_query, query_vector)
+                embed_started = time.perf_counter()
+                try:
+                    if deadline is not None:
+                        remaining = max(0.01, deadline - time.perf_counter())
+                        query_vector = await asyncio.wait_for(
+                            embedding_service.embed_single(current_query),
+                            timeout=remaining,
+                        )
+                    else:
+                        query_vector = await embedding_service.embed_single(current_query)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "⏱️ Desktop context embedding timed out (%sms), returning empty context",
+                        effective_budget_ms,
+                    )
+                    query_vector = None
+                embed_ms = (time.perf_counter() - embed_started) * 1000
+                if query_vector is not None:
+                    self._cache_query_embedding(normalized_query, query_vector)
                 cache_status = "MISS"
-            
-            context = await vector_client.search_chat_messages(
-                user_id, 
-                query_vector, 
-                limit=10, 
-                threshold=0.1
+                logger.debug("⚡ Desktop query embedding took %.0fms", embed_ms)
+
+            if query_vector is None:
+                # Preserve write path even if retrieval budget was exhausted.
+                write_task = asyncio.create_task(
+                    self.add_message_with_embedding(
+                        user_id=user_id,
+                        role="user",
+                        content=current_query,
+                        embedding=None,
+                    )
+                )
+                write_task.add_done_callback(lambda t: _on_background_done(t, "add_message_with_embedding(no_vector)"))
+                self._set_query_context_cache(user_id, normalized_query, [], False)
+                return [], False
+
+            # ✅ Persist message in background using SAME embedding (avoids re-embed)
+            write_task = asyncio.create_task(
+                self.add_message_with_embedding(
+                    user_id=user_id,
+                    role="user",
+                    content=current_query,
+                    embedding=query_vector,
+                )
             )
-            
-            elapsed = (time.time() - t0) * 1000
+            write_task.add_done_callback(lambda t: _on_background_done(t, "add_message_with_embedding"))
+
+            search_started = time.perf_counter()
+            search_coro = vector_client.search_chat_messages(
+                user_id=user_id,
+                query_vector=query_vector,
+                limit=limit,
+                threshold=threshold,
+            )
+            try:
+                if deadline is not None:
+                    remaining = deadline - time.perf_counter()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError
+                    context = await asyncio.wait_for(
+                        search_coro,
+                        timeout=remaining,
+                    )
+                else:
+                    context = await search_coro
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "⏱️ Desktop context search timed out (%sms), returning empty context",
+                    effective_budget_ms,
+                )
+                context = []
+
+            search_ms = (time.perf_counter() - search_started) * 1000
+            elapsed = (time.perf_counter() - t0) * 1000
+            self._set_query_context_cache(user_id, normalized_query, context, False)
             logger.info(
-                f"⚡ Context retrieval: {elapsed:.0f}ms "
-                f"(cache:{cache_status}, results:{len(context)})"
+                "⚡ Context retrieval: %.0fms (cache:%s, search:%.0fms, results:%d)",
+                elapsed,
+                cache_status,
+                search_ms,
+                len(context),
             )
             return context, False
         
         # Production path: Semantic search + Pinecone fallback — PARALLEL
         is_pinecone_needed = False
+        semantic_n = 120 if fast_lane else 500
         search_task = asyncio.create_task(
-            self.semantic_search_messages(user_id, current_query)
+            self.semantic_search_messages(
+                user_id=user_id,
+                query=current_query,
+                n=semantic_n,
+                top_k=limit,
+                threshold=threshold,
+            )
         )
         # ✅ Fire-and-forget: don't block search on the write
-        asyncio.create_task(
-            self._append_message_to_local_and_cloud(user_id, current_query)
+        write_task = asyncio.create_task(
+            self._append_message_to_local_and_cloud(user_id, current_query, embedding=None)
         )
+        write_task.add_done_callback(lambda t: _on_background_done(t, "append_message_to_local_and_cloud"))
         
-        context = await search_task
+        if deadline is not None:
+            try:
+                remaining = deadline - time.perf_counter()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                context = await asyncio.wait_for(
+                    search_task,
+                    timeout=remaining,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "⏱️ Production semantic search timed out (%sms), returning empty context",
+                    effective_budget_ms,
+                )
+                context = []
+        else:
+            context = await search_task
         
         if not context or len(context) == 0:
+            if effective_budget_ms > 0 or fast_lane:
+                logger.info(
+                    "⚡ Context retrieval: budget mode empty result; skipping Pinecone fallback "
+                    "(budget_ms=%s, fast_lane=%s)",
+                    effective_budget_ms,
+                    fast_lane,
+                )
+                self._set_query_context_cache(user_id, normalized_query, [], False)
+                return [], False
             from app.db.pinecone import config as pinecone_config
             logger.info("[Pinecone] Low similarity - fetching from Pinecone")
             context = pinecone_config.get_user_all_queries(user_id)
             is_pinecone_needed = True
+            self._set_query_context_cache(user_id, normalized_query, context, is_pinecone_needed)
             return context, is_pinecone_needed
 
-        elapsed = (time.time() - t0) * 1000
+        elapsed = (time.perf_counter() - t0) * 1000
         logger.info(f"⚡ Context retrieval: {elapsed:.0f}ms (results:{len(context)})")
+        self._set_query_context_cache(user_id, normalized_query, context, is_pinecone_needed)
         return context, is_pinecone_needed
     
-    async def _append_message_to_local_and_cloud(self, user_id: str, current_query: str):
+    async def _append_message_to_local_and_cloud(
+        self,
+        user_id: str,
+        current_query: str,
+        embedding: Optional[List[float]] = None,
+    ):
         """Append message to local storage and cloud Pinecone"""
         from app.db.pinecone.config import upsert_query
-        await self.add_message(user_id, "user", current_query)
+        await self.add_message_with_embedding(
+            user_id=user_id,
+            role="user",
+            content=current_query,
+            embedding=embedding,
+        )
         asyncio.create_task(asyncio.to_thread(upsert_query, user_id, current_query))
+
+
+def _on_background_done(task: asyncio.Task[Any], label: str) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception as exc:
+        logger.debug("Background task '%s' failed: %s", label, exc)

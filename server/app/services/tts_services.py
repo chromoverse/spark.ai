@@ -67,6 +67,7 @@ class TTSService:
         pitch: Optional[str] = None,
         lang: Optional[str] = None,
         gender: Optional[str] = None,
+        prefer_low_latency: bool = False,
     ) -> AsyncGenerator[bytes, None]:
         """Generate audio stream — yields individual valid WAV chunks."""
         speed = 1.0
@@ -83,6 +84,7 @@ class TTSService:
             speed=speed,
             lang=lang,
             gender=gender,
+            prefer_low_latency=prefer_low_latency,
         ):
             yield chunk
 
@@ -96,6 +98,7 @@ class TTSService:
         lang: Optional[str] = None,
         gender: Optional[str] = None,
         chunk_delay: float = 0.0,
+        prefer_low_latency: bool = False,
     ) -> bool:
         """
         Stream TTS audio to a WebSocket client.
@@ -103,20 +106,38 @@ class TTSService:
         Each event carries a unique ``stream_id`` so the client can associate
         chunks with the correct stream and reject stale data.
         """
+        request_started = time.perf_counter()
+        text_char_count = len(text or "")
+        text_word_count = len((text or "").split())
         if await self._is_duplicate_request(sid=sid, text=text):
             logger.info("⚠️ Skipping duplicate TTS stream for sid=%s text='%s'", sid, text[:80])
             return True
 
         stream_id = uuid.uuid4().hex[:12]
-        logger.info(f"🔌 TTS stream [{stream_id}] to {sid}")
+        logger.info(
+            "🔌 TTS stream [%s] to %s words=%d chars=%d",
+            stream_id,
+            sid,
+            text_word_count,
+            text_char_count,
+        )
 
+        emit_start_t0 = time.perf_counter()
         await sio.emit("tts-start", {"text": text, "streamId": stream_id}, to=sid)
+        logger.info(
+            "⏱️ TTS stream [%s] emitted tts-start in %.0fms",
+            stream_id,
+            (time.perf_counter() - emit_start_t0) * 1000,
+        )
 
         try:
             chunk_count = 0
+            first_chunk_ms: Optional[float] = None
             async for audio_bytes in self.generate_audio_stream(
-                text, voice, rate, lang=lang, gender=gender
+                text, voice, rate, lang=lang, gender=gender, prefer_low_latency=prefer_low_latency
             ):
+                if first_chunk_ms is None:
+                    first_chunk_ms = (time.perf_counter() - request_started) * 1000
                 await sio.emit(
                     "tts-chunk",
                     {"streamId": stream_id, "data": audio_bytes},
@@ -127,7 +148,18 @@ class TTSService:
                 if chunk_delay > 0:
                     await asyncio.sleep(chunk_delay)
 
-            logger.info(f"✅ Stream [{stream_id}] sent {chunk_count} chunks to {sid}")
+            total_ms = (time.perf_counter() - request_started) * 1000
+            logger.info(
+                "✅ TTS metrics stream_id=%s sid=%s first_chunk_ms=%s total_ms=%.0f chunks=%d words=%d chars=%d low_latency=%s",
+                stream_id,
+                sid,
+                f"{first_chunk_ms:.0f}" if first_chunk_ms is not None else "na",
+                total_ms,
+                chunk_count,
+                text_word_count,
+                text_char_count,
+                prefer_low_latency,
+            )
             await sio.emit(
                 "tts-end",
                 {"success": True, "chunks": chunk_count, "streamId": stream_id},

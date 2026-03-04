@@ -9,10 +9,10 @@ This integrates with the new streaming architecture:
 """
 import logging
 from typing import Any, Callable, Awaitable
-from app.schemas.schemae import RequestTTS
+from app.schemas import RequestTTS
 from app.socket.utils import emit_server_status
 from app.cache import load_user
-from app.services.stream_service import stream_chat_response
+from app.services import parallel_chat_execution, stream_chat_response
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +157,6 @@ async def handle_tts_request_with_parallel_chat(
     - Tool execution in background
     - Best of both worlds
     """
-    from app.services.stream_service import parallel_chat_execution
-    
     logger.info(f"⚡ request-tts-parallel from {sid}")
     
     try:

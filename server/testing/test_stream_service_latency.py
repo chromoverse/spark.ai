@@ -1,0 +1,155 @@
+import asyncio
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from app.config import settings
+
+_SERVER_ROOT = Path(__file__).resolve().parents[1]
+_STREAM_SERVICE_PATH = _SERVER_ROOT / "app" / "services" / "chat" / "stream_service.py"
+
+if str(_SERVER_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SERVER_ROOT))
+
+_SPEC = importlib.util.spec_from_file_location("stream_service_under_test", _STREAM_SERVICE_PATH)
+if _SPEC is None or _SPEC.loader is None:
+    raise RuntimeError("Unable to load stream_service module for tests")
+stream_module = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(stream_module)
+
+StreamService = stream_module.StreamService
+_find_split_point = stream_module._find_split_point
+
+
+class _FakeSocket:
+    async def emit(self, event, payload, to=None):
+        return None
+
+
+class _FakeTTSService:
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def stream_to_socket(self, **kwargs):
+        self.calls.append(kwargs.get("text", ""))
+        return True
+
+
+class StreamServiceLatencyTests(unittest.IsolatedAsyncioTestCase):
+    def test_find_split_point_prefers_sentence_boundary(self):
+        text = "Hello boss. Let us continue with the task right now"
+        split_at = _find_split_point(text, min_words=2, soft_words=4, max_words=20)
+        self.assertGreater(split_at, 0)
+        self.assertTrue(text[:split_at].strip().endswith("."))
+
+    def test_find_split_point_forces_at_max_words(self):
+        text = "one two three four five six seven eight nine ten"
+        split_at = _find_split_point(text, min_words=2, soft_words=8, max_words=4)
+        self.assertEqual(len(text[:split_at].split()), 4)
+
+    async def test_stream_falls_back_to_chat_when_stream_fails_before_first_chunk(self):
+        async def _failing_stream(*args, **kwargs):
+            if False:
+                yield ""
+            raise RuntimeError("stream failure")
+
+        async def _chat_fallback(*args, **kwargs):
+            return "Fallback response from chat.", "Groq"
+
+        with (
+            patch.object(stream_module, "load_user", return_value={"language": "en"}),
+            patch.object(stream_module, "get_last_n_messages", return_value=[]),
+            patch.object(stream_module, "process_query_and_get_context", return_value=([], False)),
+            patch.object(stream_module, "_iter_stream_with_fast_model", _failing_stream),
+            patch.object(stream_module, "_chat_with_fast_model", _chat_fallback),
+            patch.object(settings, "STREAM_USE_LLM_STREAM", True),
+            patch.object(settings, "STREAM_USE_COMPACT_PROMPT", True),
+            patch.object(settings, "STREAM_CHUNK_MIN_WORDS", 2),
+            patch.object(settings, "STREAM_CHUNK_SOFT_WORDS", 3),
+            patch.object(settings, "STREAM_CHUNK_MAX_WORDS", 8),
+        ):
+            service = StreamService()
+            tts = _FakeTTSService()
+            ok = await service.stream_chat_with_tts(
+                query="hello there",
+                user_id="u1",
+                sio=_FakeSocket(),
+                sid="sid1",
+                tts_service=tts,
+                gender="female",
+            )
+
+        self.assertTrue(ok)
+        self.assertGreaterEqual(len(tts.calls), 1)
+        self.assertIn("Fallback response from chat.", tts.calls[0])
+
+    async def test_stream_preserves_chunk_emit_order(self):
+        async def _stream_tokens(*args, **kwargs):
+            for token in ["Hello boss. ", "I can help with that now. ", "Tell me the next step."]:
+                yield token
+
+        with (
+            patch.object(stream_module, "load_user", return_value={"language": "en"}),
+            patch.object(stream_module, "get_last_n_messages", return_value=[]),
+            patch.object(stream_module, "process_query_and_get_context", return_value=([], False)),
+            patch.object(stream_module, "_iter_stream_with_fast_model", _stream_tokens),
+            patch.object(settings, "STREAM_USE_LLM_STREAM", True),
+            patch.object(settings, "STREAM_USE_COMPACT_PROMPT", True),
+            patch.object(settings, "STREAM_CHUNK_MIN_WORDS", 2),
+            patch.object(settings, "STREAM_CHUNK_SOFT_WORDS", 3),
+            patch.object(settings, "STREAM_CHUNK_MAX_WORDS", 12),
+        ):
+            service = StreamService()
+            tts = _FakeTTSService()
+            ok = await service.stream_chat_with_tts(
+                query="hello there",
+                user_id="u1",
+                sio=_FakeSocket(),
+                sid="sid1",
+                tts_service=tts,
+                gender="female",
+            )
+
+        self.assertTrue(ok)
+        self.assertGreaterEqual(len(tts.calls), 2)
+        self.assertTrue(tts.calls[0].startswith("Hello boss."))
+
+    async def test_context_timeout_does_not_block_stream_output(self):
+        async def _slow_context(*args, **kwargs):
+            await asyncio.sleep(0.15)
+            return [], False
+
+        async def _stream_tokens(*args, **kwargs):
+            yield "This should still be spoken quickly."
+
+        with (
+            patch.object(stream_module, "load_user", return_value={"language": "en"}),
+            patch.object(stream_module, "get_last_n_messages", return_value=[]),
+            patch.object(stream_module, "process_query_and_get_context", _slow_context),
+            patch.object(stream_module, "_iter_stream_with_fast_model", _stream_tokens),
+            patch.object(settings, "STREAM_USE_LLM_STREAM", True),
+            patch.object(settings, "STREAM_USE_COMPACT_PROMPT", True),
+            patch.object(settings, "STREAM_CONTEXT_BUDGET_MS", 50),
+            patch.object(settings, "STREAM_CHUNK_MIN_WORDS", 2),
+            patch.object(settings, "STREAM_CHUNK_SOFT_WORDS", 3),
+            patch.object(settings, "STREAM_CHUNK_MAX_WORDS", 12),
+        ):
+            service = StreamService()
+            tts = _FakeTTSService()
+            ok = await service.stream_chat_with_tts(
+                query="time out context",
+                user_id="u1",
+                sio=_FakeSocket(),
+                sid="sid1",
+                tts_service=tts,
+                gender="female",
+            )
+
+        self.assertTrue(ok)
+        self.assertGreaterEqual(len(tts.calls), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

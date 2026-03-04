@@ -72,7 +72,8 @@ class TTSManager:
         voice: Optional[str] = None, 
         speed: float = 1.0, 
         lang: Optional[str] = None,
-        gender: Optional[str] = None
+        gender: Optional[str] = None,
+        prefer_low_latency: bool = False,
     ) -> AsyncGenerator[bytes, None]:
         """
         Generate audio using the first working engine
@@ -90,8 +91,11 @@ class TTSManager:
             voice = VoiceSelector.get_voice(lang, gender)
             
         last_error = None
-        
-        for engine in self.engines:
+        engines = self._engine_order(prefer_low_latency=prefer_low_latency)
+        if prefer_low_latency:
+            logger.debug("⚡ TTS low-latency engine order: %s", [engine.get_engine_name() for engine in engines])
+
+        for engine in engines:
             engine_name = engine.get_engine_name()
             
             # Skip if engine doesn't support the language? 
@@ -116,6 +120,23 @@ class TTSManager:
             raise last_error
         else:
             raise RuntimeError("No TTS engines available")
+
+    def _engine_order(self, prefer_low_latency: bool) -> List[TTSEngine]:
+        if not prefer_low_latency:
+            return list(self.engines)
+
+        # For low-latency utterances, prefer local/offline engines first to avoid
+        # cloud round-trips before first audible chunk.
+        priority = {
+            "kokoro": 0,
+            "edge": 1,
+            "gtts": 2,
+            "groq-tts": 3,
+        }
+        return sorted(
+            self.engines,
+            key=lambda engine: priority.get(engine.get_engine_name(), 9),
+        )
             
     # Singleton access
     @classmethod

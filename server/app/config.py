@@ -37,6 +37,23 @@ class Settings(BaseSettings):
     TOOLS_CDN_MANIFEST_URL: str = ""
     TOOLS_CDN_PACKAGE_URL: str = ""
 
+    # Stream/TTS rollout flags
+    STREAM_ONE_SHOT_TTS_ENABLED: bool = True
+    STREAM_FAST_ACK_ENABLED: bool = True
+    STREAM_USE_LLM_STREAM: bool = True
+    STREAM_USE_COMPACT_PROMPT: bool = True
+    STREAM_GROQ_FAST_MODEL: str = "llama-3.1-8b-instant"
+    STREAM_CONTEXT_BUDGET_MS: int = 200
+    STREAM_FIRST_AUDIO_SLO_MS: int = 1000
+    STREAM_CHUNK_MIN_WORDS: int = 5
+    STREAM_CHUNK_SOFT_WORDS: int = 12
+    STREAM_CHUNK_MAX_WORDS: int = 30
+    STREAM_QUERY_CONTEXT_TTL_SECONDS: int = 30
+    STREAM_QUERY_CONTEXT_CACHE_SIZE: int = 512
+    FINAL_STATE_SUMMARY_TTS_ENABLED: bool = True
+    FINAL_STATE_SUMMARY_LLM_TIMEOUT_MS: int = 1000
+    SQH_PLAN_RETRY_ATTEMPTS: int = 1
+
     class Config:
         env_file = ".env"
         extra = "ignore"

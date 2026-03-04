@@ -6,11 +6,13 @@ Emits FULL TaskRecord to client for maximum flexibility
 Client gets same data access as server orchestrator
 """
 
+import asyncio
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 import socketio
 
 from app.agent.execution_gateway import get_orchestrator, TaskOutput, TaskRecord
+from app.services import get_tool_output_delivery_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,8 @@ class SocketTaskHandler:
         self.sio = sio
         self.connected_users = connected_users
         self.orchestrator = get_orchestrator()
+        # Pending approval waits keyed by (user_id, task_id)
+        self._pending_approvals: Dict[Tuple[str, str], asyncio.Future[bool]] = {}
     
     async def emit_task_single(self, user_id: str, task: TaskRecord) -> bool:
         """
@@ -220,6 +224,58 @@ class SocketTaskHandler:
             except Exception as e:
                 logger.error(f"Failed to notify status: {e}")
 
+    async def request_approval(self, user_id: str, task_id: str, question: str) -> bool:
+        """
+        Ask remote client for approval and wait for response.
+        """
+        if user_id not in self.connected_users or not self.connected_users[user_id]:
+            logger.warning("⚠️ User %s not connected - cannot request approval for %s", user_id, task_id)
+            return False
+
+        key = (user_id, task_id)
+        if key in self._pending_approvals:
+            logger.warning("⚠️ Duplicate approval request ignored for %s/%s", user_id, task_id)
+            return False
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        self._pending_approvals[key] = future
+
+        payload = {
+            "user_id": user_id,
+            "task_id": task_id,
+            "question": question,
+        }
+
+        try:
+            for sid in self.connected_users[user_id]:
+                await self.sio.emit("task:approval:request", payload, room=sid)
+            logger.info("📨 Approval requested for %s/%s", user_id, task_id)
+
+            approved = await asyncio.wait_for(future, timeout=120.0)
+            await self.orchestrator.handle_approval(user_id, task_id, approved)
+            return approved
+        except asyncio.TimeoutError:
+            logger.warning("⏱️ Approval timeout for %s/%s", user_id, task_id)
+            await self.orchestrator.handle_approval(user_id, task_id, False)
+            return False
+        finally:
+            self._pending_approvals.pop(key, None)
+
+    async def resolve_approval(self, user_id: str, task_id: str, approved: bool) -> bool:
+        """
+        Resolve a pending approval request from client response.
+        """
+        key = (user_id, task_id)
+        future = self._pending_approvals.get(key)
+        if not future:
+            logger.warning("⚠️ Approval response with no pending request: %s/%s", user_id, task_id)
+            return False
+        if future.done():
+            return False
+        future.set_result(approved)
+        return True
+
 
 # Socket.IO event registration
 async def register_task_events(
@@ -292,6 +348,115 @@ async def register_task_events(
             
         except Exception as e:
             logger.error(f"Error handling batch results: {e}")
+
+    @sio.on("task:approval:response")  # type: ignore
+    async def handle_approval_response(sid: str, data: Dict[str, Any]):
+        """
+        Client responds to approval request.
+        """
+        try:
+            if not isinstance(data, dict):
+                data = {}
+            session = await sio.get_session(sid)
+            session_user = session.get("user_id")
+            if not session_user:
+                return
+
+            user_id = data.get("user_id") or session_user
+            if user_id != session_user:
+                logger.warning("⚠️ Approval response user mismatch: sid_user=%s payload_user=%s", session_user, user_id)
+                return
+
+            task_id = data.get("task_id")
+            if not task_id:
+                return
+
+            approved_raw = data.get("approved", False)
+            if isinstance(approved_raw, bool):
+                approved = approved_raw
+            else:
+                approved = str(approved_raw).strip().lower() in {"1", "true", "yes", "approve", "approved"}
+
+            resolved = await handler.resolve_approval(user_id, task_id, approved)
+            await sio.emit(
+                "task:approval:ack",
+                {"task_id": task_id, "resolved": resolved, "approved": approved},
+                to=sid,
+            )
+        except Exception as e:
+            logger.error(f"Error handling approval response: {e}", exc_info=True)
+
+    @sio.on("tool:output:get")  # type: ignore
+    async def handle_tool_output_get(sid: str, data: Dict[str, Any]):
+        """
+        On-demand output fetch for completed tasks.
+        Keeps large tool payloads off the default live stream path.
+        """
+        try:
+            if not isinstance(data, dict):
+                data = {}
+            session = await sio.get_session(sid)
+            session_user = session.get("user_id")
+            if not session_user:
+                return
+
+            user_id = data.get("user_id") or session_user
+            if user_id != session_user:
+                logger.warning("⚠️ tool:output:get user mismatch: sid_user=%s payload_user=%s", session_user, user_id)
+                await sio.emit("tool:output", {"success": False, "error": "Unauthorized user_id"}, to=sid)
+                return
+
+            task_id = data.get("task_id")
+            tool_name = data.get("tool_name")
+            include_full = bool(data.get("include_full", False))
+            raw_fields = data.get("fields")
+            fields: Optional[List[str]] = raw_fields if isinstance(raw_fields, list) else None
+
+            payload = await get_tool_output_delivery_service().get_output(
+                user_id=user_id,
+                task_id=task_id,
+                tool_name=tool_name,
+                include_full=include_full,
+                fields=fields,
+            )
+            if not payload:
+                await sio.emit("tool:output", {"success": False, "error": "No matching task output found"}, to=sid)
+                return
+
+            await sio.emit("tool:output", {"success": True, "output": payload}, to=sid)
+        except Exception as e:
+            logger.error(f"Error handling tool:output:get: {e}", exc_info=True)
+            await sio.emit("tool:output", {"success": False, "error": str(e)}, to=sid)
+
+    @sio.on("tool:output:list")  # type: ignore
+    async def handle_tool_output_list(sid: str, data: Dict[str, Any]):
+        """
+        List recent completed tool outputs (metadata only).
+        """
+        try:
+            if not isinstance(data, dict):
+                data = {}
+            session = await sio.get_session(sid)
+            session_user = session.get("user_id")
+            if not session_user:
+                return
+
+            user_id = data.get("user_id") or session_user
+            if user_id != session_user:
+                await sio.emit("tool:outputs", {"success": False, "error": "Unauthorized user_id"}, to=sid)
+                return
+
+            limit_raw = data.get("limit", 10)
+            try:
+                limit = max(1, min(50, int(limit_raw)))
+            except Exception:
+                limit = 10
+
+            outputs = await get_tool_output_delivery_service().list_outputs(user_id=user_id, limit=limit)
+            await sio.emit("tool:outputs", {"success": True, "outputs": outputs}, to=sid)
+        except Exception as e:
+            logger.error(f"Error handling tool:output:list: {e}", exc_info=True)
+            await sio.emit("tool:outputs", {"success": False, "error": str(e)}, to=sid)
     
     logger.info("✅ Task event handlers registered")
     return handler

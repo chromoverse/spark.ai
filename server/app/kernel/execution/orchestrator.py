@@ -10,7 +10,7 @@ Production-Grade Task Orchestrator
 
 import asyncio
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from datetime import datetime
 
 from app.kernel.execution.execution_models import (
@@ -275,6 +275,29 @@ class TaskOrchestrator:
                         status="running",
                     )
                 )
+
+    async def mark_task_waiting(self, user_id: str, task_id: str) -> None:
+        """Mark task as waiting (typically pending user approval)."""
+        async with self._get_lock(user_id):
+            state = self.states.get(user_id)
+            if not state:
+                return
+
+            task = state.get_task(task_id)
+            if task:
+                task.status = "waiting"
+                task.started_at = datetime.now()
+                state.updated_at = datetime.now()
+                logger.info(f"[{user_id}] Task {task_id} waiting for approval")
+                await emit_kernel_event(
+                    KernelEvent(
+                        event_type="task_waiting",
+                        user_id=user_id,
+                        task_id=task_id,
+                        tool_name=task.tool,
+                        status="waiting",
+                    )
+                )
     
     async def mark_task_completed(
         self, 
@@ -495,6 +518,89 @@ class TaskOrchestrator:
                 summary[task.status] += 1
             
             return summary
+
+    async def build_execution_speech_snapshot(
+        self,
+        user_id: str,
+        max_tasks: int = 12,
+        max_data_fields: int = 4,
+    ) -> Dict[str, Any]:
+        """
+        Build a compact, speech-safe snapshot from execution state.
+
+        This is used by final TTS summarization after all tasks complete.
+        """
+        async with self._get_lock(user_id):
+            state = self.states.get(user_id)
+            if not state:
+                return {
+                    "user_id": user_id,
+                    "has_state": False,
+                    "summary": {
+                        "total": 0,
+                        "pending": 0,
+                        "running": 0,
+                        "completed": 0,
+                        "failed": 0,
+                        "waiting": 0,
+                        "skipped": 0,
+                        "emitted": 0,
+                    },
+                    "tasks": [],
+                }
+
+            summary = {
+                "total": len(state.tasks),
+                "pending": 0,
+                "running": 0,
+                "completed": 0,
+                "failed": 0,
+                "waiting": 0,
+                "skipped": 0,
+                "emitted": 0,
+            }
+            for task in state.tasks.values():
+                summary[task.status] += 1
+
+            ordered_tasks = sorted(
+                state.tasks.values(),
+                key=lambda t: (t.created_at, t.task_id),
+            )[: max(1, max_tasks)]
+
+            tasks: List[Dict[str, Any]] = []
+            for task in ordered_tasks:
+                output_preview: Dict[str, Any] = {}
+                if task.output and isinstance(task.output.data, dict):
+                    for i, key in enumerate(task.output.data.keys()):
+                        if i >= max_data_fields:
+                            break
+                        value = task.output.data.get(key)
+                        if isinstance(value, (str, int, float, bool)) or value is None:
+                            output_preview[key] = value
+                        elif isinstance(value, (dict, list, tuple, set)):
+                            output_preview[key] = str(value)[:140]
+                        else:
+                            output_preview[key] = str(value)[:140]
+
+                tasks.append(
+                    {
+                        "task_id": task.task_id,
+                        "tool": task.tool,
+                        "execution_target": task.execution_target,
+                        "status": task.status,
+                        "duration_ms": task.duration_ms,
+                        "error": task.error,
+                        "output_success": task.output.success if task.output else None,
+                        "output_preview": output_preview,
+                    }
+                )
+
+            return {
+                "user_id": user_id,
+                "has_state": True,
+                "summary": summary,
+                "tasks": tasks,
+            }
     
     async def cleanup_user_state(self, user_id: str) -> None:
         """Cleanup user state (call on disconnect)"""

@@ -26,7 +26,7 @@ async def main():
     await connect_to_mongo()
     
     # Import after DB connection
-    from app.services.chat_service import chat
+    from app.services import chat
     from app.core.orchestrator import get_orchestrator
     
     logger.info("\n" + "="*70)

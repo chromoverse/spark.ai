@@ -1,14 +1,9 @@
 from typing import Any, Dict, List
-import asyncio
-import json
-import logging
 
 from tools_plugin.tools.base import BaseTool, ToolOutput
 from tools_plugin.tools.web.search import WebSearchTool
 from tools_plugin.tools.web.scrape import WebScrapeTool
 from tools_plugin.tools.ai.summarize import AiSummarizeTool
-
-logger = logging.getLogger(__name__)
 
 class WebResearchTool(BaseTool):
     """
@@ -38,7 +33,7 @@ class WebResearchTool(BaseTool):
 
         urls_data = search_result.data.get("results", [])
         if not urls_data:
-             return ToolOutput(success=True, data={"summary": "No results found.", "detailed_content": "", "sources": []}, error=None)
+             return ToolOutput(success=True, data={"query": query, "summary": "No results found.", "detailed_content": "", "sources": []}, error=None)
 
         urls = [item['url'] for item in urls_data]
         
@@ -63,7 +58,7 @@ class WebResearchTool(BaseTool):
                 })
 
         if not concatenated_content:
-             return ToolOutput(success=True, data={"summary": "Could not scrape any content from the search results.", "detailed_content": "", "sources": valid_sources}, error=None)
+             return ToolOutput(success=True, data={"query": query, "summary": "Could not scrape any content from the search results.", "detailed_content": "", "sources": valid_sources}, error=None)
 
         # 3. Summarize
         summarize_tool = AiSummarizeTool()
@@ -75,37 +70,13 @@ class WebResearchTool(BaseTool):
         summary_data = summary_result.data
         summary_text = summary_data.get("summary", "")
 
-        # 4. Emit results to client (fire-and-forget — never blocks tool)
-        if user_id:
-            try:
-                from app.socket.utils import fire_socket_event, fire_tts
-                
-                # Emit the research result data to client
-                logger.info(f"📡 [WebResearch] Emitting result to user {user_id}")
-                fire_socket_event(
-                    "research-result",
-                    {
-                        "summary": summary_text,
-                        "sources": [s.get("url") for s in valid_sources],
-                        "query": query
-                    },
-                    user_id=user_id
-                )
-                
-                # Also speak the summary via TTS
-                if summary_text:
-                    logger.info(f"🔊 [WebResearch] Firing TTS for user {user_id}: {summary_text[:50]}...")
-                    fire_tts(text=summary_text, user_id=user_id)
-                
-            except ImportError:
-                # Socket module not available — standalone testing
-                print(f"\n🔊 [TTS would say]: {summary_text}\n")
-            except Exception as e:
-                logger.error(f"❌ [WebResearch] Emission failed: {e}", exc_info=True)
+        # 4. Do not emit socket/TTS from tools.
+        # Tool output is stored in execution state and can be fetched on-demand.
 
         return ToolOutput(
             success=True,
             data={
+                "query": query,
                 "summary": summary_text,
                 "detailed_content": summary_data.get("formatted_content"),
                 "sources": valid_sources

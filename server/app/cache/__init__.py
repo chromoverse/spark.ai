@@ -47,8 +47,22 @@ async def add_message(user_id: str, role: str, content: str) -> None:
 async def get_last_n_messages(user_id: str, n: int = 10) -> List[Dict[str, Any]]:
     return await cache_manager.get_last_n_messages(user_id, n)
 
-async def process_query_and_get_context(user_id: str, query: str) -> tuple[List[Dict[str, Any]], bool]:
-    return await cache_manager.process_query_and_get_context(user_id, query)
+async def process_query_and_get_context(
+    user_id: str,
+    query: str,
+    budget_ms: Optional[int] = None,
+    top_k: int = 10,
+    threshold: float = 0.1,
+    fast_lane: bool = False,
+) -> tuple[List[Dict[str, Any]], bool]:
+    return await cache_manager.process_query_and_get_context(
+        user_id=user_id,
+        current_query=query,
+        budget_ms=budget_ms,
+        top_k=top_k,
+        threshold=threshold,
+        fast_lane=fast_lane,
+    )
 
 async def clear_conversation_history(user_id: str) -> None:
     await cache_manager.clear_conversation_history(user_id)

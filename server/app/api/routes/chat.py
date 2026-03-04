@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from app.schemas.chat_schema import ChatRequest,ChatResponse
-from app.services.chat_service import chat
+from app.schemas import ChatRequest, ChatResponse
+from app.services import chat
 import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()

@@ -1,5 +1,6 @@
 import logging
 import time
+import asyncio
 import lancedb
 import pyarrow as pa
 import numpy as np
@@ -60,6 +61,8 @@ class LanceDBManager:
         
         self.db = lancedb.connect(str(self.db_path))
         self._table = self._init_tables()
+        self._index_ready = False
+        self._ensure_vector_index()
         
         # ✅ In-memory cache for chat history: {user_id: [messages]}
         self._chat_cache: OrderedDict[str, List[Dict[str, Any]]] = OrderedDict()
@@ -77,6 +80,44 @@ class LanceDBManager:
         
         # ✅ Open ONCE and keep the handle
         return self.db.open_table("user_queries")
+
+    def _ensure_vector_index(self):
+        """
+        Best-effort ANN index setup for faster vector retrieval.
+        Falls back silently when index APIs differ by LanceDB version.
+        """
+        if self._index_ready:
+            return
+
+        def _create() -> None:
+            try:
+                # Newer LanceDB signature.
+                self._table.create_index(
+                    vector_column_name="vector",
+                    metric="cosine",
+                    replace=False,
+                )
+                return
+            except TypeError:
+                # Older signature fallback.
+                pass
+            except Exception as exc:
+                if "already exists" in str(exc).lower():
+                    return
+                # Continue to legacy fallback.
+
+            try:
+                self._table.create_index("vector")
+            except Exception as exc:
+                if "already exists" not in str(exc).lower():
+                    raise
+
+        try:
+            _create()
+            self._index_ready = True
+            logger.info("✅ LanceDB vector index ready")
+        except Exception as exc:
+            logger.warning("⚠️ LanceDB index setup skipped: %s", exc)
     
     def _invalidate_cache(self, user_id: str):
         """Invalidate chat cache for user"""
@@ -123,8 +164,8 @@ class LanceDBManager:
                 "vector": vector_normalized
             }]
             
-            # ✅ Uses persistent table handle
-            self._table.add(data)
+            # ✅ Uses persistent table handle, off event loop thread
+            await asyncio.to_thread(self._table.add, data)
             
             # ✅ Invalidate cache on write
             self._invalidate_cache(user_id)
@@ -212,25 +253,40 @@ class LanceDBManager:
             else:
                 query_normalized = query_vector
             
-            # ✅ Search with native filter — no post-filtering needed
-            results = (
-                self._table.search(query_normalized)
-                .where(f"user_id = '{user_id}'")
-                .limit(limit * 3)
-                .to_pandas()
-            )
-            
-            if results.empty:
+            def _run_search() -> List[Dict[str, Any]]:
+                candidate_limit = max(8, min(64, limit * 4))
+                df = (
+                    self._table.search(query_normalized)
+                    .where(f"user_id = '{user_id}'")
+                    .limit(candidate_limit)
+                    .to_pandas()
+                )
+                if df.empty:
+                    return []
+                return [
+                    {
+                        "id": row["id"],
+                        "role": row["role"],
+                        "content": row["content"],
+                        "timestamp": row["timestamp"],
+                        "_distance": float(row.get("_distance", 2.0)),
+                    }
+                    for _, row in df.iterrows()
+                ]
+
+            rows = await asyncio.to_thread(_run_search)
+
+            if not rows:
                 logger.debug(f"No search results for user {user_id}")
                 return []
             
-            logger.info(f"🔍 LanceDB: {len(results)} results for user {user_id}")
+            logger.info(f"🔍 LanceDB: {len(rows)} results for user {user_id}")
             
             # Deduplicate and calculate similarity
             seen_keys = set()
             final_results = []
             
-            for _, row in results.iterrows():
+            for row in rows:
                 l2_distance = float(row.get("_distance", 2.0))
                 cosine_similarity = max(0.0, 1.0 - (l2_distance ** 2) / 2.0)
                 

@@ -13,7 +13,7 @@ Event-based completion signaling for proper async waiting
 
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 
 from app.kernel.execution.orchestrator import get_orchestrator
@@ -135,6 +135,17 @@ class ExecutionEngine:
         except asyncio.TimeoutError:
             logger.warning(f"⏰ Timeout waiting for {user_id} execution after {timeout}s")
             return False
+
+    async def get_execution_speech_snapshot(
+        self,
+        user_id: str,
+        max_tasks: int = 12,
+    ) -> Dict[str, Any]:
+        """Expose orchestrator snapshot for post-execution speech synthesis."""
+        return await self.orchestrator.build_execution_speech_snapshot(
+            user_id=user_id,
+            max_tasks=max_tasks,
+        )
     
     async def _execution_loop(self, user_id: str) -> None:
         """
@@ -164,8 +175,9 @@ class ExecutionEngine:
                 pending = state.get_tasks_by_status("pending")
                 running = state.get_tasks_by_status("running")
                 emitted = state.get_tasks_by_status("emitted")
+                waiting = state.get_tasks_by_status("waiting")
                 
-                if not pending and not running and not emitted:
+                if not pending and not running and not emitted and not waiting:
                     logger.info(f"All tasks finished for {user_id} — exiting")
                     break
                 
@@ -181,6 +193,12 @@ class ExecutionEngine:
                 has_work = bool(batch.server_tasks or batch.client_tasks)
                 
                 if not has_work:
+                    waiting_now = state.get_tasks_by_status("waiting")
+                    if waiting_now:
+                        logger.info("⏳ Waiting for %d approval task(s)...", len(waiting_now))
+                        await asyncio.sleep(0.2)
+                        continue
+
                     no_work_count += 1
                     logger.info(f" No runnable tasks (idle count: {no_work_count}/{max_idle})")
                     
@@ -269,6 +287,10 @@ class ExecutionEngine:
             if task.lifecycle_messages and task.lifecycle_messages.on_start:
                 logger.info(f"     {task.lifecycle_messages.on_start}")
 
+            # Optional approval gate tasks are resolved via notification response.
+            if not await self._handle_approval_gate(user_id, task):
+                return
+
             if not self.server_tool_executor: 
                 raise RuntimeError("Server tool executor not configured")    
             
@@ -283,6 +305,7 @@ class ExecutionEngine:
             
             resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
             resolved_inputs["_user_id"] = user_id
+            resolved_inputs["_task_id"] = task.task_id
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
@@ -368,6 +391,10 @@ class ExecutionEngine:
             
             if task.lifecycle_messages and task.lifecycle_messages.on_start:
                 logger.info(f"     {task.lifecycle_messages.on_start}")
+
+            # Optional approval gate tasks are resolved via notification response.
+            if not await self._handle_approval_gate(user_id, task):
+                return
             
             # Resolve inputs
             state = self.orchestrator.get_state(user_id)
@@ -380,6 +407,7 @@ class ExecutionEngine:
             
             resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
             resolved_inputs["_user_id"] = user_id
+            resolved_inputs["_task_id"] = task.task_id
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
@@ -426,6 +454,52 @@ class ExecutionEngine:
                 logger.info(f"     {task.lifecycle_messages.on_failure}")
             
             logger.error(f"  Failed locally: {task.task_id} - {error_msg}")
+
+    async def _handle_approval_gate(self, user_id: str, task: TaskRecord) -> bool:
+        """
+        Handle task-level approval gate.
+
+        Returns:
+            True  -> continue normal tool execution
+            False -> stop execution for this task (approval flow owns final status)
+        """
+        control = task.control
+        if not control or not control.requires_approval:
+            return True
+
+        question = control.approval_question or f"Allow '{task.tool}' to run?"
+        await self.orchestrator.mark_task_waiting(user_id, task.task_id)
+
+        if not self.socket_handler or not hasattr(self.socket_handler, "request_approval"):
+            await self.orchestrator.mark_task_failed(
+                user_id,
+                task.task_id,
+                "Approval requested but no approval handler is configured",
+            )
+            return False
+
+        try:
+            approved = await self.socket_handler.request_approval(user_id, task.task_id, question)
+        except Exception as exc:
+            await self.orchestrator.mark_task_failed(
+                user_id,
+                task.task_id,
+                f"Approval flow failed: {exc}",
+            )
+            return False
+
+        if not approved:
+            current = self.orchestrator.get_task(user_id, task.task_id)
+            if current and current.status == "waiting":
+                await self.orchestrator.mark_task_failed(user_id, task.task_id, "User denied approval")
+            return False
+
+        # Approval tasks are expected to be marked completed/failed by approval handler.
+        current = self.orchestrator.get_task(user_id, task.task_id)
+        if current and current.status in {"completed", "failed"}:
+            return False
+
+        return True
     
     async def _emit_client_batch_remote(self, user_id: str, tasks: list[TaskRecord]) -> None:
         """
@@ -448,6 +522,8 @@ class ExecutionEngine:
                     can_resolve, error = self.binding_resolver.validate_bindings(task, state)
                     if can_resolve:
                         resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
+                        resolved_inputs["_user_id"] = user_id
+                        resolved_inputs["_task_id"] = task.task_id
                         task.resolved_inputs = resolved_inputs
                         logger.info(f"     📋 Resolved inputs for {task.task_id}")
                 

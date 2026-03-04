@@ -91,6 +91,11 @@ Return a raw JSON object — no markdown, no code fences:
   "acknowledge_answer": "..." (it must be in past tense - short 3, or 4 words.),
   "tasks": [...]
 }}
+CRITICAL:
+- Do NOT include explanations, headings, analysis, or examples.
+- Do NOT wrap output in ```json fences.
+- Output must start with "{{" and end with "}}".
+- If output is not strict JSON, it will be rejected and retried.
 
 ━━━ ACKNOWLEDGE ANSWER RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Language  : {lang_label} (you may sprinkle {secondary_lang} naturally if it fits).

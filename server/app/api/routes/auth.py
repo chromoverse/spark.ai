@@ -5,7 +5,7 @@ from app.cache import get_user_details, set_user_details, update_user_details
 from app.db.mongo import get_db
 from app.utils.serialize_mongo_doc import serialize_doc
 from app.models.user_model import UserModel , UserResponse, UserUpdateQuery
-from app.schemas import auth_schema
+from app.schemas import auth
 from app.dependencies.auth import get_current_user
 from app.jwt.config import create_access_token,create_refresh_token
 from app.helper.email_validation import is_valid_email
@@ -132,7 +132,7 @@ async def register_user(request: Request, user: UserModel):
 
 # This route is for verifying otp either verifying the user's email for the first time or login verification
 @router.post("/verify-otp")
-async def verify_otp_code(request: Request, data : auth_schema.VerifyTokenData):
+async def verify_otp_code(request: Request, data : auth.VerifyTokenData):
     if not data.email or not is_valid_email(data.email):
         return send_error(
             message="Email address is required or Invalid email address",
@@ -208,7 +208,7 @@ async def verify_otp_code(request: Request, data : auth_schema.VerifyTokenData):
 
 
 @router.post("/sign-in", response_model = UserResponse)
-async def login(request: Request, user: auth_schema.LoginData):
+async def login(request: Request, user: auth.LoginData):
     if not user.email or not is_valid_email(user.email):
         return send_error(
             message="Email address is required or Invalid email address",
@@ -275,7 +275,7 @@ async def login(request: Request, user: auth_schema.LoginData):
 
 # This route is for inserting api keys
 @router.post("/insert-api-keys")
-async def insert_keys(request:Request ,payload: auth_schema.APIKeys, user = Depends(get_current_user)):
+async def insert_keys(request:Request ,payload: auth.APIKeys, user = Depends(get_current_user)):
     from app.cache import set_user_details
     db= get_db()
     print("user from middlware",user, "type of user",type(user))
@@ -376,7 +376,7 @@ async def update_user_details_endpoint(
 
 ## this route is for auto rotating the refresh and access_token
 @router.post("/refresh-token")
-async def refresh_access_token_endpoint(request: Request, body: auth_schema.RefreshTokenRequest):
+async def refresh_access_token_endpoint(request: Request, body: auth.RefreshTokenRequest):
     refresh_token = body.refresh_token
     if not refresh_token:
         return send_error(message="Refresh token is required", status_code=400)
