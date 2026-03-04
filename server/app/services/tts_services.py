@@ -2,8 +2,9 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import AsyncGenerator, Optional, Dict, Any
+from typing import AsyncGenerator, Optional, Any
 from app.services.tts.manager import tts_manager
+from app.services.tts.voice_selector import VoiceSelector
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,32 @@ class TTSService:
             logger.error(f"❌ TTS engine warmup failed: {e}")
             return False
 
+    def select_voice(self, gender: Optional[str], lang: str = "en") -> str:
+        """
+        Main public voice selector for TTS.
+
+        Accepts:
+        - gender: ``male`` or ``female`` (anything else falls back to language default)
+        - lang: language code, defaults to English
+        """
+        normalized_lang = (lang or "en").strip().lower() or "en"
+        normalized_gender = (gender or "").strip().lower() if gender else None
+        if normalized_gender not in {"male", "female"}:
+            normalized_gender = None
+
+        voice = VoiceSelector.get_voice(
+            lang=normalized_lang,
+            gender=normalized_gender,
+            randomize=False,
+        )
+        logger.debug(
+            "🎙️ Voice selected: lang=%s gender=%s voice=%s",
+            normalized_lang,
+            normalized_gender or "default",
+            voice,
+        )
+        return voice
+
     async def generate_audio_stream(
         self,
         text: str,
@@ -70,6 +97,9 @@ class TTSService:
         prefer_low_latency: bool = False,
     ) -> AsyncGenerator[bytes, None]:
         """Generate audio stream — yields individual valid WAV chunks."""
+        resolved_lang = (lang or "en").strip().lower() or "en"
+        resolved_voice = voice or self.select_voice(gender=gender, lang=resolved_lang)
+
         speed = 1.0
         if rate:
             try:
@@ -80,9 +110,9 @@ class TTSService:
 
         async for chunk in tts_manager.generate_stream(
             text=text,
-            voice=voice,
+            voice=resolved_voice,
             speed=speed,
-            lang=lang,
+            lang=resolved_lang,
             gender=gender,
             prefer_low_latency=prefer_low_latency,
         ):

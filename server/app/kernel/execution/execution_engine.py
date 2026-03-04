@@ -15,6 +15,7 @@ import asyncio
 import logging
 from typing import Any, Dict, Optional
 from datetime import datetime
+import contextlib
 
 from app.kernel.execution.orchestrator import get_orchestrator
 from app.kernel.execution.execution_models import TaskRecord, TaskOutput
@@ -98,15 +99,15 @@ class ExecutionEngine:
         Start execution engine for a user (non-blocking)
         Creates a background task that runs the execution loop
         """
-        # Create completion event BEFORE starting
-        self.completion_events[user_id] = asyncio.Event()
-        
         # Check if already running for this user
         if user_id in self.running_engines:
             existing = self.running_engines[user_id]
             if not existing.done():
                 logger.info(f" Execution already running for {user_id}")
                 return existing
+
+        # Create completion event for a fresh run.
+        self.completion_events[user_id] = asyncio.Event()
         
         # Start new background task
         task = asyncio.create_task(
@@ -494,11 +495,8 @@ class ExecutionEngine:
                 await self.orchestrator.mark_task_failed(user_id, task.task_id, "User denied approval")
             return False
 
-        # Approval tasks are expected to be marked completed/failed by approval handler.
-        current = self.orchestrator.get_task(user_id, task.task_id)
-        if current and current.status in {"completed", "failed"}:
-            return False
-
+        # Restore active status and continue real tool execution.
+        await self.orchestrator.mark_task_running(user_id, task.task_id)
         return True
     
     async def _emit_client_batch_remote(self, user_id: str, tasks: list[TaskRecord]) -> None:
@@ -587,6 +585,8 @@ class ExecutionEngine:
         task = self.running_engines.get(user_id)
         if task and not task.done():
             task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
             logger.info(f"🛑 Stopped execution for {user_id}")
 
 

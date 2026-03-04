@@ -38,6 +38,14 @@ class _FakeTTSService:
 
 
 class StreamServiceLatencyTests(unittest.IsolatedAsyncioTestCase):
+    def test_intent_gate_avoids_internal_status_queries(self):
+        self.assertFalse(
+            stream_module._is_live_or_tool_intent(
+                "what is the current status of our server and how many tools do we have"
+            )
+        )
+        self.assertTrue(stream_module._is_live_or_tool_intent("open camera now"))
+
     def test_find_split_point_prefers_sentence_boundary(self):
         text = "Hello boss. Let us continue with the task right now"
         split_at = _find_split_point(text, min_words=2, soft_words=4, max_words=20)

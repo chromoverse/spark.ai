@@ -18,7 +18,7 @@ import uuid
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from app.ai.providers import llm_chat, llm_stream
-from app.cache import load_user, get_last_n_messages, process_query_and_get_context
+from app.cache import add_message, load_user, get_last_n_messages, process_query_and_get_context
 from app.config import settings
 from app.prompts import stream_prompt
 
@@ -40,7 +40,6 @@ _LIVE_DATA_TOKENS = {
     "crypto",
     "news",
     "rate",
-    "status",
 }
 
 _ACTION_TOKENS = {
@@ -58,9 +57,20 @@ _ACTION_TOKENS = {
 }
 
 _LIVE_OR_ACTION_RE = re.compile(
-    r"\b(search|open|play|call|send|check|find|latest|current|today|price|weather|news|status)\b",
+    r"\b(search|open|play|call|send|check|find|latest|current|today|price|weather|news)\b",
     flags=re.IGNORECASE,
 )
+_INTERNAL_CONTEXT_TOKENS = {
+    "server",
+    "tool",
+    "tools",
+    "task",
+    "tasks",
+    "history",
+    "memory",
+    "workflow",
+    "execution",
+}
 _SENTENCE_BREAK_RE = re.compile(r'(?<!\.)(?<!…)[.!?]["\')\]]?\s+')
 _CLAUSE_BREAK_RE = re.compile(r'[,;:\u2014]\s+')
 
@@ -79,13 +89,22 @@ def _is_live_or_tool_intent(query: str) -> bool:
     if not normalized:
         return False
 
-    if _LIVE_OR_ACTION_RE.search(normalized):
-        return True
-
     tokens = set(re.findall(r"[a-zA-Z_]{2,}", normalized))
     has_live = bool(tokens & _LIVE_DATA_TOKENS)
     has_action = bool(tokens & _ACTION_TOKENS)
-    return has_live and has_action
+    has_internal_context = bool(tokens & _INTERNAL_CONTEXT_TOKENS)
+
+    # Internal status/memory questions should go through full conversational path.
+    if has_internal_context and not has_action:
+        return False
+
+    if has_action:
+        return True
+
+    if has_live and _LIVE_OR_ACTION_RE.search(normalized):
+        return True
+
+    return False
 
 
 def _resolve_language(user_details: Dict[str, Any] | None) -> str:
@@ -333,6 +352,9 @@ class StreamService:
             user_task = asyncio.create_task(load_user(user_id))
             user_task.add_done_callback(lambda t, uid=user_id: _cache_language_from_user_task(t, uid))
             user_task.add_done_callback(lambda t: _on_background_done(t, "user_details"))
+
+            persist_task = asyncio.create_task(add_message(user_id=user_id, role="user", content=query))
+            persist_task.add_done_callback(lambda t: _on_background_done(t, "add_message(fast_ack)"))
 
             lang = _USER_LANG_CACHE.get(user_id) or _guess_language_from_query(query)
             ack_text = _fallback_ack_text(lang)

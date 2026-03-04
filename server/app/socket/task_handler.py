@@ -253,11 +253,9 @@ class SocketTaskHandler:
             logger.info("📨 Approval requested for %s/%s", user_id, task_id)
 
             approved = await asyncio.wait_for(future, timeout=120.0)
-            await self.orchestrator.handle_approval(user_id, task_id, approved)
             return approved
         except asyncio.TimeoutError:
             logger.warning("⏱️ Approval timeout for %s/%s", user_id, task_id)
-            await self.orchestrator.handle_approval(user_id, task_id, False)
             return False
         finally:
             self._pending_approvals.pop(key, None)
