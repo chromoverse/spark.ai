@@ -1,4 +1,4 @@
-from app.agent.client_core.notification import show_approval_notification,show_info_notification
+from app.agent.desktop_notifications import show_approval_notification, show_info_notification
 
 show_approval_notification(
     user_id="test_user",

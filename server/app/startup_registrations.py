@@ -40,27 +40,118 @@ async def _warmup_tts() -> None:
 register("TTS engine (Kokoro)", _warmup_tts)
 
 
-# ── 4. Agentic System (Orchestrator, Engine, Tools) ──
+# ── 4. Kernel runtime (event bus, persistence, logs) ──
+async def _init_kernel_runtime() -> None:
+    from app.kernel import init_kernel_runtime
+    await init_kernel_runtime()
+
+
+register("Kernel Runtime (events + persistence + logs)", _init_kernel_runtime)
+
+
+# ── 5. Agentic System (Orchestrator, Engine, Tools) ──
 async def _init_agent_system() -> None:
     from app.config import settings  # Module-level singleton (already validated)
+    from app.kernel import KernelEvent, emit_kernel_event
     
     environment = settings.environment
     print(f"🌍 Agent System Environment: {environment}")
     
-    # ── Step 1: Load Tool Registry (Shared) ──
-    from app.agent.shared.registry.loader import load_tool_registry
+    # ── Step 1: Sync runtime tools into AppData root ──
+    from app.plugins.tools.scripts.runtime_sync import get_tools_runtime_sync, get_runtime_tools_paths
+    from app.plugins.tools.scripts.dependency_checker import check_requirements
+    await emit_kernel_event(
+        KernelEvent(
+            event_type="tools_sync_started",
+            user_id="system",
+            status="running",
+            payload={"prefer_cdn": settings.TOOLS_CDN_ENABLED},
+        )
+    )
+    try:
+        sync_result = get_tools_runtime_sync().sync(prefer_cdn=settings.TOOLS_CDN_ENABLED)
+        await emit_kernel_event(
+            KernelEvent(
+                event_type="tools_sync_completed",
+                user_id="system",
+                status="success",
+                payload={
+                    "synced": sync_result.synced,
+                    "reason": sync_result.reason,
+                    "runtime_version": sync_result.runtime_version,
+                    "seed_version": sync_result.seed_version,
+                    "source_used": sync_result.source_used,
+                    "healthy": sync_result.healthy,
+                    "runtime_root": sync_result.runtime_root,
+                },
+            )
+        )
+        print(
+            "🧰 Tools sync: "
+            f"{sync_result.reason} "
+            f"(synced={sync_result.synced}, source={sync_result.source_used})"
+        )
+    except Exception as exc:
+        await emit_kernel_event(
+            KernelEvent(
+                event_type="tools_sync_failed",
+                user_id="system",
+                status="failed",
+                payload={"error": str(exc)},
+            )
+        )
+        raise
+
+    # ── Step 1b: Ensure runtime tools requirements are installed in main env ──
+    req_path = get_runtime_tools_paths().runtime_root / "requirements.txt"
+    req_result = check_requirements(req_path)
+    if req_result.missing:
+        await emit_kernel_event(
+            KernelEvent(
+                event_type="tools_requirements_failed",
+                user_id="system",
+                status="failed",
+                payload={
+                    "requirements_path": req_result.requirements_path,
+                    "missing": req_result.missing,
+                },
+            )
+        )
+        raise RuntimeError(
+            "Missing tools_plugin runtime dependencies in main server env: "
+            + ", ".join(req_result.missing)
+        )
+
+    await emit_kernel_event(
+        KernelEvent(
+            event_type="tools_requirements_ok",
+            user_id="system",
+            status="success",
+            payload={
+                "requirements_path": req_result.requirements_path,
+                "checked": req_result.checked,
+            },
+        )
+    )
+
+    # ── Step 2: Load Tool Registry (from runtime root by default) ──
+    from app.plugins.tools.registry_loader import load_tool_registry
     load_tool_registry()
     
-    # ── Step 2: Load Tool Instances (Server + Client) ──
-    from app.agent.shared.tools.loader import load_all_tools
+    # ── Step 3: Load Tool Instances (runtime plugins) ──
+    from app.plugins.tools.tool_instance_loader import load_all_tools
     load_all_tools()
+
+    # ── Step 4: Generate typed SDK for developer DX ──
+    from app.plugins.tools.scripts.sdk_generator import get_tools_sdk_generator
+    get_tools_sdk_generator().generate()
     
-    # ── Step 3: Initialize Orchestrator ──
-    from app.agent.core.orchestrator import init_orchestrator
+    # ── Step 5: Initialize Orchestrator ──
+    from app.agent.execution_gateway import init_orchestrator
     init_orchestrator()
     
-    # ── Step 4: Initialize Task Emitter FIRST (engine depends on it) ──
-    from app.agent.core.task_emitter import init_task_emitter
+    # ── Step 6: Initialize Task Emitter FIRST (engine depends on it) ──
+    from app.agent.execution_gateway import init_task_emitter
     emitter = init_task_emitter()
     emitter.set_environment(environment)
     
@@ -75,15 +166,15 @@ async def _init_agent_system() -> None:
         except Exception as e:
             print(f"❌ Failed to wire socket handler: {e}")
     
-    # ── Step 5: Initialize Execution Engine ──
-    from app.agent.core.execution_engine import init_execution_engine
+    # ── Step 7: Initialize Execution Engine ──
+    from app.agent.execution_gateway import init_execution_engine
     engine = init_execution_engine()
     
-    # ── Step 6: Initialize Server Executor ──
-    from app.agent.core.server_executor import init_server_executor
+    # ── Step 8: Initialize Server Executor ──
+    from app.agent.execution_gateway import init_server_executor
     server_executor = init_server_executor()
     
-    # ── Step 7: WIRE EVERYTHING TOGETHER ──
+    # ── Step 9: WIRE EVERYTHING TOGETHER ──
     engine.set_server_executor(server_executor)
     engine.set_client_emitter(emitter)
     
@@ -91,3 +182,14 @@ async def _init_agent_system() -> None:
 
 
 register("Agentic System (Orchestrator + Tools)", _init_agent_system)
+
+
+# ── 6. Ensure model assets are present on startup ──
+def _download_models_if_needed() -> None:
+    from app.ml.model_loader import model_loader
+    model_loader.download_all_models()
+
+
+register("Model assets (download check)", _download_models_if_needed)
+
+

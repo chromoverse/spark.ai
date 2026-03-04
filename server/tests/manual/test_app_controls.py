@@ -5,7 +5,7 @@ import sys
 # Adjust path to enable imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
-from server.app.agent.shared.tools.system.operations import (
+from tools_plugin.tools.system.operations import (
     AppOpenTool,
     AppCloseTool,
     AppRestartTool,

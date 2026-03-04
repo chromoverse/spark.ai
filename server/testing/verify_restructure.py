@@ -16,23 +16,23 @@ async def verify():
     try:
         # 1. Check Imports
         logger.info("1. Checking Imports...")
-        import app.agent.core.orchestrator
-        import app.agent.client_core.main
-        import app.agent.shared.registry.loader
-        import app.agent.shared.tools.loader
+        import app.kernel.execution.orchestrator
+        import app.agent.desktop_notifications
+        import app.plugins.tools.registry_loader
+        import app.plugins.tools.tool_instance_loader
         import app.main
         logger.info("✅ Imports successful")
         
         # 2. Check Registry Loading
         logger.info("2. Checking Registry Loading...")
-        from app.agent.shared.registry.loader import load_tool_registry, get_tool_registry
+        from app.plugins.tools.registry_loader import load_tool_registry, get_tool_registry
         load_tool_registry()
         registry = get_tool_registry()
         logger.info(f"✅ Registry loaded: {len(registry.tools)} tools")
         
         # 3. Check Task Emitter Initialization
         logger.info("3. Checking Task Emitter...")
-        from app.agent.core.task_emitter import init_task_emitter, get_task_emitter
+        from app.kernel.execution.task_emitter import init_task_emitter, get_task_emitter
         init_task_emitter() # Reset
         emitter = get_task_emitter()
         
@@ -64,3 +64,4 @@ async def verify():
 
 if __name__ == "__main__":
     asyncio.run(verify())
+

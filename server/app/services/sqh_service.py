@@ -15,13 +15,18 @@ import asyncio
 import re
 from typing import List, Dict, Any, Union
 
-from app.agent.core.models import LifecycleMessages, Task
+from app.agent.execution_gateway import (
+    LifecycleMessages,
+    Task,
+    get_client_executor,
+    get_execution_engine,
+    get_orchestrator,
+    get_server_executor,
+    get_task_emitter,
+)
 from app.models.pqh_response_model import PQHResponse
 from app.prompts.sqh_prompt import build_sqh_prompt
 from app.ai.providers import llm_chat
-from app.agent.core.orchestrator import get_orchestrator
-from app.agent.core.execution_engine import get_execution_engine
-from app.agent.core.server_executor import get_server_executor
 
 logger = logging.getLogger(__name__)
 
@@ -231,13 +236,11 @@ async def process_sqh(
             # Desktop: inject client tool executor for direct execution
             if not execution_engine.client_tool_executor:
                 logger.info("🔧 [SQH] Injecting client tool executor (desktop mode)...")
-                from app.agent.core.client_executor import get_client_executor
                 execution_engine.set_client_executor(get_client_executor())
         else:
             # Production: inject socket handler for remote emit
             if not execution_engine.socket_handler:
                 logger.info("🔧 [SQH] Setting up socket handler (production mode)...")
-                from app.agent.core.task_emitter import get_task_emitter
                 client_emitter = get_task_emitter()
                 execution_engine.set_client_emitter(client_emitter)
         
@@ -286,3 +289,4 @@ async def _emit_ack_after_completion(user_id: str, message: str, execution_engin
         await stream_tts_to_client(message, user_id=user_id)
     except Exception as e:
         logger.error(f"❌ [SQH] Failed to emit ack after completion: {e}")
+

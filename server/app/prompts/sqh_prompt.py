@@ -5,7 +5,7 @@ Generates execution plans (Task arrays) based on PQH analysis.
 import json
 from typing import Optional, Dict, Any
 
-from app.agent.shared.registry.loader import get_tool_registry
+from app.plugins.tools.registry_loader import get_tool_registry
 from app.models.pqh_response_model import PQHResponse
 
 
@@ -131,3 +131,4 @@ Each task must follow:
 }}
 
 """
+

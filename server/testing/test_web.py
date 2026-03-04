@@ -1,5 +1,5 @@
-from app.agent.shared.tools.web import search,  scrape
-from app.agent.shared.tools.ai import init
+from tools_plugin.tools.web import search,  scrape
+from tools_plugin.tools.ai import init
 import asyncio
 import json
 
@@ -178,7 +178,7 @@ async def main ():
 async def main_research():
   query = input("Enter your research query: ")
   
-  from app.agent.shared.tools.web.research import WebResearchTool
+  from tools_plugin.tools.web.research import WebResearchTool
   
   print(f"Researching: {query}...")
   research_tool = WebResearchTool()

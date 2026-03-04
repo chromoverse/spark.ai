@@ -3,7 +3,7 @@ PQH - Primary Query Handler
 Pure Tool Decision Engine — targets ~900-1000 tokens at runtime
 """
 from typing import List, Dict, Optional
-from app.agent.shared.registry.tool_index import get_tools_index
+from app.plugins.tools.tool_index_loader import get_tools_index
 
 
 def _format_recent_context(recent_context: Optional[List[Dict]] = None) -> str:
@@ -112,3 +112,4 @@ if __name__ == "__main__":
     print(build_prompt("tell me a joke"))
     print("---")
     print(build_prompt("what is 15% of 340"))
+

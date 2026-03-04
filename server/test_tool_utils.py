@@ -1,4 +1,4 @@
-from app.agent.shared.utils.searcher.system_searcher import SystemSearcher
+from tools_plugin.utils.searcher.system_searcher import SystemSearcher
 
 searcher = SystemSearcher()
 

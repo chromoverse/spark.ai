@@ -138,6 +138,11 @@ export interface TaskStatusPayload {
   status: TaskStatus;
 }
 
+export interface TaskProgressPayload {
+  userId: string;
+  summary: Record<string, number | string>;
+}
+
 // ========================================
 // SOCKET EVENT INTERFACE
 // ========================================
@@ -167,6 +172,8 @@ export interface SocketEvents {
   "task:execute": (data: TaskExecuteBatchPayload) => void;
   "task:execute_batch": (data: TaskExecuteBatchPayload) => void;
   "task:status": (data: TaskStatusPayload) => void;
+  "task:progress": (data: TaskProgressPayload) => void;
+  "task:summary": (data: TaskProgressPayload) => void;
   
   // TTS events (payloads carry a streamId for per-stream tracking)
   "tts-start": (payload: { streamId: string; text?: string }) => void;

@@ -1,5 +1,5 @@
 from app.ai.providers.manager import llm_chat
-from app.agent.shared.tools.ai.init import AiSummarizeTool
+from tools_plugin.tools.ai.init import AiSummarizeTool
 import asyncio
 
 async def chat(text):

@@ -4,10 +4,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import chat, tts, stt, auth, ml_test, openrouter_debug
+from app.api.routes import chat, tts, stt, auth, ml_test, openrouter_debug, kernel
 from app.socket import init_socket, sio, socket_app, connected_users
 from app.db.mongo import connect_to_mongo, close_mongo_connection
 from app.db.indexes import create_indexes
+from app.plugins.tools.registry_loader import get_tool_registry
+from app.kernel.observability.log_setup import configure_structured_logging
+from app.kernel.runtime.kernel_runtime import get_kernel_runtime
+from app.agent.execution_gateway import get_orchestrator, get_task_emitter
 
 # Import ML components
 from app.ml import model_loader, embedding_worker, DEVICE, MODELS_CONFIG
@@ -16,15 +20,10 @@ from app.ml import model_loader, embedding_worker, DEVICE, MODELS_CONFIG
 import app.startup_registrations  # noqa: F401  — registers all init functions
 from app.auto_initializer import run_all as run_all_initializers
 
-# below both imports needed for task handling in client
 from app.socket.task_handler import register_task_events
-from app.agent.core.task_emitter import get_task_emitter
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+configure_structured_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -40,7 +39,7 @@ async def lifespan(app: FastAPI):
     
     # Wire socket handler to task emitter (for production mode)
     # This must happen after init_socket() below, or we register events now
-    # Actually register_task_events needs sio instance which is imported from app.socket
+    # register_task_events needs sio instance which is imported from app.socket
     # Let's register socket events
     task_handler = await register_task_events(sio, connected_users)
     get_task_emitter().set_socket_handler(task_handler)
@@ -84,6 +83,10 @@ async def lifespan(app: FastAPI):
     logger.info(" Application shutting down...")
     logger.info("=" * 60)
     
+    # Flush kernel persistence
+    await get_kernel_runtime().stop()
+    logger.info(" Kernel runtime stopped")
+
     # Cleanup database
     await close_mongo_connection()
     logger.info(" Database disconnected")
@@ -183,6 +186,10 @@ app.include_router(stt.router)
 app.include_router(auth.router)
 app.include_router(ml_test.router)
 app.include_router(openrouter_debug.router)
+app.include_router(kernel.router)
 
 # Mount WebSocket
 app.mount("/socket.io", socket_app)
+
+
+

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     GROQ_REASONING_MODEL: str = "openai/gpt-oss-20b"
 
     HUGGINGFACE_API_ACCESS_TOKEN: str
+    TOOLS_CDN_ENABLED: bool = False
+    TOOLS_CDN_MANIFEST_URL: str = ""
+    TOOLS_CDN_PACKAGE_URL: str = ""
 
     class Config:
         env_file = ".env"

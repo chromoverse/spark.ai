@@ -1,4 +1,4 @@
-import type { BrowserWindow, WebContents } from "electron";
+import { BrowserWindow, type WebContents } from "electron";
 import type { Socket } from "socket.io-client";
 import type { IEventPayloadMapping } from "@root/types";
 import { ipcWebContentSend } from "../utils/ipcUtils.js";
@@ -10,6 +10,7 @@ class SocketService {
   private socket: Socket | null = null;
   private connectionState: SocketConnectionStatePayload = { connected: false };
   private rendererTargets = new Set<WebContents>();
+  private preferredTtsTarget: WebContents | null = null;
   private connecting = false;
 
   public registerWindow(window: BrowserWindow): void {
@@ -19,8 +20,25 @@ class SocketService {
     }
 
     this.rendererTargets.add(target);
+    if (!this.preferredTtsTarget || this.preferredTtsTarget.isDestroyed()) {
+      this.preferredTtsTarget = target;
+    }
+
+    const setPreferredTarget = () => {
+      if (!target.isDestroyed()) {
+        this.preferredTtsTarget = target;
+      }
+    };
+
+    window.on("focus", setPreferredTarget);
+    window.on("show", setPreferredTarget);
     target.once("destroyed", () => {
+      window.off("focus", setPreferredTarget);
+      window.off("show", setPreferredTarget);
       this.rendererTargets.delete(target);
+      if (this.preferredTtsTarget === target) {
+        this.preferredTtsTarget = null;
+      }
     });
 
     this.sendConnectionStateTo(target);
@@ -196,6 +214,14 @@ class SocketService {
   }
 
   private broadcastSocketEvent(payload: SocketEventForwardPayload): void {
+    if (this.isSingleTargetTtsEvent(payload.event)) {
+      const target = this.resolveTtsTarget();
+      if (target) {
+        ipcWebContentSend("socketEventForward", target, payload);
+      }
+      return;
+    }
+
     for (const target of this.rendererTargets) {
       if (target.isDestroyed()) {
         this.rendererTargets.delete(target);
@@ -204,6 +230,41 @@ class SocketService {
 
       ipcWebContentSend("socketEventForward", target, payload);
     }
+  }
+
+  private isSingleTargetTtsEvent(eventName: string): boolean {
+    return (
+      eventName === "tts-start" ||
+      eventName === "tts-chunk" ||
+      eventName === "tts-end" ||
+      eventName === "response-tts"
+    );
+  }
+
+  private resolveTtsTarget(): WebContents | null {
+    const focused = BrowserWindow.getFocusedWindow()?.webContents ?? null;
+    if (focused && !focused.isDestroyed() && this.rendererTargets.has(focused)) {
+      this.preferredTtsTarget = focused;
+      return focused;
+    }
+
+    if (
+      this.preferredTtsTarget &&
+      !this.preferredTtsTarget.isDestroyed() &&
+      this.rendererTargets.has(this.preferredTtsTarget)
+    ) {
+      return this.preferredTtsTarget;
+    }
+
+    for (const candidate of this.rendererTargets) {
+      if (!candidate.isDestroyed()) {
+        this.preferredTtsTarget = candidate;
+        return candidate;
+      }
+    }
+
+    this.preferredTtsTarget = null;
+    return null;
   }
 }
 

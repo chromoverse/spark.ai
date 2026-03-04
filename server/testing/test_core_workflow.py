@@ -12,13 +12,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from app.agent.shared.registry.loader import load_tool_registry
-from app.agent.core.orchestrator import init_orchestrator
-from app.agent.core.execution_engine import init_execution_engine
-from app.agent.core.server_executor import init_server_executor
-from app.agent.core.task_emitter import get_task_emitter
-from app.agent.core.models import Task, LifecycleMessages
-from app.agent.shared.tools.loader import load_all_tools
+from app.plugins.tools.registry_loader import load_tool_registry
+from app.kernel.execution.orchestrator import init_orchestrator
+from app.kernel.execution.execution_engine import init_execution_engine
+from app.kernel.execution.server_executor import init_server_executor
+from app.kernel.execution.task_emitter import get_task_emitter
+from app.kernel.execution.execution_models import Task, LifecycleMessages
+from app.plugins.tools.tool_instance_loader import load_all_tools
 
 
 def print_section(title: str):
@@ -603,3 +603,4 @@ async def run_all_scenarios():
 
 if __name__ == "__main__":
     asyncio.run(run_all_scenarios())
+

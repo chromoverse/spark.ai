@@ -6,6 +6,7 @@ from app.prompts import pqh_prompt
 from app.services.sqh_service import process_sqh
 import asyncio
 import logging
+from app.agent.runtime import is_meta_query, try_handle_meta_query
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,12 @@ async def chat(
         return _create_error_response("Empty query received", "neutral")
     
     try:
+        # Section 2 smart runtime shortcut for metrics/history/log queries
+        if is_meta_query(query):
+            meta_response = await try_handle_meta_query(query=query, user_id=user_id)
+            if meta_response:
+                return meta_response
+
         # --- Load User Details + Recent Context in PARALLEL ---
         user_details, recent_context = await asyncio.gather(
             load_user(user_id),
@@ -137,7 +144,7 @@ async def _execute_and_wait(
         user_id: User identifier
         timeout: Max seconds to wait
     """
-    from app.agent.core.execution_engine import get_execution_engine
+    from app.agent.execution_gateway import get_execution_engine
     
     try:
         logger.info(f"⏳ Starting execution and waiting (timeout: {timeout}s)...")
@@ -175,3 +182,5 @@ def _create_error_response(message: str, emotion: str, query: str = "") -> PQHRe
          ),
          requested_tool=[]
     )
+
+

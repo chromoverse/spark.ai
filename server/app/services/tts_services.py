@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 import uuid
 from typing import AsyncGenerator, Optional, Dict, Any
 from app.services.tts.manager import tts_manager
@@ -14,7 +15,35 @@ class TTSService:
     """
 
     def __init__(self) -> None:
-        pass
+        # Prevent accidental double-play for the same user/text arriving nearly together.
+        self._recent_requests: dict[tuple[str, str], float] = {}
+        self._dedupe_window_seconds = 1.25
+        self._recent_window_seconds = 12.0
+        self._dedupe_lock = asyncio.Lock()
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        return " ".join(text.strip().lower().split())
+
+    async def _is_duplicate_request(self, sid: str, text: str) -> bool:
+        normalized = self._normalize_text(text)
+        if not normalized:
+            return False
+
+        now = time.monotonic()
+        key = (sid, normalized)
+
+        async with self._dedupe_lock:
+            # Keep map bounded by pruning stale entries.
+            stale_before = now - self._recent_window_seconds
+            for req_key, ts in list(self._recent_requests.items()):
+                if ts < stale_before:
+                    del self._recent_requests[req_key]
+
+            previous = self._recent_requests.get(key)
+            self._recent_requests[key] = now
+
+        return previous is not None and (now - previous) <= self._dedupe_window_seconds
 
     async def warmup_tts_engine(self) -> bool:
         """
@@ -74,6 +103,10 @@ class TTSService:
         Each event carries a unique ``stream_id`` so the client can associate
         chunks with the correct stream and reject stale data.
         """
+        if await self._is_duplicate_request(sid=sid, text=text):
+            logger.info("⚠️ Skipping duplicate TTS stream for sid=%s text='%s'", sid, text[:80])
+            return True
+
         stream_id = uuid.uuid4().hex[:12]
         logger.info(f"🔌 TTS stream [{stream_id}] to {sid}")
 

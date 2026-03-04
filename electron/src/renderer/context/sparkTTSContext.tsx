@@ -81,6 +81,8 @@ export const SparkTTSProvider = ({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaElementSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const ignoredStreamsRef = useRef<Set<string>>(new Set());
+  const recentTextStartRef = useRef<Map<string, number>>(new Map());
 
   // ── Initialize AudioContext ──
   useEffect(() => {
@@ -325,6 +327,8 @@ export const SparkTTSProvider = ({
     activeStreamIdRef.current = null;
     isPlayingChunkRef.current = false;
     currentStreamEndedRef.current = false;
+    ignoredStreamsRef.current.clear();
+    recentTextStartRef.current.clear();
     setQueueLength(0);
     setIsSpeaking(false);
 
@@ -342,6 +346,29 @@ export const SparkTTSProvider = ({
       console.log(`🎤 tts-start [${streamId}]: "${payload.text}"`);
 
       if (stoppedRef.current) return;
+
+      // Defensive duplicate filter: same text arriving almost immediately.
+      const normalizedText = (payload.text || "").trim().toLowerCase();
+      if (normalizedText) {
+        const now = Date.now();
+        const lastStart = recentTextStartRef.current.get(normalizedText);
+        recentTextStartRef.current.set(normalizedText, now);
+
+        // Prune stale text-start entries.
+        for (const [text, ts] of recentTextStartRef.current.entries()) {
+          if (now - ts > 10000) {
+            recentTextStartRef.current.delete(text);
+          }
+        }
+
+        if (lastStart && now - lastStart < 1200) {
+          console.warn(
+            `⚠️ Ignoring probable duplicate TTS stream [${streamId}] text="${normalizedText}"`
+          );
+          ignoredStreamsRef.current.add(streamId);
+          return;
+        }
+      }
 
       // If no active stream, start this one immediately
       if (!activeStreamIdRef.current) {
@@ -369,6 +396,8 @@ export const SparkTTSProvider = ({
       if (stoppedRef.current) return;
 
       const { streamId, data } = payload;
+      if (ignoredStreamsRef.current.has(streamId)) return;
+
       const bytes = toUint8Array(data);
 
       if (!bytes || bytes.byteLength === 0) {
@@ -424,6 +453,10 @@ export const SparkTTSProvider = ({
       error?: string;
     }) => {
       const { streamId, success } = payload;
+      if (ignoredStreamsRef.current.has(streamId)) {
+        ignoredStreamsRef.current.delete(streamId);
+        return;
+      }
       console.log(
         `✅ tts-end [${streamId}] success=${success} chunks=${payload.chunks}`
       );

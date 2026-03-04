@@ -58,8 +58,10 @@ class PathManager:
         self.CONFIG_FILE = self.USER_DATA_DIR / "config.json"
         self.LOGS_DIR = self.USER_DATA_DIR / "logs"
         self.MEMORY_DIR = self.USER_DATA_DIR / "memory"
+        self.TOOLS_PLUGIN_DIR = self.USER_DATA_DIR / "tools_plugin"
         self.LOGS_DIR.mkdir(parents=True, exist_ok=True)
         self.MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        self.TOOLS_PLUGIN_DIR.mkdir(parents=True, exist_ok=True)
 
     # Accessors
     def get_bundle_dir(self) -> Path:
@@ -85,3 +87,28 @@ class PathManager:
 
     def get_config_file(self) -> Path:
         return self.CONFIG_FILE
+
+    def get_tools_plugin_dir(self) -> Path:
+        return self.TOOLS_PLUGIN_DIR
+
+    def get_tools_plugin_manifest_file(self) -> Path:
+        return self.TOOLS_PLUGIN_DIR / "manifest.json"
+
+    def get_tools_plugin_registry_file(self) -> Path:
+        return self.TOOLS_PLUGIN_DIR / "registry" / "tool_registry.json"
+
+    def get_tools_plugin_index_file(self) -> Path:
+        return self.TOOLS_PLUGIN_DIR / "registry" / "tool_index.json"
+
+    def get_tools_plugin_generated_dir(self) -> Path:
+        return self.TOOLS_PLUGIN_DIR / "generated"
+
+    # Backward-compatible aliases. Runtime source of truth is tools_plugin.
+    def get_tools_dir(self) -> Path:
+        return self.TOOLS_PLUGIN_DIR
+
+    def get_tools_registry_file(self) -> Path:
+        return self.get_tools_plugin_registry_file()
+
+    def get_tools_manifest_file(self) -> Path:
+        return self.get_tools_plugin_manifest_file()

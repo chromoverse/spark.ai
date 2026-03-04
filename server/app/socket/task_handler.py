@@ -10,8 +10,7 @@ import logging
 from typing import Dict, Any, List
 import socketio
 
-from app.agent.core.orchestrator import get_orchestrator
-from app.agent.core.models import TaskOutput, TaskRecord
+from app.agent.execution_gateway import get_orchestrator, TaskOutput, TaskRecord
 
 logger = logging.getLogger(__name__)
 
@@ -304,3 +303,4 @@ def get_task_handler(
 ) -> SocketTaskHandler:
     """Factory function to create task handler"""
     return SocketTaskHandler(sio, connected_users)
+
