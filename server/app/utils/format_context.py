@@ -4,6 +4,13 @@ from zoneinfo import ZoneInfo
 
 NEPAL_TZ = timezone(timedelta(hours=5, minutes=45))
 
+
+def _coerce_score(value: object) -> float:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+
 def format_context(recent_context: List[Dict], query_based_context: List[Dict]) -> Tuple[str, str]:
     """Format context data for prompt injection with timestamps and relative time."""
     
@@ -65,7 +72,12 @@ def format_context(recent_context: List[Dict], query_based_context: List[Dict]) 
             # Try 'content' first as it is from redis, then 'query' as it is from pinecone
             query = ctx.get('content', '')
             if not query: query = ctx.get('query', '')
-            relevance = ctx.get('score', 0)
+            # Score priority:
+            # 1) normalized score from LanceDB/Pinecone
+            # 2) backward compatible LanceDB key
+            relevance = _coerce_score(
+                ctx.get("score", ctx.get("_similarity_score", 0))
+            )
             timestamp = ctx.get('timestamp', '')
             
             

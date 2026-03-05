@@ -543,16 +543,52 @@ class ChatCacheMixin(BaseCacheManager):
     def _normalize_query(text: str) -> str:
         return " ".join((text or "").strip().lower().split())
 
+    @staticmethod
+    def _context_cache_empty_results_enabled() -> bool:
+        return bool(getattr(settings, "STREAM_CONTEXT_CACHE_EMPTY_RESULTS", False))
+
+    @staticmethod
+    def _extract_context_score(item: Dict[str, Any]) -> float:
+        score = item.get("score", item.get("_similarity_score", 0))
+        try:
+            return float(score)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _build_query_context_cache_key(
+        self,
+        user_id: str,
+        query: str,
+        top_k: int,
+        threshold: float,
+        fast_lane: bool,
+    ) -> str:
+        normalized = self._normalize_query(query)
+        rounded_threshold = round(float(threshold), 4)
+        return (
+            f"{user_id}:{normalized}:k{max(1, int(top_k))}:"
+            f"t{rounded_threshold:.4f}:f{int(bool(fast_lane))}"
+        )
+
     def _get_query_context_cache(
         self,
         user_id: str,
         query: str,
+        top_k: int,
+        threshold: float,
+        fast_lane: bool,
     ) -> Optional[Tuple[List[Dict[str, Any]], bool]]:
         normalized = self._normalize_query(query)
         if not normalized:
             return None
 
-        key = f"{user_id}:{normalized}"
+        key = self._build_query_context_cache_key(
+            user_id=user_id,
+            query=normalized,
+            top_k=top_k,
+            threshold=threshold,
+            fast_lane=fast_lane,
+        )
         item = self._query_context_cache.get(key)
         if not item:
             return None
@@ -571,12 +607,21 @@ class ChatCacheMixin(BaseCacheManager):
         query: str,
         context: List[Dict[str, Any]],
         pinecone_flag: bool,
+        top_k: int,
+        threshold: float,
+        fast_lane: bool,
     ) -> None:
         normalized = self._normalize_query(query)
         if not normalized:
             return
 
-        key = f"{user_id}:{normalized}"
+        key = self._build_query_context_cache_key(
+            user_id=user_id,
+            query=normalized,
+            top_k=top_k,
+            threshold=threshold,
+            fast_lane=fast_lane,
+        )
         self._query_context_cache[key] = (time.time(), context, pinecone_flag)
         self._query_context_cache.move_to_end(key)
         while len(self._query_context_cache) > self._query_context_cache_limit():
@@ -602,12 +647,61 @@ class ChatCacheMixin(BaseCacheManager):
         await self._ensure_client()
         vector_client = self._get_vector_client()
         normalized_query = self._normalize_query(current_query)
-        effective_budget_ms = budget_ms if budget_ms is not None else (200 if fast_lane else 0)
+        default_budget_ms = int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", 100)) if fast_lane else 0
+        effective_budget_ms = budget_ms if budget_ms is not None else default_budget_ms
         limit = max(1, top_k)
         deadline = (t0 + (effective_budget_ms / 1000.0)) if effective_budget_ms > 0 else None
+        embed_budget_ms = max(1, int(getattr(settings, "STREAM_CONTEXT_EMBED_BUDGET_MS", 35)))
+        search_budget_ms = max(1, int(getattr(settings, "STREAM_CONTEXT_SEARCH_BUDGET_MS", 55)))
+        min_results = max(1, int(getattr(settings, "STREAM_CONTEXT_MIN_RESULTS", 3)))
+        low_score_threshold = float(getattr(settings, "STREAM_CONTEXT_LOW_SCORE", 0.22))
+        cache_empty_results = self._context_cache_empty_results_enabled()
+        timeout_stage = "none"
+        embed_ms = 0.0
+        search_ms = 0.0
+        cache_status = "MISS"
 
-        cached_context = self._get_query_context_cache(user_id, normalized_query)
+        def _remaining_seconds() -> Optional[float]:
+            if deadline is None:
+                return None
+            return max(0.0, deadline - time.perf_counter())
+
+        def _stage_timeout_seconds(stage_budget_ms: int) -> Optional[float]:
+            if deadline is None:
+                return None
+            remaining = _remaining_seconds()
+            if remaining is None or remaining <= 0:
+                return 0.0
+            return min(stage_budget_ms / 1000.0, remaining)
+
+        def _top_score(context_items: List[Dict[str, Any]]) -> float:
+            if not context_items:
+                return 0.0
+            return max(self._extract_context_score(item) for item in context_items)
+
+        def _dedup_and_sort(context_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            dedup: Dict[str, Dict[str, Any]] = {}
+            for item in context_items:
+                dedup_key = f"{item.get('content') or item.get('query', '')}_{item.get('timestamp', '')}"
+                existing = dedup.get(dedup_key)
+                if existing is None or self._extract_context_score(item) > self._extract_context_score(existing):
+                    dedup[dedup_key] = item
+            sorted_results = sorted(
+                dedup.values(),
+                key=lambda item: self._extract_context_score(item),
+                reverse=True,
+            )
+            return sorted_results[:limit]
+
+        cached_context = self._get_query_context_cache(
+            user_id=user_id,
+            query=normalized_query,
+            top_k=limit,
+            threshold=threshold,
+            fast_lane=fast_lane,
+        )
         if cached_context:
+            cache_status = "HIT"
             context, pinecone_flag = cached_context
             if vector_client:
                 cached_embedding = self._get_cached_query_embedding(normalized_query)
@@ -630,8 +724,13 @@ class ChatCacheMixin(BaseCacheManager):
                     lambda t: _on_background_done(t, "append_message_to_local_and_cloud(cache_hit)")
                 )
             logger.info(
-                "⚡ Context retrieval: 0ms (query-cache:HIT, results:%d)",
+                "⚡ Context retrieval: total_ms=0 cache_hit=true cache_status=%s embed_ms=0 search_ms=0 "
+                "result_count=%d top_score=%.4f timeout_stage=none fast_lane=%s budget_ms=%s",
+                cache_status,
                 len(context),
+                _top_score(context),
+                fast_lane,
+                effective_budget_ms,
             )
             return context, pinecone_flag
         
@@ -643,28 +742,31 @@ class ChatCacheMixin(BaseCacheManager):
             cached = self._get_cached_query_embedding(normalized_query)
             if cached:
                 query_vector = cached
-                cache_status = "HIT"
+                cache_status = "EMBED_HIT"
             else:
                 embed_started = time.perf_counter()
                 try:
-                    if deadline is not None:
-                        remaining = max(0.01, deadline - time.perf_counter())
+                    embed_timeout = _stage_timeout_seconds(embed_budget_ms)
+                    if embed_timeout is not None:
+                        if embed_timeout <= 0:
+                            raise asyncio.TimeoutError
                         query_vector = await asyncio.wait_for(
                             embedding_service.embed_single(current_query),
-                            timeout=remaining,
+                            timeout=max(0.01, embed_timeout),
                         )
                     else:
                         query_vector = await embedding_service.embed_single(current_query)
                 except asyncio.TimeoutError:
                     logger.warning(
-                        "⏱️ Desktop context embedding timed out (%sms), returning empty context",
-                        effective_budget_ms,
+                        "⏱️ Desktop context embedding timed out (stage_budget_ms=%s)",
+                        embed_budget_ms,
                     )
+                    timeout_stage = "embed"
                     query_vector = None
                 embed_ms = (time.perf_counter() - embed_started) * 1000
                 if query_vector is not None:
                     self._cache_query_embedding(normalized_query, query_vector)
-                cache_status = "MISS"
+                cache_status = "EMBED_MISS"
                 logger.debug("⚡ Desktop query embedding took %.0fms", embed_ms)
 
             if query_vector is None:
@@ -678,7 +780,27 @@ class ChatCacheMixin(BaseCacheManager):
                     )
                 )
                 write_task.add_done_callback(lambda t: _on_background_done(t, "add_message_with_embedding(no_vector)"))
-                self._set_query_context_cache(user_id, normalized_query, [], False)
+                if cache_empty_results and timeout_stage == "none":
+                    self._set_query_context_cache(
+                        user_id=user_id,
+                        query=normalized_query,
+                        context=[],
+                        pinecone_flag=False,
+                        top_k=limit,
+                        threshold=threshold,
+                        fast_lane=fast_lane,
+                    )
+                elapsed = (time.perf_counter() - t0) * 1000
+                logger.info(
+                    "⚡ Context retrieval: total_ms=%.0f cache_hit=false cache_status=%s embed_ms=%.0f "
+                    "search_ms=0 result_count=0 top_score=0.0000 timeout_stage=%s fast_lane=%s budget_ms=%s",
+                    elapsed,
+                    cache_status,
+                    embed_ms,
+                    timeout_stage,
+                    fast_lane,
+                    effective_budget_ms,
+                )
                 return [], False
 
             # ✅ Persist message in background using SAME embedding (avoids re-embed)
@@ -692,40 +814,106 @@ class ChatCacheMixin(BaseCacheManager):
             )
             write_task.add_done_callback(lambda t: _on_background_done(t, "add_message_with_embedding"))
 
-            search_started = time.perf_counter()
-            search_coro = vector_client.search_chat_messages(
-                user_id=user_id,
-                query_vector=query_vector,
-                limit=limit,
-                threshold=threshold,
-            )
-            try:
-                if deadline is not None:
-                    remaining = deadline - time.perf_counter()
-                    if remaining <= 0:
-                        raise asyncio.TimeoutError
-                    context = await asyncio.wait_for(
-                        search_coro,
-                        timeout=remaining,
-                    )
-                else:
-                    context = await search_coro
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "⏱️ Desktop context search timed out (%sms), returning empty context",
-                    effective_budget_ms,
-                )
-                context = []
+            candidate_limit = max(limit, int(getattr(settings, "STREAM_CONTEXT_CANDIDATE_LIMIT", 48)))
+            if not fast_lane:
+                candidate_limit = max(candidate_limit, limit * 4)
 
-            search_ms = (time.perf_counter() - search_started) * 1000
+            async def _run_desktop_search(
+                *,
+                search_limit: int,
+                search_threshold: float,
+                search_candidate_limit: int,
+                stage_budget: int,
+            ) -> tuple[List[Dict[str, Any]], bool, float]:
+                search_started = time.perf_counter()
+                timed_out = False
+                search_coro = vector_client.search_chat_messages(
+                    user_id=user_id,
+                    query_vector=query_vector,
+                    limit=search_limit,
+                    threshold=search_threshold,
+                    candidate_limit=search_candidate_limit,
+                )
+                try:
+                    search_timeout = _stage_timeout_seconds(stage_budget)
+                    if search_timeout is not None:
+                        if search_timeout <= 0:
+                            raise asyncio.TimeoutError
+                        results = await asyncio.wait_for(
+                            search_coro,
+                            timeout=max(0.01, search_timeout),
+                        )
+                    else:
+                        results = await search_coro
+                except asyncio.TimeoutError:
+                    timed_out = True
+                    results = []
+                elapsed_ms = (time.perf_counter() - search_started) * 1000
+                return results, timed_out, elapsed_ms
+
+            context, first_timeout, first_ms = await _run_desktop_search(
+                search_limit=limit,
+                search_threshold=threshold,
+                search_candidate_limit=candidate_limit,
+                stage_budget=search_budget_ms,
+            )
+            search_ms += first_ms
+            if first_timeout:
+                timeout_stage = "search"
+                logger.warning(
+                    "⏱️ Desktop context search timed out (stage_budget_ms=%s)",
+                    search_budget_ms,
+                )
+
+            second_pass_allowed = (
+                timeout_stage == "none"
+                and deadline is not None
+                and (_remaining_seconds() or 0.0) > 0.01
+            )
+            if second_pass_allowed:
+                top_score = _top_score(context)
+                if len(context) < min_results or top_score < low_score_threshold:
+                    relaxed_threshold = max(0.0, min(threshold, low_score_threshold) - 0.05)
+                    second_limit = max(limit, min(limit * 2, limit + min_results))
+                    second_candidate_limit = max(candidate_limit, second_limit * 4)
+                    second_context, second_timeout, second_ms = await _run_desktop_search(
+                        search_limit=second_limit,
+                        search_threshold=relaxed_threshold,
+                        search_candidate_limit=second_candidate_limit,
+                        stage_budget=search_budget_ms,
+                    )
+                    search_ms += second_ms
+                    if second_timeout and timeout_stage == "none":
+                        timeout_stage = "search_second_pass"
+                    context = _dedup_and_sort(context + second_context)
+                else:
+                    context = _dedup_and_sort(context)
+            else:
+                context = _dedup_and_sort(context)
+
             elapsed = (time.perf_counter() - t0) * 1000
-            self._set_query_context_cache(user_id, normalized_query, context, False)
+            if context or (cache_empty_results and timeout_stage == "none"):
+                self._set_query_context_cache(
+                    user_id=user_id,
+                    query=normalized_query,
+                    context=context,
+                    pinecone_flag=False,
+                    top_k=limit,
+                    threshold=threshold,
+                    fast_lane=fast_lane,
+                )
             logger.info(
-                "⚡ Context retrieval: %.0fms (cache:%s, search:%.0fms, results:%d)",
+                "⚡ Context retrieval: total_ms=%.0f cache_hit=false cache_status=%s embed_ms=%.0f "
+                "search_ms=%.0f result_count=%d top_score=%.4f timeout_stage=%s fast_lane=%s budget_ms=%s",
                 elapsed,
                 cache_status,
+                embed_ms,
                 search_ms,
                 len(context),
+                _top_score(context),
+                timeout_stage,
+                fast_lane,
+                effective_budget_ms,
             )
             return context, False
         
@@ -761,6 +949,7 @@ class ChatCacheMixin(BaseCacheManager):
                     "⏱️ Production semantic search timed out (%sms), returning empty context",
                     effective_budget_ms,
                 )
+                timeout_stage = "search"
                 context = []
         else:
             context = await search_task
@@ -773,18 +962,54 @@ class ChatCacheMixin(BaseCacheManager):
                     effective_budget_ms,
                     fast_lane,
                 )
-                self._set_query_context_cache(user_id, normalized_query, [], False)
+                if cache_empty_results and timeout_stage == "none":
+                    self._set_query_context_cache(
+                        user_id=user_id,
+                        query=normalized_query,
+                        context=[],
+                        pinecone_flag=False,
+                        top_k=limit,
+                        threshold=threshold,
+                        fast_lane=fast_lane,
+                    )
                 return [], False
             from app.db.pinecone import config as pinecone_config
             logger.info("[Pinecone] Low similarity - fetching from Pinecone")
             context = pinecone_config.get_user_all_queries(user_id)
             is_pinecone_needed = True
-            self._set_query_context_cache(user_id, normalized_query, context, is_pinecone_needed)
+            self._set_query_context_cache(
+                user_id=user_id,
+                query=normalized_query,
+                context=context,
+                pinecone_flag=is_pinecone_needed,
+                top_k=limit,
+                threshold=threshold,
+                fast_lane=fast_lane,
+            )
             return context, is_pinecone_needed
 
         elapsed = (time.perf_counter() - t0) * 1000
-        logger.info(f"⚡ Context retrieval: {elapsed:.0f}ms (results:{len(context)})")
-        self._set_query_context_cache(user_id, normalized_query, context, is_pinecone_needed)
+        context = _dedup_and_sort(context)
+        logger.info(
+            "⚡ Context retrieval: total_ms=%.0f cache_hit=false cache_status=MISS embed_ms=0 search_ms=%.0f "
+            "result_count=%d top_score=%.4f timeout_stage=%s fast_lane=%s budget_ms=%s",
+            elapsed,
+            elapsed,
+            len(context),
+            _top_score(context),
+            timeout_stage,
+            fast_lane,
+            effective_budget_ms,
+        )
+        self._set_query_context_cache(
+            user_id=user_id,
+            query=normalized_query,
+            context=context,
+            pinecone_flag=is_pinecone_needed,
+            top_k=limit,
+            threshold=threshold,
+            fast_lane=fast_lane,
+        )
         return context, is_pinecone_needed
     
     async def _append_message_to_local_and_cloud(

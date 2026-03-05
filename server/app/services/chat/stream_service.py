@@ -385,9 +385,9 @@ class StreamService:
             process_query_and_get_context(
                 user_id=user_id,
                 query=query,
-                budget_ms=settings.STREAM_CONTEXT_BUDGET_MS,
-                top_k=6,
-                threshold=0.1,
+                budget_ms=int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS)),
+                top_k=max(1, int(getattr(settings, "STREAM_CONTEXT_TOP_K", 8))),
+                threshold=0.08,
                 fast_lane=True,
             )
         )
@@ -410,23 +410,37 @@ class StreamService:
 
         query_context: List[Dict[str, Any]] = []
         context_started = time.perf_counter()
+        context_timeout_ms = int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS))
         try:
             result_context, _ = await asyncio.wait_for(
                 context_task,
-                timeout=max(0.05, settings.STREAM_CONTEXT_BUDGET_MS / 1000.0),
+                timeout=max(0.05, context_timeout_ms / 1000.0),
             )
             query_context = result_context or []
         except asyncio.TimeoutError:
-            logger.info("⏱️ [Stream] query_context timeout at %sms; using empty context", settings.STREAM_CONTEXT_BUDGET_MS)
+            logger.info("⏱️ [Stream] query_context timeout at %sms; using empty context", context_timeout_ms)
             context_task.cancel()
         except Exception as exc:
             logger.warning("⚠️ [Stream] query_context failed, using empty context: %s", exc)
         context_ms = (time.perf_counter() - context_started) * 1000
+        top_context_score = 0.0
+        if query_context:
+            def _safe_score(item: Dict[str, Any]) -> float:
+                try:
+                    return float(item.get("score", item.get("_similarity_score", 0)) or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+            top_context_score = max(
+                _safe_score(item)
+                for item in query_context
+            )
         logger.info(
-            "🧠 [Stream] request_id=%s context_ms=%.0f context_results=%d",
+            "🧠 [Stream] request_id=%s context_ms=%.0f context_results=%d top_context_score=%.4f budget_ms=%s",
             request_id,
             context_ms,
             len(query_context),
+            top_context_score,
+            context_timeout_ms,
         )
 
         lang = _resolve_language(user_details)

@@ -9,6 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from collections import OrderedDict
 import uuid
+from app.config import settings
 
 
 logger = logging.getLogger(__name__)
@@ -237,7 +238,8 @@ class LanceDBManager:
         user_id: str, 
         query_vector: List[float], 
         limit: int = 10, 
-        threshold: float = 0.5
+        threshold: float = 0.5,
+        candidate_limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Semantic search with NORMALIZED VECTORS for cosine similarity.
@@ -252,13 +254,17 @@ class LanceDBManager:
                 query_normalized = (query_np / norm).tolist()
             else:
                 query_normalized = query_vector
+            query_normalized_np = np.array(query_normalized, dtype=np.float32)
             
             def _run_search() -> List[Dict[str, Any]]:
-                candidate_limit = max(8, min(64, limit * 4))
+                default_candidate_limit = int(getattr(settings, "STREAM_CONTEXT_CANDIDATE_LIMIT", 48))
+                configured = max(limit, default_candidate_limit)
+                final_candidate_limit = candidate_limit if candidate_limit is not None else configured
+                final_candidate_limit = max(limit, min(256, final_candidate_limit))
                 df = (
                     self._table.search(query_normalized)
                     .where(f"user_id = '{user_id}'")
-                    .limit(candidate_limit)
+                    .limit(final_candidate_limit)
                     .to_pandas()
                 )
                 if df.empty:
@@ -269,6 +275,7 @@ class LanceDBManager:
                         "role": row["role"],
                         "content": row["content"],
                         "timestamp": row["timestamp"],
+                        "vector": row.get("vector", []),
                         "_distance": float(row.get("_distance", 2.0)),
                     }
                     for _, row in df.iterrows()
@@ -282,13 +289,25 @@ class LanceDBManager:
             
             logger.info(f"🔍 LanceDB: {len(rows)} results for user {user_id}")
             
-            # Deduplicate and calculate similarity
+            # Deduplicate and rerank by exact cosine score from stored vectors.
             seen_keys = set()
             final_results = []
             
             for row in rows:
                 l2_distance = float(row.get("_distance", 2.0))
+                stored_vec = row.get("vector", [])
                 cosine_similarity = max(0.0, 1.0 - (l2_distance ** 2) / 2.0)
+                if stored_vec:
+                    try:
+                        stored_np = np.array(stored_vec, dtype=np.float32)
+                        stored_norm = np.linalg.norm(stored_np)
+                        if stored_norm > 0:
+                            stored_np = stored_np / stored_norm
+                            cosine_similarity = float(np.dot(query_normalized_np, stored_np))
+                            cosine_similarity = max(0.0, min(1.0, cosine_similarity))
+                    except Exception:
+                        # Keep distance-derived similarity fallback.
+                        pass
                 
                 dedup_key = f"{row['content']}_{row['timestamp']}"
                 if dedup_key in seen_keys:
@@ -296,24 +315,23 @@ class LanceDBManager:
                 seen_keys.add(dedup_key)
                 
                 if cosine_similarity >= threshold:
+                    score = round(cosine_similarity, 4)
                     final_results.append({
                         "id": row["id"],
                         "role": row["role"],
                         "content": row["content"],
                         "timestamp": row["timestamp"],
-                        "_similarity_score": round(cosine_similarity, 4),
+                        "score": score,
+                        "_similarity_score": score,
                         "_distance": round(l2_distance, 4)
                     })
-                
-                if len(final_results) >= limit:
-                    break
             
-            final_results.sort(key=lambda x: x["_similarity_score"], reverse=True)
+            final_results.sort(key=lambda x: x["score"], reverse=True)
             
             if final_results:
                 logger.info(
                     f"✅ Search found {len(final_results)} results "
-                    f"(threshold={threshold}, top_score={final_results[0]['_similarity_score']})"
+                    f"(threshold={threshold}, top_score={final_results[0]['score']})"
                 )
             else:
                 logger.warning(

@@ -3,7 +3,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.config import settings
 
@@ -157,6 +157,87 @@ class StreamServiceLatencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(ok)
         self.assertGreaterEqual(len(tts.calls), 1)
+
+    async def test_stream_uses_tuned_context_defaults(self):
+        async def _stream_tokens(*args, **kwargs):
+            yield "I have enough context now."
+
+        context_mock = AsyncMock(return_value=([{"content": "timeline detail", "score": 0.91}], False))
+
+        with (
+            patch.object(stream_module, "load_user", return_value={"language": "en"}),
+            patch.object(stream_module, "get_last_n_messages", return_value=[]),
+            patch.object(stream_module, "process_query_and_get_context", context_mock),
+            patch.object(stream_module, "_iter_stream_with_fast_model", _stream_tokens),
+            patch.object(settings, "STREAM_USE_LLM_STREAM", True),
+            patch.object(settings, "STREAM_USE_COMPACT_PROMPT", True),
+            patch.object(settings, "STREAM_CONTEXT_TARGET_MS", 100),
+            patch.object(settings, "STREAM_CONTEXT_TOP_K", 8),
+            patch.object(settings, "STREAM_CHUNK_MIN_WORDS", 2),
+            patch.object(settings, "STREAM_CHUNK_SOFT_WORDS", 3),
+            patch.object(settings, "STREAM_CHUNK_MAX_WORDS", 12),
+        ):
+            service = StreamService()
+            tts = _FakeTTSService()
+            ok = await service.stream_chat_with_tts(
+                query="what is my project timeline",
+                user_id="u1",
+                sio=_FakeSocket(),
+                sid="sid1",
+                tts_service=tts,
+                gender="female",
+            )
+
+        self.assertTrue(ok)
+        self.assertTrue(context_mock.await_count >= 1)
+        self.assertEqual(context_mock.call_args.kwargs["budget_ms"], 100)
+        self.assertEqual(context_mock.call_args.kwargs["top_k"], 8)
+        self.assertEqual(context_mock.call_args.kwargs["threshold"], 0.08)
+        self.assertTrue(context_mock.call_args.kwargs["fast_lane"])
+
+    async def test_stream_injects_successful_query_context_into_prompt(self):
+        async def _stream_tokens(*args, **kwargs):
+            yield "Using your memory now."
+
+        captured: dict[str, object] = {}
+
+        def _capture_prompt(**kwargs):
+            captured["query_context"] = kwargs.get("query_context")
+            return "Mock prompt"
+
+        with (
+            patch.object(stream_module, "load_user", return_value={"language": "en"}),
+            patch.object(stream_module, "get_last_n_messages", return_value=[]),
+            patch.object(
+                stream_module,
+                "process_query_and_get_context",
+                AsyncMock(return_value=([{"content": "main data", "score": 0.88}], False)),
+            ),
+            patch.object(stream_module, "_build_stream_prompt", side_effect=_capture_prompt),
+            patch.object(stream_module, "_iter_stream_with_fast_model", _stream_tokens),
+            patch.object(settings, "STREAM_USE_LLM_STREAM", True),
+            patch.object(settings, "STREAM_USE_COMPACT_PROMPT", True),
+            patch.object(settings, "STREAM_CHUNK_MIN_WORDS", 2),
+            patch.object(settings, "STREAM_CHUNK_SOFT_WORDS", 3),
+            patch.object(settings, "STREAM_CHUNK_MAX_WORDS", 12),
+        ):
+            service = StreamService()
+            tts = _FakeTTSService()
+            ok = await service.stream_chat_with_tts(
+                query="remind me my main data",
+                user_id="u1",
+                sio=_FakeSocket(),
+                sid="sid1",
+                tts_service=tts,
+                gender="female",
+            )
+
+        self.assertTrue(ok)
+        self.assertIn("query_context", captured)
+        query_context = captured["query_context"]
+        self.assertIsInstance(query_context, list)
+        self.assertEqual(query_context[0]["content"], "main data")
+        self.assertAlmostEqual(query_context[0]["score"], 0.88, places=2)
 
 
 if __name__ == "__main__":
