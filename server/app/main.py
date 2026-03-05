@@ -4,17 +4,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import chat, tts, stt, auth, ml_test, openrouter_debug, kernel
+from app.api.api_wrapper import include_api_routes
+from app.config import settings
 from app.socket import init_socket, sio, socket_app, connected_users
 from app.db.mongo import connect_to_mongo, close_mongo_connection
 from app.db.indexes import create_indexes
-from app.plugins.tools.registry_loader import get_tool_registry
 from app.kernel.observability.log_setup import configure_structured_logging
 from app.kernel.runtime.kernel_runtime import get_kernel_runtime
-from app.agent.execution_gateway import get_orchestrator, get_task_emitter
-
-# Import ML components
-from app.ml import model_loader, embedding_worker, DEVICE, MODELS_CONFIG
+from app.agent.execution_gateway import get_task_emitter
 
 # Import auto-initializer system
 import app.startup_registrations  # noqa: F401  — registers all init functions
@@ -54,6 +51,12 @@ async def lifespan(app: FastAPI):
     logger.info("📡 WebSocket server available at /ws")
     init_socket()
     logger.info("✅ WebSocket initialized")
+
+    # Import ML runtime only after dependency bootstrap has completed.
+    from app.ml import model_loader, embedding_worker, DEVICE
+    app.state.model_loader = model_loader
+    app.state.embedding_worker = embedding_worker
+    app.state.ml_device = DEVICE
     
     # Load ML models
     logger.info("=" * 60)
@@ -92,8 +95,12 @@ async def lifespan(app: FastAPI):
     logger.info(" Database disconnected")
     
     # Cleanup ML resources
-    embedding_worker.shutdown()
-    model_loader.unload_all_models()
+    embedding_worker = getattr(app.state, "embedding_worker", None)
+    model_loader = getattr(app.state, "model_loader", None)
+    if embedding_worker is not None:
+        embedding_worker.shutdown()
+    if model_loader is not None:
+        model_loader.unload_all_models()
     logger.info(" ML models unloaded")
     
     # Cleanup other resources
@@ -114,82 +121,15 @@ app = FastAPI(
 # Add CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*", "http://localhost:5123"],
+    # Frontend URLs are controlled via config FRONTEND_URLS (comma-separated).
+    allow_origins=settings.frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-@app.get("/")
-def read_root():
-    return {
-        "message": "Your AI assistant is ready!",
-        "device": DEVICE,
-        "socket": "/socket.io",
-        "docs": "/docs"
-    }
-
-
-@app.get("/health")
-def health_check():
-    """Health check endpoint"""
-    orchestrator = get_orchestrator()
-    registry = get_tool_registry()
-    
-    return {
-        "status": "healthy",
-        "device": DEVICE,
-        "models_loaded": list(model_loader._models.keys()),
-        "tools_loaded": len(registry.tools),
-        "active_users": len(orchestrator.states)
-    }
-
-
-@app.get("/ml/status")
-def ml_status():
-    """Check ML models status"""
-    return {
-        "device": DEVICE,
-        "models_loaded": list(model_loader._models.keys()),
-        "models_available": list(MODELS_CONFIG.keys())
-    }
-
-
-# Orchestration status endpoint
-@app.get("/orchestration/status")
-def orchestration_status():
-    """Check orchestration system status"""
-    registry = get_tool_registry()
-    orchestrator = get_orchestrator()
-    
-    return {
-        "registry": {
-            "total_tools": len(registry.tools),
-            "server_tools": len(registry.server_tools),
-            "client_tools": len(registry.client_tools),
-            "categories": list(registry.categories.keys())
-        },
-        "orchestrator": {
-            "active_users": len(orchestrator.states),
-            "total_tasks": sum(
-                len(state.tasks) for state in orchestrator.states.values()
-            )
-        }
-    }
-
-
-# Include routes
-app.include_router(chat.router)
-app.include_router(tts.router)
-app.include_router(stt.router)
-app.include_router(auth.router)
-app.include_router(ml_test.router)
-app.include_router(openrouter_debug.router)
-app.include_router(kernel.router)
+# Include all HTTP API routes through unified wrapper
+include_api_routes(app)
 
 # Mount WebSocket
 app.mount("/socket.io", socket_app)
-
-
-

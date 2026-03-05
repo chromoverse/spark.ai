@@ -122,6 +122,21 @@ def _fallback_ack_text(lang: str) -> str:
     return "Got it, working on that now."
 
 
+def _extract_chat_answer_text(chat_result: Any) -> str:
+    """Extract a human-facing answer text from PQHResponse-like objects."""
+    if chat_result is None:
+        return ""
+    try:
+        cognitive_state = getattr(chat_result, "cognitive_state", None)
+        if cognitive_state is not None:
+            text = getattr(cognitive_state, "answer_english", None) or getattr(cognitive_state, "answer", None)
+            if isinstance(text, str):
+                return " ".join(text.split()).strip()
+    except Exception:
+        return ""
+    return ""
+
+
 def _guess_language_from_query(query: str) -> str:
     # Devanagari implies Hindi/Nepali; prefer Hindi fallback for ack text.
     if _DEVANAGARI_RE.search(query or ""):
@@ -385,7 +400,7 @@ class StreamService:
             process_query_and_get_context(
                 user_id=user_id,
                 query=query,
-                budget_ms=int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS)),
+                budget_ms=max(50, int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS))),
                 top_k=max(1, int(getattr(settings, "STREAM_CONTEXT_TOP_K", 8))),
                 threshold=0.08,
                 fast_lane=True,
@@ -410,7 +425,10 @@ class StreamService:
 
         query_context: List[Dict[str, Any]] = []
         context_started = time.perf_counter()
-        context_timeout_ms = int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS))
+        context_timeout_ms = max(
+            50,
+            int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS)),
+        )
         try:
             result_context, _ = await asyncio.wait_for(
                 context_task,
@@ -628,6 +646,53 @@ async def parallel_chat_execution(
     tool orchestration proceeds.
     """
     from .chat_service import chat
+    from app.agent.runtime import is_meta_query
+
+    # Meta queries should prioritize factual spoken answer from chat result.
+    # This avoids generic stream acknowledgements for status/inventory questions.
+    if is_meta_query(query):
+        logger.info("📊 Meta query detected — prioritizing factual chat speech path for %s", user_id)
+        chat_result = None
+        try:
+            chat_result = await chat(
+                query=query,
+                user_id=user_id,
+                wait_for_execution=False,
+            )
+        except Exception as exc:
+            logger.error("❌ Chat failed for meta query: %s", exc, exc_info=True)
+
+        spoken_text = _extract_chat_answer_text(chat_result)
+        if spoken_text:
+            try:
+                await tts_service.stream_to_socket(
+                    sio=sio,
+                    sid=sid,
+                    text=spoken_text,
+                    gender=gender,
+                )
+                logger.info("🗣️ Meta query spoken response emitted for %s", user_id)
+                return {
+                    "stream_success": True,
+                    "chat_result": chat_result,
+                }
+            except Exception as exc:
+                logger.error("❌ Meta query speech emit failed: %s", exc, exc_info=True)
+
+        # Fallback to regular stream if no factual text available.
+        logger.info("↩️ Meta query fallback to regular stream path for %s", user_id)
+        stream_ok = await stream_chat_response(
+            query=query,
+            user_id=user_id,
+            sio=sio,
+            sid=sid,
+            tts_service=tts_service,
+            gender=gender,
+        )
+        return {
+            "stream_success": stream_ok,
+            "chat_result": chat_result,
+        }
 
     async def _independent_stream() -> None:
         try:

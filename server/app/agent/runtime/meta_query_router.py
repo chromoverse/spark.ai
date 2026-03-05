@@ -24,7 +24,12 @@ def is_meta_query(query: str) -> bool:
         "history",
         "success rate",
         "how many tools",
+        "tools do we have",
+        "client tools",
+        "server tools",
         "tool status",
+        "status of tools",
+        "their status",
         "best tools",
         "what can you do",
         "capabilities",
@@ -52,11 +57,22 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
         )
         return _response(query, answer)
 
-    if "how many tools" in text or "tool count" in text or "tool status" in text:
+    if (
+        "how many tools" in text
+        or "tool count" in text
+        or "tool status" in text
+        or "client tools" in text
+        or "server tools" in text
+        or "their status" in text
+        or "status of tools" in text
+        or "tools do we have" in text
+    ):
         data = await kernel_tool_inventory_lookup(user_id=user_id)
+        runtime_health = "healthy" if data.get("runtime_healthy") else "unhealthy"
         answer = (
             f"Runtime tools loaded: {data['total_tools']} total "
-            f"({data['server_tools']} server, {data['client_tools']} client)."
+            f"({data['server_tools']} server, {data['client_tools']} client). "
+            f"Runtime status: {runtime_health}, sync={data.get('runtime_sync_status', 'unknown')}."
         )
         return _response(query, answer)
 

@@ -2,8 +2,7 @@
 ML Configuration
 Centralized configuration for all ML models
 """
-import os
-from pathlib import Path
+from app.ml.device_profile import detect_device_profile
 
 # Base paths
 from app.utils.path_manager import PathManager
@@ -40,21 +39,9 @@ MODELS_CONFIG = {
     },
 }
 
-# GPU/Device detection
-def get_optimal_device():
-    """Detect the best available device"""
-    try:
-        import torch
-        if torch.cuda.is_available():
-            return "cuda"
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-    except ImportError:
-        pass
-    return "cpu"
-
-# Set device for all models
-DEVICE = get_optimal_device()
+# Unified device detection (shared with runtime dependency bootstrap)
+DEVICE_PROFILE = detect_device_profile()
+DEVICE = DEVICE_PROFILE.device
 for model_config in MODELS_CONFIG.values():
     model_config["device"] = DEVICE
 
