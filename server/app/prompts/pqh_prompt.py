@@ -25,6 +25,7 @@ def build_prompt(current_query: str, recent_context: Optional[List[Dict]] = None
     )
     categories = sorted(set(t.get("category", "general") for t in available_tools))
     recent_str = _format_recent_context(recent_context)
+    semantic_rules = _build_semantic_tool_rules(available_tools)
 
     return f"""You are SPARK's Tool Decision Engine. Your only job is to decide whether a user query needs a tool or not, and output a strict JSON decision.
 
@@ -59,6 +60,9 @@ GATE 4 — MULTI-TOOL only if:
   • Never chain tools speculatively or "just in case".
 
 ⚠️  DEFAULT WHEN UNSURE → no tool. Always err toward answering directly.
+
+━━━ TOOL SEMANTICS (hard rules) ━━━
+{semantic_rules}
 
 ━━━ OUTPUT FORMAT (strict JSON, no extra text) ━━━
 {{
@@ -106,6 +110,24 @@ def _build_examples(tools: List[Dict]) -> str:
             break
 
     return "\n".join(lines)
+
+
+def _build_semantic_tool_rules(tools: List[Dict]) -> str:
+    tool_names = {t.get("name", "") for t in tools}
+    rules: list[str] = []
+
+    if "call_audio" in tool_names or "call_video" in tool_names:
+        rules.append("  • Call intent (call/dial/ring/phone) must use call_audio or call_video.")
+    if "call_video" in tool_names:
+        rules.append("  • If user explicitly asks video call, choose call_video.")
+    if "call_audio" in tool_names:
+        rules.append("  • If user asks call without video, choose call_audio.")
+    if "message_send" in tool_names:
+        rules.append("  • message_send is only for sending text, never for call intent.")
+
+    if not rules:
+        return "  • No special semantic overrides."
+    return "\n".join(rules)
 
 
 if __name__ == "__main__":

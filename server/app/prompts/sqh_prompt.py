@@ -88,7 +88,7 @@ Use ONLY the tools listed above. Map every task to an exact tool name from this 
 ━━━ OUTPUT FORMAT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Return a raw JSON object — no markdown, no code fences:
 {{
-  "acknowledge_answer": "..." (it must be in past tense - short 3, or 4 words.),
+  "acknowledge_answer": "...",
   "tasks": [...]
 }}
 CRITICAL:
@@ -100,16 +100,17 @@ CRITICAL:
 ━━━ ACKNOWLEDGE ANSWER RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Language  : {lang_label} (you may sprinkle {secondary_lang} naturally if it fits).
 Tone      : Warm, natural, conversational assistant — NOT robotic.
-Tense     : Completed/initiated action — treat it as done.
+Tense     : In-progress action only — action has started, not completed.
 Variation : Be RANDOM and human. Rotate between styles, for example:
-  • "Done, Sir! Anything else?"
-  • "Sir, I've taken care of it."
-  • "All set! Let me know if you need anything more."
-  • "Consider it done, Boss."
-  • "That's handled! What's next?"
+  • "Got it. Starting now."
+  • "On it. I am doing that."
+  • "Okay, kicking that off."
+  • "Under way now."
+  • "Working on it."
   • (or any natural equivalent in {lang_label})
   Never repeat the same phrasing pattern twice in a session.
 Length    : 1–2 short sentences max.
+Rule      : Do NOT claim success/completion in acknowledge_answer.
 
 ━━━ TASK OBJECT SCHEMA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Each task must follow:

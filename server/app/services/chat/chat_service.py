@@ -6,9 +6,43 @@ from app.prompts import pqh_prompt
 from .sqh_service import process_sqh
 import asyncio
 import logging
+import re
 from app.agent.runtime import is_meta_query, try_handle_meta_query
 
 logger = logging.getLogger(__name__)
+
+_CALL_INTENT_RE = re.compile(r"\b(call|dial|ring|phone)\b", flags=re.IGNORECASE)
+_VIDEO_INTENT_RE = re.compile(r"\b(video|video\s+call|facetime)\b", flags=re.IGNORECASE)
+
+
+def _normalize_requested_tools(query: str, response: PQHResponse) -> None:
+    """
+    Guardrail for high-impact messaging intents.
+
+    If PQH maps "call X" to message_send, remap to call_audio/call_video
+    before SQH prompt generation so the correct tool schema is available.
+    """
+    current_tools = list(response.requested_tool or [])
+    if not current_tools:
+        return
+
+    lower_query = (query or "").lower().strip()
+    has_call_intent = bool(_CALL_INTENT_RE.search(lower_query))
+    has_video_hint = bool(_VIDEO_INTENT_RE.search(lower_query))
+    has_whatsapp_hint = "whatsapp" in lower_query
+
+    if not has_call_intent:
+        return
+
+    if "message_send" in current_tools:
+        replacement = "call_video" if has_video_hint else "call_audio"
+        response.requested_tool = [replacement]
+        logger.warning(
+            "🔁 PQH tool guardrail remapped message_send -> %s (query=%r, whatsapp_hint=%s)",
+            replacement,
+            query,
+            has_whatsapp_hint,
+        )
 
 
 async def _run_sqh_background(cleaned_response: PQHResponse, user_details: dict, user_id: str) -> None:
@@ -88,6 +122,7 @@ async def chat(
         
         # --- Step 6: Clean and Return Response ---
         cleaned_response = clean_pqh_response.clean_pqh_response(raw_response, emotion)
+        _normalize_requested_tools(query, cleaned_response)
 
         
         # # Add ai response to Redis asynchronously

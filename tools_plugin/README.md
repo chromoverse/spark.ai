@@ -13,7 +13,10 @@ This folder is the external seed source for runtime tools.
 2. Activate:
    - `.\.venv\Scripts\Activate.ps1`
 3. Validate:
-   - `python tool_tester.py`
+   - `python tool_tester.py --list`
+   - `python tool_tester.py system_info "{}"`
+   - `python tool_tester.py --tool message_send --inputs "{\"contact\":\"Rajesh Vaiya\",\"message\":\"hello\"}"`
+   - `python tool_tester.py --import tools.messaging.message_send:MessageSendTool --inputs "{\"contact\":\"Rajesh Vaiya\",\"message\":\"hello\"}"`
 
 ## Runtime Layout
 - `manifest.json`

@@ -76,7 +76,6 @@ class TaskSummarySpeechService:
         payload = {
             "summary": snapshot.summary,
             "tasks": snapshot.tasks,
-            "ack_hint": ack_hint,
         }
         payload_json = json.dumps(payload, ensure_ascii=False)
 

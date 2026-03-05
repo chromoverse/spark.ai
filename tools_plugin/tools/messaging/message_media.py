@@ -63,10 +63,16 @@ class MessageMediaTool(BaseTool):
                 media_type = "unknown"
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation().create()
+            wa = await WhatsAppAutomation.create()
             
             # Send the media (photo/video)
-            wa.send_photo(contact, media_path, caption)
+            sent = wa.send_photo(contact, media_path, caption)
+            if not sent:
+                return ToolOutput(
+                    success=False,
+                    data={},
+                    error="WhatsApp media send flow did not complete"
+                )
             
             return ToolOutput(
                 success=True,

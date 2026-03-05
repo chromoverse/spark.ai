@@ -51,10 +51,16 @@ class MessageFileTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation().create()
+            wa = await WhatsAppAutomation.create()
             
             # Send the file
-            wa.send_file(contact, file_path, caption)
+            sent = wa.send_file(contact, file_path, caption)
+            if not sent:
+                return ToolOutput(
+                    success=False,
+                    data={},
+                    error="WhatsApp file send flow did not complete"
+                )
             
             # Get file name from path
             file_name = os.path.basename(file_path)

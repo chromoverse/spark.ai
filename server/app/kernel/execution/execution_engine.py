@@ -275,10 +275,10 @@ class ExecutionEngine:
             return_exceptions=True
         )
         
-        success_count = sum(1 for r in results if not isinstance(r, Exception))
+        success_count = sum(1 for r in results if r is True)
         logger.info(f"Completed {success_count}/{len(tasks)} server tasks")
     
-    async def _execute_single_server_task(self, user_id: str, task: TaskRecord) -> None:
+    async def _execute_single_server_task(self, user_id: str, task: TaskRecord) -> bool:
         """Execute a single server task"""
         try:
             await self.orchestrator.mark_task_running(user_id, task.task_id)
@@ -290,7 +290,7 @@ class ExecutionEngine:
 
             # Optional approval gate tasks are resolved via notification response.
             if not await self._handle_approval_gate(user_id, task):
-                return
+                return False
 
             if not self.server_tool_executor: 
                 raise RuntimeError("Server tool executor not configured")    
@@ -324,25 +324,34 @@ class ExecutionEngine:
                 )
             else:
                 output = await self.server_tool_executor.execute(task)
-            
-            await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
-            
-            if task.lifecycle_messages and task.lifecycle_messages.on_success:
-                logger.info(f"     {task.lifecycle_messages.on_success}")
-            
-            logger.info(f"  Completed: {task.task_id} ({task.duration_ms}ms)")
+
+            if output.success:
+                await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
+                if task.lifecycle_messages and task.lifecycle_messages.on_success:
+                    logger.info(f"     {task.lifecycle_messages.on_success}")
+                logger.info(f"  Completed: {task.task_id} ({task.duration_ms}ms)")
+                return True
+            else:
+                error = output.error or f"Tool '{task.tool}' returned unsuccessful output"
+                await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
+                if task.lifecycle_messages and task.lifecycle_messages.on_failure:
+                    logger.info(f"     {task.lifecycle_messages.on_failure}")
+                logger.error(f"  Failed: {task.task_id} - {error}")
+                return False
         
         except asyncio.TimeoutError:
             error = f"Task timed out after {timeout}s" # type: ignore
             await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
             if task.lifecycle_messages and task.lifecycle_messages.on_failure:
                 logger.info(f"     {task.lifecycle_messages.on_failure}")
+            return False
         
         except Exception as e:
             error = str(e)
             await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
             if task.lifecycle_messages and task.lifecycle_messages.on_failure:
                 logger.info(f"     {task.lifecycle_messages.on_failure}")
+            return False
     
     # ==================== CLIENT TASK HANDLING ====================
     
@@ -380,10 +389,10 @@ class ExecutionEngine:
             return_exceptions=True
         )
         
-        success_count = sum(1 for r in results if not isinstance(r, Exception))
+        success_count = sum(1 for r in results if r is True)
         logger.info(f"Completed {success_count}/{len(tasks)} client tasks locally")
     
-    async def _execute_single_client_task(self, user_id: str, task: TaskRecord) -> None:
+    async def _execute_single_client_task(self, user_id: str, task: TaskRecord) -> bool:
         """Execute a single client task locally (desktop mode)"""
         try:
             await self.orchestrator.mark_task_running(user_id, task.task_id)
@@ -395,7 +404,7 @@ class ExecutionEngine:
 
             # Optional approval gate tasks are resolved via notification response.
             if not await self._handle_approval_gate(user_id, task):
-                return
+                return False
             
             # Resolve inputs
             state = self.orchestrator.get_state(user_id)
@@ -414,28 +423,46 @@ class ExecutionEngine:
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
             
             # Execute via client tool executor
+            client_executor = self.client_tool_executor
+            if client_executor is None:
+                raise RuntimeError("Client tool executor not configured")
             local_t0 = datetime.now()
-            output = await self.client_tool_executor.execute(task, resolved_inputs)
+            output = await client_executor.execute(task, resolved_inputs)
             latency_ms = int((datetime.now() - local_t0).total_seconds() * 1000)
-
-            # KEY: Mark on SAME orchestrator — dependent tasks unblock instantly
-            await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
-
-            await emit_kernel_event(
-                KernelEvent(
-                    event_type="tool_invoked" if output.success else "tool_failed",
-                    user_id=user_id,
-                    task_id=task.task_id,
-                    tool_name=task.tool,
-                    status="success" if output.success else "failed",
-                    payload={"latency_ms": latency_ms, "error": output.error},
+            if output.success:
+                # KEY: Mark on SAME orchestrator — dependent tasks unblock instantly
+                await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
+                await emit_kernel_event(
+                    KernelEvent(
+                        event_type="tool_invoked",
+                        user_id=user_id,
+                        task_id=task.task_id,
+                        tool_name=task.tool,
+                        status="success",
+                        payload={"latency_ms": latency_ms, "error": None},
+                    )
                 )
-            )
-            
-            if task.lifecycle_messages and task.lifecycle_messages.on_success:
-                logger.info(f"     {task.lifecycle_messages.on_success}")
-            
-            logger.info(f"  Completed locally: {task.task_id}")
+                if task.lifecycle_messages and task.lifecycle_messages.on_success:
+                    logger.info(f"     {task.lifecycle_messages.on_success}")
+                logger.info(f"  Completed locally: {task.task_id}")
+                return True
+            else:
+                error_msg = output.error or f"Client tool '{task.tool}' returned unsuccessful output"
+                await self.orchestrator.mark_task_failed(user_id, task.task_id, error_msg)
+                await emit_kernel_event(
+                    KernelEvent(
+                        event_type="tool_failed",
+                        user_id=user_id,
+                        task_id=task.task_id,
+                        tool_name=task.tool,
+                        status="failed",
+                        payload={"latency_ms": latency_ms, "error": error_msg},
+                    )
+                )
+                if task.lifecycle_messages and task.lifecycle_messages.on_failure:
+                    logger.info(f"     {task.lifecycle_messages.on_failure}")
+                logger.error(f"  Failed locally: {task.task_id} - {error_msg}")
+                return False
         
         except Exception as e:
             error_msg = str(e)
@@ -455,6 +482,7 @@ class ExecutionEngine:
                 logger.info(f"     {task.lifecycle_messages.on_failure}")
             
             logger.error(f"  Failed locally: {task.task_id} - {error_msg}")
+            return False
 
     async def _handle_approval_gate(self, user_id: str, task: TaskRecord) -> bool:
         """
@@ -556,6 +584,7 @@ class ExecutionEngine:
     async def _print_final_summary(self, user_id: str):
         """Print execution summary"""
         summary = await self.orchestrator.get_execution_summary(user_id)
+        summary_payload: Dict[str, Any] = dict(summary)
         
         logger.info("\n" + "="*70)
         logger.info("FINAL EXECUTION SUMMARY")
@@ -570,10 +599,10 @@ class ExecutionEngine:
         if summary['total'] > 0:
             success_rate = (summary['completed'] / summary['total']) * 100
             logger.info(f"Success Rate: {success_rate:.1f}%")
-            summary["success_rate"] = round(success_rate, 2)
+            summary_payload["success_rate"] = round(success_rate, 2)
         
         logger.info("="*70)
-        await _emit_summary_event(user_id, summary)
+        await _emit_summary_event(user_id, summary_payload)
     
     def is_running(self, user_id: str) -> bool:
         """Check if execution is running for user"""

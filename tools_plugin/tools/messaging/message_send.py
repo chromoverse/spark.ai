@@ -42,10 +42,16 @@ class MessageSendTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation().create()
+            wa = await WhatsAppAutomation.create()
             
             # Send the message
-            wa.send_message(contact, message)
+            sent = wa.send_message(contact, message)
+            if not sent:
+                return ToolOutput(
+                    success=False,
+                    data={},
+                    error="WhatsApp message send flow did not complete"
+                )
             
             return ToolOutput(
                 success=True,

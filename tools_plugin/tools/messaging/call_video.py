@@ -33,10 +33,16 @@ class CallVideoTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation().create()
+            wa = await WhatsAppAutomation.create()
             
             # Start video call
-            wa.video_call(contact)
+            started = wa.video_call(contact)
+            if not started:
+                return ToolOutput(
+                    success=False,
+                    data={},
+                    error="WhatsApp video call flow did not complete"
+                )
             
             return ToolOutput(
                 success=True,

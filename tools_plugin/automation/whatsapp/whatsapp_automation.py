@@ -4,6 +4,7 @@ import pygetwindow as gw
 import time
 import os
 import sys
+import builtins
 
 # Add the server directory to sys.path for imports to work when running directly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
@@ -28,6 +29,17 @@ ICONS_DIR = os.path.join(os.path.dirname(__file__), "icons")
 def icon(name: str) -> str:
     """Returns absolute path to an icon file"""
     return os.path.join(ICONS_DIR, name)
+
+
+def _emit(message: str) -> None:
+    """
+    Console-safe output helper.
+    Falls back to ASCII when terminal codec cannot render unicode glyphs.
+    """
+    try:
+        builtins.print(message)
+    except UnicodeEncodeError:
+        builtins.print(message.encode("ascii", errors="replace").decode("ascii"))
 
 
 class WhatsAppAutomation:
@@ -62,20 +74,50 @@ class WhatsAppAutomation:
         Usage:  wa = await WhatsAppAutomation.create()
         """
         self = cls(confidence=confidence, search_timeout=search_timeout)
-        await self.app_open_tool.execute({"target": "WhatsApp"})
-        print("  ⏳ Waiting for WhatsApp to be ready...")
-        self.process_manager.bring_to_focus("WhatsApp")
+        open_result = await self.app_open_tool.execute({"target": "WhatsApp"})
+        if not open_result.success:
+            raise RuntimeError(f"Failed to open WhatsApp: {open_result.error or 'unknown error'}")
+        _emit("  ⏳ Waiting for WhatsApp to be ready...")
+        focused = self.process_manager.bring_to_focus("WhatsApp")
+        if not focused:
+            # Windows can block foreground focus from background threads/processes.
+            # Try direct pygetwindow activation as a fallback before failing.
+            windows = gw.getWindowsWithTitle("WhatsApp")
+            if windows:
+                try:
+                    win = windows[0]
+                    if getattr(win, "isMinimized", False):
+                        win.restore()
+                        time.sleep(0.2)
+                    win.activate()
+                    time.sleep(0.4)
+                    focused = True
+                except Exception:
+                    focused = False
+            else:
+                focused = False
+        if not focused:
+            _emit("  ⚠️ Could not force WhatsApp to foreground; continuing with best-effort focus")
         time.sleep(3)   # let the app fully render before clicking
         return self
 
     def _get_window(self):
         """Find and focus the WhatsApp Desktop window"""
-        self.process_manager.bring_to_focus("WhatsApp")
         windows = gw.getWindowsWithTitle("WhatsApp")
         if not windows:
             raise RuntimeError("❌ WhatsApp Desktop is not open!")
         win = windows[0]
-        win.activate()
+        try:
+            if getattr(win, "isMinimized", False):
+                win.restore()
+                time.sleep(0.2)
+            win.activate()
+        except Exception:
+            # Fallback: click near title/header area to force focus.
+            try:
+                pyautogui.click(win.left + int(win.width * 0.5), win.top + 40)
+            except Exception as exc:
+                raise RuntimeError(f"Failed to focus WhatsApp window: {exc}") from exc
         time.sleep(0.5)
         return win
 
@@ -97,7 +139,7 @@ class WhatsAppAutomation:
                 nw, nh = img.size
                 _, _, rw, rh = region
                 if nw > rw or nh > rh:
-                    print(f"  ⚠️  btn too large ({nw}x{nh}) for region ({rw}x{rh}) → full screen")
+                    _emit(f"  ⚠️  btn too large ({nw}x{nh}) for region ({rw}x{rh}) → full screen")
                     region = None  # fall back to full screen
             except Exception:
                 region = None  # if anything fails, just go full screen
@@ -112,13 +154,13 @@ class WhatsAppAutomation:
                 pass
             except ValueError:
                 # needle bigger than region — drop region and retry full screen
-                print(f"  ⚠️  Region too small — retrying full screen...")
+                _emit(f"  ⚠️  Region too small — retrying full screen...")
                 region = None
             time.sleep(0.2)
 
         # ── Fallback: lower confidence ───────────────────────────────
         if conf > 0.6:
-            print(f"  ⚠️  Not found at {conf} — retrying at 0.6...")
+            _emit(f"  ⚠️  Not found at {conf} — retrying at 0.6...")
             try:
                 loc = pyautogui.locateCenterOnScreen(image_path, confidence=0.6, region=region)
                 if loc:
@@ -137,17 +179,17 @@ class WhatsAppAutomation:
         path = icon(image_name)
         loc  = self._find_button(path, confidence=confidence, region=region)
         if loc:
-            print(f"  ✅ Found [{label}] at {loc} → clicking")
+            _emit(f"  ✅ Found [{label}] at {loc} → clicking")
             pyautogui.click(loc)
             return True
-        print(f"  ❌ Could not find [{label}] — re-capture {image_name} if this keeps failing")
+        _emit(f"  ❌ Could not find [{label}] — re-capture {image_name} if this keeps failing")
         return False
 
     def _open_chat(self, contact_name: str):
         """Search and open a chat by contact name. Returns the WhatsApp window."""
         win = self._get_window()
 
-        print(f"  🔍 Opening chat: '{contact_name}'")
+        _emit(f"  🔍 Opening chat: '{contact_name}'")
         pyautogui.hotkey("ctrl", "f")
         time.sleep(0.5)
         pyautogui.hotkey("ctrl", "a")
@@ -188,32 +230,33 @@ class WhatsAppAutomation:
     #  PUBLIC API
     # ══════════════════════════════════════════════════════
 
-    def send_message(self, contact_name: str, message: str):
+    def send_message(self, contact_name: str, message: str) -> bool:
         """Send a text message to a contact by name"""
-        print(f"\n📨 send_message → '{contact_name}'")
+        _emit(f"\n📨 send_message → '{contact_name}'")
         win = self._open_chat(contact_name)
         self._focus_input(win)
         self._paste_and_send(message)
-        print(f"  ✅ Message sent to '{contact_name}'")
+        _emit(f"  ✅ Message sent to '{contact_name}'")
+        return True
 
-    def send_file(self, contact_name: str, file_path: str, caption: str = ""):
+    def send_file(self, contact_name: str, file_path: str, caption: str = "") -> bool:
         """
         Send any file (PDF, ZIP, DOCX, etc.) to a contact.
         file_path : absolute path  e.g. r"C:/Users/You/report.pdf"
         caption   : optional text shown with the file (default: none)
         """
-        print(f"\n📄 send_file → '{contact_name}' | {os.path.basename(file_path)}")
+        _emit(f"\n📄 send_file → '{contact_name}' | {os.path.basename(file_path)}")
         win = self._open_chat(contact_name)
         time.sleep(0.3)
         region = self._get_wa_region(win)
 
         # lower confidence for + button — it changes look based on hover/tooltip state
         if not self._click_button("btn_plus.png", label="[ + ] button", confidence=0.6, region=region):
-            return
+            raise RuntimeError("Could not find WhatsApp attachment button (+)")
         time.sleep(0.6)
 
         if not self._click_button("btn_docs.png", label="[ Document ]", region=region):
-            return
+            raise RuntimeError("Could not find WhatsApp document option")
         time.sleep(1.0)
 
         self._handle_file_dialog(file_path)
@@ -224,26 +267,27 @@ class WhatsAppAutomation:
             time.sleep(0.2)
 
         pyautogui.press("enter")
-        print(f"  ✅ File sent to '{contact_name}'")
+        _emit(f"  ✅ File sent to '{contact_name}'")
+        return True
 
-    def send_photo(self, contact_name: str, photo_path: str, caption: str = ""):
+    def send_photo(self, contact_name: str, photo_path: str, caption: str = "") -> bool:
         """
         Send a photo or video to a contact.
         photo_path : absolute path  e.g. r"C:/Users/You/photo.jpg"
         caption    : optional text shown with the photo (default: none)
         """
-        print(f"\n🖼️  send_photo → '{contact_name}' | {os.path.basename(photo_path)}")
+        _emit(f"\n🖼️  send_photo → '{contact_name}' | {os.path.basename(photo_path)}")
         win = self._open_chat(contact_name)
         time.sleep(0.3)
         region = self._get_wa_region(win)
 
         # lower confidence for + button — it changes look based on hover/tooltip state
         if not self._click_button("btn_plus.png", label="[ + ] button", confidence=0.6, region=region):
-            return
+            raise RuntimeError("Could not find WhatsApp attachment button (+)")
         time.sleep(0.6)
 
         if not self._click_button("btn_photos.png", label="[ Photos & Videos ]", region=region):
-            return
+            raise RuntimeError("Could not find WhatsApp photos/videos option")
         time.sleep(1.0)
 
         self._handle_file_dialog(photo_path)
@@ -254,51 +298,54 @@ class WhatsAppAutomation:
             time.sleep(0.2)
 
         pyautogui.press("enter")
-        print(f"  ✅ Photo/Video sent to '{contact_name}'")
+        _emit(f"  ✅ Photo/Video sent to '{contact_name}'")
+        return True
 
-    def audio_call(self, contact_name: str):
+    def audio_call(self, contact_name: str) -> bool:
         """
         Start a voice call with a contact.
         Flow: open chat → click 📞 call icon → click [ Voice ] in dropdown.
         Dropdown is searched ONLY inside WhatsApp window to avoid false matches.
         """
-        print(f"\n📞 audio_call → '{contact_name}'")
+        _emit(f"\n📞 audio_call → '{contact_name}'")
         win = self._open_chat(contact_name)
         time.sleep(0.5)
         region = self._get_wa_region(win)
 
         # call icon lives in the chat header — full screen ok
         if not self._click_button("btn_call_icon.png", label="[ 📞 call icon ]"):
-            return
+            raise RuntimeError("Could not find WhatsApp call icon")
         time.sleep(0.8)  # wait for dropdown to fully appear
 
         # RESTRICT to WhatsApp window — stops matching VS Code tabs etc.
         if not self._click_button("btn_audio_call.png", label="[ Voice ]", region=region):
-            return
+            raise RuntimeError("Could not find WhatsApp audio-call menu item")
 
-        print(f"  ✅ Audio call started with '{contact_name}'")
+        _emit(f"  ✅ Audio call started with '{contact_name}'")
+        return True
 
-    def video_call(self, contact_name: str):
+    def video_call(self, contact_name: str) -> bool:
         """
         Start a video call with a contact.
         Flow: open chat → click 📞 call icon → click [ Video ] in dropdown.
         Dropdown is searched ONLY inside WhatsApp window to avoid false matches.
         """
-        print(f"\n📹 video_call → '{contact_name}'")
+        _emit(f"\n📹 video_call → '{contact_name}'")
         win = self._open_chat(contact_name)
         time.sleep(0.5)
         region = self._get_wa_region(win)
 
         # call icon lives in the chat header — full screen ok
         if not self._click_button("btn_call_icon.png", label="[ 📞 call icon ]"):
-            return
+            raise RuntimeError("Could not find WhatsApp call icon")
         time.sleep(0.8)  # wait for dropdown to fully appear
 
         # RESTRICT to WhatsApp window — stops matching VS Code tabs etc.
         if not self._click_button("btn_video_call.png", label="[ Video ]", region=region):
-            return
+            raise RuntimeError("Could not find WhatsApp video-call menu item")
 
-        print(f"  ✅ Video call started with '{contact_name}'")
+        _emit(f"  ✅ Video call started with '{contact_name}'")
+        return True
 
 
 # ── USAGE ─────────────────────────────────────────────────
