@@ -11,6 +11,7 @@ from app.kernel.contracts.models import KernelEvent
 from app.plugins.tools.scripts.runtime_sync import get_runtime_tools_paths
 
 logger = logging.getLogger(__name__)
+_mongo_not_ready_warned = False
 
 
 def _parse_window_days(window: str | int) -> int:
@@ -32,7 +33,14 @@ class KernelStatsStore:
         try:
             db = get_db()
         except RuntimeError:
-            logger.warning("Mongo not ready, skipping stats persist for event=%s", event.event_type)
+            global _mongo_not_ready_warned
+            if not _mongo_not_ready_warned:
+                logger.warning(
+                    "Mongo not ready yet; skipping early stats events until DB startup completes"
+                )
+                _mongo_not_ready_warned = True
+            else:
+                logger.debug("Mongo not ready, skipping stats persist for event=%s", event.event_type)
             return
 
         ts = self._parse_event_time(event.timestamp)

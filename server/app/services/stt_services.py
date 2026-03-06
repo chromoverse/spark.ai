@@ -11,7 +11,8 @@ from typing import Optional, Dict, Any
 
 import numpy as np
 
-from app.ml import model_loader, DEVICE
+from app.ml import get_device, model_loader
+from app.config import settings
 from app.utils.async_utils import make_async
 
 logger = logging.getLogger(__name__)
@@ -94,10 +95,12 @@ class WhisperService:
     
     def __init__(self):
         self.model = None
-        self._ensure_model_loaded()
     
     def _ensure_model_loaded(self):
         """Ensure Whisper model is loaded"""
+        if settings.environment != "DESKTOP":
+            return
+
         if self.model is None:
             self.model = model_loader.get_model("whisper")
             if self.model is None:
@@ -105,7 +108,7 @@ class WhisperService:
                 self.model = model_loader.load_model("whisper")
             
             if self.model:
-                device = DEVICE
+                device = get_device()
                 speed = "70-150ms" if device == "cuda" else "1.5-3s"
                 logger.info(f"✅ Whisper service ready on {device.upper()} (expected: {speed})")
     
@@ -313,10 +316,11 @@ class WhisperService:
     
     def get_status(self) -> Dict[str, Any]:
         """Get service status"""
+        device = get_device()
         return {
             "available": self.model is not None,
-            "device": DEVICE,
-            "expected_speed": "70-150ms" if DEVICE == "cuda" else "1.5-3s"
+            "device": device,
+            "expected_speed": "70-150ms" if device == "cuda" else "1.5-3s"
         }
 
 

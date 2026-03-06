@@ -7,6 +7,7 @@ from collections import deque
 from typing import Any, Deque, Dict
 
 from app.cache import cache_manager
+from app.cache.key_config import kernel_recent_events_key
 from app.config import settings
 from app.kernel.contracts.models import KernelEvent
 from app.kernel.persistence.stats_store import get_kernel_stats_store
@@ -46,7 +47,7 @@ class KernelPersistenceRouter:
             return
         self._running = True
 
-        if self.environment == "desktop":
+        if self.environment == "DESKTOP":
             self._flush_task = asyncio.create_task(self._desktop_flush_loop())
             logger.info("KernelPersistenceRouter started in desktop batch mode")
         else:
@@ -62,13 +63,13 @@ class KernelPersistenceRouter:
                 pass
             self._flush_task = None
 
-        if self.environment == "desktop":
+        if self.environment == "DESKTOP":
             await self._flush_desktop_outbox()
 
     async def write_event(self, event: KernelEvent) -> None:
         self._cache_event(event)
 
-        if self.environment == "desktop":
+        if self.environment == "DESKTOP":
             self._desktop_outbox.append(event)
             if len(self._desktop_outbox) >= self._batch_size:
                 await self._flush_desktop_outbox()
@@ -112,7 +113,7 @@ class KernelPersistenceRouter:
                 break
 
     async def _update_hot_cache(self, event: KernelEvent) -> None:
-        cache_key = f"kernel:recent:{event.user_id}"
+        cache_key = kernel_recent_events_key(event.user_id)
         try:
             payload = json.dumps(event.to_dict())
             await cache_manager.rpush(cache_key, payload)

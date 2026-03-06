@@ -3,6 +3,7 @@ from app.config import settings
 import logging
 from typing import Optional
 
+logger = logging.getLogger(__name__)
 
 client: Optional[AsyncIOMotorClient] = None
 db = None
@@ -14,10 +15,10 @@ async def connect_to_mongo():
     try:
         client = AsyncIOMotorClient(settings.mongo_uri)
         db = client[settings.db_name]
-        print("✅ Async MongoDB connected")
+        logger.info("Async MongoDB connected")
 
     except Exception as e:
-        logging.error(f"❌ MongoDB connection failed: {e}")
+        logger.error("MongoDB connection failed: %s", e)
         raise e
 
 
@@ -26,7 +27,7 @@ async def close_mongo_connection():
 
     if client:
         client.close()
-        print("✅ MongoDB connection closed")
+        logger.info("MongoDB connection closed")
 
 
 def get_db():

@@ -22,6 +22,8 @@ from app.cache import add_message, load_user, get_last_n_messages, process_query
 from app.config import settings
 from app.prompts import stream_prompt
 
+import json
+
 logger = logging.getLogger(__name__)
 _USER_LANG_CACHE: Dict[str, str] = {}
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
@@ -71,8 +73,11 @@ _INTERNAL_CONTEXT_TOKENS = {
     "workflow",
     "execution",
 }
+DESKTOP_CONTEXT_WAIT_TIMEOUT_MS = 1000
 _SENTENCE_BREAK_RE = re.compile(r'(?<!\.)(?<!…)[.!?]["\')\]]?\s+')
 _CLAUSE_BREAK_RE = re.compile(r'[,;:\u2014]\s+')
+_STREAM_CONTEXT_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+_STREAM_RECENT_CONTEXT_FALLBACK_LIMIT = 3
 
 
 def _on_background_done(task: asyncio.Task[Any], label: str) -> None:
@@ -192,6 +197,81 @@ def _build_stream_prompt(
     return stream_prompt.build_prompt_en(
         emotion, query, recent_context, query_context, user_details
     )
+
+
+def _tokenize_stream_context(text: str) -> set[str]:
+    if not text:
+        return set()
+    tokens: set[str] = set()
+    for raw in _STREAM_CONTEXT_TOKEN_RE.findall(text.lower()):
+        token = raw.strip("_")
+        if len(token) >= 2:
+            tokens.add(token)
+    return tokens
+
+
+def _build_query_context_from_recent(
+    query: str,
+    recent_context: List[Dict[str, Any]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    if not recent_context:
+        return []
+
+    query_tokens = _tokenize_stream_context(query)
+    scored: List[Dict[str, Any]] = []
+    total = max(1, len(recent_context))
+
+    for idx, message in enumerate(recent_context):
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+
+        overlap = 0
+        if query_tokens:
+            overlap = len(query_tokens & _tokenize_stream_context(content))
+            if overlap <= 0:
+                continue
+
+        lexical_score = (overlap / max(1, len(query_tokens))) if query_tokens else 0.0
+        recency_boost = ((total - idx) / total) * 0.02
+        score = round(float(min(1.0, lexical_score + recency_boost)), 4)
+        scored.append(
+            {
+                "role": message.get("role", "user"),
+                "content": content,
+                "timestamp": message.get("timestamp", ""),
+                "score": score,
+                "_similarity_score": score,
+                "_fallback_source": "stream_recent_overlap",
+            }
+        )
+
+    if scored:
+        scored.sort(
+            key=lambda item: float(item.get("score", item.get("_similarity_score", 0)) or 0),
+            reverse=True,
+        )
+        return scored[: max(1, limit)]
+
+    fallback_take = max(1, min(limit, _STREAM_RECENT_CONTEXT_FALLBACK_LIMIT))
+    fallback: List[Dict[str, Any]] = []
+    for rank, message in enumerate(recent_context[:fallback_take]):
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        score = round(max(0.001, 0.01 - (rank * 0.001)), 4)
+        fallback.append(
+            {
+                "role": message.get("role", "user"),
+                "content": content,
+                "timestamp": message.get("timestamp", ""),
+                "score": score,
+                "_similarity_score": score,
+                "_fallback_source": "stream_recent_tail",
+            }
+        )
+    return fallback
 
 
 def _word_count(text: str) -> int:
@@ -390,17 +470,27 @@ class StreamService:
                 total_ms,
                 ack_text,
             )
+            assistant_task = asyncio.create_task(
+                add_message(user_id=user_id, role="assistant", content=ack_text)
+            )
+            assistant_task.add_done_callback(
+                lambda t: _on_background_done(t, "add_message(fast_ack_assistant)")
+            )
             return success
 
         # Conversational path: await user/recent and bounded query-context.
         # Kick off context work in parallel only when we actually need it.
+        context_budget_ms = max(
+            50,
+            int(getattr(settings, "STREAM_CONTEXT_BUDGET_MS", settings.STREAM_CONTEXT_TARGET_MS)),
+        )
         user_task = asyncio.create_task(load_user(user_id))
         recent_task = asyncio.create_task(get_last_n_messages(user_id, n=10))
         context_task = asyncio.create_task(
             process_query_and_get_context(
                 user_id=user_id,
                 query=query,
-                budget_ms=max(50, int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS))),
+                budget_ms=context_budget_ms,
                 top_k=max(1, int(getattr(settings, "STREAM_CONTEXT_TOP_K", 8))),
                 threshold=0.08,
                 fast_lane=True,
@@ -425,10 +515,10 @@ class StreamService:
 
         query_context: List[Dict[str, Any]] = []
         context_started = time.perf_counter()
-        context_timeout_ms = max(
-            50,
-            int(getattr(settings, "STREAM_CONTEXT_TARGET_MS", settings.STREAM_CONTEXT_BUDGET_MS)),
-        )
+        context_timeout_ms = context_budget_ms
+        context_top_k = max(1, int(getattr(settings, "STREAM_CONTEXT_TOP_K", 8)))
+        if settings.environment == "DESKTOP":
+            context_timeout_ms = max(context_timeout_ms, DESKTOP_CONTEXT_WAIT_TIMEOUT_MS)
         try:
             result_context, _ = await asyncio.wait_for(
                 context_task,
@@ -440,6 +530,20 @@ class StreamService:
             context_task.cancel()
         except Exception as exc:
             logger.warning("⚠️ [Stream] query_context failed, using empty context: %s", exc)
+
+        if settings.environment == "PRODUCTION" and (not query_context) and recent_context:
+            query_context = _build_query_context_from_recent(
+                query=query,
+                recent_context=recent_context,
+                limit=context_top_k,
+            )
+            if query_context:
+                logger.info(
+                    "🧩 [Stream] request_id=%s recovered query_context from recent messages count=%d",
+                    request_id,
+                    len(query_context),
+                )
+
         context_ms = (time.perf_counter() - context_started) * 1000
         top_context_score = 0.0
         if query_context:
@@ -452,6 +556,8 @@ class StreamService:
                 _safe_score(item)
                 for item in query_context
             )
+        print("Recent Context +===========================", json.dumps(recent_context, indent=2))    
+        print("QUery Context +===========================", json.dumps(query_context, indent=2))    
         logger.info(
             "🧠 [Stream] request_id=%s context_ms=%.0f context_results=%d top_context_score=%.4f budget_ms=%s",
             request_id,
@@ -508,6 +614,7 @@ class StreamService:
         produced_chunks = 0
         buffer = ""
         stream_error: Optional[Exception] = None
+        fallback_chunk_text = ""
 
         async def _enqueue_chunk(chunk_text: str) -> None:
             nonlocal produced_chunks
@@ -586,7 +693,8 @@ class StreamService:
                 return False
 
         if not full_response.strip() and produced_chunks == 0:
-            await _enqueue_chunk(_fallback_ack_text(lang))
+            fallback_chunk_text = _fallback_ack_text(lang)
+            await _enqueue_chunk(fallback_chunk_text)
 
         await queue.put(None)
         tts_success = await consumer_task
@@ -606,6 +714,19 @@ class StreamService:
             len(full_response),
             int(getattr(settings, "STREAM_FIRST_AUDIO_SLO_MS", 1000)),
         )
+
+        assistant_message = " ".join(full_response.split()).strip()
+        if not assistant_message and fallback_chunk_text:
+            assistant_message = fallback_chunk_text
+        if assistant_message:
+            try:
+                await add_message(user_id=user_id, role="assistant", content=assistant_message)
+            except Exception as exc:
+                logger.warning(
+                    "⚠️ [Stream] request_id=%s failed to persist assistant message: %s",
+                    request_id,
+                    exc,
+                )
         return tts_success
 
 

@@ -46,6 +46,11 @@ def configure_structured_logging() -> None:
 
     root.addHandler(console)
     root.addHandler(file_handler)
+
+    # Reduce third-party transport noise; app-level logs provide clearer signals.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     root._spark_logging_configured = True  # type: ignore[attr-defined]
 
 

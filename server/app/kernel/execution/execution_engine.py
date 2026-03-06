@@ -362,7 +362,7 @@ class ExecutionEngine:
         Desktop: Execute DIRECTLY (same orchestrator, same state)
         Production: Emit via WebSocket
         """
-        if self.environment == "desktop":
+        if self.environment == "DESKTOP":
             await self._execute_client_batch_locally(user_id, tasks)
         else:
             await self._emit_client_batch_remote(user_id, tasks)

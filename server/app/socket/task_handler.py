@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import socketio
 
 from app.agent.execution_gateway import get_orchestrator, TaskOutput, TaskRecord
-from app.services import get_tool_output_delivery_service
+from app.services.chat.tool_output_delivery_service import get_tool_output_delivery_service
 
 logger = logging.getLogger(__name__)
 

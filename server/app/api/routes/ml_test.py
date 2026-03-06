@@ -7,9 +7,10 @@ from typing import List
 import tempfile
 import os
 
-from app.ml import model_loader, get_embedding, get_embeddings
+from app.ml import MODELS_CONFIG, get_embedding, get_embeddings, model_loader
 
 router = APIRouter(prefix="/ml-test", tags=["ML Testing"])
+_EMBEDDING_MODEL_NAME = str(MODELS_CONFIG.get("embedding", {}).get("name", "embedding"))
 
 # ==================== REQUEST MODELS ====================
 
@@ -44,7 +45,7 @@ async def test_single_embedding(input: TextInput):
             "text": input.text,
             "embedding_dimension": len(embedding),
             "embedding_sample": embedding[:5],  # First 5 values
-            "model": "bge-m3"
+            "model": _EMBEDDING_MODEL_NAME
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -74,7 +75,7 @@ async def test_batch_embeddings(input: BatchTextInput):
             "texts": input.texts,
             "embedding_dimension": len(embeddings[0]),
             "embeddings_sample": [emb[:5] for emb in embeddings],  # First 5 values each
-            "model": "bge-m3"
+            "model": _EMBEDDING_MODEL_NAME
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -110,7 +111,7 @@ async def test_similarity(input: SimilarityInput):
             "text2": input.text2,
             "similarity_score": float(similarity),
             "interpretation": "Very similar" if similarity > 0.8 else "Somewhat similar" if similarity > 0.5 else "Not similar",
-            "model": "bge-m3"
+            "model": _EMBEDDING_MODEL_NAME
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

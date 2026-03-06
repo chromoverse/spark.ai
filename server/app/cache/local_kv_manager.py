@@ -101,6 +101,28 @@ class LocalKVManager:
             CREATE INDEX IF NOT EXISTS idx_user_messages 
             ON messages(user_id, created_at DESC)
         """)
+
+        # Persistent sync outbox for desktop -> cloud reconciliation.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sync_outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope TEXT NOT NULL,
+                op TEXT NOT NULL,
+                key TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_sync_outbox_created_at
+            ON sync_outbox(created_at ASC)
+            """
+        )
         
         self._conn.commit()
     
@@ -333,3 +355,98 @@ class LocalKVManager:
         except Exception as e:
             logger.error(f"SQLite Clear Messages Error: {e}")
             return False
+
+    # ============ SYNC OUTBOX METHODS ============
+
+    async def enqueue_sync_event(self, scope: str, op: str, key: str, payload_json: str) -> int:
+        """Persist a sync event for background cloud flush."""
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO sync_outbox (scope, op, key, payload_json, created_at, attempts, last_error)
+                VALUES (?, ?, ?, ?, ?, 0, NULL)
+                """,
+                (scope, op, key, payload_json, time.time()),
+            )
+            self._conn.commit()
+            return int(cursor.lastrowid or 0)
+        except Exception as e:
+            logger.error(f"LocalKV enqueue sync event error: {e}")
+            return 0
+
+    async def fetch_sync_events(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch oldest pending sync events."""
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, scope, op, key, payload_json, created_at, attempts, last_error
+                FROM sync_outbox
+                ORDER BY created_at ASC, id ASC
+                LIMIT ?
+                """,
+                (max(1, int(limit)),),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": int(row[0]),
+                    "scope": str(row[1]),
+                    "op": str(row[2]),
+                    "key": str(row[3]),
+                    "payload_json": str(row[4]),
+                    "created_at": float(row[5]),
+                    "attempts": int(row[6]),
+                    "last_error": row[7],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logger.error(f"LocalKV fetch sync events error: {e}")
+            return []
+
+    async def mark_sync_events_success(self, ids: List[int]) -> int:
+        """Delete successfully flushed sync events."""
+        try:
+            if not ids:
+                return 0
+            cursor = self._conn.cursor()
+            placeholders = ",".join("?" for _ in ids)
+            cursor.execute(
+                f"DELETE FROM sync_outbox WHERE id IN ({placeholders})",
+                tuple(ids),
+            )
+            deleted = int(cursor.rowcount or 0)
+            self._conn.commit()
+            return deleted
+        except Exception as e:
+            logger.error(f"LocalKV mark sync success error: {e}")
+            return 0
+
+    async def mark_sync_event_failure(self, event_id: int, error: str) -> None:
+        """Increment attempts and store last error for a failed event."""
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sync_outbox
+                SET attempts = attempts + 1, last_error = ?
+                WHERE id = ?
+                """,
+                (error[:1000], int(event_id)),
+            )
+            self._conn.commit()
+        except Exception as e:
+            logger.error(f"LocalKV mark sync failure error: {e}")
+
+    async def get_sync_outbox_size(self) -> int:
+        """Return number of pending sync events."""
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM sync_outbox")
+            row = cursor.fetchone()
+            return int(row[0] if row else 0)
+        except Exception as e:
+            logger.error(f"LocalKV sync outbox size error: {e}")
+            return 0

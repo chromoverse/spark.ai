@@ -6,7 +6,8 @@ import logging
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
 
-from app.ml import get_embedding, get_embeddings, model_loader, DEVICE
+from app.ml import MODELS_CONFIG, get_device, get_embedding, get_embeddings, model_loader
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,12 @@ class EmbeddingService:
     
     def __init__(self):
         self.model = None
-        self._ensure_model_loaded()
     
     def _ensure_model_loaded(self):
         """Ensure embedding model is loaded"""
+        if settings.environment != "DESKTOP":
+            return
+
         if self.model is None:
             self.model = model_loader.get_model("embedding")
             if self.model is None:
@@ -295,10 +298,11 @@ class EmbeddingService:
     
     def get_status(self) -> Dict[str, Any]:
         """Get service status"""
+        embedding_dim = int(MODELS_CONFIG.get("embedding", {}).get("dimension", 1024))
         return {
             "available": self.model is not None,
-            "device": DEVICE,
-            "dimension": 1024  # BGE-M3 dimension
+            "device": get_device(),
+            "dimension": embedding_dim,
         }
 
 

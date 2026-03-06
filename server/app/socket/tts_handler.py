@@ -12,7 +12,7 @@ from typing import Any, Callable, Awaitable
 from app.schemas import RequestTTS
 from app.socket.utils import emit_server_status
 from app.cache import load_user
-from app.services import parallel_chat_execution, stream_chat_response
+from app.services.chat import parallel_chat_execution, stream_chat_response
 
 logger = logging.getLogger(__name__)
 

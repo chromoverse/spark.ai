@@ -3,6 +3,7 @@ from app.cache.base_manager import BaseCacheManager
 from app.cache.generic_cache import GenericCacheMixin
 from app.cache.chat_cache import ChatCacheMixin
 from app.cache.user_cache import UserCacheMixin, UserCache, log_cache_performance
+from app.cache.sync_manager import get_sync_manager
 from typing import Any, Optional, Dict, List
 
 class CacheManager(GenericCacheMixin, ChatCacheMixin, UserCacheMixin, BaseCacheManager):
@@ -14,6 +15,7 @@ class CacheManager(GenericCacheMixin, ChatCacheMixin, UserCacheMixin, BaseCacheM
 
 # Singleton instance
 cache_manager: CacheManager = CacheManager()  # type: ignore[assignment]
+sync_manager = get_sync_manager()
 
 # ============ CONVENIENCE FUNCTIONS (backward compatibility) ============
 

@@ -4,6 +4,54 @@ import { windowManager } from "./services/WindowManager.js";
 import { registerAllHandlers } from "./ipc/index.js";
 import { ipcWebContentSend } from "./utils/ipcUtils.js";
 
+const SAFE_GPU_MODE_ARG = "--safe-gpu-mode";
+const safeGpuModeEnabled =
+  process.argv.includes(SAFE_GPU_MODE_ARG) || process.env.ELECTRON_SAFE_GPU_MODE === "1";
+
+if (safeGpuModeEnabled) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu");
+  console.warn("[GPU] Safe mode enabled: hardware acceleration disabled.");
+}
+
+let hasTriggeredGpuRelaunch = false;
+
+function setupGpuRecovery() {
+  app.on("child-process-gone", (_event, details) => {
+    if (details.type !== "GPU") {
+      return;
+    }
+
+    console.error(
+      `[GPU] Child process gone: reason=${details.reason}, exitCode=${details.exitCode}, service=${details.serviceName ?? details.name ?? "unknown"}`,
+    );
+
+    const shouldRelaunchInSafeMode =
+      !safeGpuModeEnabled &&
+      !hasTriggeredGpuRelaunch &&
+      details.reason !== "clean-exit";
+
+    if (!shouldRelaunchInSafeMode) {
+      return;
+    }
+
+    hasTriggeredGpuRelaunch = true;
+    console.warn(`[GPU] Relaunching app with ${SAFE_GPU_MODE_ARG}.`);
+
+    const args = process.argv.slice(1);
+    if (!args.includes(SAFE_GPU_MODE_ARG)) {
+      args.push(SAFE_GPU_MODE_ARG);
+    }
+
+    app.relaunch({ args });
+    app.exit(0);
+  });
+
+  app.on("gpu-info-update", () => {
+    console.log("[GPU] Feature status", app.getGPUFeatureStatus());
+  });
+}
+
 function registerGlobalShortcuts(mainWindow: BrowserWindow) {
   // Register Ctrl/Cmd + Shift + M for mic mute/unmute toggle
   const shortcut =
@@ -27,6 +75,8 @@ function registerGlobalShortcuts(mainWindow: BrowserWindow) {
     console.error(`❌ Failed to register global shortcut ${shortcut}`);
   }
 }
+
+setupGpuRecovery();
 
 void app.whenReady().then(async () => {
   console.log("App Ready - Initializing Application");

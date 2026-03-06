@@ -12,7 +12,6 @@ from typing import List, Optional, Any
 
 from app.kernel.execution.execution_models import TaskRecord
 from app.kernel.execution.orchestrator import get_orchestrator
-from app.agent.desktop_notifications import show_approval_notification, show_info_notification
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +37,8 @@ class TaskEmitter:
     
     def set_environment(self, env: str):
         """Set environment (desktop/production)"""
-        self.environment = env
-        logger.info("Task Emitter environment set to: %s", env)
+        self.environment = str(env or "").strip().upper()
+        logger.info("Task Emitter environment set to: %s", self.environment)
         
     def set_socket_handler(self, handler: Any):
         """Set WebSocket handler for production execution"""
@@ -57,7 +56,7 @@ class TaskEmitter:
             task_dict = self._enrich_with_server_state(user_id, task_dict)
             
             # ROUTING LOGIC
-            if self.environment == "desktop":
+            if self.environment == "DESKTOP":
                 # Desktop execution is already handled inside kernel execution engine.
                 logger.info("Desktop mode: task %s handled in-process by kernel engine", task.task_id)
                 return True
@@ -85,7 +84,7 @@ class TaskEmitter:
                 await self.orchestrator.mark_task_emitted(user_id, task.task_id)
             
             # ROUTING LOGIC
-            if self.environment == "desktop":
+            if self.environment == "DESKTOP":
                 logger.info("Desktop mode: batch of %s tasks handled in-process by kernel engine", len(tasks))
                 return True
                 
@@ -104,8 +103,10 @@ class TaskEmitter:
     async def emit_acknowledgment(self, user_id: str, message: str) -> bool:
         """Emit SQH acknowledgment (past tense confirmation)"""
         try:
-            if self.environment == "desktop":
+            if self.environment == "DESKTOP":
                 logger.info("Desktop mode acknowledgment for %s: %s", user_id, message[:50])
+                from app.agent.desktop_notifications import show_info_notification
+
                 show_info_notification("SPARK AI", message)
                 return True
             else:
@@ -120,7 +121,7 @@ class TaskEmitter:
     async def request_approval(self, user_id: str, task_id: str, question: str) -> bool:
         """Request user approval for a task"""
         try:
-            if self.environment == "desktop":
+            if self.environment == "DESKTOP":
                 logger.info("Desktop mode approval request for task %s", task_id)
                 loop = asyncio.get_running_loop()
                 decision: asyncio.Future[bool] = loop.create_future()
@@ -129,6 +130,8 @@ class TaskEmitter:
                     await self.orchestrator.handle_approval(uid, tid, approved)
                     if not decision.done():
                         loop.call_soon_threadsafe(decision.set_result, approved)
+
+                from app.agent.desktop_notifications import show_approval_notification
 
                 show_approval_notification(
                     user_id=user_id,

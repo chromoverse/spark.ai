@@ -3,7 +3,7 @@ ML Module - Centralized ML model management
 """
 from app.ml.model_loader import model_loader
 from app.ml.embedding_worker import embedding_worker, get_embedding, get_embeddings
-from app.ml.config import MODELS_CONFIG, DEVICE, DEVICE_PROFILE
+from app.ml.config import MODELS_CONFIG, get_device, get_device_profile
 
 __all__ = [
     "model_loader",
@@ -11,6 +11,6 @@ __all__ = [
     "get_embedding",
     "get_embeddings",
     "MODELS_CONFIG",
-    "DEVICE",
-    "DEVICE_PROFILE",
+    "get_device",
+    "get_device_profile",
 ]

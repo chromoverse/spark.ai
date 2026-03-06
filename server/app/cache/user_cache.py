@@ -5,6 +5,9 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 from typing import Any, Optional, Dict, Tuple
 from app.cache.base_manager import BaseCacheManager
+from app.cache.key_config import user_details_key
+from app.cache.sync_manager import get_sync_manager
+from app.config import settings
 from app.utils.serialize_mongo_doc import serialize_doc
 
 logger = logging.getLogger(__name__)
@@ -12,14 +15,23 @@ logger = logging.getLogger(__name__)
 class UserCacheMixin(BaseCacheManager):
     """User-specific Redis operations"""
 
-    async def set_user_details(self, user_id: str, details: Dict[str, Any]) -> None:
+    async def set_user_details(self, user_id: str, details: Dict[str, Any], sync: bool = True) -> None:
         """Set user details"""
-        key = f"user:{user_id}:details"
+        key = user_details_key(user_id)
         await self.set(key, json.dumps(details))
+        if (
+            sync
+            and settings.environment == "DESKTOP"
+            and bool(getattr(settings, "cache_sync_enabled", True))
+        ):
+            try:
+                await get_sync_manager().enqueue_user_details(user_id, details)
+            except Exception as exc:
+                logger.debug("Failed to enqueue user details sync: %s", exc)
     
     async def get_user_details(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user details"""
-        key = f"user:{user_id}:details"
+        key = user_details_key(user_id)
         details = await self.get(key)
         if details:
             try:
@@ -28,19 +40,28 @@ class UserCacheMixin(BaseCacheManager):
                 return None
         return None
     
-    async def clear_user_details(self, user_id: str) -> None:
+    async def clear_user_details(self, user_id: str, sync: bool = True) -> None:
         """Clear user details"""
-        key = f"user:{user_id}:details"
+        key = user_details_key(user_id)
         await self.delete(key)
+        if (
+            sync
+            and settings.environment == "DESKTOP"
+            and bool(getattr(settings, "cache_sync_enabled", True))
+        ):
+            try:
+                await get_sync_manager().enqueue_delete("user_details", key)
+            except Exception as exc:
+                logger.debug("Failed to enqueue user details delete sync: %s", exc)
     
-    async def update_user_details(self, user_id: str, details: Dict[str, Any]) -> None:
+    async def update_user_details(self, user_id: str, details: Dict[str, Any], sync: bool = True) -> None:
         """Update user details (merge with existing)"""
         existing_details = await self.get_user_details(user_id)
         if existing_details is None:
-            await self.set_user_details(user_id, details)
+            await self.set_user_details(user_id, details, sync=sync)
         else:
             existing_details.update(details)
-            await self.set_user_details(user_id, existing_details)
+            await self.set_user_details(user_id, existing_details, sync=sync)
 
 class UserCache:
     """

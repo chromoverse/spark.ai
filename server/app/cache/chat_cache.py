@@ -3,6 +3,7 @@ import logging
 import asyncio
 import time
 import hashlib
+import re
 import numpy as np
 import base64
 import uuid
@@ -10,6 +11,16 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Optional, List, Dict, Tuple, TYPE_CHECKING
 from collections import OrderedDict
 from app.cache.base_manager import BaseCacheManager
+from app.cache.key_config import (
+    query_hash,
+    user_context_key,
+    user_details_key,
+    user_embedding_key,
+    user_embedding_prefix,
+    user_prefix,
+    user_recent_messages_key,
+)
+from app.cache.sync_manager import get_sync_manager
 from app.config import settings
 
 if TYPE_CHECKING:
@@ -22,6 +33,11 @@ EMBEDDING_TTL = 86400 * 7
 LOCAL_CACHE_SIZE = 500
 QUERY_CONTEXT_TTL_SECONDS = 20
 QUERY_CONTEXT_CACHE_SIZE = 256
+DESKTOP_CONTEXT_EMBED_MIN_BUDGET_MS = 500
+DESKTOP_CONTEXT_SEARCH_MIN_BUDGET_MS = 300
+LEXICAL_FALLBACK_SCAN_LIMIT = 120
+LEXICAL_FALLBACK_RECENT_LIMIT = 3
+_LEXICAL_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 
 class ChatCacheMixin(BaseCacheManager):
     """Conversation history and embedding logic"""
@@ -29,6 +45,7 @@ class ChatCacheMixin(BaseCacheManager):
     _local_emb_cache: OrderedDict = OrderedDict()
     _query_emb_cache: OrderedDict = OrderedDict()  # query text hash → vector
     _query_context_cache: OrderedDict = OrderedDict()  # (user:query) -> (ts, context, pinecone_flag)
+    _embedding_warmup_task: Optional[asyncio.Task[Any]] = None
     _QUERY_CACHE_MAX = 400
     _env: Optional[str] = None  # Cache environment type
 
@@ -37,7 +54,7 @@ class ChatCacheMixin(BaseCacheManager):
         if self._env is None:
             from app.config import settings
             self._env = settings.environment
-            logger.info(f"🌍 Environment initialized: {self._env}")
+            logger.debug("Environment initialized: %s", self._env)
         return self._env
 
     @staticmethod
@@ -56,7 +73,7 @@ class ChatCacheMixin(BaseCacheManager):
     
     def _is_desktop_env(self) -> bool:
         """Check if running in desktop environment"""
-        return self._init_env() == "desktop"
+        return self._init_env() == "DESKTOP"
 
     def _get_vector_client(self) -> Optional['LanceDBManager']:
         """Get vector client for desktop"""
@@ -71,6 +88,44 @@ class ChatCacheMixin(BaseCacheManager):
             if isinstance(self.client, LocalKVManager):
                 return self.client
         return None
+
+    @staticmethod
+    def _recent_messages_limit() -> int:
+        return max(10, int(getattr(settings, "cache_recent_messages_limit", 50)))
+
+    def _remote_embedding_cache_enabled(self) -> bool:
+        # In production Cloudflare path, keep embeddings local-only.
+        if settings.environment == "PRODUCTION" and self.is_cloudflare_backend():
+            return False
+        return True
+
+    async def _read_recent_messages_payload(self, user_id: str) -> tuple[list[dict[str, Any]], float]:
+        raw = await self.get(user_recent_messages_key(user_id))
+        if not raw:
+            return [], 0.0
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [m for m in parsed if isinstance(m, dict)], 0.0
+            if isinstance(parsed, dict):
+                messages = parsed.get("messages", [])
+                if isinstance(messages, list):
+                    ts = float(parsed.get("updated_at", 0) or 0)
+                    return [m for m in messages if isinstance(m, dict)], ts
+        except Exception:
+            return [], 0.0
+        return [], 0.0
+
+    async def _write_recent_messages_payload(self, user_id: str, messages: list[dict[str, Any]]) -> None:
+        payload = {
+            "updated_at": time.time(),
+            "seq": int(time.time() * 1_000_000),
+            "messages": messages[-self._recent_messages_limit() :],
+        }
+        await self.set(
+            user_recent_messages_key(user_id),
+            json.dumps(payload, ensure_ascii=False),
+        )
 
     async def add_message(self, user_id: str, role: str, content: str) -> None:
         await self.add_message_with_embedding(
@@ -112,19 +167,34 @@ class ChatCacheMixin(BaseCacheManager):
                 await vector_client.add_chat_message(user_id, role, content, final_embedding, timestamp)
                 
                 logger.debug(f"✅ Message added to both SQLite + LanceDB: [{role}] {content[:50]}...")
+
+                if bool(getattr(settings, "cache_sync_enabled", True)):
+                    # Desktop local-first: enqueue core conversation state for cloud sync.
+                    try:
+                        recent_messages = await kv_client.get_messages(
+                            user_id,
+                            limit=self._recent_messages_limit(),
+                        )
+                        asyncio.create_task(
+                            get_sync_manager().enqueue_recent_messages(user_id, recent_messages)
+                        )
+                    except Exception as exc:
+                        logger.debug("Failed to enqueue recent_messages sync: %s", exc)
                 return
             except Exception as e:
                 logger.error(f"❌ Error adding message: {e}", exc_info=True)
                 return
 
-        # Redis path (production/dev)
-        key = f"user:{user_id}:conversation"
+        # Remote cache path (production/dev)
         message = {
             "role": role,
             "content": content,
             "timestamp": timestamp
         }
-        await self.rpush(key, json.dumps(message))
+        messages, _ = await self._read_recent_messages_payload(user_id)
+        messages.append(message)
+        messages = messages[-self._recent_messages_limit() :]
+        await self._write_recent_messages_payload(user_id, messages)
         if embedding:
             await self._set_embedding_cache(user_id, content, embedding)
         else:
@@ -197,22 +267,13 @@ class ChatCacheMixin(BaseCacheManager):
             # Desktop: Get from SQLite directly
             return await kv_client.get_messages(user_id, n)
 
-        # Redis Logic (production/dev)
+        # Remote cache logic (production/dev)
         try:
-            key = f"user:{user_id}:conversation"
-            messages_raw = await self.lrange(key, -n, -1)
-            if not messages_raw:
+            messages, _ = await self._read_recent_messages_payload(user_id)
+            if not messages:
                 return []
-            
-            messages: List[Dict[str, Any]] = []
-            for msg in messages_raw:
-                if msg:
-                    try:
-                        messages.append(json.loads(msg))
-                    except json.JSONDecodeError:
-                        continue
-            
-            return messages[::-1]
+            recent = messages[-n:] if len(messages) > n else messages
+            return list(reversed(recent))
         except Exception as e:
             self._safe_warn(f"Failed to get messages for user '{user_id}': {e}")
             return []
@@ -227,12 +288,21 @@ class ChatCacheMixin(BaseCacheManager):
             await kv_client.clear_messages(user_id)
             # 2. Clear LanceDB vectors
             await vector_client.clear_user_data(user_id)
+            if bool(getattr(settings, "cache_sync_enabled", True)):
+                try:
+                    asyncio.create_task(
+                        get_sync_manager().enqueue_delete(
+                            "recent_messages",
+                            user_recent_messages_key(user_id),
+                        )
+                    )
+                except Exception as exc:
+                    logger.debug("Failed to enqueue recent_messages delete sync: %s", exc)
             logger.info(f"🗑️ Cleared messages from both SQLite + LanceDB for {user_id}")
             return
 
-        # Redis path
-        key = f"user:{user_id}:conversation"
-        await self.delete(key)
+        # Remote path
+        await self.delete(user_recent_messages_key(user_id))
     
     def _get_text_hash(self, text: str) -> str:
         """Generate hash for text"""
@@ -280,7 +350,10 @@ class ChatCacheMixin(BaseCacheManager):
             local = self._get_local_cache(user_id, text_hash)
             if local: return local
 
-            cache_key = f"user:{user_id}:emb:{text_hash}"
+            if not self._remote_embedding_cache_enabled():
+                return None
+
+            cache_key = user_embedding_key(user_id, text_hash)
             cached = await self.get(cache_key)
             if cached:
                 embedding = self._deserialize_embedding(cached)
@@ -297,20 +370,11 @@ class ChatCacheMixin(BaseCacheManager):
         user_id: str, 
         texts: List[str]
     ) -> List[Optional[List[float]]]:
-        """Batch cache retrieval using pipeline"""
+        """Batch cache retrieval using local memory + backend batch get."""
         if not texts:
             return []
         
         try:
-            cache_keys = [
-                f"user:{user_id}:emb:{self._get_text_hash(text)}" 
-                for text in texts
-            ]
-            
-            pipeline = await self.pipeline()
-            for key in cache_keys:
-                pipeline.get(key)
-            
             results: List[Optional[List[float]]] = []
             keys_to_fetch_remote: List[str] = []
             remote_indices: List[int] = []
@@ -322,23 +386,19 @@ class ChatCacheMixin(BaseCacheManager):
                     results.append(local)
                 else:
                     results.append(None)
-                    keys_to_fetch_remote.append(f"user:{user_id}:emb:{text_hash}")
+                    keys_to_fetch_remote.append(user_embedding_key(user_id, text_hash))
                     remote_indices.append(i)
 
-            if keys_to_fetch_remote:
-                pipeline = await self.pipeline()
-                for key in keys_to_fetch_remote:
-                    pipeline.get(key)
-                
-                cached_values = await pipeline.execute()
-                
+            if keys_to_fetch_remote and self._remote_embedding_cache_enabled():
+                cached_values = await self.bulk_get(keys_to_fetch_remote)
                 for idx, cached in zip(remote_indices, cached_values):
-                    if cached:
-                        embedding = self._deserialize_embedding(cached)
-                        if embedding:
-                            text_hash = self._get_text_hash(texts[idx])
-                            self._set_local_cache(user_id, text_hash, embedding)
-                            results[idx] = embedding
+                    if not cached:
+                        continue
+                    embedding = self._deserialize_embedding(cached)
+                    if embedding:
+                        text_hash = self._get_text_hash(texts[idx])
+                        self._set_local_cache(user_id, text_hash, embedding)
+                        results[idx] = embedding
             
             return results
         except Exception as e:
@@ -350,10 +410,11 @@ class ChatCacheMixin(BaseCacheManager):
         try:
             text_hash = self._get_text_hash(text)
             self._set_local_cache(user_id, text_hash, embedding)
-            
-            cache_key = f"user:{user_id}:emb:{text_hash}"
-            serialized = self._serialize_embedding(embedding)
-            await self.set(cache_key, serialized, ex=EMBEDDING_TTL)
+
+            if self._remote_embedding_cache_enabled():
+                cache_key = user_embedding_key(user_id, text_hash)
+                serialized = self._serialize_embedding(embedding)
+                await self.set(cache_key, serialized, ex=EMBEDDING_TTL)
             return True
         except Exception as e:
             logger.debug(f"Failed to cache embedding: {e}")
@@ -370,17 +431,18 @@ class ChatCacheMixin(BaseCacheManager):
             return False
         
         try:
-            pipeline = await self.pipeline()
-            
+            batch_payload: List[tuple[str, str, Optional[int]]] = []
             for text, embedding in zip(texts, embeddings):
                 text_hash = self._get_text_hash(text)
                 self._set_local_cache(user_id, text_hash, embedding)
-                
-                cache_key = f"user:{user_id}:emb:{text_hash}"
-                serialized = self._serialize_embedding(embedding)
-                pipeline.setex(cache_key, EMBEDDING_TTL, serialized)
-            
-            await pipeline.execute()
+
+                if self._remote_embedding_cache_enabled():
+                    cache_key = user_embedding_key(user_id, text_hash)
+                    serialized = self._serialize_embedding(embedding)
+                    batch_payload.append((cache_key, serialized, EMBEDDING_TTL))
+
+            if batch_payload:
+                await self.bulk_set(batch_payload)
             return True
         except Exception as e:
             logger.debug(f"Failed to batch cache embeddings: {e}")
@@ -444,7 +506,73 @@ class ChatCacheMixin(BaseCacheManager):
                 threshold=threshold,
             )
 
-        # Redis path (production/dev)
+        # Production path: query Pinecone directly (no local embedding/model load).
+        if settings.environment == "PRODUCTION":
+            from app.db.pinecone import config as pinecone_config
+
+            try:
+                pinecone_rows = await asyncio.to_thread(
+                    pinecone_config.search_user_queries,
+                    user_id,
+                    query,
+                    max(1, min(int(top_k), 20)),
+                )
+            except Exception as exc:
+                logger.warning("Pinecone semantic search failed: %s", exc)
+                return []
+
+            results: List[Dict[str, Any]] = []
+            for row in pinecone_rows:
+                try:
+                    score = float(row.get("score", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    score = 0.0
+                if score < threshold:
+                    continue
+
+                content = str(row.get("query") or row.get("text") or "").strip()
+                if not content:
+                    continue
+
+                results.append(
+                    {
+                        "role": "user",
+                        "content": content,
+                        "timestamp": row.get("timestamp") or "",
+                        "_similarity_score": round(score, 4),
+                    }
+                )
+
+            if not results and threshold > 0:
+                # Keep query-context useful even when score calibration drifts across providers.
+                for row in pinecone_rows:
+                    content = str(row.get("query") or row.get("text") or "").strip()
+                    if not content:
+                        continue
+                    try:
+                        score = float(row.get("score", 0.0) or 0.0)
+                    except (TypeError, ValueError):
+                        score = 0.0
+                    results.append(
+                        {
+                            "role": "user",
+                            "content": content,
+                            "timestamp": row.get("timestamp") or "",
+                            "_similarity_score": round(score, 4),
+                        }
+                    )
+
+            results.sort(key=lambda item: float(item.get("_similarity_score", 0.0)), reverse=True)
+            results = results[: max(1, int(top_k))]
+            top_score = float(results[0].get("_similarity_score", 0.0)) if results else 0.0
+            logger.info(
+                "🔎 RAG search source=pinecone result_count=%d top_score=%.4f",
+                len(results),
+                top_score,
+            )
+            return results
+
+        # Development fallback path: in-memory semantic over recent messages.
         start = time.time()
         messages = await self.get_last_n_messages(user_id, n)
         if not messages:
@@ -492,7 +620,7 @@ class ChatCacheMixin(BaseCacheManager):
 
     async def clear_embedding_cache(self, user_id: str) -> int:
         """Clear all cached embeddings for a user"""
-        pattern = f"user:{user_id}:emb:*"
+        pattern = f"{user_embedding_prefix(user_id)}*"
         return await self._delete_by_pattern(pattern)
 
     async def clear_all_user_data(self, user_id: str) -> None:
@@ -511,14 +639,31 @@ class ChatCacheMixin(BaseCacheManager):
                 del self._local_emb_cache[key]
             
             # Clear KV data (user details, generic cache)
-            pattern = f"user:{user_id}:*"
+            pattern = f"{user_prefix(user_id)}*"
             await self._delete_by_pattern(pattern)
+
+            if bool(getattr(settings, "cache_sync_enabled", True)):
+                try:
+                    asyncio.create_task(
+                        get_sync_manager().enqueue_delete(
+                            "recent_messages",
+                            user_recent_messages_key(user_id),
+                        )
+                    )
+                    asyncio.create_task(
+                        get_sync_manager().enqueue_delete(
+                            "user_details",
+                            user_details_key(user_id),
+                        )
+                    )
+                except Exception as exc:
+                    logger.debug("Failed to enqueue clear_all sync deletes: %s", exc)
             
             logger.info(f"🗑️ Cleared ALL data for user {user_id}")
             return
         
         # Redis path
-        pattern = f"user:{user_id}:*"
+        pattern = f"{user_prefix(user_id)}*"
         total_deleted = await self._delete_by_pattern(pattern)
         if total_deleted > 0:
             logger.info(f"🗑️ Cleared all data for user {user_id}: {total_deleted} keys")
@@ -548,6 +693,105 @@ class ChatCacheMixin(BaseCacheManager):
         return bool(getattr(settings, "STREAM_CONTEXT_CACHE_EMPTY_RESULTS", False))
 
     @staticmethod
+    def _tokenize_for_lexical_fallback(text: str) -> set[str]:
+        if not text:
+            return set()
+        tokens: set[str] = set()
+        for raw in _LEXICAL_TOKEN_RE.findall(text.lower()):
+            token = raw.strip("_")
+            if len(token) >= 2:
+                tokens.add(token)
+        return tokens
+
+    async def _build_lexical_fallback_context(
+        self,
+        user_id: str,
+        query: str,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        scan_limit = max(LEXICAL_FALLBACK_SCAN_LIMIT, limit * 8)
+        messages = await self.get_last_n_messages(user_id, n=scan_limit)
+        if not messages:
+            return []
+
+        query_tokens = self._tokenize_for_lexical_fallback(query)
+        scored: List[Dict[str, Any]] = []
+        total = max(1, len(messages))
+
+        for idx, message in enumerate(messages):
+            content = str(message.get("content") or "").strip()
+            if not content:
+                continue
+
+            overlap = 0
+            if query_tokens:
+                overlap = len(query_tokens & self._tokenize_for_lexical_fallback(content))
+                if overlap <= 0:
+                    continue
+
+            recency_boost = ((idx + 1) / total) * 0.02
+            lexical_score = (overlap / max(1, len(query_tokens))) if query_tokens else 0.0
+            score = round(float(min(1.0, lexical_score + recency_boost)), 4)
+            scored.append(
+                {
+                    "id": message.get("id"),
+                    "role": message.get("role", "user"),
+                    "content": content,
+                    "timestamp": message.get("timestamp", ""),
+                    "score": score,
+                    "_similarity_score": score,
+                    "_fallback_source": "lexical_overlap",
+                }
+            )
+
+        if scored:
+            scored.sort(key=lambda item: self._extract_context_score(item), reverse=True)
+            return scored[:limit]
+
+        # No lexical overlap: still return recent turns so prompt context isn't empty.
+        recent_take = max(1, min(limit, LEXICAL_FALLBACK_RECENT_LIMIT))
+        recent_messages = messages[-recent_take:]
+        fallback_context: List[Dict[str, Any]] = []
+        for rank, message in enumerate(reversed(recent_messages)):
+            content = str(message.get("content") or "").strip()
+            if not content:
+                continue
+            score = round(max(0.001, 0.01 - (rank * 0.001)), 4)
+            fallback_context.append(
+                {
+                    "id": message.get("id"),
+                    "role": message.get("role", "user"),
+                    "content": content,
+                    "timestamp": message.get("timestamp", ""),
+                    "score": score,
+                    "_similarity_score": score,
+                    "_fallback_source": "recent_tail",
+                }
+            )
+        return fallback_context
+
+    def _schedule_embedding_warmup_task(self) -> None:
+        existing = self.__class__._embedding_warmup_task
+        if existing and not existing.done():
+            return
+
+        async def _warmup() -> None:
+            from app.services.embedding_services import embedding_service
+
+            started = time.perf_counter()
+            vector = await embedding_service.embed_single("context retrieval warmup")
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            logger.info(
+                "🔥 Embedding warmup task complete (dim=%d, elapsed_ms=%.0f)",
+                len(vector),
+                elapsed_ms,
+            )
+
+        task = asyncio.create_task(_warmup())
+        task.add_done_callback(lambda t: _on_background_done(t, "embedding_warmup_task"))
+        self.__class__._embedding_warmup_task = task
+
+    @staticmethod
     def _extract_context_score(item: Dict[str, Any]) -> float:
         score = item.get("score", item.get("_similarity_score", 0))
         try:
@@ -563,11 +807,12 @@ class ChatCacheMixin(BaseCacheManager):
         threshold: float,
         fast_lane: bool,
     ) -> str:
-        normalized = self._normalize_query(query)
-        rounded_threshold = round(float(threshold), 4)
-        return (
-            f"{user_id}:{normalized}:k{max(1, int(top_k))}:"
-            f"t{rounded_threshold:.4f}:f{int(bool(fast_lane))}"
+        return user_context_key(
+            user_id=user_id,
+            query_hash=query_hash(query),
+            top_k=top_k,
+            threshold=threshold,
+            fast_lane=fast_lane,
         )
 
     def _get_query_context_cache(
@@ -652,7 +897,13 @@ class ChatCacheMixin(BaseCacheManager):
         limit = max(1, top_k)
         deadline = (t0 + (effective_budget_ms / 1000.0)) if effective_budget_ms > 0 else None
         embed_budget_ms = max(1, int(getattr(settings, "STREAM_CONTEXT_EMBED_BUDGET_MS", 35)))
+        if fast_lane and vector_client:
+            # 35ms is too aggressive for local sentence-transformer inference on CPU.
+            embed_budget_ms = max(embed_budget_ms, DESKTOP_CONTEXT_EMBED_MIN_BUDGET_MS)
         search_budget_ms = max(1, int(getattr(settings, "STREAM_CONTEXT_SEARCH_BUDGET_MS", 55)))
+        if fast_lane and vector_client:
+            # Keep desktop search practical for local LanceDB + pandas conversion costs.
+            search_budget_ms = max(search_budget_ms, DESKTOP_CONTEXT_SEARCH_MIN_BUDGET_MS)
         min_results = max(1, int(getattr(settings, "STREAM_CONTEXT_MIN_RESULTS", 3)))
         low_score_threshold = float(getattr(settings, "STREAM_CONTEXT_LOW_SCORE", 0.22))
         cache_empty_results = self._context_cache_empty_results_enabled()
@@ -746,10 +997,10 @@ class ChatCacheMixin(BaseCacheManager):
             else:
                 embed_started = time.perf_counter()
                 try:
-                    embed_timeout = _stage_timeout_seconds(embed_budget_ms)
+                    # Use stage budget directly for desktop embedding. Remaining global
+                    # budget can be consumed by model warmups and starve retrieval.
+                    embed_timeout = (embed_budget_ms / 1000.0) if embed_budget_ms > 0 else None
                     if embed_timeout is not None:
-                        if embed_timeout <= 0:
-                            raise asyncio.TimeoutError
                         query_vector = await asyncio.wait_for(
                             embedding_service.embed_single(current_query),
                             timeout=max(0.01, embed_timeout),
@@ -762,6 +1013,10 @@ class ChatCacheMixin(BaseCacheManager):
                         embed_budget_ms,
                     )
                     timeout_stage = "embed"
+                    query_vector = None
+                except Exception as exc:
+                    logger.warning("⚠️ Desktop context embedding failed: %s", exc)
+                    timeout_stage = "embed_error"
                     query_vector = None
                 embed_ms = (time.perf_counter() - embed_started) * 1000
                 if query_vector is not None:
@@ -780,6 +1035,40 @@ class ChatCacheMixin(BaseCacheManager):
                     )
                 )
                 write_task.add_done_callback(lambda t: _on_background_done(t, "add_message_with_embedding(no_vector)"))
+
+                # Timeout/error in vector path should not force empty context.
+                fallback_context = await self._build_lexical_fallback_context(
+                    user_id=user_id,
+                    query=current_query,
+                    limit=limit,
+                )
+                if fallback_context:
+                    timeout_stage = f"{timeout_stage}_fallback" if timeout_stage != "none" else "lexical_fallback"
+                    self._set_query_context_cache(
+                        user_id=user_id,
+                        query=normalized_query,
+                        context=fallback_context,
+                        pinecone_flag=False,
+                        top_k=limit,
+                        threshold=threshold,
+                        fast_lane=fast_lane,
+                    )
+                    elapsed = (time.perf_counter() - t0) * 1000
+                    logger.info(
+                        "⚡ Context retrieval: total_ms=%.0f cache_hit=false cache_status=%s embed_ms=%.0f "
+                        "search_ms=0 result_count=%d top_score=%.4f timeout_stage=%s fast_lane=%s budget_ms=%s",
+                        elapsed,
+                        cache_status,
+                        embed_ms,
+                        len(fallback_context),
+                        _top_score(fallback_context),
+                        timeout_stage,
+                        fast_lane,
+                        effective_budget_ms,
+                    )
+                    self._schedule_embedding_warmup_task()
+                    return fallback_context, False
+
                 if cache_empty_results and timeout_stage == "none":
                     self._set_query_context_cache(
                         user_id=user_id,
@@ -801,6 +1090,7 @@ class ChatCacheMixin(BaseCacheManager):
                     fast_lane,
                     effective_budget_ms,
                 )
+                self._schedule_embedding_warmup_task()
                 return [], False
 
             # ✅ Persist message in background using SAME embedding (avoids re-embed)
@@ -827,23 +1117,30 @@ class ChatCacheMixin(BaseCacheManager):
             ) -> tuple[List[Dict[str, Any]], bool, float]:
                 search_started = time.perf_counter()
                 timed_out = False
-                search_coro = vector_client.search_chat_messages(
-                    user_id=user_id,
-                    query_vector=query_vector,
-                    limit=search_limit,
-                    threshold=search_threshold,
-                    candidate_limit=search_candidate_limit,
-                )
                 try:
-                    search_timeout = _stage_timeout_seconds(stage_budget)
+                    # Search timeout uses stage budget directly. Remaining global budget is
+                    # often exhausted by embedding and can starve retrieval completely.
+                    search_timeout = (stage_budget / 1000.0) if stage_budget > 0 else None
                     if search_timeout is not None:
-                        if search_timeout <= 0:
-                            raise asyncio.TimeoutError
+                        search_coro = vector_client.search_chat_messages(
+                            user_id=user_id,
+                            query_vector=query_vector,
+                            limit=search_limit,
+                            threshold=search_threshold,
+                            candidate_limit=search_candidate_limit,
+                        )
                         results = await asyncio.wait_for(
                             search_coro,
                             timeout=max(0.01, search_timeout),
                         )
                     else:
+                        search_coro = vector_client.search_chat_messages(
+                            user_id=user_id,
+                            query_vector=query_vector,
+                            limit=search_limit,
+                            threshold=search_threshold,
+                            candidate_limit=search_candidate_limit,
+                        )
                         results = await search_coro
                 except asyncio.TimeoutError:
                     timed_out = True
@@ -890,6 +1187,20 @@ class ChatCacheMixin(BaseCacheManager):
                     context = _dedup_and_sort(context)
             else:
                 context = _dedup_and_sort(context)
+
+            if not context:
+                fallback_context = await self._build_lexical_fallback_context(
+                    user_id=user_id,
+                    query=current_query,
+                    limit=limit,
+                )
+                if fallback_context:
+                    context = _dedup_and_sort(fallback_context)
+                    timeout_stage = (
+                        f"{timeout_stage}_fallback" if timeout_stage != "none" else "lexical_fallback"
+                    )
+                if timeout_stage.startswith("search"):
+                    self._schedule_embedding_warmup_task()
 
             elapsed = (time.perf_counter() - t0) * 1000
             if context or (cache_empty_results and timeout_stage == "none"):
@@ -955,6 +1266,39 @@ class ChatCacheMixin(BaseCacheManager):
             context = await search_task
         
         if not context or len(context) == 0:
+            fallback_context = await self._build_lexical_fallback_context(
+                user_id=user_id,
+                query=current_query,
+                limit=limit,
+            )
+            if fallback_context:
+                context = _dedup_and_sort(fallback_context)
+                timeout_stage = (
+                    f"{timeout_stage}_fallback" if timeout_stage != "none" else "lexical_fallback"
+                )
+                elapsed = (time.perf_counter() - t0) * 1000
+                logger.info(
+                    "⚡ Context retrieval: total_ms=%.0f cache_hit=false cache_status=MISS embed_ms=0 "
+                    "search_ms=%.0f result_count=%d top_score=%.4f timeout_stage=%s fast_lane=%s budget_ms=%s",
+                    elapsed,
+                    elapsed,
+                    len(context),
+                    _top_score(context),
+                    timeout_stage,
+                    fast_lane,
+                    effective_budget_ms,
+                )
+                self._set_query_context_cache(
+                    user_id=user_id,
+                    query=normalized_query,
+                    context=context,
+                    pinecone_flag=False,
+                    top_k=limit,
+                    threshold=threshold,
+                    fast_lane=fast_lane,
+                )
+                return context, False
+
             if effective_budget_ms > 0 or fast_lane:
                 logger.info(
                     "⚡ Context retrieval: budget mode empty result; skipping Pinecone fallback "

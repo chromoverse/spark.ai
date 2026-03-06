@@ -46,11 +46,14 @@ class TTSManager:
             except Exception as e:
                 logger.warning(f"⚠️ TTS: Groq engine unavailable: {e}")
             
-        # Priority 1: Kokoro
-        kokoro = KokoroEngine()
-        if await kokoro.is_available():
-            self.engines.append(kokoro)
-            logger.info("✅ TTS: Kokoro engine enabled")
+        # Priority 1: Kokoro (desktop only; production is cloud-first).
+        if settings.environment == "DESKTOP":
+            kokoro = KokoroEngine()
+            if await kokoro.is_available():
+                self.engines.append(kokoro)
+                logger.info("✅ TTS: Kokoro engine enabled")
+        else:
+            logger.info("⏭️ TTS: skipping Kokoro init (env=%s)", settings.environment)
             
         # Priority 2: Edge TTS
         edge = EdgeEngine()

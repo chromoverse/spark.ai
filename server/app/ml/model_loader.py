@@ -2,9 +2,10 @@
 Model Loader - Handles downloading and loading all ML models
 """
 import logging
-from pathlib import Path
+import shutil
 from typing import Dict, Any, Optional
-from app.ml.config import MODELS_CONFIG, DEVICE
+from app.ml.config import MODELS_CONFIG, apply_runtime_device_to_models
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ class ModelLoader:
     _instance = None
     _models: Dict[str, Any] = {}
     _initialized = False
+    _runtime_device: Optional[str] = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -22,22 +24,63 @@ class ModelLoader:
     
     def __init__(self):
         if not self._initialized:
-            logger.info(f"🔧 Initializing ModelLoader with device: {DEVICE}")
+            # Runtime device is intentionally resolved lazily on first desktop load.
+            self.MODELS_CONFIG = MODELS_CONFIG
+            self.DEVICE = "cpu"
+            logger.info("🔧 Initializing ModelLoader (lazy device resolution)")
             self._initialized = True
+
+    @staticmethod
+    def _local_models_enabled() -> bool:
+        return settings.environment == "DESKTOP"
+
+    def _ensure_runtime_device(self) -> str:
+        """
+        Resolve runtime device once per process in desktop mode and stamp model configs.
+        """
+        if not self._local_models_enabled():
+            self._runtime_device = "cpu"
+            self.DEVICE = "cpu"
+            return "cpu"
+
+        if self._runtime_device is None:
+            self._runtime_device = apply_runtime_device_to_models()
+            self.DEVICE = self._runtime_device
+            logger.info("🧭 ML runtime device resolved once: %s", self._runtime_device)
+        return self._runtime_device
     
     def download_model(self, model_key: str) -> bool:
         """Download a model if not already present"""
+        if not self._local_models_enabled():
+            logger.info(
+                "⏭️ Skipping model download for '%s' (env=%s)",
+                model_key,
+                settings.environment,
+            )
+            return False
+
+        self._ensure_runtime_device()
         config = MODELS_CONFIG.get(model_key)
         if not config:
             logger.error(f"❌ Model '{model_key}' not found in config")
             return False
         
         model_path = config["path"]
-        
-        # Check if already downloaded
+
+        # Check if already downloaded (with format-aware validation for sentence-transformers).
         if model_path.exists() and any(model_path.iterdir()):
-            logger.info(f"✅ Model '{model_key}' already exists at {model_path}")
-            return True
+            if config["type"] == "sentence-transformer":
+                if self._is_sentence_transformer_model_dir(model_path):
+                    logger.info(f"✅ Model '{model_key}' already exists at {model_path}")
+                    return True
+                logger.warning(
+                    "⚠️ Model '%s' directory exists but is invalid/incomplete. Re-downloading...",
+                    model_key,
+                )
+                shutil.rmtree(model_path, ignore_errors=True)
+            else:
+                logger.info(f"✅ Model '{model_key}' already exists at {model_path}")
+                return True
         
         logger.info(f"⬇️  Downloading model '{model_key}' from {config['name']}...")
         
@@ -46,15 +89,13 @@ class ModelLoader:
             
             if config["type"] == "sentence-transformer":
                 from sentence_transformers import SentenceTransformer
-                # Download directly to the target path
+                # Download from hub and persist in canonical sentence-transformers format.
                 model = SentenceTransformer(config["name"], cache_folder=str(model_path.parent))
-                # Move to exact location if needed
-                import shutil
-                source = model_path.parent / config["name"].replace("/", "--")
-                if source.exists() and source != model_path:
-                    if model_path.exists():
-                        shutil.rmtree(model_path)
-                    shutil.move(str(source), str(model_path))
+                model.save(str(model_path))
+                if not self._is_sentence_transformer_model_dir(model_path):
+                    raise RuntimeError(
+                        f"Downloaded sentence-transformer artifacts are incomplete at {model_path}"
+                    )
                 
             elif config["type"] == "whisper":
                 from faster_whisper import WhisperModel
@@ -77,9 +118,29 @@ class ModelLoader:
         except Exception as e:
             logger.error(f"❌ Failed to download model '{model_key}': {e}")
             return False
+
+    @staticmethod
+    def _is_sentence_transformer_model_dir(model_path) -> bool:
+        try:
+            required = [
+                model_path / "modules.json",
+                model_path / "1_Pooling" / "config.json",
+            ]
+            return all(path.exists() for path in required)
+        except Exception:
+            return False
     
     def load_model(self, model_key: str, force_reload: bool = False) -> Optional[Any]:
         """Load a model into memory"""
+        if not self._local_models_enabled():
+            logger.debug(
+                "Skipping local model load for '%s' (env=%s)",
+                model_key,
+                settings.environment,
+            )
+            return None
+
+        device = self._ensure_runtime_device()
         if not force_reload and model_key in self._models:
             logger.info(f"♻️  Using cached model '{model_key}'")
             return self._models[model_key]
@@ -88,6 +149,8 @@ class ModelLoader:
         if not config:
             logger.error(f"❌ Model '{model_key}' not found in config")
             return None
+
+        config["device"] = device
         
         model_path = config["path"]
         
@@ -137,6 +200,11 @@ class ModelLoader:
     
     def download_all_models(self) -> bool:
         """Download all configured models"""
+        if not self._local_models_enabled():
+            logger.info("⏭️ Skipping all model downloads (env=%s)", settings.environment)
+            return True
+
+        self._ensure_runtime_device()
         logger.info("⬇️  Downloading all models...")
         success = True
         
@@ -153,6 +221,11 @@ class ModelLoader:
     
     def load_all_models(self) -> bool:
         """Load all configured models"""
+        if not self._local_models_enabled():
+            logger.info("⏭️ Skipping all local model loads (env=%s)", settings.environment)
+            return True
+
+        self._ensure_runtime_device()
         logger.info("📦 Loading all models...")
         success = True
         
@@ -173,6 +246,10 @@ class ModelLoader:
     
     def warmup_models(self):
         """Warmup models with dummy data to avoid cold start"""
+        if not self._local_models_enabled():
+            logger.info("⏭️ Skipping model warmup (env=%s)", settings.environment)
+            return
+
         logger.info("🔥 Warming up models...")
         
         try:

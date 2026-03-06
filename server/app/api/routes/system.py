@@ -8,9 +8,9 @@ router = APIRouter(tags=["System"])
 
 
 def _load_ml_runtime():
-    from app.ml import DEVICE, DEVICE_PROFILE, MODELS_CONFIG, model_loader
+    from app.ml import MODELS_CONFIG, get_device, get_device_profile, model_loader
 
-    return DEVICE, DEVICE_PROFILE, MODELS_CONFIG, model_loader
+    return get_device(), get_device_profile(), MODELS_CONFIG, model_loader
 
 
 @router.get("/")

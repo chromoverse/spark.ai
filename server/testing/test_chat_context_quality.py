@@ -53,6 +53,37 @@ class _TestChatCache(ChatCacheMixin):
         return None
 
 
+class _RemoteTestChatCache(ChatCacheMixin):
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
+    def __init__(self, semantic_results=None, recent_messages=None):
+        self.client = object()
+        self.vector_client = None
+        self._semantic_results = list(semantic_results or [])
+        self._recent_messages = list(recent_messages or [])
+        self._query_context_cache = OrderedDict()
+        self._query_emb_cache = OrderedDict()
+
+    async def _ensure_client(self):
+        return None
+
+    def _get_vector_client(self):
+        return None
+
+    async def semantic_search_messages(self, *args, **kwargs):
+        return list(self._semantic_results)
+
+    async def get_last_n_messages(self, user_id: str, n: int = 10):
+        return self._recent_messages[:n]
+
+    async def add_message_with_embedding(self, *args, **kwargs):
+        return None
+
+    async def _append_message_to_local_and_cloud(self, *args, **kwargs):
+        return None
+
+
 class ChatContextQualityTests(unittest.IsolatedAsyncioTestCase):
     def _fake_embedding_module(self, sleep_s: float = 0.0):
         mod = types.ModuleType("app.services.embedding_services")
@@ -195,6 +226,33 @@ class ChatContextQualityTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(vector_client.calls), 2)
         self.assertGreaterEqual(len(context), 1)
         self.assertEqual(context[0]["content"], "main detail")
+
+    async def test_fast_lane_remote_empty_search_uses_lexical_fallback(self):
+        cache = _RemoteTestChatCache(
+            semantic_results=[],
+            recent_messages=[
+                {
+                    "role": "user",
+                    "content": "sing me song using meow meow meow",
+                    "timestamp": "2026-03-06T12:26:22.511985+05:45",
+                }
+            ],
+        )
+
+        with patch("app.cache.chat_cache.settings.STREAM_CONTEXT_CACHE_EMPTY_RESULTS", False):
+            context, is_pinecone = await cache.process_query_and_get_context(
+                user_id="u1",
+                current_query="meow song",
+                budget_ms=100,
+                top_k=5,
+                threshold=0.08,
+                fast_lane=True,
+            )
+
+        self.assertFalse(is_pinecone)
+        self.assertGreaterEqual(len(context), 1)
+        self.assertIn("meow", context[0]["content"])
+        self.assertEqual(context[0].get("_fallback_source"), "lexical_overlap")
 
 
 if __name__ == "__main__":

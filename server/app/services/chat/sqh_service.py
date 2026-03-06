@@ -288,7 +288,7 @@ async def process_sqh(
             execution_engine.set_server_executor(get_server_executor())
         
         # ✅ UNIFIED: Setup based on environment
-        if settings.environment == "desktop":
+        if settings.environment == "DESKTOP":
             # Desktop: inject client tool executor for direct execution
             if not execution_engine.client_tool_executor:
                 logger.info("🔧 [SQH] Injecting client tool executor (desktop mode)...")

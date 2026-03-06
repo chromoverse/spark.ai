@@ -3,33 +3,67 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
-    from windows_toasts import (
-        InteractableWindowsToaster,
-        Toast,
-        ToastActivatedEventArgs,
-        ToastButton,
-        ToastDismissedEventArgs,
-    )
-
-    TOASTS_AVAILABLE = True
-except ImportError:
-    TOASTS_AVAILABLE = False
-    logger.warning("windows-toasts not installed. Desktop notifications will fallback to logs.")
+_toaster: Optional[Any] = None
+_toasts_checked = False
+_toasts_available = False
+_InteractableWindowsToaster: Any = None
+_Toast: Any = None
+_ToastButton: Any = None
 
 
-_toaster: Optional["InteractableWindowsToaster"] = None
+def _toasts_enabled() -> bool:
+    try:
+        from app.config import settings
+
+        return bool(getattr(settings, "DESKTOP_TOASTS_ENABLED", True))
+    except Exception:
+        return True
 
 
-def _get_toaster() -> "InteractableWindowsToaster":
+def _ensure_toasts_loaded() -> bool:
+    global _toasts_checked
+    global _toasts_available
+    global _InteractableWindowsToaster
+    global _Toast
+    global _ToastButton
+
+    if _toasts_checked:
+        return _toasts_available
+
+    _toasts_checked = True
+    if not _toasts_enabled():
+        logger.info("Desktop toast notifications disabled by config.")
+        _toasts_available = False
+        return False
+
+    try:
+        from windows_toasts import InteractableWindowsToaster, Toast, ToastButton
+    except Exception as exc:
+        logger.warning(
+            "windows-toasts unavailable. Desktop notifications will fallback to logs: %s",
+            exc,
+        )
+        _toasts_available = False
+        return False
+
+    _InteractableWindowsToaster = InteractableWindowsToaster
+    _Toast = Toast
+    _ToastButton = ToastButton
+    _toasts_available = True
+    return True
+
+
+def _get_toaster() -> Optional[Any]:
     global _toaster
-    if _toaster is None and TOASTS_AVAILABLE:
-        _toaster = InteractableWindowsToaster("SPARK AI Assistant")
-    return _toaster  # type: ignore[return-value]
+    if not _ensure_toasts_loaded():
+        return None
+    if _toaster is None:
+        _toaster = _InteractableWindowsToaster("SPARK AI Assistant")
+    return _toaster
 
 
 def _run_callback_async(callback: Callable[[str, str, bool], Awaitable[None]], user_id: str, task_id: str, approved: bool) -> None:
@@ -46,20 +80,20 @@ def show_approval_notification(
     on_response_callback: Optional[Callable[[str, str, bool], Awaitable[None]]] = None,
 ) -> None:
     """Show desktop approval toast; falls back to auto-approve if unavailable."""
-    if not TOASTS_AVAILABLE:
+    toaster = _get_toaster()
+    if toaster is None:
         logger.info("[NOTIFICATION] Approval needed for %s: %s", task_id, question)
         if on_response_callback:
             _run_callback_async(on_response_callback, user_id, task_id, True)
         return
 
     try:
-        toaster = _get_toaster()
-        toast = Toast()
+        toast = _Toast()
         toast.text_fields = ["SPARK AI - Approval Required", question]
-        toast.AddAction(ToastButton("Accept", arguments=f"approve|{user_id}|{task_id}"))
-        toast.AddAction(ToastButton("Deny", arguments=f"deny|{user_id}|{task_id}"))
+        toast.AddAction(_ToastButton("Accept", arguments=f"approve|{user_id}|{task_id}"))
+        toast.AddAction(_ToastButton("Deny", arguments=f"deny|{user_id}|{task_id}"))
 
-        def on_activated(event: ToastActivatedEventArgs) -> None:
+        def on_activated(event: Any) -> None:
             args = event.arguments or ""
             parts = args.split("|")
             if len(parts) != 3:
@@ -69,7 +103,7 @@ def show_approval_notification(
             if on_response_callback:
                 asyncio.run(on_response_callback(uid, tid, approved))
 
-        def on_dismissed(_: ToastDismissedEventArgs) -> None:
+        def on_dismissed(_: Any) -> None:
             if on_response_callback:
                 asyncio.run(on_response_callback(user_id, task_id, False))
 
@@ -84,12 +118,12 @@ def show_approval_notification(
 
 def show_info_notification(title: str, message: str) -> None:
     """Show non-interactive desktop toast; logs when unavailable."""
-    if not TOASTS_AVAILABLE:
+    toaster = _get_toaster()
+    if toaster is None:
         logger.info("[NOTIFICATION] %s: %s", title, message)
         return
     try:
-        toaster = _get_toaster()
-        toast = Toast()
+        toast = _Toast()
         toast.text_fields = [title, message]
         toaster.show_toast(toast)
     except Exception as exc:

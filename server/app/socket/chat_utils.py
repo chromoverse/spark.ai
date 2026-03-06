@@ -13,12 +13,10 @@ import asyncio
 from app.socket.server import sio
 from app.socket.user_utils import get_user_from_session, serialize_response
 from app.socket.utils import emit_server_status
-from app.services import (
-    parallel_chat_execution,
-    stt_session_manager,
-    transcribe_audio,
-    tts_service,
-)
+from app.services.chat import parallel_chat_execution
+from app.services.stt_session_manager import stt_session_manager
+from app.services.stt_services import transcribe_audio
+from app.services.tts_services import tts_service
 
 logger = logging.getLogger(__name__)
 

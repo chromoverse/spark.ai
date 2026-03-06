@@ -6,18 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.api_wrapper import include_api_routes
 from app.config import settings
-from app.socket import init_socket, sio, socket_app, connected_users
+from app.socket import init_socket, socket_app
 from app.db.mongo import connect_to_mongo, close_mongo_connection
 from app.db.indexes import create_indexes
 from app.kernel.observability.log_setup import configure_structured_logging
 from app.kernel.runtime.kernel_runtime import get_kernel_runtime
-from app.agent.execution_gateway import get_task_emitter
+from app.startup_state import startup_state
 
 # Import auto-initializer system
 import app.startup_registrations  # noqa: F401  — registers all init functions
 from app.auto_initializer import run_all as run_all_initializers
-
-from app.socket.task_handler import register_task_events
 
 # Configure logging
 configure_structured_logging()
@@ -34,14 +32,6 @@ async def lifespan(app: FastAPI):
     # Run all registered startup initializers (cache, keys, TTS, Agent System, etc.)
     await run_all_initializers()
     
-    # Wire socket handler to task emitter (for production mode)
-    # This must happen after init_socket() below, or we register events now
-    # register_task_events needs sio instance which is imported from app.socket
-    # Let's register socket events
-    task_handler = await register_task_events(sio, connected_users)
-    get_task_emitter().set_socket_handler(task_handler)
-    logger.info("🔌 Socket task handler wired to emitter")
-    
     # Connect to database
     await connect_to_mongo()
     await create_indexes()
@@ -52,25 +42,23 @@ async def lifespan(app: FastAPI):
     init_socket()
     logger.info("✅ WebSocket initialized")
 
-    # Import ML runtime only after dependency bootstrap has completed.
-    from app.ml import model_loader, embedding_worker, DEVICE
-    app.state.model_loader = model_loader
-    app.state.embedding_worker = embedding_worker
-    app.state.ml_device = DEVICE
-    
-    # Load ML models
-    logger.info("=" * 60)
-    logger.info(f" Loading ML models on device: {DEVICE}")
-    logger.info("=" * 60)
-    
-    success = model_loader.load_all_models()
-    
-    if success:
-        logger.info(" All ML models loaded successfully")
-        model_loader.warmup_models()
-        logger.info(" Models warmed up - no cold start!")
-    else:
-        logger.warning("⚠️  Some ML models failed to load - check logs")
+    # ML runtime state is initialized by startup registrations.
+    app.state.model_loader = startup_state.model_loader
+    app.state.embedding_worker = startup_state.embedding_worker
+    app.state.ml_device = startup_state.ml_device
+    app.state.embedding_ready = startup_state.embedding_ready
+    app.state.pinecone_service = startup_state.pinecone_service
+    app.state.pinecone_ready = startup_state.pinecone_ready
+
+    if settings.environment == "PRODUCTION":
+        logger.info("Pinecone startup warmup ready=%s", bool(app.state.pinecone_ready))
+
+    if app.state.model_loader is None:
+        logger.info("Skipping local ML model initialization (env=%s)", settings.environment)
+    elif settings.environment == "DESKTOP" and not bool(app.state.embedding_ready):
+        logger.warning(
+            "⚠️ Embedding startup prime not ready; query-context will use fallback until warm."
+        )
     
 
     
@@ -90,6 +78,13 @@ async def lifespan(app: FastAPI):
     await get_kernel_runtime().stop()
     logger.info(" Kernel runtime stopped")
 
+    # Stop cache sync background workers.
+    try:
+        from app.cache import sync_manager
+        await sync_manager.stop()
+    except Exception as exc:
+        logger.debug("Sync manager shutdown skipped: %s", exc)
+
     # Cleanup database
     await close_mongo_connection()
     logger.info(" Database disconnected")
@@ -101,7 +96,10 @@ async def lifespan(app: FastAPI):
         embedding_worker.shutdown()
     if model_loader is not None:
         model_loader.unload_all_models()
-    logger.info(" ML models unloaded")
+    if model_loader is not None or embedding_worker is not None:
+        logger.info(" ML models unloaded")
+    else:
+        logger.info(" ML teardown skipped (not initialized)")
     
     # Cleanup other resources
     from app.utils.async_utils import cleanup_executor

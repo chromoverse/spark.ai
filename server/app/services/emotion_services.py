@@ -5,7 +5,8 @@ Single source of truth for emotion analysis
 import logging
 from typing import Union, List, Dict, Any
 
-from app.ml import model_loader, DEVICE
+from app.ml import get_device, model_loader
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,12 @@ class EmotionService:
     
     def __init__(self):
         self.model = None
-        self._ensure_model_loaded()
     
     def _ensure_model_loaded(self):
         """Ensure emotion model is loaded"""
+        if settings.environment != "DESKTOP":
+            return
+
         if self.model is None:
             self.model = model_loader.get_model("emotion")
             if self.model is None:
@@ -214,7 +217,7 @@ class EmotionService:
         """Get service status"""
         return {
             "available": self.model is not None,
-            "device": DEVICE
+            "device": get_device(),
         }
 
 

@@ -239,6 +239,66 @@ class StreamServiceLatencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(query_context[0]["content"], "main data")
         self.assertAlmostEqual(query_context[0]["score"], 0.88, places=2)
 
+    async def test_stream_recovers_query_context_from_recent_when_retrieval_empty(self):
+        async def _stream_tokens(*args, **kwargs):
+            yield "Recovered from recent messages."
+
+        captured: dict[str, object] = {}
+
+        def _capture_prompt(**kwargs):
+            captured["query_context"] = kwargs.get("query_context")
+            return "Mock prompt"
+
+        recent_messages = [
+            {
+                "role": "user",
+                "content": "Hey Spark, sing song using meow meow and try to impress your CEO using your humor.",
+                "timestamp": "2026-03-06T12:30:15.559988+05:45",
+            },
+            {
+                "role": "assistant",
+                "content": "Sure, here's a meow-inspired song.",
+                "timestamp": "2026-03-06T12:30:18.124406+05:45",
+            },
+        ]
+
+        with (
+            patch.object(stream_module, "load_user", return_value={"language": "en"}),
+            patch.object(stream_module, "get_last_n_messages", return_value=recent_messages),
+            patch.object(
+                stream_module,
+                "process_query_and_get_context",
+                AsyncMock(return_value=([], False)),
+            ),
+            patch.object(stream_module, "_build_stream_prompt", side_effect=_capture_prompt),
+            patch.object(stream_module, "_iter_stream_with_fast_model", _stream_tokens),
+            patch.object(settings, "STREAM_USE_LLM_STREAM", True),
+            patch.object(settings, "STREAM_USE_COMPACT_PROMPT", True),
+            patch.object(settings, "STREAM_CHUNK_MIN_WORDS", 2),
+            patch.object(settings, "STREAM_CHUNK_SOFT_WORDS", 3),
+            patch.object(settings, "STREAM_CHUNK_MAX_WORDS", 12),
+            patch.object(settings, "STREAM_CONTEXT_TOP_K", 8),
+            patch.object(settings, "environment", "PRODUCTION"),
+        ):
+            service = StreamService()
+            tts = _FakeTTSService()
+            ok = await service.stream_chat_with_tts(
+                query="meow meow song",
+                user_id="u1",
+                sio=_FakeSocket(),
+                sid="sid1",
+                tts_service=tts,
+                gender="female",
+            )
+
+        self.assertTrue(ok)
+        self.assertIn("query_context", captured)
+        query_context = captured["query_context"]
+        self.assertIsInstance(query_context, list)
+        self.assertGreaterEqual(len(query_context), 1)
+        self.assertIn("meow", query_context[0]["content"].lower())
+        self.assertTrue(str(query_context[0].get("_fallback_source", "")).startswith("stream_recent_"))
+
 
 if __name__ == "__main__":
     unittest.main()

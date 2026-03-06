@@ -1,6 +1,7 @@
 import logging
 import time
 import asyncio
+import inspect
 import lancedb
 import pyarrow as pa
 import numpy as np
@@ -10,6 +11,7 @@ from datetime import datetime
 from collections import OrderedDict
 import uuid
 from app.config import settings
+from app.ml.config import MODELS_CONFIG
 
 
 logger = logging.getLogger(__name__)
@@ -22,14 +24,38 @@ class UserQuerySchema:
     """Schema for chat messages with embeddings"""
     @staticmethod
     def get_schema():
+        vector_dim = _get_embedding_dimension()
         return pa.schema([
             pa.field("id", pa.string()),
             pa.field("user_id", pa.string()),
             pa.field("role", pa.string()),
             pa.field("content", pa.string()),
             pa.field("timestamp", pa.string()),
-            pa.field("vector", pa.list_(pa.float32(), 1024))  # BGE-M3 dimension
+            pa.field("vector", pa.list_(pa.float32(), vector_dim))
         ])
+
+
+def _get_embedding_dimension() -> int:
+    config = MODELS_CONFIG.get("embedding", {})
+    try:
+        return int(config.get("dimension", 1024))
+    except Exception:
+        return 1024
+
+
+def _get_table_vector_dimension(table: Any) -> Optional[int]:
+    try:
+        schema = table.schema
+        if schema is None:
+            return None
+        field = schema.field("vector")
+        vector_type = field.type
+        # FixedSizeListType exposes list_size.
+        if hasattr(vector_type, "list_size"):
+            return int(vector_type.list_size)
+        return None
+    except Exception:
+        return None
 
 
 class LanceDBManager:
@@ -73,14 +99,27 @@ class LanceDBManager:
     def _init_tables(self):
         """Ensure required tables exist and return persistent handle"""
         existing_tables = self.db.table_names()
+        expected_dim = _get_embedding_dimension()
         
         if "user_queries" not in existing_tables:
             schema = UserQuerySchema.get_schema()
             self.db.create_table("user_queries", schema=schema)
             logger.info("Created 'user_queries' table")
-        
+
+        table = self.db.open_table("user_queries")
+        existing_dim = _get_table_vector_dimension(table)
+        if existing_dim is not None and existing_dim != expected_dim:
+            logger.warning(
+                "LanceDB vector dimension mismatch (table=%s, expected=%s). Recreating table.",
+                existing_dim,
+                expected_dim,
+            )
+            schema = UserQuerySchema.get_schema()
+            self.db.create_table("user_queries", schema=schema, mode="overwrite")
+            table = self.db.open_table("user_queries")
+
         # ✅ Open ONCE and keep the handle
-        return self.db.open_table("user_queries")
+        return table
 
     def _ensure_vector_index(self):
         """
@@ -92,26 +131,40 @@ class LanceDBManager:
 
         def _create() -> None:
             try:
-                # Newer LanceDB signature.
-                self._table.create_index(
-                    vector_column_name="vector",
-                    metric="cosine",
-                    replace=False,
-                )
+                if hasattr(self._table, "count_rows") and int(self._table.count_rows()) == 0:
+                    logger.debug("LanceDB index deferred: table is empty")
+                    return
+            except Exception:
+                # Keep going even if row counting is unavailable on this version.
+                pass
+
+            # Build kwargs from runtime signature so we don't pass unsupported args.
+            params = set(inspect.signature(self._table.create_index).parameters)
+            kwargs: Dict[str, Any] = {}
+            if "vector_column_name" in params:
+                kwargs["vector_column_name"] = "vector"
+            if "metric" in params:
+                kwargs["metric"] = "cosine"
+            elif "distance_type" in params:
+                kwargs["distance_type"] = "cosine"
+            if "index_type" in params:
+                # Avoid PQ training requirements for small local datasets.
+                kwargs["index_type"] = "IVF_FLAT"
+            if "replace" in params:
+                kwargs["replace"] = False
+
+            try:
+                self._table.create_index(**kwargs)
                 return
             except TypeError:
-                # Older signature fallback.
-                pass
+                # Some versions reject a subset of kwargs (for example replace).
+                kwargs.pop("replace", None)
+                self._table.create_index(**kwargs)
+                return
             except Exception as exc:
                 if "already exists" in str(exc).lower():
                     return
-                # Continue to legacy fallback.
-
-            try:
-                self._table.create_index("vector")
-            except Exception as exc:
-                if "already exists" not in str(exc).lower():
-                    raise
+                raise
 
         try:
             _create()
@@ -167,6 +220,8 @@ class LanceDBManager:
             
             # ✅ Uses persistent table handle, off event loop thread
             await asyncio.to_thread(self._table.add, data)
+            if not self._index_ready:
+                self._ensure_vector_index()
             
             # ✅ Invalidate cache on write
             self._invalidate_cache(user_id)
@@ -295,13 +350,16 @@ class LanceDBManager:
             
             for row in rows:
                 l2_distance = float(row.get("_distance", 2.0))
-                stored_vec = row.get("vector", [])
+                stored_vec = row.get("vector")
                 cosine_similarity = max(0.0, 1.0 - (l2_distance ** 2) / 2.0)
-                if stored_vec:
+                if stored_vec is not None:
                     try:
-                        stored_np = np.array(stored_vec, dtype=np.float32)
-                        stored_norm = np.linalg.norm(stored_np)
-                        if stored_norm > 0:
+                        stored_np = np.asarray(stored_vec, dtype=np.float32)
+                        if stored_np.size > 0:
+                            stored_norm = np.linalg.norm(stored_np)
+                        else:
+                            stored_norm = 0.0
+                        if stored_norm > 0.0:
                             stored_np = stored_np / stored_norm
                             cosine_similarity = float(np.dot(query_normalized_np, stored_np))
                             cosine_similarity = max(0.0, min(1.0, cosine_similarity))

@@ -1,4 +1,34 @@
+import os
+from pathlib import Path
+
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+
+def _read_env_file_map() -> dict[str, str]:
+    """
+    Minimal `.env` parser for fallback lookups when alias fields resolve empty.
+    """
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _fallback_env_value(*keys: str) -> str:
+    env_map = _read_env_file_map()
+    for key in keys:
+        value = (os.getenv(key, "") or env_map.get(key, "")).strip()
+        if value:
+            return value
+    return ""
 
 
 class Settings(BaseSettings):
@@ -6,7 +36,7 @@ class Settings(BaseSettings):
     # App Core
     # =========================
     port: int
-    environment: str = "desktop"  # "desktop" | "development" | "production"
+    environment: str = "DESKTOP"  # "DESKTOP" | "DEVELOPMENT" | "PRODUCTION"
     db_name: str = "spark"
     default_lang: str = "en"
     ai_name: str = "SPARK"
@@ -25,12 +55,74 @@ class Settings(BaseSettings):
         origins = [item.strip() for item in raw.split(",") if item.strip()]
         return origins or ["*"]
 
+    @field_validator("environment", mode="before")
+    @classmethod
+    def _normalize_environment(cls, value: str) -> str:
+        normalized = str(value or "").strip().upper()
+        if normalized in {"DESKTOP", "DEVELOPMENT", "PRODUCTION"}:
+            return normalized
+        raise ValueError(
+            "environment must be one of: DESKTOP, DEVELOPMENT, PRODUCTION"
+        )
+
+    @model_validator(mode="after")
+    def _hydrate_cloudflare_alias_fallbacks(self) -> "Settings":
+        """
+        AliasChoices prefers the first present env var even when it's empty.
+        Fill from legacy aliases when primary values are blank.
+        """
+        if not (self.cloudflare_api_token or "").strip():
+            self.cloudflare_api_token = _fallback_env_value(
+                "CLOUDFLARE_API_TOKEN",
+                "CLOUDFLARE_API_KEY",
+            )
+
+        if not (self.cloudflare_account_id or "").strip():
+            self.cloudflare_account_id = _fallback_env_value(
+                "CLOUDFLARE_ACCOUNT_ID",
+                "CLOUDFLARE_USER_ID",
+            )
+
+        if not (self.cloudflare_kv_namespace_id or "").strip():
+            self.cloudflare_kv_namespace_id = _fallback_env_value(
+                "CLOUDFLARE_KV_NAMESPACE_ID",
+                "CLOUDFLARE_NAMESPACE_ID",
+            )
+
+        return self
+
     # =========================
     # Data Stores / Cache
     # =========================
     mongo_uri: str
     upstash_redis_rest_url: str
     upstash_redis_rest_token: str
+    cloudflare_api_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_API_KEY"),
+    )
+    cloudflare_api_email: str = Field(
+        default="",
+        validation_alias=AliasChoices("CLOUDFLARE_API_EMAIL", "CLOUDFLARE_EMAIL"),
+    )
+    cloudflare_account_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_USER_ID"),
+    )
+    cloudflare_kv_namespace_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "CLOUDFLARE_KV_NAMESPACE_ID",
+            "CLOUDFLARE_NAMESPACE_ID",
+        ),
+    )
+    cloudflare_kv_timeout_ms: int = 3000
+    cache_prod_backend: str = "cloudflare_kv"
+    cache_upstash_fallback_enabled: bool = True
+    cache_sync_enabled: bool = True
+    cache_sync_batch_size: int = 100
+    cache_sync_flush_interval_ms: int = 2000
+    cache_recent_messages_limit: int = 50
 
     # =========================
     # AI Provider Keys + Models
@@ -72,6 +164,7 @@ class Settings(BaseSettings):
     TOOLS_CDN_ENABLED: bool = False
     TOOLS_CDN_MANIFEST_URL: str = ""
     TOOLS_CDN_PACKAGE_URL: str = ""
+    DESKTOP_TOASTS_ENABLED: bool = True
 
     # =========================
     # Runtime Dependency Bootstrap
@@ -120,10 +213,20 @@ class Settings(BaseSettings):
     FINAL_STATE_SUMMARY_TTS_ENABLED: bool = True
     FINAL_STATE_SUMMARY_LLM_TIMEOUT_MS: int = 1000
     SQH_PLAN_RETRY_ATTEMPTS: int = 1
+    pinecone_integrated_embeddings_prod: bool = True
+
 
     class Config:
         env_file = ".env"
+        env_ignore_empty = True
         extra = "ignore"
+
+    @property
+    def CLOUDFLARE_API_KEY(self) -> str:
+        """
+        Backward-compatible alias for legacy codepaths expecting uppercase setting.
+        """
+        return self.cloudflare_api_token
 
 
 settings = Settings()  # type: ignore
