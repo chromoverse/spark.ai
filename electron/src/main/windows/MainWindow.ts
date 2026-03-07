@@ -1,11 +1,16 @@
 import { BrowserWindow, app } from "electron";
 import * as path from "node:path";
-import { getPreloadPath, getUIPath } from "../utils/pathResolver.js";
+import { getPreloadPath } from "../utils/pathResolver.js";
 import { isDevMode } from "../utils/isDevMode.js";
 import { ipcWebContentSend } from "../utils/ipcUtils.js";
+import type { Rectangle } from "electron";
 
 export class MainWindow {
   private window: BrowserWindow | null = null;
+  private onboardingWindowSnapshot: {
+    bounds: Rectangle;
+    wasMaximized: boolean;
+  } | null = null;
 
   constructor() {
     this.window = new BrowserWindow({
@@ -93,5 +98,57 @@ export class MainWindow {
 
   public close() {
     this.window?.close();
+  }
+
+  public setOnboardingWindowMode(
+    mode: "IMMERSIVE" | "MAXIMIZED" | "DEFAULT",
+  ) {
+    if (!this.window) return;
+
+    if (mode === "IMMERSIVE") {
+      if (!this.onboardingWindowSnapshot) {
+        this.onboardingWindowSnapshot = {
+          bounds: this.window.getBounds(),
+          wasMaximized: this.window.isMaximized(),
+        };
+      }
+
+      if (this.window.isMinimized()) {
+        this.window.restore();
+      }
+
+      this.window.maximize();
+      this.window.setFullScreen(true);
+      this.window.focus();
+      return;
+    }
+
+    if (mode === "MAXIMIZED") {
+      if (this.window.isMinimized()) {
+        this.window.restore();
+      }
+
+      this.window.setFullScreen(false);
+      this.window.maximize();
+      this.window.focus();
+      return;
+    }
+
+    this.window.setFullScreen(false);
+
+    if (this.onboardingWindowSnapshot?.wasMaximized) {
+      this.window.maximize();
+    } else {
+      if (this.window.isMaximized()) {
+        this.window.unmaximize();
+      }
+
+      if (this.onboardingWindowSnapshot?.bounds) {
+        this.window.setBounds(this.onboardingWindowSnapshot.bounds);
+      }
+    }
+
+    this.onboardingWindowSnapshot = null;
+    this.window.focus();
   }
 }

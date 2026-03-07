@@ -1,7 +1,12 @@
 import { X, Minus, Square, Copy } from "lucide-react";
 import React, { useEffect, useState } from "react";
 
-export default function MinimalHeader() {
+interface Props {
+  removeMinimize?: boolean;
+  removeMaximize?: boolean;
+}
+
+export default function MinimalHeader({ removeMinimize = false, removeMaximize = false }: Props) {
   const [isMainWindowMaximized, setIsMainWindowMaximized] =
     useState<boolean>(false);
 
@@ -20,30 +25,34 @@ export default function MinimalHeader() {
   console.log("Frame State main", isMainWindowMaximized);
 
   return (
-    <div className="w-full min-h-8 bg-white/5 webkit-drag-drag flex justify-end items-center text-white">
+    <div className="w-full min-h-10 webkit-drag-drag flex justify-end items-center text-white">
       {/* Right Section */}
-      <div className="flex items-center justify-center gap-0 h-10 webkit-drag-nodrag">
-        <ul
-          onClick={() => window.electronApi.sendFrameAction("MINIMIZE")}
-          className="hover:bg-white/10 h-full flex items-center justify-center w-12"
-        >
-          <Minus strokeWidth={0.75} size={20} />
-        </ul>
-        <ul
-          onClick={() => window.electronApi.sendFrameAction("MAXIMIZE")}
-          className="hover:bg-white/10 h-full flex items-center justify-center w-12"
-        >
-          {isMainWindowMaximized ? (
-            <Copy strokeWidth={0.75} size={15} />
-          ) : (
-            <Square strokeWidth={0.75} size={15} />
-          )}
-        </ul>
+      <div className="flex items-center justify-center gap-0 webkit-drag-nodrag">
+        {!removeMinimize && (
+          <ul
+            onClick={() => window.electronApi.sendFrameAction("MINIMIZE")}
+            className="hover:bg-white/10 h-full flex items-center justify-center mx-3"
+          >
+            <Minus strokeWidth={0.75} size={16} />
+          </ul>
+        )}
+        {!removeMaximize && (
+          <ul
+            onClick={() => window.electronApi.sendFrameAction("MAXIMIZE")}
+            className="hover:bg-white/10 h-full flex items-center justify-center mx-3 "
+          >
+            {isMainWindowMaximized ? (
+              <Copy strokeWidth={0.75} size={11} />
+            ) : (
+              <Square strokeWidth={0.75} size={11} />
+            )}
+          </ul>
+        )}
         <ul
           onClick={() => window.electronApi.sendFrameAction("CLOSE")}
-          className="hover:bg-red-500 h-full flex items-center justify-center w-12"
+          className="hover:bg-red-500 h-full flex items-center justify-center mx-3"
         >
-          <X strokeWidth={0.75} size={20} />
+          <X strokeWidth={0.55} size={16} />
         </ul>
       </div>
     </div>

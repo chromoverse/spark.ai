@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useMediaDevices } from "@/hooks/useMediaDevices";
@@ -8,14 +8,11 @@ import {
   setIsDevicesAlreadyFetchedTrue,
   setSelectedCameraDeviceId,
   setSelectedInputDeviceId,
-  setSelectedOutputDeviceId,
 } from "@/store/features/device/deviceSlice";
 import {
   toggleMicrophoneListening,
   toggleCameraOn,
 } from "@/store/features/localState/localSlice";
-import { tokenRefreshManager } from "@/lib/auth/tokenRefreshManager";
-import { getCurrentUser } from "@/store/features/auth/authThunks";
 import Welcome from "@/pages/Welcome";
 import { useAuthRouting } from "@/hooks/useAuthRouting";
 
@@ -25,7 +22,6 @@ export default function AppInitializer({
   children: React.ReactNode;
 }) {
   const dispatch = useAppDispatch();
-  const navigate = useNavigate();
   const location = useLocation();
 
   const { isLoading, isAuthenticated } = useAuthRouting();

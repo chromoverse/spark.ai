@@ -45,7 +45,7 @@ export function useAuthRouting() {
       authTriggered.current = true;
       
       // Ensure we don't dispatch Main Window actions from the Secondary (AI Panel) Window
-      if (location.pathname !== "/ai-panel") {
+      if (location.pathname !== "/ai-panel" && location.pathname !== "/auth/onboarding") {
         if (isAuthenticated) {
           console.log("🚀 Auth Success - Switching to AI Panel");
           window.electronApi.onAuthSuccess();
@@ -57,7 +57,7 @@ export function useAuthRouting() {
           window.electronApi.onAuthFailure();
         }
       } else {
-        console.log("🚀 Auth checks passed for Secondary Window");
+        console.log("🚀 Auth checks intentionally paused on AI Panel / onboarding");
       }
     }
   }, [isLoading, isAuthenticated, navigate, location.pathname]);

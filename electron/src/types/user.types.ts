@@ -2,7 +2,9 @@ export interface IUser {
   _id: string;
 
   username?: string;
+  fullName?: string;
   email?: string;
+  gender?: string;
 
   createdAt: string;
   lastLogin?: string;
@@ -18,8 +20,13 @@ export interface IUser {
   acceptsPromotionalEmails: boolean;
   language: string;
   aiGender: string;
+  aiVoiceName?: string;
   theme: Partial<ThemePreferences>;
   notificationsEnabled: boolean;
+
+  geminiApiKeys: string[];
+  openrouterApiKeys: string[];
+  groqApiKeys: string[];
 
   categoriesOfInterest: string[];
   favoriteBrands: string[];

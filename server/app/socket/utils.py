@@ -144,7 +144,8 @@ def get_online_count() -> int:
 async def stream_tts_to_client(
     text: str,
     user_id: Optional[str] = None,
-    gender: str = "female"
+    gender: str = "female",
+    voice_name: Optional[str] = None,
 ) -> bool:
     """
     Stream TTS audio to connected client(s) via socket.
@@ -161,6 +162,7 @@ async def stream_tts_to_client(
         text:     The text to convert to speech and stream
         user_id:  Target a specific user (None = broadcast to all)
         gender:   Voice gender for TTS ("male" or "female")
+        voice_name: Explicit TTS voice ID when available
     
     Returns:
         True if TTS was streamed, False if fell back to print
@@ -207,7 +209,11 @@ async def stream_tts_to_client(
             logger.info(f"📡 Streaming TTS to socket {sid}")
             asyncio.create_task(
                 tts_service.stream_to_socket(
-                    sio=sio, sid=sid, text=text, gender=gender
+                    sio=sio,
+                    sid=sid,
+                    text=text,
+                    gender=gender,
+                    voice=voice_name,
                 )
             )
 
@@ -266,7 +272,8 @@ def fire_socket_event(
 def fire_tts(
     text: str,
     user_id: Optional[str] = None,
-    gender: str = "female"
+    gender: str = "female",
+    voice_name: Optional[str] = None,
 ) -> None:
     """
     Non-blocking TTS streaming — fire-and-forget.
@@ -277,6 +284,7 @@ def fire_tts(
         text:     Text to speak
         user_id:  Target user (None = broadcast)
         gender:   Voice gender
+        voice_name: Explicit TTS voice ID when available
     
     Usage:
         from app.socket.utils import fire_tts
@@ -292,7 +300,12 @@ def fire_tts(
     
     async def _safe_tts():
         try:
-            result = await stream_tts_to_client(text=text, user_id=user_id, gender=gender)
+            result = await stream_tts_to_client(
+                text=text,
+                user_id=user_id,
+                gender=gender,
+                voice_name=voice_name,
+            )
             if result:
                 logger.info(f"✅ fire_tts succeeded for user={user_id}")
             else:

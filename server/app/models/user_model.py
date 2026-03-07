@@ -8,7 +8,9 @@ from . import CamelModel
 # Base model with ALL fields (for internal use/database)
 class UserModel(CamelModel):
     username: Optional[str] = None
+    full_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    gender : Optional[str] = None
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_login: Optional[datetime] = None
@@ -20,10 +22,10 @@ class UserModel(CamelModel):
     refresh_token: Optional[str] = None  # ⚠️ never expose
 
     # --- API KEYS ---
-    gemini_api_key: Optional[str] = None
-    openrouter_api_key: Optional[str] = None
-    is_gemini_api_quota_reached: bool = False
-    is_openrouter_api_quota_reached: bool = False
+    gemini_api_keys: List[str] = Field(default_factory=list)
+    openrouter_api_keys: List[str] = Field(default_factory=list)
+    groq_api_keys: List[str] = Field(default_factory=list)
+    
 
     # --- UTM / Tracking ---
     advertiser_partner: Optional[str] = None
@@ -35,6 +37,7 @@ class UserModel(CamelModel):
     accepts_promotional_emails: bool = False
     language: str = "en"
     ai_gender: str = "male"
+    ai_voice_name: Optional[str] = None
     theme: str = "light"
     notifications_enabled: bool = True
 
@@ -61,14 +64,20 @@ class UserModel(CamelModel):
 # update user model
 class UserUpdateQuery(BaseModel):
     username: Optional[str] = None
+    full_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    gender: Optional[str] = None
 
     gemini_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
+    gemini_api_keys: Optional[List[str]] = None
+    openrouter_api_keys: Optional[List[str]] = None
+    groq_api_keys: Optional[List[str]] = None
 
     accepts_promotional_emails: Optional[bool] = None
     language: Optional[str] = None
     ai_gender: Optional[str] = None
+    ai_voice_name: Optional[str] = None
     theme: Optional[str] = None
     notifications_enabled: Optional[bool] = None
 
@@ -90,7 +99,9 @@ class UserUpdateQuery(BaseModel):
 class UserResponse(CamelModel):
     id: str = Field(..., alias="_id")
     username: Optional[str] = None
+    full_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    gender: Optional[str] = None
 
     created_at: datetime
     last_login: Optional[datetime] = None
@@ -106,8 +117,13 @@ class UserResponse(CamelModel):
     accepts_promotional_emails: bool
     language: str
     ai_gender: str
+    ai_voice_name: Optional[str] = None
     theme: str
     notifications_enabled: bool
+
+    gemini_api_keys: List[str] = Field(default_factory=list)
+    openrouter_api_keys: List[str] = Field(default_factory=list)
+    groq_api_keys: List[str] = Field(default_factory=list)
 
     categories_of_interest: List[str]
     favorite_brands: List[str]

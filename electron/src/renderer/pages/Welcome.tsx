@@ -1,12 +1,8 @@
-import AuthLanderBg from "../../assets/AuthLanderBg.jpg";
 import SparkIcon from "../../assets/icon.png";
 import MinimalHeader from "@/components/local/MinimalHeader";
 import { useNavigate } from "react-router-dom";
 import { RippleButton } from "@/components/ui/ripple-button";
-
-import Icon from "../../assets/icon.png"
-import {toast} from "sonner"
-import { useAppDispatch } from "@/store/hooks";
+import LiquidGradientBackground from "@/components/local/LiquidGradientBackground";
 
 
 
@@ -32,7 +28,7 @@ function DescribeApp() {
   );
 }
 
-function EntranceMaker() {
+function AuthMaker() {
   const navigate = useNavigate();
   return (
     <div className="webkit-drag-nodrag mt-60 flex flex-col gap-4 items-center">
@@ -44,7 +40,8 @@ function EntranceMaker() {
       </RippleButton>
       <span className="text-gray-800 text-[15px]">
         Already have an Account?{" "}
-        <span onClick={() => navigate("/auth/sign-in")} className="hover:underline cursor-pointer">Login</span>
+        <span onClick={() => navigate("/auth/onboarding")} className="hover:underline cursor-pointer">OnBoarding</span>
+        {/* <span onClick={() => navigate("/auth/sign-in")} className="hover:underline cursor-pointer">Login</span> */}
       </span>
     </div>
   );
@@ -56,18 +53,11 @@ interface WelcomeProps {
 }
 
 export default function Welcome({ isLoading = false }: WelcomeProps) {
-  const dispatch = useAppDispatch()
   
   return (
-    <div
-      className="h-screen w-screen webkit-drag-drag select-none"
-      style={{
-        backgroundImage: `url(${AuthLanderBg})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      }}
-    >
-      <div className="w-full h-full flex items-center relative flex-col backdrop-blur-xs">
+    <div className="h-screen w-screen select-none relative overflow-hidden">
+      <LiquidGradientBackground />
+      <div className="absolute inset-0 w-full h-full flex items-center flex-col z-10">
         <MinimalHeader />
         <Title />
         <DescribeApp />
@@ -78,7 +68,7 @@ export default function Welcome({ isLoading = false }: WelcomeProps) {
              <span className="text-gray-600 font-medium">Initializing...</span>
           </div>
         ) : (
-          <EntranceMaker />
+          <AuthMaker />
         )}
 
         <span className="absolute bottom-5 text-sm text-gray-900">V.1.0.0</span>

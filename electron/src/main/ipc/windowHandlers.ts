@@ -1,3 +1,4 @@
+import { shell } from "electron";
 import { ipcMainHandle, ipcMainOn } from "../utils/ipcUtils.js";
 import { MainWindow } from "../windows/MainWindow.js";
 import { windowManager } from "../services/WindowManager.js";
@@ -23,6 +24,21 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   ipcMainHandle("isMainWindowMaximized", () =>
     mainWindow.getBrowserWindow().isMaximized(),
   );
+
+  ipcMainHandle("setOnboardingWindowMode", (_event, payload) => {
+    mainWindow.setOnboardingWindowMode(payload);
+    return { success: true };
+  });
+
+  ipcMainHandle("openExternalUrl", async (_event, url) => {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error("Unsupported URL protocol");
+    }
+
+    await shell.openExternal(parsed.toString());
+    return { success: true };
+  });
 
   ipcMainHandle("getFrameState", () => {
     return mainWindow.getBrowserWindow().isMinimized()

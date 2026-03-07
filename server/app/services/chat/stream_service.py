@@ -422,6 +422,7 @@ class StreamService:
         sid: str,
         tts_service: Any,
         gender: str = "female",
+        voice_name: Optional[str] = None,
     ) -> bool:
         request_id = uuid.uuid4().hex[:8]
         request_started = time.perf_counter()
@@ -459,6 +460,7 @@ class StreamService:
                 sio=sio,
                 sid=sid,
                 text=ack_text,
+                voice=voice_name,
                 gender=gender,
             )
             tts_dispatch_ms = (time.perf_counter() - tts_dispatch_started) * 1000
@@ -601,6 +603,7 @@ class StreamService:
                         sio=sio,
                         sid=sid,
                         text=chunk_text,
+                        voice=voice_name,
                         gender=gender,
                     )
                     emitted_chunks += 1
@@ -739,6 +742,7 @@ async def stream_chat_response(
     sid: str,
     tts_service: Any,
     gender: str = "female",
+    voice_name: Optional[str] = None,
 ) -> bool:
     """Quick helper for stream path with TTS."""
     service = StreamService()
@@ -749,6 +753,7 @@ async def stream_chat_response(
         sid=sid,
         tts_service=tts_service,
         gender=gender,
+        voice_name=voice_name,
     )
 
 
@@ -759,6 +764,7 @@ async def parallel_chat_execution(
     sid: str,
     tts_service: Any,
     gender: str = "female",
+    voice_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run stream (voice path) and chat (PQH→SQH) in parallel.
@@ -790,6 +796,7 @@ async def parallel_chat_execution(
                     sio=sio,
                     sid=sid,
                     text=spoken_text,
+                    voice=voice_name,
                     gender=gender,
                 )
                 logger.info("🗣️ Meta query spoken response emitted for %s", user_id)
@@ -809,6 +816,7 @@ async def parallel_chat_execution(
             sid=sid,
             tts_service=tts_service,
             gender=gender,
+            voice_name=voice_name,
         )
         return {
             "stream_success": stream_ok,
@@ -824,6 +832,7 @@ async def parallel_chat_execution(
                 sid=sid,
                 tts_service=tts_service,
                 gender=gender,
+                voice_name=voice_name,
             )
         except Exception as exc:
             logger.error("❌ Independent stream failed: %s", exc, exc_info=True)

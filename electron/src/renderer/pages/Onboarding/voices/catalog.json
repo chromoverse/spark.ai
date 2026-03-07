@@ -1,0 +1,58 @@
+[
+  {
+    "id": "af_heart",
+    "name": "Heart",
+    "gender": "female",
+    "languageCodes": ["en"],
+    "iconPath": "./assets/voice-female.svg",
+    "audioPath": "./assets/voice-af-heart.wav"
+  },
+  {
+    "id": "af_bella",
+    "name": "Bella",
+    "gender": "female",
+    "languageCodes": ["en"],
+    "iconPath": "./assets/voice-female.svg",
+    "audioPath": "./assets/voice-af-bella.wav"
+  },
+  {
+    "id": "af_nicole",
+    "name": "Nicole",
+    "gender": "female",
+    "languageCodes": ["en"],
+    "iconPath": "./assets/voice-female.svg",
+    "audioPath": "./assets/voice-af-nicole.wav"
+  },
+  {
+    "id": "af_sarah",
+    "name": "Sarah",
+    "gender": "female",
+    "languageCodes": ["en"],
+    "iconPath": "./assets/voice-female.svg",
+    "audioPath": "./assets/voice-af-sarah.wav"
+  },
+  {
+    "id": "am_michael",
+    "name": "Michael",
+    "gender": "male",
+    "languageCodes": ["en"],
+    "iconPath": "./assets/voice-male.svg",
+    "audioPath": "./assets/voice-am-michael.wav"
+  },
+  {
+    "id": "am_fenrir",
+    "name": "Fenrir",
+    "gender": "male",
+    "languageCodes": ["en"],
+    "iconPath": "./assets/voice-male.svg",
+    "audioPath": "./assets/voice-am-fenrir.wav"
+  },
+  {
+    "id": "am_puck",
+    "name": "Puck",
+    "gender": "male",
+    "languageCodes": ["en"],
+    "iconPath": "./assets/voice-male.svg",
+    "audioPath": "./assets/voice-am-puck.wav"
+  }
+]

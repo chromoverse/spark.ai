@@ -138,6 +138,19 @@ class VoiceSelector:
         "it": "it", "italian": "it",
         "pt": "pt", "pt-br": "pt", "portuguese": "pt",
     }
+
+    @classmethod
+    @lru_cache(maxsize=1)
+    def available_voices(cls) -> set[str]:
+        voices: set[str] = set()
+        for lang_config in cls.VOICE_MAP.values():
+            for gender in ("female", "male"):
+                voices.update(lang_config.get(gender, []))
+        return voices
+
+    @classmethod
+    def is_supported_voice(cls, voice: Optional[str]) -> bool:
+        return bool(voice and voice.strip() in cls.available_voices())
     
     @classmethod
     def get_voice(

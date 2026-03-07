@@ -1,17 +1,28 @@
-import React, { useState } from "react";
-import { ArrowLeft, Mail, Lock, CheckCircle2, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Mail, Lock, CheckCircle2 } from "lucide-react";
 import { RippleButton } from "@/components/ui/ripple-button";
-import { useNavigate } from "react-router-dom";
-import AuthLanderBg from "../../assets/AuthLanderBg.jpg";
+import { useLocation, useNavigate } from "react-router-dom";
 import axiosInstance from "@/utils/axiosConfig";
 import type { AuthResponse } from "@shared/auth.types";
-import { toast } from "sonner";
 import { useAppDispatch } from "@/store/hooks";
-import { verifyOtp } from "@/store/features/auth/authThunks";
+import { getCurrentUser } from "@/store/features/auth/authThunks";
+import LiquidGradientBackground from "@/components/local/LiquidGradientBackground";
+import type {
+  OnboardingDraft,
+  OnboardingLocationState,
+} from "./Onboarding/types";
+
+type SignUpLocationState = {
+  onboardingDraft?: OnboardingDraft;
+};
 
 function SignUp() {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useAppDispatch()
+  const onboardingDraft =
+    ((location.state as SignUpLocationState | null) ?? null)?.onboardingDraft ||
+    null;
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -63,7 +74,17 @@ function SignUp() {
        if (data.access_token && data.refresh_token) {
         await window.electronApi.saveToken("access_token", data.access_token);
         await window.electronApi.saveToken("refresh_token", data.refresh_token);
-        navigate("/");
+        await dispatch(getCurrentUser());
+      navigate("/auth/onboarding", {
+        replace: true,
+        state: onboardingDraft
+          ? ({
+              onboardingDraft,
+              skipIntro: true,
+              resumeAtReview: true,
+            } satisfies OnboardingLocationState)
+          : undefined,
+      });
       }
      } catch (error) {
        console.error("Error verifying OTP:", error);
@@ -88,19 +109,9 @@ function SignUp() {
   return (
     <div
       className="h-screen w-screen webkit-drag-drag select-none overflow-hidden flex items-center justify-center p-4 relative"
-      style={{
-        backgroundImage: `url(${AuthLanderBg})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      }}
     >
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob" />
-        <div className="absolute top-40 right-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000" />
-        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000" />
-      </div>
-
+      <LiquidGradientBackground />
+      
       <div className="w-full max-w-md relative z-10 webkit-drag-nodrag select-none">
         <div
           className="rounded-3xl shadow-2xl p-8 relative backdrop-blur-xl overflow-hidden"

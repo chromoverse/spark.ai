@@ -2,6 +2,7 @@
 
 // FrameWindowAction
 export type IFrameWindowAction = "CLOSE" | "MINIMIZE" | "MAXIMIZE";
+export type IOnboardingWindowMode = "IMMERSIVE" | "MAXIMIZED" | "DEFAULT";
 
 // Media Types handling
 export type IMediaDeviceType = "audioinput" | "audiooutput" | "videoinput";
@@ -65,6 +66,8 @@ export type IEventPayloadMapping = {
   frameWindowAction: IFrameWindowAction;
   getFrameState: IFrameWindowAction;
   isMainWindowMaximized: boolean;
+  setOnboardingWindowMode: { success: boolean };
+  openExternalUrl: { success: boolean };
 
   // Media
   getMediaDevices: IMediaDevices;
@@ -122,6 +125,10 @@ declare global {
       sendFrameAction: (payload: IFrameWindowAction) => void;
       getFrameState: () => Promise<IFrameWindowAction>;
       isMainWindowMaximized: () => Promise<boolean>;
+      setOnboardingWindowMode: (
+        payload: IOnboardingWindowMode,
+      ) => Promise<{ success: boolean }>;
+      openExternalUrl: (url: string) => Promise<{ success: boolean }>;
       onWindowMaximizeStateChange: (
         callback: (payload: boolean) => void,
       ) => () => void;

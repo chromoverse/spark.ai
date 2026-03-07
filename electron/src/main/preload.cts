@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   IEventPayloadMapping,
   IFrameWindowAction,
+  IOnboardingWindowMode,
   IDeviceUsageStatusManager,
   ISocketConnectionState,
   ISocketEventForwardPayload,
@@ -18,6 +19,9 @@ contextBridge.exposeInMainWorld("electronApi", {
     ipcSend("frameWindowAction", payload),
   getFrameState: () => ipcInvoke("getFrameState", {}),
   isMainWindowMaximized: () => ipcInvoke("isMainWindowMaximized", {}),
+  setOnboardingWindowMode: (payload: IOnboardingWindowMode) =>
+    ipcInvoke("setOnboardingWindowMode", payload),
+  openExternalUrl: (url: string) => ipcInvoke("openExternalUrl", url),
   onWindowMaximizeStateChange: (callback: (payload: boolean) => void) =>
     ipcOn("isMainWindowMaximized", callback),
 

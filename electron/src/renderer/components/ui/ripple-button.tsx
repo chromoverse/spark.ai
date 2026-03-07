@@ -17,6 +17,7 @@ export const RippleButton = React.forwardRef<HTMLButtonElement, RippleButtonProp
       rippleColor = "#ADD8E6",
       duration = "600ms",
       onClick,
+      style,
       ...props
     },
     ref
@@ -91,6 +92,7 @@ export const RippleButton = React.forwardRef<HTMLButtonElement, RippleButtonProp
           textShadow: isHovered
             ? "0 0 15px rgba(173, 216, 230, 0.8), 0 0 5px rgba(255, 255, 255, 0.5)"
             : "0 0 10px rgba(173, 216, 230, 0.5)",
+          ...style,
         }}
         {...props}
       >
@@ -125,7 +127,7 @@ export const RippleButton = React.forwardRef<HTMLButtonElement, RippleButtonProp
         </style>
 
         <div
-          className="relative z-10 text-gray-800"
+          className="relative z-10 text-inherit"
           style={{
             animation: isPressed ? "threadClick 300ms ease-out" : "none",
           }}

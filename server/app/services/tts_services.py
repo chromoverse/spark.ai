@@ -60,7 +60,12 @@ class TTSService:
             logger.error(f"❌ TTS engine warmup failed: {e}")
             return False
 
-    def select_voice(self, gender: Optional[str], lang: str = "en") -> str:
+    def select_voice(
+        self,
+        gender: Optional[str],
+        lang: str = "en",
+        preferred_voice: Optional[str] = None,
+    ) -> str:
         """
         Main public voice selector for TTS.
 
@@ -68,6 +73,9 @@ class TTSService:
         - gender: ``male`` or ``female`` (anything else falls back to language default)
         - lang: language code, defaults to English
         """
+        if VoiceSelector.is_supported_voice(preferred_voice):
+            return str(preferred_voice).strip()
+
         normalized_lang = (lang or "en").strip().lower() or "en"
         normalized_gender = (gender or "").strip().lower() if gender else None
         if normalized_gender not in {"male", "female"}:
@@ -98,7 +106,11 @@ class TTSService:
     ) -> AsyncGenerator[bytes, None]:
         """Generate audio stream — yields individual valid WAV chunks."""
         resolved_lang = (lang or "en").strip().lower() or "en"
-        resolved_voice = voice or self.select_voice(gender=gender, lang=resolved_lang)
+        resolved_voice = self.select_voice(
+            gender=gender,
+            lang=resolved_lang,
+            preferred_voice=voice,
+        )
 
         speed = 1.0
         if rate:

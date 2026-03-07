@@ -67,6 +67,7 @@ async def handle_tts_request(
         user = await load_user(user_id)
         gender = user.get("ai_gender", "").strip().lower()
         lang = user.get("language", "").strip().lower()
+        voice_name = (user.get("ai_voice_name") or "").strip() or None
         
         await emit_server_status(
             f"Loaded user preferences: gender={gender}, language={lang}",
@@ -74,7 +75,13 @@ async def handle_tts_request(
             sid
         )
         
-        logger.info(f"TTS request: user={user_id}, lang={lang}, gender={gender}")
+        logger.info(
+            "TTS request: user=%s, lang=%s, gender=%s, voice=%s",
+            user_id,
+            lang,
+            gender,
+            voice_name or "auto",
+        )
         
         # ✅ NEW: Stream AI response with TTS
         success = await stream_chat_response(
@@ -83,7 +90,8 @@ async def handle_tts_request(
             sio=sio,
             sid=sid,
             tts_service=tts_service,
-            gender=gender
+            gender=gender,
+            voice_name=voice_name,
         )
         
         if not success:
@@ -163,6 +171,7 @@ async def handle_tts_request_with_parallel_chat(
         user_id = await get_user_from_session(sid)
         user = await load_user(user_id)
         gender = user.get("ai_gender", "").strip().lower()
+        voice_name = (user.get("ai_voice_name") or "").strip() or None
         
         # Run both TTS stream and chat in parallel
         result = await parallel_chat_execution(
@@ -171,7 +180,8 @@ async def handle_tts_request_with_parallel_chat(
             sio=sio,
             sid=sid,
             tts_service=tts_service,
-            gender=gender
+            gender=gender,
+            voice_name=voice_name,
         )
         
         if result["stream_success"]:
