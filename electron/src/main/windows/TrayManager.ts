@@ -126,26 +126,29 @@ class TrayManager {
   }
 
   private sendMediaToggleToRenderer(type: "MIC" | "CAMERA") {
-    const targetWebContents = this.getActiveWebContents();
-    if (targetWebContents) {
-      ipcWebContentSend("onTrayMediaToggle", targetWebContents, { type });
+    const targets = this.getAllRendererWebContents();
+    for (const target of targets) {
+      ipcWebContentSend("onTrayMediaToggle", target, { type });
     }
   }
 
   private sendDeviceSelectToRenderer(type: "MIC" | "CAMERA", deviceId: string) {
-    const targetWebContents = this.getActiveWebContents();
-    if (targetWebContents) {
-      ipcWebContentSend("onTrayDeviceSelect", targetWebContents, { type, deviceId });
+    const targets = this.getAllRendererWebContents();
+    for (const target of targets) {
+      ipcWebContentSend("onTrayDeviceSelect", target, { type, deviceId });
     }
   }
 
-  private getActiveWebContents() {
-    // Prefer AI Panel if it's open
-    const secondaryWin = windowManager.getSecondaryWindow()?.getBrowserWindow();
-    if (secondaryWin && secondaryWin.isVisible()) {
-      return secondaryWin.webContents;
+  private getAllRendererWebContents() {
+    const targets = [];
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      targets.push(this.mainWindow.webContents);
     }
-    return this.mainWindow?.webContents;
+    const secondaryWin = windowManager.getSecondaryWindow()?.getBrowserWindow();
+    if (secondaryWin && !secondaryWin.isDestroyed()) {
+      targets.push(secondaryWin.webContents);
+    }
+    return targets;
   }
 
   private toggleMainWindow() {

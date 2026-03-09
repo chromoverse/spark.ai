@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowLeft, Mail, Lock, CheckCircle2 } from "lucide-react";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { useLocation, useNavigate } from "react-router-dom";
-import axiosInstance from "@/utils/axiosConfig";
+import axiosInstance, { type ApiResponse } from "@/utils/axiosConfig";
 import type { AuthResponse } from "@shared/auth.types";
 import { useAppDispatch } from "@/store/hooks";
 import { getCurrentUser } from "@/store/features/auth/authThunks";
@@ -11,6 +11,7 @@ import type {
   OnboardingDraft,
   OnboardingLocationState,
 } from "./Onboarding/types";
+import { toast } from "sonner";
 
 type SignUpLocationState = {
   onboardingDraft?: OnboardingDraft;
@@ -55,6 +56,9 @@ function SignUp() {
       setStep(2);
     } catch (error) {
       console.error("Error registering:", error);
+      // 
+      const errorMessage = error instanceof Error ? error.message : (error as any)?.error?.message || "Error registering. Please try again.";
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +70,7 @@ function SignUp() {
     }
 
      try {
-       const data : AuthResponse= await axiosInstance.post("/api/v1/auth/verify-otp", {
+       const data : AuthResponse= await axiosInstance.post("/auth/verify-otp", {
          email,
          otp,
        });

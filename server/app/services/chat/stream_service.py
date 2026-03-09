@@ -22,8 +22,6 @@ from app.cache import add_message, load_user, get_last_n_messages, process_query
 from app.config import settings
 from app.prompts import stream_prompt
 
-import json
-
 logger = logging.getLogger(__name__)
 _USER_LANG_CACHE: Dict[str, str] = {}
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
@@ -73,7 +71,8 @@ _INTERNAL_CONTEXT_TOKENS = {
     "workflow",
     "execution",
 }
-DESKTOP_CONTEXT_WAIT_TIMEOUT_MS = 1000
+# Hard cap only for non-fast-lane desktop requests.
+DESKTOP_CONTEXT_WAIT_TIMEOUT_MS = 300
 _SENTENCE_BREAK_RE = re.compile(r'(?<!\.)(?<!…)[.!?]["\')\]]?\s+')
 _CLAUSE_BREAK_RE = re.compile(r'[,;:\u2014]\s+')
 _STREAM_CONTEXT_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
@@ -87,6 +86,14 @@ def _on_background_done(task: asyncio.Task[Any], label: str) -> None:
         return
     except Exception as exc:
         logger.debug("Background task '%s' failed: %s", label, exc)
+
+
+async def _emit_stream_event(sio: Any, sid: str, event: str, payload: Dict[str, Any]) -> None:
+    """Best-effort stream lifecycle emit that never interrupts main flow."""
+    try:
+        await sio.emit(event, payload, to=sid)
+    except Exception as exc:
+        logger.debug("Stream lifecycle emit failed event=%s sid=%s err=%s", event, sid, exc)
 
 
 def _is_live_or_tool_intent(query: str) -> bool:
@@ -124,7 +131,7 @@ def _fallback_ack_text(lang: str) -> str:
         return "ठीक है, अभी करता हूँ।"
     if lang == "ne":
         return "हुन्छ, अहिले गर्छु।"
-    return "Got it, working on that now."
+    return "Got it Sir, working on it."
 
 
 def _extract_chat_answer_text(chat_result: Any) -> str:
@@ -423,13 +430,67 @@ class StreamService:
         tts_service: Any,
         gender: str = "female",
         voice_name: Optional[str] = None,
+        latency_trace: Optional[Dict[str, Any]] = None,
     ) -> bool:
         request_id = uuid.uuid4().hex[:8]
         request_started = time.perf_counter()
+        stream_started_epoch_ms = time.time() * 1000.0
+        latency_trace = latency_trace or {}
+        speech_end_ts_ms = int(latency_trace.get("speech_end_ts_ms") or 0)
+        stt_ready_ms = float(latency_trace.get("stt_ready_ms") or 0.0)
+
+        async def _emit_latency_metrics(
+            *,
+            first_llm_token_ms: Optional[float],
+            first_tts_dispatch_ms: Optional[float],
+            context_ms: float,
+            total_ms: float,
+            emitted_chunks: int,
+            chars: int,
+            success: bool,
+            error: Optional[str] = None,
+        ) -> None:
+            speech_to_first_tts_ms: Optional[float] = None
+            if speech_end_ts_ms > 0 and first_tts_dispatch_ms is not None:
+                speech_to_first_tts_ms = max(
+                    0.0,
+                    (stream_started_epoch_ms + float(first_tts_dispatch_ms))
+                    - float(speech_end_ts_ms),
+                )
+
+            payload: Dict[str, Any] = {
+                "requestId": request_id,
+                "success": success,
+                "sttReadyMs": round(stt_ready_ms, 1) if stt_ready_ms > 0 else None,
+                "speechToFirstTtsMs": round(speech_to_first_tts_ms, 1)
+                if speech_to_first_tts_ms is not None
+                else None,
+                "firstLlmTokenMs": round(first_llm_token_ms, 1)
+                if first_llm_token_ms is not None
+                else None,
+                "firstTtsDispatchMs": round(first_tts_dispatch_ms, 1)
+                if first_tts_dispatch_ms is not None
+                else None,
+                "contextMs": round(context_ms, 1),
+                "totalMs": round(total_ms, 1),
+                "emittedChunks": emitted_chunks,
+                "chars": chars,
+            }
+            if error:
+                payload["error"] = error
+            await _emit_stream_event(sio, sid, "latency-metrics", payload)
+
+        async def _emit_ai_end(success: bool, error: Optional[str] = None) -> None:
+            payload: Dict[str, Any] = {"requestId": request_id, "success": success}
+            if error:
+                payload["error"] = error
+            await _emit_stream_event(sio, sid, "ai-end", payload)
+
         query = (query or "").strip()
         if not query:
             logger.warning("⚠️ Empty query received in stream_chat_with_tts")
             return False
+        await _emit_stream_event(sio, sid, "ai-start", {"requestId": request_id})
 
         gate_started = time.perf_counter()
         live_or_tool = _is_live_or_tool_intent(query)
@@ -478,6 +539,17 @@ class StreamService:
             assistant_task.add_done_callback(
                 lambda t: _on_background_done(t, "add_message(fast_ack_assistant)")
             )
+            await _emit_ai_end(success=success, error=None if success else "tts_stream_failed")
+            await _emit_latency_metrics(
+                first_llm_token_ms=None,
+                first_tts_dispatch_ms=tts_dispatch_ms,
+                context_ms=0.0,
+                total_ms=total_ms,
+                emitted_chunks=1 if success else 0,
+                chars=len(ack_text),
+                success=success,
+                error=None if success else "tts_stream_failed",
+            )
             return success
 
         # Conversational path: await user/recent and bounded query-context.
@@ -486,6 +558,7 @@ class StreamService:
             50,
             int(getattr(settings, "STREAM_CONTEXT_BUDGET_MS", settings.STREAM_CONTEXT_TARGET_MS)),
         )
+        fast_lane = True
         user_task = asyncio.create_task(load_user(user_id))
         recent_task = asyncio.create_task(get_last_n_messages(user_id, n=10))
         context_task = asyncio.create_task(
@@ -503,10 +576,12 @@ class StreamService:
             user_details = await user_task
         except Exception as exc:
             logger.error("❌ [Stream] Failed to load user details: %s", exc, exc_info=True)
+            await _emit_ai_end(success=False, error="user_load_failed")
             return False
 
         if not user_details:
             logger.error("❌ [Stream] User %s not found", user_id)
+            await _emit_ai_end(success=False, error="user_not_found")
             return False
         _remember_user_language(user_id, user_details)
 
@@ -519,7 +594,7 @@ class StreamService:
         context_started = time.perf_counter()
         context_timeout_ms = context_budget_ms
         context_top_k = max(1, int(getattr(settings, "STREAM_CONTEXT_TOP_K", 8)))
-        if settings.environment == "DESKTOP":
+        if settings.environment == "DESKTOP" and not fast_lane:
             context_timeout_ms = max(context_timeout_ms, DESKTOP_CONTEXT_WAIT_TIMEOUT_MS)
         try:
             result_context, _ = await asyncio.wait_for(
@@ -558,8 +633,6 @@ class StreamService:
                 _safe_score(item)
                 for item in query_context
             )
-        print("Recent Context +===========================", json.dumps(recent_context, indent=2))    
-        print("QUery Context +===========================", json.dumps(query_context, indent=2))    
         logger.info(
             "🧠 [Stream] request_id=%s context_ms=%.0f context_results=%d top_context_score=%.4f budget_ms=%s",
             request_id,
@@ -642,6 +715,12 @@ class StreamService:
 
                     buffer += token
                     full_response += token
+                    await _emit_stream_event(
+                        sio,
+                        sid,
+                        "ai-token",
+                        {"requestId": request_id, "token": token},
+                    )
 
                     while True:
                         min_words, soft_words, max_words = _stream_chunk_thresholds(
@@ -666,6 +745,12 @@ class StreamService:
                 )
                 full_response = (llm_result or "").strip()
                 if full_response:
+                    await _emit_stream_event(
+                        sio,
+                        sid,
+                        "ai-token",
+                        {"requestId": request_id, "token": full_response},
+                    )
                     await _enqueue_chunk(full_response)
         except Exception as exc:
             stream_error = exc
@@ -687,16 +772,40 @@ class StreamService:
                 )
                 full_response = (fallback_result or "").strip()
                 if full_response:
+                    await _emit_stream_event(
+                        sio,
+                        sid,
+                        "ai-token",
+                        {"requestId": request_id, "token": full_response},
+                    )
                     await _enqueue_chunk(full_response)
             except Exception as exc:
                 logger.error("❌ [Stream] request_id=%s LLM fallback failed: %s", request_id, exc, exc_info=True)
                 consumer_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await consumer_task
+                await _emit_ai_end(success=False, error="llm_fallback_failed")
+                total_ms = (time.perf_counter() - request_started) * 1000
+                await _emit_latency_metrics(
+                    first_llm_token_ms=first_llm_token_ms,
+                    first_tts_dispatch_ms=first_tts_dispatch_ms,
+                    context_ms=context_ms,
+                    total_ms=total_ms,
+                    emitted_chunks=emitted_chunks,
+                    chars=len(full_response),
+                    success=False,
+                    error="llm_fallback_failed",
+                )
                 return False
 
         if not full_response.strip() and produced_chunks == 0:
             fallback_chunk_text = _fallback_ack_text(lang)
+            await _emit_stream_event(
+                sio,
+                sid,
+                "ai-token",
+                {"requestId": request_id, "token": fallback_chunk_text},
+            )
             await _enqueue_chunk(fallback_chunk_text)
 
         await queue.put(None)
@@ -730,6 +839,17 @@ class StreamService:
                     request_id,
                     exc,
                 )
+        await _emit_ai_end(success=tts_success, error=None if tts_success else "tts_stream_failed")
+        await _emit_latency_metrics(
+            first_llm_token_ms=first_llm_token_ms,
+            first_tts_dispatch_ms=first_tts_dispatch_ms,
+            context_ms=context_ms,
+            total_ms=total_ms,
+            emitted_chunks=emitted_chunks,
+            chars=len(full_response),
+            success=tts_success,
+            error=None if tts_success else "tts_stream_failed",
+        )
         return tts_success
 
 
@@ -743,6 +863,7 @@ async def stream_chat_response(
     tts_service: Any,
     gender: str = "female",
     voice_name: Optional[str] = None,
+    latency_trace: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Quick helper for stream path with TTS."""
     service = StreamService()
@@ -754,6 +875,7 @@ async def stream_chat_response(
         tts_service=tts_service,
         gender=gender,
         voice_name=voice_name,
+        latency_trace=latency_trace,
     )
 
 
@@ -765,6 +887,7 @@ async def parallel_chat_execution(
     tts_service: Any,
     gender: str = "female",
     voice_name: Optional[str] = None,
+    latency_trace: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Run stream (voice path) and chat (PQH→SQH) in parallel.
@@ -817,6 +940,7 @@ async def parallel_chat_execution(
             tts_service=tts_service,
             gender=gender,
             voice_name=voice_name,
+            latency_trace=latency_trace,
         )
         return {
             "stream_success": stream_ok,
@@ -833,6 +957,7 @@ async def parallel_chat_execution(
                 tts_service=tts_service,
                 gender=gender,
                 voice_name=voice_name,
+                latency_trace=latency_trace,
             )
         except Exception as exc:
             logger.error("❌ Independent stream failed: %s", exc, exc_info=True)

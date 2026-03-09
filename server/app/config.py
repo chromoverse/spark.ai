@@ -120,8 +120,12 @@ class Settings(BaseSettings):
     cache_prod_backend: str = "cloudflare_kv"
     cache_upstash_fallback_enabled: bool = True
     cache_sync_enabled: bool = True
+    cache_sync_mode: str = "background"  # "background" | "startup_once"
     cache_sync_batch_size: int = 100
     cache_sync_flush_interval_ms: int = 2000
+    cache_sync_message_batch_size: int = 10
+    cache_sync_startup_max_batches: int = 50
+    cache_sync_close_after_startup: bool = True
     cache_recent_messages_limit: int = 50
 
     # =========================

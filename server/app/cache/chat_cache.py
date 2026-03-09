@@ -169,15 +169,9 @@ class ChatCacheMixin(BaseCacheManager):
                 logger.debug(f"✅ Message added to both SQLite + LanceDB: [{role}] {content[:50]}...")
 
                 if bool(getattr(settings, "cache_sync_enabled", True)):
-                    # Desktop local-first: enqueue core conversation state for cloud sync.
+                    # Desktop local-first: queue sync when unsynced message batch threshold is reached.
                     try:
-                        recent_messages = await kv_client.get_messages(
-                            user_id,
-                            limit=self._recent_messages_limit(),
-                        )
-                        asyncio.create_task(
-                            get_sync_manager().enqueue_recent_messages(user_id, recent_messages)
-                        )
+                        asyncio.create_task(get_sync_manager().enqueue_recent_messages_if_needed(user_id))
                     except Exception as exc:
                         logger.debug("Failed to enqueue recent_messages sync: %s", exc)
                 return
@@ -234,6 +228,12 @@ class ChatCacheMixin(BaseCacheManager):
                     if result:
                         success_count += 1
                     await asyncio.sleep(0.001)
+
+                if bool(getattr(settings, "cache_sync_enabled", True)):
+                    try:
+                        asyncio.create_task(get_sync_manager().enqueue_recent_messages_if_needed(user_id))
+                    except Exception as exc:
+                        logger.debug("Failed to enqueue recent_messages sync after batch write: %s", exc)
                 
                 logger.info(f"✅ Batch added {success_count}/{len(messages)} messages to both storages")
                 return success_count

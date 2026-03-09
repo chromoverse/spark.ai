@@ -41,6 +41,10 @@ class UserModel(CamelModel):
     theme: str = "light"
     notifications_enabled: bool = True
 
+    # --- Quota Flags ---
+    is_gemini_api_quota_reached: bool = False
+    is_openrouter_api_quota_reached: bool = False
+    
     categories_of_interest: List[str] = Field(default_factory=list)
     favorite_brands: List[str] = Field(default_factory=list)
 
@@ -110,8 +114,8 @@ class UserResponse(CamelModel):
     is_user_verified: bool
 
     # --- Quota Flags ---
-    is_gemini_api_quota_reached: bool
-    is_openrouter_api_quota_reached: bool
+    is_gemini_api_quota_reached: bool = False
+    is_openrouter_api_quota_reached: bool = False
 
     # --- Preferences ---
     accepts_promotional_emails: bool

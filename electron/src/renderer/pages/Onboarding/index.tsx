@@ -1147,8 +1147,12 @@ function Onboarding() {
 
                     <button
                       type="button"
-                      aria-label={isSidebarPinned ? "Hide sections" : "Show sections"}
-                      title={isSidebarPinned ? "Hide sections" : "Show sections"}
+                      aria-label={
+                        isSidebarPinned ? "Hide sections" : "Show sections"
+                      }
+                      title={
+                        isSidebarPinned ? "Hide sections" : "Show sections"
+                      }
                       onMouseEnter={() => setIsSidebarHovering(true)}
                       onMouseLeave={() => {
                         if (!isSidebarPinned) {
@@ -1189,7 +1193,8 @@ function Onboarding() {
                           Build your Spark profile one screen at a time.
                         </h1>
                         <p className="mt-4 max-w-md text-sm leading-7 text-slate-300">
-                          The sidebar stays hidden until you hover the left edge or open it with the top toggle.
+                          The sidebar stays hidden until you hover the left edge
+                          or open it with the top toggle.
                         </p>
 
                         <div className="mt-8">
@@ -1238,7 +1243,11 @@ function Onboarding() {
                                         : "border-white/10 text-slate-400"
                                   }`}
                                 >
-                                  {item.completed ? <Check size={12} /> : item.index + 1}
+                                  {item.completed ? (
+                                    <Check size={12} />
+                                  ) : (
+                                    item.index + 1
+                                  )}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-semibold text-white">
@@ -1284,7 +1293,10 @@ function Onboarding() {
                                 : "Waiting"
                             }
                           />
-                          <SummaryCard label="API keys" value={`${totalApiKeys}`} />
+                          <SummaryCard
+                            label="API keys"
+                            value={`${totalApiKeys}`}
+                          />
                         </div>
                       </div>
                     </motion.aside>
@@ -1307,10 +1319,19 @@ function Onboarding() {
                         initial="enter"
                         animate="center"
                         exit="exit"
-                        transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+                        transition={{
+                          duration: 0.48,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
                         className="absolute inset-0 overflow-y-auto pr-2 onboarding-scrollbar"
                       >
-                        <div className={isSummarySection ? "mx-auto w-full max-w-6xl" : "w-full"}>
+                        <div
+                          className={
+                            isSummarySection
+                              ? "mx-auto w-full max-w-6xl"
+                              : "w-full"
+                          }
+                        >
                           {renderSectionBody()}
                         </div>
                       </motion.article>
@@ -1319,7 +1340,9 @@ function Onboarding() {
 
                   <div
                     className={`mt-8 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center ${
-                      isSummarySection ? "sm:justify-center" : "sm:justify-between"
+                      isSummarySection
+                        ? "sm:justify-center"
+                        : "sm:justify-between"
                     }`}
                   >
                     <button
@@ -1361,12 +1384,12 @@ function Onboarding() {
                       <RippleButton
                         onClick={handleNext}
                         disabled={isSubmitting}
-                        className="min-w-[240px] rounded-full px-7 py-3.5 font-semibold text-slate-950"
+                        className="min-w-60 rounded-full px-7 py-3.5 font-semibold text-slate-950"
                         rippleColor="#67E8F9"
                         style={{
                           background:
-                            "linear-gradient(135deg, rgba(103,232,249,0.96), rgba(244,251,255,0.94))",
-                          borderColor: "rgba(165,243,252,0.82)",
+                            "",
+                          // borderColor: "rgba(165,243,252,0.82)",
                           boxShadow:
                             "0 20px 44px rgba(34,211,238,0.24), inset 0 1px 0 rgba(255,255,255,0.4)",
                           textShadow: "none",

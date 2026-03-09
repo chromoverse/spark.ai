@@ -13,6 +13,8 @@ import asyncio
 import io
 import logging
 import time
+import wave
+import re
 from typing import Any, Dict, Optional
 
 from groq import Groq  # type: ignore[import-untyped]
@@ -46,6 +48,37 @@ _QUOTA_KEYWORDS = frozenset({
 def _is_quota_error(err: Exception) -> bool:
     msg = str(err).lower()
     return any(kw in msg for kw in _QUOTA_KEYWORDS)
+
+
+_PCM_RATE_RE = re.compile(r"(?:^|;)\s*rate\s*=\s*(\d+)\s*(?:;|$)", re.IGNORECASE)
+
+
+def _is_pcm_mime(base_mime: str) -> bool:
+    normalized = (base_mime or "").strip().lower()
+    return normalized in {"audio/pcm", "audio/l16"}
+
+
+def _extract_pcm_rate(mime_type: str) -> int:
+    match = _PCM_RATE_RE.search(mime_type or "")
+    if not match:
+        return 16000
+    try:
+        rate = int(match.group(1))
+        return rate if rate > 0 else 16000
+    except Exception:
+        return 16000
+
+
+def _wrap_pcm16_as_wav(pcm_bytes: bytes, sample_rate: int) -> bytes:
+    """Wrap little-endian mono PCM16 payload into a WAV container."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
+    buffer.seek(0)
+    return buffer.read()
 
 
 class GroqSTTEngine:
@@ -90,8 +123,14 @@ class GroqSTTEngine:
                 "text": "",
                 "message": "Audio data too small (< 1 KB)",
             }
-
-        ext = _MIME_TO_EXT.get(mime_type.split(";")[0].strip(), ".webm")
+        base_mime = mime_type.split(";")[0].strip().lower()
+        if _is_pcm_mime(base_mime):
+            sample_rate = _extract_pcm_rate(mime_type)
+            audio_bytes = _wrap_pcm16_as_wav(audio_bytes, sample_rate=sample_rate)
+            ext = ".wav"
+            logger.debug("🎧 Groq STT received PCM16 payload; wrapped as WAV (%s Hz)", sample_rate)
+        else:
+            ext = _MIME_TO_EXT.get(base_mime, ".webm")
 
         # ── Try up to 3 keys ──
         max_retries = 3

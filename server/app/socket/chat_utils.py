@@ -10,6 +10,7 @@ Registers:
 
 import logging
 import asyncio
+import time
 from app.socket.server import sio
 from app.socket.user_utils import get_user_from_session, serialize_response
 from app.socket.utils import emit_server_status
@@ -59,6 +60,7 @@ def register_chat_events():
                 sio=sio,
                 sid=sid,
                 tts_service=tts_service,
+                latency_trace=None,
             )
 
             chat_result = result.get("chat_result")
@@ -135,6 +137,7 @@ def register_chat_events():
                     sio=sio,
                     sid=sid,
                     tts_service=tts_service,
+                    latency_trace=None,
                 )
 
                 chat_result = result.get("chat_result")
@@ -252,6 +255,11 @@ def register_chat_events():
             { sessionId: str }
         """
         session_id = data.get("sessionId")
+        speech_end_ts_ms_raw = data.get("timestamp")
+        try:
+            speech_end_ts_ms = int(speech_end_ts_ms_raw or 0)
+        except Exception:
+            speech_end_ts_ms = 0
 
         if not session_id:
             logger.warning(f"⚠️ user-stop-speaking: missing sessionId from {sid}")
@@ -267,13 +275,20 @@ def register_chat_events():
 
             await emit_server_status("Backend Fired Up", "INFO", sid)
             await emit_server_status("Analyzing your data", "INFO", sid)
+            stop_started = time.perf_counter()
 
             # ★ Wait for any in-flight chunk transcriptions to finish
             await stt_session_manager.wait_for_pending(session_id)
 
             # Get the full text assembled from all streamed chunks
             text = await stt_session_manager.get_full_text(session_id)
+            stt_ready_ms = (time.perf_counter() - stop_started) * 1000
             logger.info(f"✅ Assembled transcription: '{text}'")
+            logger.info(
+                "⏱️ Voice STT stage complete session=%s stt_ready_ms=%.0f",
+                session_id[:8],
+                stt_ready_ms,
+            )
 
             # Clean up session memory immediately
             await stt_session_manager.cleanup(session_id)
@@ -290,6 +305,10 @@ def register_chat_events():
                     sio=sio,
                     sid=sid,
                     tts_service=tts_service,
+                    latency_trace={
+                        "speech_end_ts_ms": speech_end_ts_ms,
+                        "stt_ready_ms": stt_ready_ms,
+                    },
                 )
 
                 chat_result = result.get("chat_result")

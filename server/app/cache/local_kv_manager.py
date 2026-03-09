@@ -2,10 +2,8 @@ import json
 import logging
 import time
 from typing import Optional, List, Dict, Any
-from pathlib import Path
 from collections import OrderedDict
 import sqlite3
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +93,19 @@ class LocalKVManager:
                 created_at REAL NOT NULL
             )
         """)
-        
+        self._ensure_messages_sync_columns(cursor)
+
         # Create index for fast user queries
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_user_messages 
             ON messages(user_id, created_at DESC)
         """)
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_user_messages_sync
+            ON messages(user_id, is_synced, created_at DESC)
+            """
+        )
 
         # Persistent sync outbox for desktop -> cloud reconciliation.
         cursor.execute(
@@ -125,6 +130,17 @@ class LocalKVManager:
         )
         
         self._conn.commit()
+
+    def _ensure_messages_sync_columns(self, cursor: sqlite3.Cursor) -> None:
+        """Backfill sync-tracking columns for existing databases."""
+        cursor.execute("PRAGMA table_info(messages)")
+        existing_columns = {str(row[1]) for row in cursor.fetchall()}
+        if "is_synced" not in existing_columns:
+            cursor.execute(
+                "ALTER TABLE messages ADD COLUMN is_synced INTEGER NOT NULL DEFAULT 0"
+            )
+        if "synced_at" not in existing_columns:
+            cursor.execute("ALTER TABLE messages ADD COLUMN synced_at REAL")
     
     async def ping(self):
         """Health check"""
@@ -267,17 +283,21 @@ class LocalKVManager:
         role: str, 
         content: str, 
         timestamp: str,
-        message_id: str
+        message_id: str,
+        is_synced: bool = False,
     ) -> bool:
         """Add message to SQLite"""
         try:
+            now_ts = time.time()
+            synced_flag = 1 if bool(is_synced) else 0
+            synced_at = now_ts if synced_flag else None
             cursor = self._conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO messages (id, user_id, role, content, timestamp, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO messages (id, user_id, role, content, timestamp, created_at, is_synced, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (message_id, user_id, role, content, timestamp, time.time())
+                (message_id, user_id, role, content, timestamp, now_ts, synced_flag, synced_at)
             )
             self._conn.commit()
             
@@ -289,6 +309,66 @@ class LocalKVManager:
         except Exception as e:
             logger.error(f"SQLite Add Message Error: {e}")
             return False
+
+    async def get_unsynced_message_count(self, user_id: str) -> int:
+        """Return how many local messages are still pending cloud sync."""
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM messages
+                WHERE user_id = ? AND is_synced = 0
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            return int(row[0] if row else 0)
+        except Exception as e:
+            logger.error(f"SQLite unsynced count error: {e}")
+            return 0
+
+    async def get_users_with_unsynced_messages(self) -> List[str]:
+        """List users that currently have unsynced local messages."""
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                """
+                SELECT DISTINCT user_id
+                FROM messages
+                WHERE is_synced = 0
+                ORDER BY user_id ASC
+                """
+            )
+            rows = cursor.fetchall()
+            return [str(row[0]) for row in rows if row and row[0]]
+        except Exception as e:
+            logger.error(f"SQLite unsynced users lookup error: {e}")
+            return []
+
+    async def mark_messages_synced(self, user_id: str, message_ids: List[str]) -> int:
+        """Mark specific messages as synced after a successful cloud push."""
+        try:
+            cleaned_ids = [str(mid) for mid in message_ids if mid]
+            if not cleaned_ids:
+                return 0
+            cursor = self._conn.cursor()
+            placeholders = ",".join("?" for _ in cleaned_ids)
+            params = [time.time(), user_id, *cleaned_ids]
+            cursor.execute(
+                f"""
+                UPDATE messages
+                SET is_synced = 1, synced_at = ?
+                WHERE user_id = ? AND id IN ({placeholders})
+                """,
+                tuple(params),
+            )
+            updated = int(cursor.rowcount or 0)
+            self._conn.commit()
+            return updated
+        except Exception as e:
+            logger.error(f"SQLite mark messages synced error: {e}")
+            return 0
     
     async def get_messages(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Get last N messages for user from SQLite (with in-memory cache)"""
@@ -373,6 +453,30 @@ class LocalKVManager:
             return int(cursor.lastrowid or 0)
         except Exception as e:
             logger.error(f"LocalKV enqueue sync event error: {e}")
+            return 0
+
+    async def upsert_sync_event(self, scope: str, op: str, key: str, payload_json: str) -> int:
+        """
+        Keep only the latest pending event for a given (scope, key) pair.
+        This avoids unbounded outbox growth for high-frequency writes.
+        """
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "DELETE FROM sync_outbox WHERE scope = ? AND key = ?",
+                (scope, key),
+            )
+            cursor.execute(
+                """
+                INSERT INTO sync_outbox (scope, op, key, payload_json, created_at, attempts, last_error)
+                VALUES (?, ?, ?, ?, ?, 0, NULL)
+                """,
+                (scope, op, key, payload_json, time.time()),
+            )
+            self._conn.commit()
+            return int(cursor.lastrowid or 0)
+        except Exception as e:
+            logger.error(f"LocalKV upsert sync event error: {e}")
             return 0
 
     async def fetch_sync_events(self, limit: int = 100) -> List[Dict[str, Any]]:

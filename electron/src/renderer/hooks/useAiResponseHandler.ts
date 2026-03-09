@@ -182,7 +182,7 @@ export function useAiResponseHandler(
   useEffect(() => {
     if (!autoListen || !socket || !isConnected) return;
 
-    console.log("👂 Setting up AI response listeners");
+    // console.log("👂 Setting up AI response listeners");
 
     // PQH listener
     const handleQueryResult = (data: QueryResultPayload) => {
@@ -202,7 +202,7 @@ export function useAiResponseHandler(
     on("task:execute_batch", handleTaskExecuteBatchPayload);
 
     return () => {
-      console.log("👋 Cleaning up AI response listeners");
+      // console.log("👋 Cleaning up AI response listeners");
       off("query-result", handleQueryResult);
       off("task:execute", handleTaskExecuteBatchPayload);
       off("task:execute_batch", handleTaskExecuteBatchPayload);
