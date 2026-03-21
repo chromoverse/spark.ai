@@ -8,12 +8,8 @@ Registers:
 """
 
 import asyncio
-<<<<<<< HEAD
 import logging
 
-=======
-import time
->>>>>>> 7ff3f566494ef823f1013bcd9bc269d63d0fb839
 from app.socket.server import sio
 from app.socket.user_utils import get_user_from_session, serialize_response
 from app.socket.utils import emit_server_status
@@ -54,12 +50,8 @@ async def _parallel_execute(
                 sio=sio,
                 sid=sid,
                 tts_service=tts_service,
-<<<<<<< HEAD
                 gender=gender,
                 voice_name=voice_name,
-=======
-                latency_trace=None,
->>>>>>> 7ff3f566494ef823f1013bcd9bc269d63d0fb839
             )
         except Exception as exc:
             logger.error("stream path failed for %s: %s", sid, exc)
@@ -118,98 +110,7 @@ def register_chat_events():
 
     # ── Streaming STT: receive audio chunk ────────────────────────────────
 
-<<<<<<< HEAD
     @sio.on("user-speaking") # type: ignore
-=======
-            if isinstance(audio_data, str):
-                logger.info(f"📊 Received base64 audio: {len(audio_data)} chars, type: {mime_type}")
-            elif isinstance(audio_data, bytes):
-                logger.info(f"📊 Received binary audio: {len(audio_data)} bytes, type: {mime_type}")
-            else:
-                logger.error(f"❌ Unexpected audio data type: {type(audio_data)}")
-                await sio.emit("query-error", {"error": "Invalid audio format", "success": False}, to=sid)
-                return
-
-            await sio.emit("processing", {"status": "Transcribing audio..."}, to=sid)
-
-            # Transcribe audio
-            text = await transcribe_audio(audio_data, mime_type)
-            logger.info(f"✅ Transcription result: '{text}'")
-
-            # Validate transcription
-            if text and text not in _INVALID_TRANSCRIPTIONS:
-                await sio.emit("processing", {"status": "Getting response..."}, to=sid)
-
-                result = await parallel_chat_execution(
-                    query=text,
-                    user_id=user_id,
-                    sio=sio,
-                    sid=sid,
-                    tts_service=tts_service,
-                    latency_trace=None,
-                )
-
-                chat_result = result.get("chat_result")
-                if chat_result:
-                    response_data = chat_result.model_dump(by_alias=True)
-                    await sio.emit("query-result", response_data, to=sid)
-                    logger.info(f"✅ Sent complete query-result to {sid}")
-                else:
-                    await sio.emit("query-error", {
-                        "error": "Chat processing failed",
-                        "success": False
-                    }, to=sid)
-            else:
-                await sio.emit("query-error", {
-                    "result": text,
-                    "success": False,
-                    "message": "No speech detected or transcription failed"
-                }, to=sid)
-                logger.info(f"⚠️ No valid speech for {sid}")
-
-        except Exception as e:
-            logger.error(f"❌ Error in send_user_voice_query: {e}", exc_info=True)
-            await sio.emit("query-error", {"error": str(e), "success": False}, to=sid)
-
-    # ── Streaming STT: continuous chunk handler ────────────────────────────
-
-    async def _transcribe_chunk(
-        session_id: str, seq: int, audio_data, mime_type: str
-    ):
-        """
-        Background coroutine — transcribes one audio chunk and stores
-        the result.  Runs in parallel with other chunk transcriptions.
-        Uses previous chunk's text as context for better continuity.
-        """
-        try:
-            # Retrieve previous chunk text for context continuity (Fix 5)
-            previous_text = await stt_session_manager.get_last_chunk_text(session_id)
-
-            text = await transcribe_audio(audio_data, mime_type, previous_text=previous_text)
-
-            if text and text not in _INVALID_TRANSCRIPTIONS:
-                await stt_session_manager.add_chunk(session_id, seq, text)
-                logger.info(
-                    f"🎤 Chunk #{seq} transcribed for session "
-                    f"{session_id[:8]}…: '{text}'"
-                )
-            else:
-                logger.debug(
-                    f"🎤 Chunk #{seq} for session {session_id[:8]}…: "
-                    f"no speech detected, skipping"
-                )
-        except Exception as e:
-            logger.error(
-                f"❌ Error transcribing chunk #{seq} for session "
-                f"{session_id[:8]}…: {e}",
-                exc_info=True,
-            )
-        finally:
-            # Always decrement so wait_for_pending doesn't hang
-            await stt_session_manager.decrement_pending(session_id)
-
-    @sio.on("user-speaking")  # type: ignore
->>>>>>> 7ff3f566494ef823f1013bcd9bc269d63d0fb839
     async def handle_user_speaking(sid, data):
         session_id = data.get("sessionId")
         seq        = data.get("seq")
@@ -228,15 +129,6 @@ def register_chat_events():
     @sio.on("user-stop-speaking") # type: ignore
     async def handle_user_stop_speaking(sid, data):
         session_id = data.get("sessionId")
-<<<<<<< HEAD
-=======
-        speech_end_ts_ms_raw = data.get("timestamp")
-        try:
-            speech_end_ts_ms = int(speech_end_ts_ms_raw or 0)
-        except Exception:
-            speech_end_ts_ms = 0
-
->>>>>>> 7ff3f566494ef823f1013bcd9bc269d63d0fb839
         if not session_id:
             logger.warning("user-stop-speaking: missing sessionId from %s", sid)
             return
@@ -244,64 +136,13 @@ def register_chat_events():
         try:
             user_id = await get_user_from_session(sid)
 
-<<<<<<< HEAD
             # Wait for any in-flight chunk transcriptions to finish
-=======
-            await emit_server_status("Backend Fired Up", "INFO", sid)
-            await emit_server_status("Analyzing your data", "INFO", sid)
-            stop_started = time.perf_counter()
-
-            # ★ Wait for any in-flight chunk transcriptions to finish
->>>>>>> 7ff3f566494ef823f1013bcd9bc269d63d0fb839
             await stt_session_manager.wait_for_pending(session_id)
 
             text = await stt_session_manager.get_full_text(session_id)
-<<<<<<< HEAD
             await stt_session_manager.cleanup(session_id)
 
             if not text or text in _INVALID_TRANSCRIPTIONS:
-=======
-            stt_ready_ms = (time.perf_counter() - stop_started) * 1000
-            logger.info(f"✅ Assembled transcription: '{text}'")
-            logger.info(
-                "⏱️ Voice STT stage complete session=%s stt_ready_ms=%.0f",
-                session_id[:8],
-                stt_ready_ms,
-            )
-
-            # Clean up session memory immediately
-            await stt_session_manager.cleanup(session_id)
-
-            # Validate transcription (same checks as legacy handler)
-            if text and text not in _INVALID_TRANSCRIPTIONS:
-                await sio.emit(
-                    "processing", {"status": "Getting response..."}, to=sid
-                )
-
-                result = await parallel_chat_execution(
-                    query=text,
-                    user_id=user_id,
-                    sio=sio,
-                    sid=sid,
-                    tts_service=tts_service,
-                    latency_trace={
-                        "speech_end_ts_ms": speech_end_ts_ms,
-                        "stt_ready_ms": stt_ready_ms,
-                    },
-                )
-
-                chat_result = result.get("chat_result")
-                if chat_result:
-                    response_data = chat_result.model_dump(by_alias=True)
-                    await sio.emit("query-result", response_data, to=sid)
-                    logger.info(f"✅ Sent complete query-result to {sid}")
-                else:
-                    await sio.emit("query-error", {
-                        "error": "Chat processing failed",
-                        "success": False
-                    }, to=sid)
-            else:
->>>>>>> 7ff3f566494ef823f1013bcd9bc269d63d0fb839
                 await sio.emit("query-error", {
                     "success": False,
                     "message": "No speech detected",
