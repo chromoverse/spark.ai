@@ -1,140 +1,145 @@
-"""SQH - Secondary Query Handler
-Generates execution plans (Task arrays) based on PQH analysis.
+"""
+SQH Prompt — Execution Plan Generator
+
+Two-part messages structure:
+
+  [system]  → output format, task schema, rules  (static → Groq caches it)
+  [user]    → PQH analysis + tool schemas + preferences  (changes per call)
+
+Only the user message changes per request, so the system prompt
+prefix-caches across all SQH calls.
 """
 
+from __future__ import annotations
+
 import json
-from typing import Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from app.plugins.tools.registry_loader import get_tool_registry
 from app.models.pqh_response_model import PQHResponse
 
 
-def get_tools_schema(tool_names: list[str]) -> dict[str, dict]:
-    """Get schemas for the specified tools from registry."""
-    tool_registry = get_tool_registry()
+def get_tools_schema(tool_names: List[str]) -> Dict[str, dict]:
+    registry = get_tool_registry()
     return {
         name: tool.__dict__
         for name in tool_names
-        if (tool := tool_registry.get_tool(name))
+        if (tool := registry.get_tool(name))
     }
 
 
-def build_sqh_prompt(
-    pqh_response: PQHResponse,
-    user_lang: str = "en",                        # Primary lang for ack/lifecycle messages
-    user_preferences: Optional[Dict[str, Any]] = None       # {"movies": ["netflix"], "browser": ["chrome"], ...}
-) -> str:
+# ── Static system prompt — cached by Groq ─────────────────────────────────────
+
+def build_system_prompt(lang_label: str, secondary_lang: str) -> str:
     """
-    Builds the SQH system prompt.
-
-    Args:
-        pqh_response:      Full PQH response model.
-        user_lang:         Language code for output ("en", "hi", "ne").
-        user_preferences:  User's preferred apps/services per category.
-                           e.g. {"browser": ["chrome"], "movies": ["netflix", "youtube"]}
-                           Falls back to stable defaults if empty or missing.
+    Static rules for SQH. Lang labels are passed in but the structure
+    never changes — so caching still applies within the same language session.
     """
-
-    # ── 1. Unpack PQH context ──────────────────────────────────────────────
-    c_state        = pqh_response.cognitive_state
-    user_query     = c_state.user_query
-    thought_process = c_state.thought_process
-    pqh_answer     = c_state.answer
-    tool_names     = pqh_response.requested_tool or []
-
-    # ── 2. Language config ─────────────────────────────────────────────────
-    LANG_MAP = {
-        "hi": "Hindi",
-        "ne": "Nepali",
-        "en": "English",
-    }
-    lang_label = LANG_MAP.get(user_lang, "English")
-    # Second language is always English as fallback for clarity
-    secondary_lang = "English" if user_lang != "en" else "Hindi"
-
-    # ── 3. User preferences ────────────────────────────────────────────────
-    prefs = user_preferences or {}
-    prefs_json = json.dumps(prefs, indent=2) if prefs else "None provided"
-
-    # ── 4. Tool schemas ────────────────────────────────────────────────────
-    tool_schemas     = get_tools_schema(tool_names)
-    tool_schemas_json = json.dumps(tool_schemas, indent=2)
-
-    # ── 5. Prompt ──────────────────────────────────────────────────────────
     return f"""You are SQH (Secondary Query Handler).
-Your job: read the PQH analysis, then return a precise JSON execution plan.
+Your only job: read the PQH analysis and return a precise JSON execution plan.
 
-━━━ INPUT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-User Query        : "{user_query}"
-PQH Thought       : "{thought_process}"
-PQH Answer (sent) : "{pqh_answer}"
-
-━━━ USER PREFERENCES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{prefs_json}
-
-PREFERENCE RULES:
-- When a task involves opening an app, browser, streaming service, or any
-  category-specific tool, CHECK preferences first.
-- Example: query = "play a movie" → check preferences["movies"] → use first
-  entry (e.g. "netflix"). If empty → default to the most universally stable
-  option (e.g. "youtube" for media, "chrome" for browser, "notepad" for text).
-- Never invent a preference. Only use what's listed or a safe default.
-
-━━━ AVAILABLE TOOLS (schemas) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{tool_schemas_json}
-
-Use ONLY the tools listed above. Map every task to an exact tool name from this set.
-
-━━━ OUTPUT FORMAT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Return a raw JSON object — no markdown, no code fences:
+━━━ OUTPUT FORMAT (strict JSON, no markdown, no fences) ━━━
 {{
   "acknowledge_answer": "...",
   "tasks": [...]
 }}
 CRITICAL:
-- Do NOT include explanations, headings, analysis, or examples.
-- Do NOT wrap output in ```json fences.
 - Output must start with "{{" and end with "}}".
-- If output is not strict JSON, it will be rejected and retried.
+- No explanation, no headings, no code fences.
+- Strict JSON only — invalid output is rejected and retried.
 
-━━━ ACKNOWLEDGE ANSWER RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Language  : {lang_label} (you may sprinkle {secondary_lang} naturally if it fits).
-Tone      : Warm, natural, conversational assistant — NOT robotic.
-Tense     : In-progress action only — action has started, not completed.
-Variation : Be RANDOM and human. Rotate between styles, for example:
-  • "Got it. Starting now."
-  • "On it. I am doing that."
-  • "Okay, kicking that off."
-  • "Under way now."
-  • "Working on it."
-  • (or any natural equivalent in {lang_label})
-  Never repeat the same phrasing pattern twice in a session.
-Length    : 1–2 short sentences max.
-Rule      : Do NOT claim success/completion in acknowledge_answer.
-
-━━━ TASK OBJECT SCHEMA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Each task must follow:
+━━━ TASK OBJECT SCHEMA ━━━
 {{
-  "task_id"          : "step_1",          // Unique (step_1, step_2 ...)
-  "tool"             : "exact_tool_name", // From Available Tools only
-  "execution_target" : "client",          // or "server" per tool schema
-  "depends_on"       : [],               // task_ids this waits for
-  "inputs"           : {{                  // Static, schema-matched inputs
-    "arg_name": "value"
-  }},
-  "input_bindings"   : {{                  // Dynamic from prior task output
-    "arg_name": "$.tasks.step_1.output.data.field"
-  }},
+  "task_id"          : "step_1",
+  "tool"             : "exact_tool_name",
+  "execution_target" : "client",
+  "depends_on"       : [],
+  "inputs"           : {{"arg_name": "value"}},
+  "input_bindings"   : {{"arg_name": "$.tasks.step_1.output.data.field"}},
   "lifecycle_messages": {{
-    "on_start"  : "...",  // Action started  — {lang_label}, natural
-    "on_success": "...",  // Action done     — {lang_label}, natural
-    "on_failure": "..."   // Action failed   — {lang_label}, natural
+    "on_start"  : "...",
+    "on_success": "...",
+    "on_failure": "..."
   }},
   "control": {{
     "requires_approval": false,
-    "on_failure": "abort"   // or "continue"
+    "on_failure": "abort"
   }}
 }}
 
-"""
+━━━ ACKNOWLEDGE ANSWER RULES ━━━
+Language : {lang_label} (may sprinkle {secondary_lang} naturally).
+Tone     : Warm, conversational — NOT robotic.
+Tense    : In-progress only — action has started, not completed.
+Length   : 1–2 short sentences max.
+Vary the phrasing every time. Never repeat the same pattern.
+  Examples: "Got it. Starting now." / "On it." / "Working on it." / "Under way."
+Do NOT claim success or completion.
 
+━━━ LIFECYCLE MESSAGE RULES ━━━
+Language : {lang_label}.
+on_start  : action just began (present tense)
+on_success: action completed (past tense)
+on_failure: action failed, what went wrong (brief)
+Keep each under 10 words. Natural, not robotic.
+
+━━━ TOOL USAGE RULES ━━━
+- Use ONLY tools listed in the user message.
+- Map every task to an exact tool name from the provided schemas.
+- Multi-tool only when two distinct real-world actions are clearly needed.
+- Never chain tools speculatively."""
+
+
+# ── Dynamic user message — changes per request ────────────────────────────────
+
+def build_user_message(
+    pqh_response: PQHResponse,
+    user_preferences: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Dynamic part — PQH context + tool schemas + preferences.
+    Changes every SQH call, so it is never cached.
+    """
+    c = pqh_response.cognitive_state
+    tool_names = pqh_response.requested_tool or []
+
+    tool_schemas     = get_tools_schema(tool_names)
+    tool_schemas_str = json.dumps(tool_schemas, indent=2)
+    prefs_str        = json.dumps(user_preferences or {}, indent=2) if user_preferences else "None"
+
+    return f"""━━━ PQH ANALYSIS ━━━
+User Query  : "{c.user_query}"
+PQH Thought : "{c.thought_process}"
+PQH Answer  : "{c.answer}"
+Tools needed: {tool_names}
+
+━━━ TOOL SCHEMAS ━━━
+{tool_schemas_str}
+
+━━━ USER PREFERENCES ━━━
+{prefs_str}
+
+PREFERENCE RULES:
+- When opening an app, browser, or streaming service → check preferences first.
+- Use first matching entry (e.g. preferences["movies"][0]).
+- If empty → safe default (youtube for media, chrome for browser, notepad for text).
+- Never invent a preference.
+
+Generate the execution plan now."""
+
+
+# ── Message builder ────────────────────────────────────────────────────────────
+
+def build_messages(
+    pqh_response: PQHResponse,
+    user_lang: str = "en",
+    user_preferences: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, str]]:
+    _LANG = {"hi": "Hindi", "ne": "Nepali", "en": "English"}
+    lang_label     = _LANG.get(user_lang, "English")
+    secondary_lang = "English" if user_lang != "en" else "Hindi"
+
+    return [
+        {"role": "system", "content": build_system_prompt(lang_label, secondary_lang)},
+        {"role": "user",   "content": build_user_message(pqh_response, user_preferences)},
+    ]

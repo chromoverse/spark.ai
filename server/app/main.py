@@ -78,13 +78,6 @@ async def lifespan(app: FastAPI):
     await get_kernel_runtime().stop()
     logger.info(" Kernel runtime stopped")
 
-    # Stop cache sync background workers.
-    try:
-        from app.cache import sync_manager
-        await sync_manager.stop()
-    except Exception as exc:
-        logger.debug("Sync manager shutdown skipped: %s", exc)
-
     # Cleanup database
     await close_mongo_connection()
     logger.info(" Database disconnected")

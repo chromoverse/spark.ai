@@ -1,229 +1,168 @@
-from app.utils import  clean_pqh_response
+"""
+PQH — Primary Query Handler (chat_service.py)
+
+Messages structure:
+  [system]      — tool decision rules + available tools  (static, Groq caches it)
+  [user/asst]*  — real recent conversation turns
+  [user]        — the raw query, nothing else
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+
+from app.utils import clean_pqh_response
 from app.models.pqh_response_model import CognitiveState, PQHResponse
 from app.cache import load_user, get_last_n_messages
 from app.ai.providers import llm_chat
 from app.prompts import pqh_prompt
 from .sqh_service import process_sqh
-import asyncio
-import logging
-import re
 from app.agent.runtime import is_meta_query, try_handle_meta_query
 
 logger = logging.getLogger(__name__)
 
-_CALL_INTENT_RE = re.compile(r"\b(call|dial|ring|phone)\b", flags=re.IGNORECASE)
+_CALL_INTENT_RE  = re.compile(r"\b(call|dial|ring|phone)\b",        flags=re.IGNORECASE)
 _VIDEO_INTENT_RE = re.compile(r"\b(video|video\s+call|facetime)\b", flags=re.IGNORECASE)
+
+_RECENT_TURNS = 5
 
 
 def _normalize_requested_tools(query: str, response: PQHResponse) -> None:
-    """
-    Guardrail for high-impact messaging intents.
-
-    If PQH maps "call X" to message_send, remap to call_audio/call_video
-    before SQH prompt generation so the correct tool schema is available.
-    """
-    current_tools = list(response.requested_tool or [])
-    if not current_tools:
+    """Remap message_send → call_audio/call_video when query has call intent."""
+    if not (response.requested_tool and "message_send" in response.requested_tool):
         return
-
-    lower_query = (query or "").lower().strip()
-    has_call_intent = bool(_CALL_INTENT_RE.search(lower_query))
-    has_video_hint = bool(_VIDEO_INTENT_RE.search(lower_query))
-    has_whatsapp_hint = "whatsapp" in lower_query
-
-    if not has_call_intent:
+    lower = (query or "").lower()
+    if not _CALL_INTENT_RE.search(lower):
         return
-
-    if "message_send" in current_tools:
-        replacement = "call_video" if has_video_hint else "call_audio"
-        response.requested_tool = [replacement]
-        logger.warning(
-            "🔁 PQH tool guardrail remapped message_send -> %s (query=%r, whatsapp_hint=%s)",
-            replacement,
-            query,
-            has_whatsapp_hint,
-        )
+    replacement = "call_video" if _VIDEO_INTENT_RE.search(lower) else "call_audio"
+    response.requested_tool = [replacement]
+    logger.warning("PQH guardrail: message_send → %s (query=%r)", replacement, query)
 
 
 async def _run_sqh_background(cleaned_response: PQHResponse, user_details: dict, user_id: str) -> None:
-    """Run SQH safely in background so task exceptions are always captured."""
     try:
         await process_sqh(cleaned_response, user_details)
     except Exception as exc:
-        logger.error("❌ [SQH] Background failure for user %s: %s", user_id, exc, exc_info=True)
+        logger.error("[SQH] background failure user=%s: %s", user_id, exc, exc_info=True)
+
+
+def _build_messages(
+    query: str,
+    recent_context: list[dict],
+) -> list[dict[str, str]]:
+    """
+    Proper multi-turn messages for PQH.
+
+      [system]     — tool decision engine rules + available tools (static)
+      [user/asst]* — real recent turns so PQH can resolve context references
+      [user]       — just the raw query
+    """
+    messages: list[dict[str, str]] = []
+
+    # System: static tool-decision rules — Groq caches this across requests
+    messages.append({
+        "role": "system",
+        "content": pqh_prompt.build_system_prompt(),
+    })
+
+    # Real conversation turns — lets PQH resolve "that one", "the same app", etc.
+    for turn in recent_context[-_RECENT_TURNS:]:
+        role    = str(turn.get("role", "user"))
+        content = str(turn.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content})
+
+    # Raw query — nothing else mixed in
+    messages.append({"role": "user", "content": query})
+
+    return messages
+
 
 async def chat(
     query: str,
     user_id: str = "guest",
-    wait_for_execution: bool = False,  # ✅ NEW: Option to wait for tasks
-    execution_timeout: float = 30.0     # ✅ NEW: Timeout for execution
+    wait_for_execution: bool = False,
+    execution_timeout: float = 30.0,
 ) -> PQHResponse:
     """
-    Main entry point for the chat service as PQH - Primary Query Handler.
-    
-    Args:
-        query: User's message
-        user_id: User identifier
-        model_name: Optional model name for OpenRouter fallback
-        wait_for_execution: If True, waits for task execution to complete (default: False)
-        execution_timeout: Max seconds to wait for execution (default: 30)
-    
-    Returns:
-        clean_pqh_response.PQHResponse: Structured response from the AI
-        
-    Note:
-        In production (web server), keep wait_for_execution=False for async behavior.
-        In testing/CLI, set wait_for_execution=True to ensure tasks complete.
+    PQH entry point.
+    Decides if a tool is needed, fires SQH in background if so.
     """
-    if not query or not query.strip():
-        return _create_error_response("Empty query received", "neutral")
-    
-    try:
-        # Section 2 smart runtime shortcut for metrics/history/log queries
-        if is_meta_query(query):
-            meta_response = await try_handle_meta_query(query=query, user_id=user_id)
-            if meta_response:
-                return meta_response
+    query = (query or "").strip()
+    if not query:
+        return _error("Empty query", "neutral")
 
-        # --- Load User Details + Recent Context in PARALLEL ---
+    try:
+        # Meta-query shortcut (status/history/log queries)
+        if is_meta_query(query):
+            meta = await try_handle_meta_query(query=query, user_id=user_id)
+            if meta:
+                return meta
+
+        # Load user + recent context in parallel
         user_details, recent_context = await asyncio.gather(
             load_user(user_id),
-            get_last_n_messages(user_id, n=5),  # last 5 for tool context
+            get_last_n_messages(user_id, n=_RECENT_TURNS),
         )
 
         if not user_details:
-            logger.error(f"❌ Could not load user details for {user_id}")
-            return _create_error_response(
-                "User not found. Please log in again.",
-                "neutral",
-                query
-            )
-        print("BYPASS 1 -  USER from redis",user_details)
+            logger.error("user not found: %s", user_id)
+            return _error("User not found. Please log in again.", "neutral", query)
 
-        # ---  Emotion Detection (placeholder) ---
-        emotion = "neutral"
+        # Build proper multi-turn messages
+        messages = _build_messages(query=query, recent_context=recent_context)
 
-        # --- Build Prompt with recent context ---
-        prompt = pqh_prompt.build_prompt(query, recent_context)
-        
-        # --- Step 5: Call AI with Smart Fallback ---
-        messages = [{"role": "user", "content": prompt}]
-        
-        raw_response, provider_used = await llm_chat(
-            messages=messages,
-        )
+        raw_response, _ = await llm_chat(messages=messages)
 
-        print("BYPASS  -  raw response", raw_response)
-        
-        print(f"✅ Response received from {provider_used}")
-        
         if not raw_response:
-            return clean_pqh_response._create_error_pqh_response("Empty AI response", emotion)
-        
-        # --- Step 6: Clean and Return Response ---
-        cleaned_response = clean_pqh_response.clean_pqh_response(raw_response, emotion)
-        _normalize_requested_tools(query, cleaned_response)
+            return clean_pqh_response._create_error_pqh_response("Empty AI response", "neutral")
 
-        
-        # # Add ai response to Redis asynchronously
-        # asyncio.create_task(
-        #     redis_add_message(
-        #         user_id=user_id,
-        #         role="ai",
-        #         content=cleaned_response.cognitive_state.answer_english
-        #     )
-        # )
-        # # Add chat message to MongoDB asynchronously
-        # asyncio.create_task(
-        #  add_chat_message_to_mongo(
-        #     ChatController(
-        #         user_id=user_id,
-        #         user_query=query,
-        #         ai_response=cleaned_response.cognitive_state.answer_english
-        #     )
-        # ))
+        cleaned = clean_pqh_response.clean_pqh_response(raw_response, "neutral")
+        _normalize_requested_tools(query, cleaned)
 
-        # --- Step 7: Trigger SQH in Background (if tools needed) ---
-        if cleaned_response.requested_tool and len(cleaned_response.requested_tool) > 0:
-            logger.info("🔧 Tools requested by PQH. Triggering SQH in background...")
-            
-            # ✅ NEW: Option to wait for execution completion
+        # Fire SQH if tools were requested
+        if cleaned.requested_tool:
             if wait_for_execution:
-                await _execute_and_wait(
-                    cleaned_response=cleaned_response,
-                    user_details=user_details,
-                    user_id=user_id,
-                    timeout=execution_timeout
-                )
+                await _execute_and_wait(cleaned, user_details, user_id, execution_timeout)
             else:
-                # Original behavior: fire-and-forget
-                asyncio.create_task(
-                    _run_sqh_background(cleaned_response, user_details, user_id)
-                )
-        
-        return cleaned_response
-    
-    except Exception as e:
-        logger.error(f"❌ Chat service error: {e}", exc_info=True)
-        error_message = str(e) if str(e) else "Sorry, I'm having trouble processing your request."
-        return _create_error_response(error_message, "neutral", query)
+                asyncio.create_task(_run_sqh_background(cleaned, user_details, user_id))
+
+        return cleaned
+
+    except Exception as exc:
+        logger.error("chat service error: %s", exc, exc_info=True)
+        return _error(str(exc) or "Sorry, I'm having trouble processing your request.", "neutral", query)
 
 
 async def _execute_and_wait(
     cleaned_response: PQHResponse,
     user_details: dict,
     user_id: str,
-    timeout: float = 30.0
+    timeout: float = 30.0,
 ) -> None:
-    """
-    ✅ NEW: Execute tasks and wait for completion with timeout
-    
-    This is used when wait_for_execution=True in chat()
-    Ensures all tasks complete before returning
-    
-    Args:
-        cleaned_response: PQH response with tool requests
-        user_details: User information
-        user_id: User identifier
-        timeout: Max seconds to wait
-    """
+    """Wait for tool execution to complete — used in test/CLI mode only."""
     from app.agent.execution_gateway import get_execution_engine
-    
     try:
-        logger.info(f"⏳ Starting execution and waiting (timeout: {timeout}s)...")
-        
-        # Start execution and get the task
-        execution_task = await process_sqh(cleaned_response, user_details)
-        
-        # Wait for completion with timeout
+        await process_sqh(cleaned_response, user_details)
         engine = get_execution_engine()
-        success = await engine.wait_for_completion(user_id, timeout=timeout)
-        
-        if success:
-            logger.info(f"✅ Task execution completed for user: {user_id}")
-        else:
-            logger.warning(f"⏰ Task execution timed out after {timeout}s for user: {user_id}")
-            
+        await engine.wait_for_completion(user_id, timeout=timeout)
     except asyncio.TimeoutError:
-        logger.error(f"❌ Execution timeout after {timeout}s for user: {user_id}")
-    except Exception as e:
-        logger.error(f"❌ Error during task execution: {e}", exc_info=True)
+        logger.error("execution timeout after %.0fs user=%s", timeout, user_id)
+    except Exception as exc:
+        logger.error("execution error user=%s: %s", user_id, exc, exc_info=True)
 
-    
 
-def _create_error_response(message: str, emotion: str, query: str = "") -> PQHResponse:
-    """Helper to create fallback error responses with all required fields."""
-   
+def _error(message: str, emotion: str, query: str = "") -> PQHResponse:
     return PQHResponse(
-       request_id="error_response",
-       cognitive_state=CognitiveState(
-              user_query=query,
-              emotion=emotion,
-              thought_process="Error occurred while processing the request.",
-              answer=message,
-              answer_english=message
-         ),
-         requested_tool=[]
+        request_id="error_response",
+        cognitive_state=CognitiveState(
+            user_query=query,
+            emotion=emotion,
+            thought_process="Error occurred while processing the request.",
+            answer=message,
+            answer_english=message,
+        ),
+        requested_tool=[],
     )
-
-

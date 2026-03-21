@@ -1,20 +1,19 @@
 """
-SQH Service
-Handles Secondary Query Handler logic:
-1. Generates Task Plan using LLM
-2. Registers tasks with Orchestrator
-3. Triggers Execution Engine
+SQH Service — Secondary Query Handler
 
-✅ UNIFIED: Uses client_tool_executor for desktop, socket for production
-✅ Final speech emitted after execution completion using ExecutionState summary
+1. Build execution plan via LLM
+2. Register tasks with Orchestrator
+3. Start Execution Engine
+4. Emit final TTS summary after completion
 """
 
-import logging
-import json
+from __future__ import annotations
+
 import asyncio
+import json
+import logging
 import re
-import time
-from typing import List, Dict, Any, Union, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.agent.execution_gateway import (
     LifecycleMessages,
@@ -26,7 +25,7 @@ from app.agent.execution_gateway import (
     get_task_emitter,
 )
 from app.models.pqh_response_model import PQHResponse
-from app.prompts.sqh_prompt import build_sqh_prompt
+from app.prompts.sqh_prompt import build_messages
 from app.ai.providers import llm_chat
 from app.config import settings
 from .task_summary_speech_service import get_task_summary_speech_service
@@ -34,97 +33,46 @@ from .task_summary_speech_service import get_task_summary_speech_service
 logger = logging.getLogger(__name__)
 
 
-def _looks_like_task_object(obj: Any) -> bool:
-    if not isinstance(obj, dict):
-        return False
-    return "tool" in obj and ("task_id" in obj or "inputs" in obj or "input_bindings" in obj)
+# ── JSON extraction ────────────────────────────────────────────────────────────
+
+def _looks_like_task(obj: Any) -> bool:
+    return isinstance(obj, dict) and "tool" in obj and (
+        "task_id" in obj or "inputs" in obj or "input_bindings" in obj
+    )
 
 
-def _count_task_like_items(candidate: Union[dict, list]) -> int:
+def _count_tasks(candidate: Union[dict, list]) -> int:
     if isinstance(candidate, list):
-        return sum(1 for item in candidate if _looks_like_task_object(item))
-
-    tasks = candidate.get("tasks") if isinstance(candidate, dict) else None
-    if isinstance(tasks, list):
-        return sum(1 for item in tasks if _looks_like_task_object(item))
-
-    if isinstance(candidate, dict) and _looks_like_task_object(candidate):
-        return 1
-
+        return sum(1 for x in candidate if _looks_like_task(x))
+    if isinstance(candidate, dict):
+        tasks = candidate.get("tasks")
+        if isinstance(tasks, list):
+            return sum(1 for x in tasks if _looks_like_task(x))
+        if _looks_like_task(candidate):
+            return 1
     return 0
 
 
-def _extract_tasks_and_ack(data: Union[dict, list, None]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    if data is None:
-        return [], None
-
-    ack_msg: Optional[str] = None
-    tasks_data: List[Dict[str, Any]] = []
-
-    if isinstance(data, list):
-        tasks_data = [item for item in data if isinstance(item, dict)]
-        return tasks_data, None
-
-    if isinstance(data, dict):
-        ack_raw = data.get("acknowledge_answer")
-        if isinstance(ack_raw, str):
-            ack_msg = ack_raw
-
-        raw_tasks = data.get("tasks")
-        if isinstance(raw_tasks, list):
-            tasks_data = [item for item in raw_tasks if isinstance(item, dict)]
-            return tasks_data, ack_msg
-
-        # Some models return a single task object as top-level JSON.
-        if _looks_like_task_object(data):
-            return [data], ack_msg
-
-    return [], ack_msg
-
-
-def _select_best_json_candidate(candidates: List[Union[dict, list]]) -> Union[dict, list, None]:
+def _best_candidate(candidates: List[Union[dict, list]]) -> Union[dict, list, None]:
     if not candidates:
         return None
-
-    scored: List[Tuple[int, int, Union[dict, list]]] = []
-    for idx, candidate in enumerate(candidates):
-        task_score = _count_task_like_items(candidate)
-        scored.append((task_score, idx, candidate))
-
-    # Prefer candidate with most task-like items; on tie prefer the later block.
-    best_task_score, _idx, best = max(scored, key=lambda item: (item[0], item[1]))
-    if best_task_score > 0:
+    scored = [((_count_tasks(c), i), c) for i, c in enumerate(candidates)]
+    best_score, best = max(scored, key=lambda x: x[0])
+    if best_score[0] > 0:
         return best
-
-    # Otherwise prefer the last dict containing expected SQH keys.
-    for candidate in reversed(candidates):
-        if isinstance(candidate, dict) and ("tasks" in candidate or "acknowledge_answer" in candidate):
-            return candidate
-
-    # Last parsed candidate is usually the most complete block in verbose outputs.
+    for c in reversed(candidates):
+        if isinstance(c, dict) and ("tasks" in c or "acknowledge_answer" in c):
+            return c
     return candidates[-1]
 
-def extract_json_from_response(response: str) -> Union[dict, list, None]:
-    """
-    Smart JSON extraction from LLM responses.
-    
-    Handles:
-    - Plain JSON: { ... } or [ ... ]
-    - Markdown code blocks: ```json ... ``` or ``` ... ```
-    - Explanatory text before/after JSON
-    - Partial JSON with trailing text
-    - Nested structures
-    
-    Returns:
-        Parsed JSON (dict or list) or None if parsing fails
-    """
+
+def extract_json(response: str) -> Union[dict, list, None]:
     if not response:
         return None
-    
     cleaned = response.strip()
     candidates: List[Union[dict, list]] = []
 
-    # Method 1: Try direct parse (already clean JSON)
+    # Direct parse
     try:
         parsed = json.loads(cleaned)
         if isinstance(parsed, (dict, list)):
@@ -132,41 +80,33 @@ def extract_json_from_response(response: str) -> Union[dict, list, None]:
     except json.JSONDecodeError:
         pass
 
-    # Method 2: Parse every fenced block (not only the first).
-    for match in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, flags=re.IGNORECASE):
-        block = match.group(1).strip()
-        if not block:
-            continue
+    # Fenced blocks
+    for m in re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE):
+        block = m.group(1).strip()
         try:
             parsed = json.loads(block)
             if isinstance(parsed, (dict, list)):
                 candidates.append(parsed)
         except json.JSONDecodeError:
-            continue
+            pass
 
-    # Method 3: Bracket-scan fallback from first JSON-looking token.
-    first_brace = cleaned.find("{")
-    first_bracket = cleaned.find("[")
-    start_pos = -1
-    if first_brace != -1 and first_bracket != -1:
-        start_pos = min(first_brace, first_bracket)
-    elif first_brace != -1:
-        start_pos = first_brace
-    elif first_bracket != -1:
-        start_pos = first_bracket
-
-    if start_pos != -1:
-        json_candidate = cleaned[start_pos:]
-        for end_pos in range(len(json_candidate), 0, -1):
+    # Bracket scan
+    first = min(
+        (cleaned.find(c) for c in "{[" if cleaned.find(c) != -1),
+        default=-1,
+    )
+    if first != -1:
+        fragment = cleaned[first:]
+        for end in range(len(fragment), 0, -1):
             try:
-                parsed = json.loads(json_candidate[:end_pos])
+                parsed = json.loads(fragment[:end])
                 if isinstance(parsed, (dict, list)):
                     candidates.append(parsed)
                 break
             except json.JSONDecodeError:
-                continue
+                pass
 
-    # Method 4: Minor repair for trailing commas.
+    # Trailing-comma repair
     fixed = re.sub(r",(\s*[\]}])", r"\1", cleaned)
     try:
         parsed = json.loads(fixed)
@@ -175,208 +115,145 @@ def extract_json_from_response(response: str) -> Union[dict, list, None]:
     except json.JSONDecodeError:
         pass
 
-    return _select_best_json_candidate(candidates)
+    return _best_candidate(candidates)
 
 
-async def process_sqh(
-    pqh_response: PQHResponse,
-    user_details: Dict[str, Any]
-) -> None:
-    """
-    Process SQH in background - AUTO INITIALIZES and STARTS EXECUTION:
-    - Generate Plan
-    - Register Tasks
-    - Trigger Execution Engine (automatically, no waiting)
-    
-    ✅ UPDATED: Emits ack immediately, unified engine handles the rest
-    
-    Raises:
-        ValueError: If LLM response is invalid or parsing fails
-        RuntimeError: If task generation fails
-    """
-    user_id = user_details.get("_id", "guest")
-    if not isinstance(user_id, str):
-        user_id = str(user_id)
+def _unpack(data: Union[dict, list, None]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    if data is None:
+        return [], None
+    if isinstance(data, list):
+        return [x for x in data if isinstance(x, dict)], None
+    if isinstance(data, dict):
+        ack  = data.get("acknowledge_answer") if isinstance(data.get("acknowledge_answer"), str) else None
+        raw  = data.get("tasks")
+        if isinstance(raw, list):
+            return [x for x in raw if isinstance(x, dict)], ack
+        if _looks_like_task(data):
+            return [data], ack
+    return [], None
 
-    logger.info(f"🚀 [SQH] Starting background task generation for user: {user_id}")
+
+# ── Main service ───────────────────────────────────────────────────────────────
+
+async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -> None:
+    user_id  = str(user_details.get("_id", "guest"))
+    user_lang = user_details.get("lang", "en")
+    original_query = pqh_response.cognitive_state.user_query or ""
 
     try:
-        # 1. Build Prompt
-        base_prompt = build_sqh_prompt(
-            pqh_response,
+        messages     = build_messages(
+            pqh_response=pqh_response,
             user_lang=user_details.get("lang", "en"),
             user_preferences=user_details.get("preferences", {}),
         )
-
-        max_attempts = 1 + max(0, int(getattr(settings, "SQH_PLAN_RETRY_ATTEMPTS", 1)))
-        tasks: List[Task] = []
-        ack_msg: Optional[str] = None
+        retry_limit  = 1 + max(0, int(getattr(settings, "SQH_PLAN_RETRY_ATTEMPTS", 1)))
+        tasks:  List[Task]   = []
+        ack:    Optional[str] = None
         last_error: Optional[Exception] = None
-        prompt = base_prompt
 
-        for attempt in range(1, max_attempts + 1):
-            logger.info("🧠 [SQH] calling LLM... (attempt %d/%d)", attempt, max_attempts)
-            raw_response, provider = await llm_chat(messages=[{"role": "user", "content": prompt}])
-            logger.info("✅ [SQH] Response received from %s (len=%d)", provider, len(raw_response or ""))
+        for attempt in range(1, retry_limit + 1):
+            raw, _ = await llm_chat(messages=messages)
 
             try:
-                if not raw_response:
-                    raise ValueError("Empty response from LLM")
+                if not raw:
+                    raise ValueError("empty LLM response")
 
-                data = extract_json_from_response(raw_response)
+                data = extract_json(raw)
                 if data is None:
-                    raise ValueError("Failed to extract valid JSON from LLM response")
+                    raise ValueError("no valid JSON in response")
 
-                tasks_data, ack_msg = _extract_tasks_and_ack(data)
-                logger.info("SQH response task candidates: %d", len(tasks_data))
+                tasks_data, ack = _unpack(data)
+                tasks = [Task(**t) for t in tasks_data]
 
-                tasks = [Task(**task_data) for task_data in tasks_data]
                 if not tasks:
-                    raise ValueError("No tasks generated by LLM")
-
-                logger.info(f"📋 [SQH] Parsed {len(tasks)} tasks:")
-                for task in tasks:
-                    logger.info(f"   - {task.task_id}: {task.tool} ({task.execution_target})")
-
-                if ack_msg:
-                    logger.info(f"🎤 [SQH] Acknowledgment: {ack_msg}")
+                    raise ValueError("no tasks in plan")
 
                 last_error = None
                 break
 
-            except Exception as parse_exc:
-                last_error = parse_exc if isinstance(parse_exc, Exception) else Exception(str(parse_exc))
-                logger.warning(
-                    "⚠️ [SQH] Plan parse/validation failed on attempt %d/%d: %s",
-                    attempt,
-                    max_attempts,
-                    parse_exc,
-                )
-                if attempt >= max_attempts:
+            except Exception as exc:
+                last_error = exc
+                logger.warning("[SQH] attempt %d/%d failed: %s", attempt, retry_limit, exc)
+                if attempt >= retry_limit:
                     break
+                # Append retry instruction to last user message
+                messages = messages[:-1] + [{
+                    "role": "user",
+                    "content": (
+                        messages[-1]["content"]
+                        + "\n\nRETRY: Previous output was invalid. "
+                        "Return ONLY raw JSON. `tasks` must be a non-empty array. "
+                        "No markdown, no explanation."
+                    ),
+                }]
 
-                # Retry hint makes LLM return strict executable JSON only.
-                prompt = (
-                    base_prompt
-                    + "\n\nIMPORTANT RETRY:\n"
-                    + "- Your previous answer could not be executed.\n"
-                    + "- Return ONLY one raw JSON object.\n"
-                    + "- `tasks` must be a non-empty JSON array of valid task objects.\n"
-                    + "- No markdown, no explanation, no analysis.\n"
-                )
+        if last_error or not tasks:
+            raise ValueError(str(last_error or "no tasks generated"))
 
-        if last_error is not None or not tasks:
-            raise ValueError(str(last_error or "No tasks generated by LLM"))
-
-        orchestrator = get_orchestrator()
+        # ── Register + start execution ────────────────────────────────────
+        orchestrator    = get_orchestrator()
         execution_engine = get_execution_engine()
 
-        # Ensure each SQH call starts from a clean in-memory execution state.
         if execution_engine.is_running(user_id):
-            logger.info("🧹 [SQH] Stopping previous execution for user: %s", user_id)
             await execution_engine.stop_execution(user_id)
         await orchestrator.cleanup_user_state(user_id)
 
-        # 4. Register Tasks
-        logger.info(f"📝 [SQH] Registering {len(tasks)} tasks with Orchestrator...")
         await orchestrator.register_tasks(user_id, tasks)
-        
-        # 5. Setup Execution Dependencies
-        # ✅ Ensure server executor is set
+
         if not execution_engine.server_tool_executor:
-            logger.info("🔧 [SQH] Injecting server executor...")
             execution_engine.set_server_executor(get_server_executor())
-        
-        # ✅ UNIFIED: Setup based on environment
+
         if settings.environment == "DESKTOP":
-            # Desktop: inject client tool executor for direct execution
             if not execution_engine.client_tool_executor:
-                logger.info("🔧 [SQH] Injecting client tool executor (desktop mode)...")
                 execution_engine.set_client_executor(get_client_executor())
         else:
-            # Production: inject socket handler for remote emit
             if not execution_engine.socket_handler:
-                logger.info("🔧 [SQH] Setting up socket handler (production mode)...")
-                client_emitter = get_task_emitter()
-                execution_engine.set_client_emitter(client_emitter)
-        
-        # 6. Trigger Execution Engine - AUTO START
-        logger.info(f"⚡ [SQH] Starting execution for {len(tasks)} tasks...")
-        await execution_engine.start_execution(user_id)
-        
-        logger.info(f"✅ [SQH] Execution workflow auto-started for user: {user_id}")
-        
-        # 7. Emit final spoken summary AFTER execution completes (background task)
-        # Keep ack_msg as optional hint for backward compatibility.
-        asyncio.create_task(
-            _emit_ack_after_completion(
-                user_id=user_id,
-                message=(ack_msg or ""),
-                execution_engine=execution_engine,
-            )
-        )
-        
-        return None
+                execution_engine.set_client_emitter(get_task_emitter())
 
-    except Exception as e:
-        logger.error(f"❌ [SQH] Critical Failure: {e}", exc_info=True)
+        await execution_engine.start_execution(user_id)
+
+        # Emit TTS summary after execution finishes
+        asyncio.create_task(_emit_summary(user_id, ack or "", execution_engine, original_query, user_lang))
+
+    except Exception as exc:
+        logger.error("[SQH] critical failure user=%s: %s", user_id, exc, exc_info=True)
         raise
 
 
-async def _emit_ack_after_completion(user_id: str, message: str, execution_engine):
-    """
-    Wait for execution to complete, THEN emit centralized final TTS summary.
-    """
-    wait_started = time.perf_counter()
+# ── Post-execution TTS summary ─────────────────────────────────────────────────
+
+async def _emit_summary(
+    user_id: str,
+    ack_hint: str,
+    execution_engine: Any,
+    original_query: str = "",
+    user_lang: str = "en",
+) -> None:
+    """Wait for execution to complete, then emit final TTS summary."""
     try:
-        completion_event = execution_engine.completion_events.get(user_id)
-        if completion_event:
-            logger.info(f"⏳ [SQH] Waiting for execution to complete before ack...")
-            await asyncio.wait_for(completion_event.wait(), timeout=60)
-            wait_ms = (time.perf_counter() - wait_started) * 1000
-            logger.info(f"✅ [SQH] Execution done in %.0fms — preparing final summary TTS", wait_ms)
+        event = execution_engine.completion_events.get(user_id)
+        if event:
+            await asyncio.wait_for(event.wait(), timeout=60)
+    except asyncio.TimeoutError:
+        logger.warning("[SQH] completion wait timed out for user=%s — emitting anyway", user_id)
+    except Exception as exc:
+        logger.error("[SQH] completion wait error user=%s: %s", user_id, exc)
 
-        summary_text = message.strip()
+    try:
+        summary = ack_hint.strip()
         if settings.FINAL_STATE_SUMMARY_TTS_ENABLED:
-            summary_started = time.perf_counter()
-            summary_text = await get_task_summary_speech_service().build_summary_text(
+            summary = await get_task_summary_speech_service().build_summary_text(
                 user_id=user_id,
-                ack_hint=message,
-            )
-            logger.info(
-                "🧾 [SQH] Summary text built in %.0fms",
-                (time.perf_counter() - summary_started) * 1000,
+                ack_hint=ack_hint,
+                original_query=original_query,
+                user_lang=user_lang,
             )
 
-        if not summary_text:
-            logger.info("ℹ️ [SQH] Final summary text empty; skipping TTS emit")
+        if not summary:
             return
 
-        # Emit final summary via socket (works for both desktop and production)
         from app.socket.utils import stream_tts_to_client
-        emit_started = time.perf_counter()
-        await stream_tts_to_client(summary_text, user_id=user_id)
-        logger.info(
-            "✅ [SQH] Final summary emitted in %.0fms: %s",
-            (time.perf_counter() - emit_started) * 1000,
-            summary_text,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(f"⚠️ [SQH] Completion wait timeout — trying summary emit anyway")
-        try:
-            summary_text = message.strip()
-            if settings.FINAL_STATE_SUMMARY_TTS_ENABLED:
-                summary_text = await get_task_summary_speech_service().build_summary_text(
-                    user_id=user_id,
-                    ack_hint=message,
-                )
+        await stream_tts_to_client(summary, user_id=user_id)
 
-            if summary_text:
-                from app.socket.utils import stream_tts_to_client
-                await stream_tts_to_client(summary_text, user_id=user_id)
-                logger.info(f"✅ [SQH] Timeout-path final summary emitted: {summary_text}")
-        except Exception as emit_exc:
-            logger.error(f"❌ [SQH] Timeout-path final summary emit failed: {emit_exc}")
-    except Exception as e:
-        logger.error(f"❌ [SQH] Failed to emit ack after completion: {e}")
-
+    except Exception as exc:
+        logger.error("[SQH] summary emit failed user=%s: %s", user_id, exc)

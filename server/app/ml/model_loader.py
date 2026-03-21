@@ -1,288 +1,355 @@
 """
-Model Loader - Handles downloading and loading all ML models
+Model Loader — downloads, loads, and caches all ML models.
+
+Key behaviours
+──────────────
+• load=True models   — loaded eagerly on load_all_models() at boot.
+• lazy_load=True     — skipped at boot; loaded transparently on first
+                       get_model() call, then cached for the process lifetime.
+• load=False, lazy_load=False — completely skipped; get_model() returns None.
+• Parallel loading   — all eager models start concurrently via ThreadPoolExecutor.
+• Meta-tensor fix    — SentenceTransformer receives model_kwargs={"device_map": None}
+                       so transformers never places weights on a meta device.
+• Lazy device        — torch is never imported at module level; device is resolved
+                       on the first desktop load call.
 """
+
 import logging
 import shutil
-from typing import Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, Optional
+
 from app.ml.config import MODELS_CONFIG, apply_runtime_device_to_models
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class ModelLoader:
-    """Singleton class to manage model loading"""
-    
-    _instance = None
-    _models: Dict[str, Any] = {}
-    _initialized = False
-    _runtime_device: Optional[str] = None
-    
+    """Singleton that owns every loaded ML model for the process lifetime."""
+
+    _instance:        Optional["ModelLoader"] = None
+    _models:          Dict[str, Any]          = {}
+    _initialized:     bool                    = False
+    _runtime_device:  Optional[str]           = None
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
-        if not self._initialized:
-            # Runtime device is intentionally resolved lazily on first desktop load.
-            self.MODELS_CONFIG = MODELS_CONFIG
-            self.DEVICE = "cpu"
-            logger.info("🔧 Initializing ModelLoader (lazy device resolution)")
-            self._initialized = True
+        if self._initialized:
+            return
+        self.__class__._initialized = True
+
+    # ── Internal helpers ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _local_models_enabled() -> bool:
+    def _desktop() -> bool:
         return settings.environment == "DESKTOP"
 
-    def _ensure_runtime_device(self) -> str:
-        """
-        Resolve runtime device once per process in desktop mode and stamp model configs.
-        """
-        if not self._local_models_enabled():
-            self._runtime_device = "cpu"
-            self.DEVICE = "cpu"
-            return "cpu"
-
+    def _ensure_device(self) -> str:
         if self._runtime_device is None:
             self._runtime_device = apply_runtime_device_to_models()
-            self.DEVICE = self._runtime_device
-            logger.info("🧭 ML runtime device resolved once: %s", self._runtime_device)
+            logger.info("Runtime device resolved: %s", self._runtime_device)
         return self._runtime_device
-    
-    def download_model(self, model_key: str) -> bool:
-        """Download a model if not already present"""
-        if not self._local_models_enabled():
-            logger.info(
-                "⏭️ Skipping model download for '%s' (env=%s)",
-                model_key,
-                settings.environment,
-            )
-            return False
-
-        self._ensure_runtime_device()
-        config = MODELS_CONFIG.get(model_key)
-        if not config:
-            logger.error(f"❌ Model '{model_key}' not found in config")
-            return False
-        
-        model_path = config["path"]
-
-        # Check if already downloaded (with format-aware validation for sentence-transformers).
-        if model_path.exists() and any(model_path.iterdir()):
-            if config["type"] == "sentence-transformer":
-                if self._is_sentence_transformer_model_dir(model_path):
-                    logger.info(f"✅ Model '{model_key}' already exists at {model_path}")
-                    return True
-                logger.warning(
-                    "⚠️ Model '%s' directory exists but is invalid/incomplete. Re-downloading...",
-                    model_key,
-                )
-                shutil.rmtree(model_path, ignore_errors=True)
-            else:
-                logger.info(f"✅ Model '{model_key}' already exists at {model_path}")
-                return True
-        
-        logger.info(f"⬇️  Downloading model '{model_key}' from {config['name']}...")
-        
-        try:
-            model_path.mkdir(parents=True, exist_ok=True)
-            
-            if config["type"] == "sentence-transformer":
-                from sentence_transformers import SentenceTransformer
-                # Download from hub and persist in canonical sentence-transformers format.
-                model = SentenceTransformer(config["name"], cache_folder=str(model_path.parent))
-                model.save(str(model_path))
-                if not self._is_sentence_transformer_model_dir(model_path):
-                    raise RuntimeError(
-                        f"Downloaded sentence-transformer artifacts are incomplete at {model_path}"
-                    )
-                
-            elif config["type"] == "whisper":
-                from faster_whisper import WhisperModel
-                # faster-whisper uses size names, not full model names
-                model_size = config["name"].split("/")[-1].replace("whisper-", "")
-                # Just initialize - it will download automatically
-                WhisperModel(model_size, download_root=str(model_path.parent), device="cpu")
-                
-            elif config["type"] == "transformers":
-                from transformers import AutoModelForSequenceClassification, AutoTokenizer
-                model = AutoModelForSequenceClassification.from_pretrained(config["name"])
-                tokenizer = AutoTokenizer.from_pretrained(config["name"])
-                model.save_pretrained(str(model_path))
-                tokenizer.save_pretrained(str(model_path))
-            
-            
-            logger.info(f"✅ Model '{model_key}' downloaded successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to download model '{model_key}': {e}")
-            return False
 
     @staticmethod
-    def _is_sentence_transformer_model_dir(model_path) -> bool:
-        try:
-            required = [
-                model_path / "modules.json",
-                model_path / "1_Pooling" / "config.json",
-            ]
-            return all(path.exists() for path in required)
-        except Exception:
+    def _is_valid_st_dir(path) -> bool:
+        return all([
+            (path / "modules.json").exists(),
+            (path / "1_Pooling" / "config.json").exists(),
+        ])
+
+    @staticmethod
+    def _should_eager_load(cfg: dict) -> bool:
+        return bool(cfg.get("load", True))
+
+    @staticmethod
+    def _should_lazy_load(cfg: dict) -> bool:
+        """True only when load=False AND lazy_load=True."""
+        return not cfg.get("load", True) and bool(cfg.get("lazy_load", False))
+
+    @staticmethod
+    def _is_disabled(cfg: dict) -> bool:
+        """load=False + lazy_load=False → model is disabled."""
+        return not cfg.get("load", True) and not cfg.get("lazy_load", False)
+
+    # ── Download ───────────────────────────────────────────────────────────────
+
+    def download_model(self, model_key: str) -> bool:
+        if not self._desktop():
             return False
-    
-    def load_model(self, model_key: str, force_reload: bool = False) -> Optional[Any]:
-        """Load a model into memory"""
-        if not self._local_models_enabled():
+
+        self._ensure_device()
+        cfg = MODELS_CONFIG.get(model_key)
+        if not cfg:
+            logger.error("Unknown model key: %s", model_key)
+            return False
+
+        # Don't download disabled models
+        if self._is_disabled(cfg):
+            logger.debug("Model '%s' is disabled — skipping download", model_key)
+            return True
+
+        path       = cfg["path"]
+        model_type = cfg["type"]
+
+        if path.exists() and any(path.iterdir()):
+            if model_type == "sentence-transformer":
+                if self._is_valid_st_dir(path):
+                    return True
+                logger.warning("Model '%s' dir incomplete — re-downloading", model_key)
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                return True
+
+        path.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if model_type == "sentence-transformer":
+                from sentence_transformers import SentenceTransformer
+                m = SentenceTransformer(cfg["name"], cache_folder=str(path.parent))
+                m.save(str(path))
+                if not self._is_valid_st_dir(path):
+                    raise RuntimeError(f"ST artifacts incomplete at {path}")
+
+            elif model_type == "whisper":
+                from faster_whisper import WhisperModel
+                # faster-whisper resolves model name directly (e.g. "small")
+                model_name = cfg["name"].split("/")[-1].replace("faster-whisper-", "")
+                path.mkdir(parents=True, exist_ok=True)
+                WhisperModel(model_name, download_root=str(path), device="cpu")
+
+            elif model_type == "transformers":
+                from transformers import AutoModelForSequenceClassification, AutoTokenizer
+                m = AutoModelForSequenceClassification.from_pretrained(cfg["name"])
+                t = AutoTokenizer.from_pretrained(cfg["name"])
+                m.save_pretrained(str(path))
+                t.save_pretrained(str(path))
+
+            logger.info("Downloaded '%s' successfully", model_key)
+            return True
+
+        except Exception as exc:
+            logger.error("Download failed for '%s': %s", model_key, exc)
+            return False
+
+    # ── Load (single model) ────────────────────────────────────────────────────
+
+    def load_model(self, model_key: str, force: bool = False) -> Optional[Any]:
+        """
+        Load one model into memory.
+        Respects load/lazy_load flags unless force=True.
+        Thread-safe for parallel calls.
+        """
+        if not self._desktop():
+            return None
+
+        device = self._ensure_device()
+        cfg    = MODELS_CONFIG.get(model_key)
+
+        if not cfg:
+            logger.error("Unknown model key: %s", model_key)
+            return None
+
+        # Respect disabled flag unless explicitly forced
+        if not force and self._is_disabled(cfg):
             logger.debug(
-                "Skipping local model load for '%s' (env=%s)",
+                "Model '%s' is disabled (load=False, lazy_load=False) — skipping",
                 model_key,
-                settings.environment,
             )
             return None
 
-        device = self._ensure_runtime_device()
-        if not force_reload and model_key in self._models:
-            logger.info(f"♻️  Using cached model '{model_key}'")
+        if not force and model_key in self._models:
             return self._models[model_key]
-        
-        config = MODELS_CONFIG.get(model_key)
-        if not config:
-            logger.error(f"❌ Model '{model_key}' not found in config")
-            return None
 
-        config["device"] = device
-        
-        model_path = config["path"]
-        
-        # Ensure model is downloaded
         if not self.download_model(model_key):
             return None
-        
-        logger.info(f"📦 Loading model '{model_key}' from {model_path}...")
-        
+
+        logger.info("Loading '%s' from %s on %s", model_key, cfg["path"], device)
+
         try:
-            if config["type"] == "sentence-transformer":
-                from sentence_transformers import SentenceTransformer
-                model = SentenceTransformer(str(model_path), device=config["device"])
-                
-            elif config["type"] == "whisper":
-                from faster_whisper import WhisperModel
-                model_size = config["name"].split("/")[-1].replace("whisper-", "")
-                compute_type = "float16" if config["device"] in ["cuda"] else "int8"
-                model = WhisperModel(
-                    model_size,
-                    device=config["device"],
-                    compute_type=compute_type,
-                    download_root=str(model_path.parent)
-                )
-                
-            elif config["type"] == "transformers":
-                from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
-                model = pipeline(
-                    "text-classification",
-                    model=str(model_path),
-                    tokenizer=str(model_path),
-                    device=0 if config["device"] == "cuda" else -1
-                )
-                
-            
-            else:
-                logger.error(f"❌ Unknown model type: {config['type']}")
-                return None
-            
-            self._models[model_key] = model
-            logger.info(f"✅ Model '{model_key}' loaded successfully on {config['device']}")
-            return model
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to load model '{model_key}': {e}")
+            model = self._load_by_type(cfg["type"], cfg["path"], cfg, device)
+        except Exception as exc:
+            logger.error("Failed to load '%s': %s", model_key, exc, exc_info=True)
             return None
-    
-    def download_all_models(self) -> bool:
-        """Download all configured models"""
-        if not self._local_models_enabled():
-            logger.info("⏭️ Skipping all model downloads (env=%s)", settings.environment)
-            return True
 
-        self._ensure_runtime_device()
-        logger.info("⬇️  Downloading all models...")
-        success = True
-        
-        for model_key in MODELS_CONFIG.keys():
-            if not self.download_model(model_key):
-                success = False
-        
-        if success:
-            logger.info("✅ All models downloaded successfully")
-        else:
-            logger.warning("⚠️  Some models failed to download")
-        
-        return success
-    
+        self._models[model_key] = model
+        logger.info("'%s' ready on %s", model_key, device)
+        return model
+
+    def _load_by_type(self, mtype: str, path, cfg: dict, device: str) -> Any:
+        if mtype == "sentence-transformer":
+            return self._load_sentence_transformer(path, cfg, device)
+
+        if mtype == "whisper":
+            from faster_whisper import WhisperModel
+            model_name  = cfg["name"].split("/")[-1].replace("faster-whisper-", "")
+            compute     = "float16" if device == "cuda" else "int8"
+            cpu_threads = int(getattr(settings, "WHISPER_CPU_THREADS", 4))
+            return WhisperModel(
+                model_name,
+                device=device,
+                compute_type=compute,
+                cpu_threads=cpu_threads,
+                download_root=str(path),
+            )
+
+        if mtype == "transformers":
+            from transformers import pipeline
+            return pipeline(
+                "text-classification",
+                model=str(path), tokenizer=str(path),
+                device=0 if device == "cuda" else -1,
+            )
+
+        raise ValueError(f"Unknown model type: {mtype}")
+
+    @staticmethod
+    def _load_sentence_transformer(path, cfg: dict, device: str):
+        import torch
+        from sentence_transformers import SentenceTransformer
+
+        model_kwargs: dict = {"device_map": None}
+        if device in ("cpu", "vulkan"):
+            model_kwargs["dtype"] = torch.float32
+
+        model = SentenceTransformer(str(path), device=device, model_kwargs=model_kwargs)
+        if cfg.get("max_seq_length"):
+            model.max_seq_length = cfg["max_seq_length"]
+        return model
+
+    # ── Parallel bulk load (eager models only) ─────────────────────────────────
+
     def load_all_models(self) -> bool:
-        """Load all configured models"""
-        if not self._local_models_enabled():
-            logger.info("⏭️ Skipping all local model loads (env=%s)", settings.environment)
+        """
+        Load all models where load=True in parallel.
+        Models with load=False are skipped here regardless of lazy_load.
+        """
+        if not self._desktop():
             return True
 
-        self._ensure_runtime_device()
-        logger.info("📦 Loading all models...")
+        self._ensure_device()
+
+        eager_keys = [k for k, cfg in MODELS_CONFIG.items() if self._should_eager_load(cfg)]
+        skip_keys  = [k for k, cfg in MODELS_CONFIG.items() if not self._should_eager_load(cfg)]
+
+        if skip_keys:
+            for k in skip_keys:
+                cfg = MODELS_CONFIG[k]
+                tag = "lazy" if self._should_lazy_load(cfg) else "disabled"
+                logger.info("Skipping '%s' at boot (%s)", k, tag)
+
+        if not eager_keys:
+            return True
+
+        logger.info("Eager loading %d model(s): %s", len(eager_keys), eager_keys)
         success = True
-        
-        for model_key in MODELS_CONFIG.keys():
-            if not self.load_model(model_key):
-                success = False
-        
-        if success:
-            logger.info("✅ All models loaded successfully")
-        else:
-            logger.warning("⚠️  Some models failed to load")
-        
+
+        with ThreadPoolExecutor(max_workers=len(eager_keys), thread_name_prefix="ml_load") as ex:
+            futures = {ex.submit(self.load_model, k): k for k in eager_keys}
+            for fut in as_completed(futures):
+                key = futures[fut]
+                try:
+                    if fut.result() is None:
+                        logger.warning("Model '%s' did not load", key)
+                        success = False
+                except Exception as exc:
+                    logger.error("Model '%s' load raised: %s", key, exc)
+                    success = False
+
         return success
-    
+
+    def download_all_models(self) -> bool:
+        """Download all non-disabled models in parallel."""
+        if not self._desktop():
+            return True
+
+        self._ensure_device()
+        keys    = [k for k, cfg in MODELS_CONFIG.items() if not self._is_disabled(cfg)]
+        success = True
+
+        with ThreadPoolExecutor(max_workers=max(1, len(keys)), thread_name_prefix="ml_dl") as ex:
+            futures = {ex.submit(self.download_model, k): k for k in keys}
+            for fut in as_completed(futures):
+                key = futures[fut]
+                try:
+                    if not fut.result():
+                        success = False
+                except Exception as exc:
+                    logger.error("Download '%s' raised: %s", key, exc)
+                    success = False
+
+        return success
+
+    # ── Accessor — respects lazy_load ──────────────────────────────────────────
+
     def get_model(self, model_key: str) -> Optional[Any]:
-        """Get a loaded model"""
-        return self._models.get(model_key)
-    
-    def warmup_models(self):
-        """Warmup models with dummy data to avoid cold start"""
-        if not self._local_models_enabled():
-            logger.info("⏭️ Skipping model warmup (env=%s)", settings.environment)
+        """
+        Return a loaded model.
+
+        Behaviour by flag:
+          load=True            → already in cache from boot; returns immediately.
+          load=False, lazy=True  → loads now on first call, cached for all future calls.
+          load=False, lazy=False → disabled; returns None without loading.
+        """
+        if model_key in self._models:
+            return self._models[model_key]
+
+        cfg = MODELS_CONFIG.get(model_key)
+        if not cfg:
+            logger.error("Unknown model key: %s", model_key)
+            return None
+
+        if self._is_disabled(cfg):
+            logger.debug("get_model('%s') — model is disabled, returning None", model_key)
+            return None
+
+        # Lazy load — first access triggers load
+        if self._should_lazy_load(cfg):
+            logger.info("Lazy-loading '%s' on first access", model_key)
+            return self.load_model(model_key)
+
+        return None
+
+    # ── Warmup ─────────────────────────────────────────────────────────────────
+
+    def warmup(self) -> None:
+        """Dummy inference on every loaded model to avoid cold starts."""
+        if not self._desktop():
             return
 
-        logger.info("🔥 Warming up models...")
-        
-        try:
-            # Warmup embedding model
-            if "embedding" in self._models:
-                self._models["embedding"].encode(["warmup text"], show_progress_bar=False)
-                logger.info("✅ Embedding model warmed up")
-            
-            # Warmup emotion model
-            if "emotion" in self._models:
-                self._models["emotion"]("warmup text")
-                logger.info("✅ Emotion model warmed up")
-            
-            # Note: Kokoro TTS handles its own initialization separately
-            
-            # Whisper warmup happens on first transcription
-            
-            logger.info("✅ All models warmed up")
-            
-        except Exception as e:
-            logger.warning(f"⚠️  Model warmup failed: {e}")
-    
-    def unload_model(self, model_key: str):
-        """Unload a model from memory"""
-        if model_key in self._models:
-            del self._models[model_key]
-            logger.info(f"🗑️  Model '{model_key}' unloaded from memory")
-    
-    def unload_all_models(self):
-        """Unload all models from memory"""
+        emb = self._models.get("embedding")
+        if emb:
+            try:
+                emb.encode(["warmup"], show_progress_bar=False)
+                logger.info("Embedding model warmed up")
+            except Exception as exc:
+                logger.warning("Embedding warmup failed: %s", exc)
+
+        emo = self._models.get("emotion")
+        if emo:
+            try:
+                emo("warmup text")
+                logger.info("Emotion model warmed up")
+            except Exception as exc:
+                logger.warning("Emotion warmup failed: %s", exc)
+
+    def warmup_models(self) -> None:
+        """Alias for warmup() — backwards compatibility."""
+        return self.warmup()
+
+    # ── Cleanup ────────────────────────────────────────────────────────────────
+
+    def unload(self, model_key: str) -> None:
+        self._models.pop(model_key, None)
+        logger.info("Unloaded model '%s'", model_key)
+
+    def unload_all(self) -> None:
         self._models.clear()
-        logger.info("🗑️  All models unloaded from memory")
+        logger.info("All models unloaded")
 
 
-# Singleton instance
 model_loader = ModelLoader()

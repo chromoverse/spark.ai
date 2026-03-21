@@ -1,67 +1,74 @@
 """
-PQH - Primary Query Handler
-Pure Tool Decision Engine — targets ~900-1000 tokens at runtime
+PQH Prompt — Tool Decision Engine
+
+build_system_prompt() returns ONLY the static rules + tool registry.
+
+Recent conversation and the user query are injected as real message
+turns by chat_service._build_messages() — not as formatted text here.
+
+This keeps the system prompt static so Groq can prefix-cache it.
+The only thing that could bust the cache is a change to the tools
+registry — which happens infrequently.
 """
-from typing import List, Dict, Optional
+
+from __future__ import annotations
+
+from typing import List, Dict
 from app.plugins.tools.tool_index_loader import get_tools_index
 
 
-def _format_recent_context(recent_context: Optional[List[Dict]] = None) -> str:
-    if not recent_context:
-        return "  (none)"
-    lines = []
-    for msg in recent_context[-5:]:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")[:120]
-        lines.append(f"  {role}: {content}")
-    return "\n".join(lines) if lines else "  (none)"
+def build_system_prompt() -> str:
+    """
+    Static tool-decision system prompt.
 
-
-def build_prompt(current_query: str, recent_context: Optional[List[Dict]] = None) -> str:
+    Does NOT include recent_context or the user query — those are
+    injected as real message turns so the LLM attends to them properly.
+    """
     available_tools = get_tools_index()
+
     tools_str = "\n".join(
         f"  {t['name']}: {t.get('description', '').strip()}"
         for t in available_tools
     )
-    categories = sorted(set(t.get("category", "general") for t in available_tools))
-    recent_str = _format_recent_context(recent_context)
+    categories   = sorted(set(t.get("category", "general") for t in available_tools))
     semantic_rules = _build_semantic_tool_rules(available_tools)
+    tool_examples  = _build_examples(available_tools)
 
-    return f"""You are SPARK's Tool Decision Engine. Your only job is to decide whether a user query needs a tool or not, and output a strict JSON decision.
+    return f"""You are SPARK's Tool Decision Engine. Your only job: decide whether the user query needs a tool, and output strict JSON.
 
 ━━━ AVAILABLE TOOLS ({len(available_tools)} tools | categories: {", ".join(categories)}) ━━━
 {tools_str}
 
-━━━ RECENT CONVERSATION ━━━
-{recent_str}
+━━━ CONVERSATION HISTORY ━━━
+You will receive the recent conversation as real message turns above this system prompt.
+Use them to resolve ambiguous references ("that one", "same app", "the model I mentioned").
+If the answer or intent is clear from history → no tool needed.
 
-━━━ DECISION GATES (work top to bottom, stop at first match) ━━━
+━━━ DECISION GATES (top to bottom, stop at first match) ━━━
 
-GATE 1 — HARD NO-TOOL (these NEVER need a tool, no exceptions):
+GATE 1 — HARD NO-TOOL (never needs a tool):
   • Jokes, banter, roasts, small talk, greetings
-  • Math, logic, coding questions, general knowledge
+  • Math, logic, coding, general knowledge
   • Opinions, advice, definitions, explanations
-  • Creative requests: poems, stories, rhymes, ideas
-  • Anything recallable from RECENT CONVERSATION above
+  • Creative: poems, stories, rhymes, ideas
+  • Anything answerable from conversation history
 
-GATE 2 — RESOLVE FROM CONTEXT FIRST:
-  • If the query is short or ambiguous, read RECENT CONVERSATION.
-  • If context makes the intent clear → respond from context, no tool.
-  • Example: user said "play something chill" earlier, now says "lo-fi" → play tool.
-  • Example: user asked about a model earlier, now says "that one" → no tool, recall it.
+GATE 2 — RESOLVE FROM HISTORY FIRST:
+  • Short or ambiguous query → check conversation turns above.
+  • If history resolves it → answer directly, no tool.
 
 GATE 3 — USE A TOOL only if:
   • Needs a real-world system action: open app, control OS, set alarm, manage files.
-  • Needs genuinely live data: current weather, live prices, real-time news.
-  • Needs to interact with a connected external service.
+  • Needs live data: current weather, live prices, real-time news.
+  • Needs a connected external service.
 
 GATE 4 — MULTI-TOOL only if:
-  • Query clearly needs two distinct real-world actions simultaneously.
-  • Never chain tools speculatively or "just in case".
+  • Two distinct real-world actions are clearly needed simultaneously.
+  • Never chain tools speculatively.
 
 ⚠️  DEFAULT WHEN UNSURE → no tool. Always err toward answering directly.
 
-━━━ TOOL SEMANTICS (hard rules) ━━━
+━━━ TOOL SEMANTICS ━━━
 {semantic_rules}
 
 ━━━ OUTPUT FORMAT (strict JSON, no extra text) ━━━
@@ -88,28 +95,7 @@ No-tool cases:
   "what did we talk about"    → tool:none  | requested_tool: []
   "which model did I mention" → tool:none  | requested_tool: []
 
-{_build_examples(available_tools)}
-━━━ QUERY ━━━
-{current_query}"""
-
-
-def _build_examples(tools: List[Dict]) -> str:
-    """One compact tool example per category, derived from registry."""
-    seen_categories = set()
-    lines = ["Tool cases:"]
-
-    for t in tools:
-        cat = t.get("category", "general")
-        if cat not in seen_categories:
-            seen_categories.add(cat)
-            name = t["name"]
-            desc = t.get("description", "").strip().lower()[:35]
-            trigger = name.replace("_", " ")
-            lines.append(f'  "{trigger}" → tool:{name} | requested_tool: ["{name}"]  # {desc}')
-        if len(lines) >= 5:  # 4 tool examples max
-            break
-
-    return "\n".join(lines)
+{tool_examples}"""
 
 
 def _build_semantic_tool_rules(tools: List[Dict]) -> str:
@@ -117,21 +103,28 @@ def _build_semantic_tool_rules(tools: List[Dict]) -> str:
     rules: list[str] = []
 
     if "call_audio" in tool_names or "call_video" in tool_names:
-        rules.append("  • Call intent (call/dial/ring/phone) must use call_audio or call_video.")
+        rules.append("  • Call intent (call/dial/ring/phone) → call_audio or call_video. Never message_send.")
     if "call_video" in tool_names:
-        rules.append("  • If user explicitly asks video call, choose call_video.")
+        rules.append("  • Explicit video call request → call_video.")
     if "call_audio" in tool_names:
-        rules.append("  • If user asks call without video, choose call_audio.")
+        rules.append("  • Call without video → call_audio.")
     if "message_send" in tool_names:
-        rules.append("  • message_send is only for sending text, never for call intent.")
+        rules.append("  • message_send is for text messages only.")
 
-    if not rules:
-        return "  • No special semantic overrides."
-    return "\n".join(rules)
+    return "\n".join(rules) if rules else "  • No special semantic overrides."
 
 
-if __name__ == "__main__":
-    print(build_prompt("tell me a joke"))
-    print("---")
-    print(build_prompt("what is 15% of 340"))
-
+def _build_examples(tools: List[Dict]) -> str:
+    seen: set[str] = set()
+    lines = ["Tool cases:"]
+    for t in tools:
+        cat = t.get("category", "general")
+        if cat not in seen:
+            seen.add(cat)
+            name    = t["name"]
+            desc    = t.get("description", "").strip().lower()[:35]
+            trigger = name.replace("_", " ")
+            lines.append(f'  "{trigger}" → tool:{name} | requested_tool: ["{name}"]  # {desc}')
+        if len(lines) >= 6:
+            break
+    return "\n".join(lines)

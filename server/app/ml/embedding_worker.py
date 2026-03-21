@@ -35,13 +35,21 @@ class EmbeddingWorker:
             logger.info("✅ EmbeddingWorker initialized")
     
     def _ensure_model_loaded(self):
-        """Ensure embedding model is loaded"""
-        if self.model is None:
-            self.model = model_loader.get_model("embedding")
-            if self.model is None:
-                self.model = model_loader.load_model("embedding")
-            if self.model is None:
-                raise RuntimeError("Failed to load embedding model")
+        """Ensure embedding model is loaded.
+
+        Always fetch from model_loader so we pick up models that were
+        pre-loaded at startup (via load_all_models / warmup).  Never
+        cache a stale None from a previous failed attempt.
+        """
+        model = model_loader.get_model("embedding")
+        if model is not None:
+            self.model = model
+            return
+        # Model wasn't loaded yet — try one load attempt
+        model = model_loader.load_model("embedding")
+        if model is None:
+            raise RuntimeError("Failed to load embedding model")
+        self.model = model
     
     def _generate_embeddings_sync(
         self,

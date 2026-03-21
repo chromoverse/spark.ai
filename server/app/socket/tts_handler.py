@@ -7,15 +7,63 @@ This integrates with the new streaming architecture:
 - Generates audio in real-time
 - Sends audio chunks to frontend instantly
 """
-import logging
+import logging, asyncio
 from typing import Any, Callable, Awaitable
 from app.schemas import RequestTTS
 from app.socket.utils import emit_server_status
 from app.cache import load_user
-from app.services.chat import parallel_chat_execution, stream_chat_response
+from app.services.chat import stream_chat_response
 
 logger = logging.getLogger(__name__)
 
+from app.socket.server import sio
+from app.socket.utils import emit_server_status
+from app.services.chat.chat_service import chat
+from app.services.chat.stream_service import stream_chat_response
+from app.services.tts_services import tts_service
+
+
+
+# ── Parallel execution: stream (TTS) + chat (tools) run independently ─────────
+#
+#   Stream path  → immediate audio feedback to the user via TTS
+#   Chat path    → PQH → tool dispatch (SQH) — heavier, runs in background
+#
+#   They don't depend on each other. Stream doesn't need chat's result.
+#   Chat doesn't need stream's result. Fire both, await chat for query-result.
+
+async def _parallel_execute(
+    query: str,
+    user_id: str,
+    sid: str,
+    voice_name: str | None = None,
+    gender: str = "female",
+) -> dict:
+    async def _stream() -> None:
+        try:
+            await stream_chat_response(
+                query=query,
+                user_id=user_id,
+                sio=sio,
+                sid=sid,
+                tts_service=tts_service,
+                gender=gender,
+                voice_name=voice_name,
+            )
+        except Exception as exc:
+            logger.error("stream path failed for %s: %s", sid, exc)
+
+    # Stream fires immediately as a background task — user hears audio ASAP
+    stream_task = asyncio.create_task(_stream())
+
+    # Chat runs concurrently — handles tool execution
+    chat_result = None
+    try:
+        chat_result = await chat(query=query, user_id=user_id, wait_for_execution=False)
+    except Exception as exc:
+        logger.error("chat path failed for %s: %s", sid, exc)
+
+    return {"stream_task": stream_task, "chat_result": chat_result}
 
 async def handle_tts_request(
     sio: Any,
@@ -174,12 +222,10 @@ async def handle_tts_request_with_parallel_chat(
         voice_name = (user.get("ai_voice_name") or "").strip() or None
         
         # Run both TTS stream and chat in parallel
-        result = await parallel_chat_execution(
+        result = await _parallel_execute(
             query=data.text,
             user_id=user_id,
-            sio=sio,
             sid=sid,
-            tts_service=tts_service,
             gender=gender,
             voice_name=voice_name,
         )

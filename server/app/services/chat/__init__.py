@@ -4,7 +4,6 @@ from .chat_service import chat
 from .sqh_service import process_sqh
 from .stream_service import (
     StreamService,
-    parallel_chat_execution,
     stream_chat_response,
 )
 from .task_summary_speech_service import (
@@ -21,7 +20,6 @@ __all__ = [
     "process_sqh",
     "StreamService",
     "stream_chat_response",
-    "parallel_chat_execution",
     "TaskSummarySpeechService",
     "get_task_summary_speech_service",
     "ToolOutputDeliveryService",

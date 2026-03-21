@@ -1,5 +1,6 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config import settings
+import certifi
 import logging
 from typing import Optional
 
@@ -13,7 +14,10 @@ async def connect_to_mongo():
     global client, db
 
     try:
-        client = AsyncIOMotorClient(settings.mongo_uri)
+        client = AsyncIOMotorClient(
+            settings.mongo_uri,
+            tlsCAFile=certifi.where(),
+        )
         db = client[settings.db_name]
         logger.info("Async MongoDB connected")
 

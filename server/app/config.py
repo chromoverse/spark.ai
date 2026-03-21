@@ -65,60 +65,13 @@ class Settings(BaseSettings):
             "environment must be one of: DESKTOP, DEVELOPMENT, PRODUCTION"
         )
 
-    @model_validator(mode="after")
-    def _hydrate_cloudflare_alias_fallbacks(self) -> "Settings":
-        """
-        AliasChoices prefers the first present env var even when it's empty.
-        Fill from legacy aliases when primary values are blank.
-        """
-        if not (self.cloudflare_api_token or "").strip():
-            self.cloudflare_api_token = _fallback_env_value(
-                "CLOUDFLARE_API_TOKEN",
-                "CLOUDFLARE_API_KEY",
-            )
-
-        if not (self.cloudflare_account_id or "").strip():
-            self.cloudflare_account_id = _fallback_env_value(
-                "CLOUDFLARE_ACCOUNT_ID",
-                "CLOUDFLARE_USER_ID",
-            )
-
-        if not (self.cloudflare_kv_namespace_id or "").strip():
-            self.cloudflare_kv_namespace_id = _fallback_env_value(
-                "CLOUDFLARE_KV_NAMESPACE_ID",
-                "CLOUDFLARE_NAMESPACE_ID",
-            )
-
-        return self
-
     # =========================
     # Data Stores / Cache
     # =========================
     mongo_uri: str
     upstash_redis_rest_url: str
     upstash_redis_rest_token: str
-    cloudflare_api_token: str = Field(
-        default="",
-        validation_alias=AliasChoices("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_API_KEY"),
-    )
-    cloudflare_api_email: str = Field(
-        default="",
-        validation_alias=AliasChoices("CLOUDFLARE_API_EMAIL", "CLOUDFLARE_EMAIL"),
-    )
-    cloudflare_account_id: str = Field(
-        default="",
-        validation_alias=AliasChoices("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_USER_ID"),
-    )
-    cloudflare_kv_namespace_id: str = Field(
-        default="",
-        validation_alias=AliasChoices(
-            "CLOUDFLARE_KV_NAMESPACE_ID",
-            "CLOUDFLARE_NAMESPACE_ID",
-        ),
-    )
-    cloudflare_kv_timeout_ms: int = 3000
-    cache_prod_backend: str = "cloudflare_kv"
-    cache_upstash_fallback_enabled: bool = True
+    cache_prod_backend: str = "upstash"
     cache_sync_enabled: bool = True
     cache_sync_batch_size: int = 100
     cache_sync_flush_interval_ms: int = 2000
@@ -191,8 +144,9 @@ class Settings(BaseSettings):
     STREAM_FAST_ACK_ENABLED: bool = True
     STREAM_USE_LLM_STREAM: bool = True
     STREAM_USE_COMPACT_PROMPT: bool = True
-    STREAM_GROQ_FAST_MODEL: str = "llama-3.1-8b-instant"
-
+    GROQ_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"  # streaming
+    GROQ_REASONING_MODEL: str = "openai/gpt-oss-20b"                           # non-streaming only
+    GROQ_FALLBACK_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"  # lightweight fallback
     STREAM_CONTEXT_BUDGET_MS: int = 200
     STREAM_CONTEXT_TARGET_MS: int = 100
     STREAM_CONTEXT_EMBED_BUDGET_MS: int = 35
@@ -220,13 +174,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_ignore_empty = True
         extra = "ignore"
-
-    @property
-    def CLOUDFLARE_API_KEY(self) -> str:
-        """
-        Backward-compatible alias for legacy codepaths expecting uppercase setting.
-        """
-        return self.cloudflare_api_token
 
 
 settings = Settings()  # type: ignore

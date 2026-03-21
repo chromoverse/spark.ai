@@ -41,5 +41,3 @@ def get_kernel_event_bus() -> KernelEventBus:
 
 async def emit_kernel_event(event: KernelEvent) -> None:
     await get_kernel_event_bus().emit(event)
-
-

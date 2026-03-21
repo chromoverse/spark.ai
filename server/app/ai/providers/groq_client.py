@@ -1,29 +1,32 @@
 """
 Groq LLM Client — Primary provider using Groq's OpenAI-compatible API.
-
 Uses the openai SDK pointed at https://api.groq.com/openai/v1
 Env var: GROQ_API_KEY (JSON array of keys)
-Default model: llama-3.3-70b-versatile
 """
 import asyncio
 import logging
-from typing import Any, List, Dict, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, List
 
 from openai import OpenAI  # type: ignore[import-untyped]
 from app.ai.providers.base_client import BaseClient
 
 logger = logging.getLogger(__name__)
 
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
 GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
-GROQ_REASONING_MODEL = "openai/gpt-oss-20b"
+
+_SENTINEL = object()
+
+
+def _is_reasoning(model: str) -> bool:
+    return "gpt-oss" in model or "reasoning" in model
 
 
 class GroqClient(BaseClient):
     """Groq provider — fastest inference, primary in fallback chain."""
 
     def __init__(self) -> None:
-        super().__init__(
+        super().__init__(  # type: ignore[call-arg]
             provider_name="Groq",
             env_key="GROQ_API_KEY",
             default_model=GROQ_DEFAULT_MODEL,
@@ -38,33 +41,36 @@ class GroqClient(BaseClient):
             timeout=30.0,
             max_retries=1,
         )
-    
-    async def _do_chat(self, client, messages, model, temperature, max_tokens) -> str:
+
+    async def _do_chat(
+        self,
+        client: Any,
+        messages: List[Dict[str, str]],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
         def _call() -> str:
-            # Reasoning models (gpt-oss-*) don't support temperature
-            is_reasoning = "gpt-oss" in model or "reasoning" in model
-            
-            kwargs: Dict[str, Any] = dict(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-            )
-            if not is_reasoning:
-                kwargs["temperature"] = temperature  # only add for non-reasoning models
+            kwargs: Dict[str, Any] = {
+                "model":      model,
+                "messages":   messages,
+                "max_tokens": max_tokens,
+            }
+            if not _is_reasoning(model):
+                kwargs["temperature"] = temperature
 
             completion = client.chat.completions.create(**kwargs)
-            
             if not completion.choices:
-                raise ValueError("Groq returned empty response")
-            
-            msg = completion.choices[0].message
+                raise ValueError("Groq returned empty choices")
+
+            msg     = completion.choices[0].message
             content = msg.content or getattr(msg, "reasoning_content", None)
-            
             if not content:
-                raise ValueError("Groq returned empty response")
-            
+                raise ValueError("Groq returned empty content")
             return str(content)
+
         return await asyncio.to_thread(_call)
+
     async def _do_stream(
         self,
         client: Any,
@@ -73,23 +79,50 @@ class GroqClient(BaseClient):
         temperature: float,
         max_tokens: int,
     ) -> AsyncGenerator[str, None]:
-        """Stream response — runs sync iterator in a thread-safe way."""
-        def _create_stream() -> Any:
-            return client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-            )
+        """
+        Stream via a thread-safe queue.
 
-        stream = await asyncio.to_thread(_create_stream)
+        FIX: Use asyncio.get_running_loop() (not get_event_loop()) and cache
+        the reference once — both the producer thread and run_in_executor call
+        must use the exact same loop object to avoid dropped chunks / hangs.
+        """
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()   # ← FIX: get_running_loop, stored once
 
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-                await asyncio.sleep(0)  # yield control to event loop
+        def _produce() -> None:
+            """Runs in a thread — iterates the sync stream, pushes to queue."""
+            try:
+                kwargs: Dict[str, Any] = {
+                    "model":      model,
+                    "messages":   messages,
+                    "max_tokens": max_tokens,
+                    "stream":     True,
+                }
+                if not _is_reasoning(model):
+                    kwargs["temperature"] = temperature
+
+                stream = client.chat.completions.create(**kwargs)
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    text  = delta.content or getattr(delta, "reasoning_content", None)
+                    if text:
+                        asyncio.run_coroutine_threadsafe(queue.put(str(text)), loop)
+            except Exception as exc:
+                asyncio.run_coroutine_threadsafe(queue.put(exc), loop)
+            finally:
+                asyncio.run_coroutine_threadsafe(queue.put(_SENTINEL), loop)
+
+        loop.run_in_executor(None, _produce)   # ← FIX: use cached loop
+
+        while True:
+            item = await queue.get()
+            if item is _SENTINEL:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
 
     def _extra_quota_keywords(self) -> List[str]:
-        """Groq-specific quota error patterns."""
         return ["resource_exhausted"]

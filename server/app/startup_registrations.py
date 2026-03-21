@@ -19,22 +19,22 @@ logger = logging.getLogger(__name__)
 
 
 # ── 0. Runtime dependency bootstrap (device-aware package install) ──
-async def _bootstrap_runtime_dependencies() -> None:
-    from app.bootstrap.runtime_dependency_bootstrap import ensure_runtime_dependencies
-    from app.config import settings
+# async def _bootstrap_runtime_dependencies() -> None:
+#     from app.bootstrap.runtime_dependency_bootstrap import ensure_runtime_dependencies
+#     from app.config import settings
 
-    if settings.environment != "DESKTOP":
-        logger.info("Skipping runtime dependency bootstrap (env=%s)", settings.environment)
-        return
+#     if settings.environment != "DESKTOP":
+#         logger.info("Skipping runtime dependency bootstrap (env=%s)", settings.environment)
+#         return
  
-    report = await ensure_runtime_dependencies()
-    if report.failed and bool(getattr(settings, "RUNTIME_AUTO_INSTALL_STRICT", False)):
-        raise RuntimeError(
-            "Runtime dependency bootstrap failed: " + ", ".join(report.failed)
-        )
+#     report = await ensure_runtime_dependencies()
+#     if report.failed and bool(getattr(settings, "RUNTIME_AUTO_INSTALL_STRICT", False)):
+#         raise RuntimeError(
+#             "Runtime dependency bootstrap failed: " + ", ".join(report.failed)
+#         )
 
 
-register("Runtime dependencies (device-aware bootstrap)", _bootstrap_runtime_dependencies)
+# register("Runtime dependencies (device-aware bootstrap)", _bootstrap_runtime_dependencies)
 
 
 # ── 1. API Key cache (sync — reads Windows registry once) ──
@@ -49,7 +49,7 @@ register("KeyCache (API keys)", _warmup_key_cache)
 # ── 2. Cache client (LocalKV / LanceDB / Redis) ──
 async def _warmup_cache_client() -> None:
     from app.config import settings
-    from app.cache import cache_manager, sync_manager
+    from app.cache import cache_manager
 
     try:
         await cache_manager._ensure_client()
@@ -61,9 +61,6 @@ async def _warmup_cache_client() -> None:
             )
             return
         raise
-
-    if settings.environment == "DESKTOP":
-        await sync_manager.start(cache_manager)
 
 
 register("Cache client (LocalKV/Redis)", _warmup_cache_client)
