@@ -60,11 +60,14 @@ function registerGlobalShortcuts(mainWindow: BrowserWindow) {
   const registered = globalShortcut.register(shortcut, () => {
     console.log("🔇 Global shortcut triggered: Toggle Microphone Mute");
 
-    // Send the mic toggle event to the renderer
+    // Broadcast mic toggle to every open renderer window.
+    // Each window has its own Redux store, so single-target emit can desync UI state.
     const secondaryWin = windowManager.getSecondaryWindow()?.getBrowserWindow();
-    const targetWindow = secondaryWin?.isVisible() ? secondaryWin : mainWindow;
+    const targets = [mainWindow, secondaryWin].filter(
+      (win): win is BrowserWindow => Boolean(win && !win.isDestroyed()),
+    );
 
-    if (targetWindow) {
+    for (const targetWindow of targets) {
       ipcWebContentSend("onMicMuteToggle", targetWindow.webContents, {});
     }
   });

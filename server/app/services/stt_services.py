@@ -7,6 +7,7 @@ import io
 import logging
 import re
 import time
+import wave
 from typing import Optional, Dict, Any
 
 import numpy as np
@@ -28,7 +29,11 @@ MIME_TO_EXT = {
     "audio/m4a": ".m4a",
     "audio/mp4": ".mp4",
     "audio/ogg": ".ogg",
+    "audio/pcm": ".wav",
+    "audio/l16": ".wav",
 }
+
+_PCM_RATE_RE = re.compile(r"(?:^|;)\s*rate\s*=\s*(\d+)\s*(?:;|$)", re.IGNORECASE)
 
 # Hallucination detection thresholds
 _MAX_WORDS_PER_SECOND = 8       # Normal speech ~2-3 words/sec
@@ -125,6 +130,33 @@ class WhisperService:
             raise ValueError("Audio data too small (< 1KB)")
         
         return audio_bytes
+
+    @staticmethod
+    def _is_pcm_mime(mime_type: str) -> bool:
+        base_mime = mime_type.split(";")[0].strip().lower()
+        return base_mime in {"audio/pcm", "audio/l16"}
+
+    @staticmethod
+    def _extract_pcm_rate(mime_type: str) -> int:
+        match = _PCM_RATE_RE.search(mime_type or "")
+        if not match:
+            return 16000
+        try:
+            rate = int(match.group(1))
+            return rate if rate > 0 else 16000
+        except Exception:
+            return 16000
+
+    @staticmethod
+    def _wrap_pcm16_as_wav(pcm_bytes: bytes, sample_rate: int) -> bytes:
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(pcm_bytes)
+        buffer.seek(0)
+        return buffer.read()
     
     def _get_extension(self, mime_type: str) -> str:
         """Get file extension from MIME type"""
@@ -167,6 +199,10 @@ class WhisperService:
         try:
             # Decode and validate audio
             audio_bytes = self._decode_audio(audio_data)
+            if self._is_pcm_mime(mime_type):
+                sample_rate = self._extract_pcm_rate(mime_type)
+                audio_bytes = self._wrap_pcm16_as_wav(audio_bytes, sample_rate=sample_rate)
+                logger.debug("🎧 Wrapped PCM payload into WAV for local Whisper (%s Hz)", sample_rate)
             
             logger.info(f"📝 Processing {len(audio_bytes)} bytes in-memory")
             

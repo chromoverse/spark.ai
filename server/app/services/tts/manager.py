@@ -14,15 +14,10 @@ class TTSManager:
     """
     Manages TTS engines with fallback priority.
 
-    When groq_mode is ON:
-        0. Groq TTS (Cloud, Fast, High Quality)
-        1. Kokoro  (Local, Fast, High Quality)
-        2. Edge TTS
-        3. gTTS
-
-    When groq_mode is OFF:
-        1. Kokoro
-        2. Edge TTS
+    Priority order:
+        0. Groq TTS (when groq_mode is enabled)
+        1. Edge TTS
+        2. Kokoro (desktop only)
         3. gTTS
     """
     
@@ -46,7 +41,13 @@ class TTSManager:
             except Exception as e:
                 logger.warning(f"⚠️ TTS: Groq engine unavailable: {e}")
             
-        # Priority 1: Kokoro (desktop only; production is cloud-first).
+        # Priority 1: Edge TTS
+        edge = EdgeEngine()
+        if await edge.is_available():
+            self.engines.append(edge)
+            logger.info("✅ TTS: Edge engine enabled")
+
+        # Priority 2: Kokoro (desktop only; production is cloud-first).
         if settings.environment == "DESKTOP":
             kokoro = KokoroEngine()
             if await kokoro.is_available():
@@ -54,13 +55,7 @@ class TTSManager:
                 logger.info("✅ TTS: Kokoro engine enabled")
         else:
             logger.info("⏭️ TTS: skipping Kokoro init (env=%s)", settings.environment)
-            
-        # Priority 2: Edge TTS
-        edge = EdgeEngine()
-        if await edge.is_available():
-            self.engines.append(edge)
-            logger.info("✅ TTS: Edge engine enabled")
-            
+
         # Priority 3: gTTS
         gtts = GTTSEngine()
         if await gtts.is_available():
@@ -125,21 +120,9 @@ class TTSManager:
             raise RuntimeError("No TTS engines available")
 
     def _engine_order(self, prefer_low_latency: bool) -> List[TTSEngine]:
-        if not prefer_low_latency:
-            return list(self.engines)
-
-        # For low-latency utterances, prefer local/offline engines first to avoid
-        # cloud round-trips before first audible chunk.
-        priority = {
-            "kokoro": 0,
-            "edge": 1,
-            "gtts": 2,
-            "groq-tts": 3,
-        }
-        return sorted(
-            self.engines,
-            key=lambda engine: priority.get(engine.get_engine_name(), 9),
-        )
+        # Keep a single deterministic fallback order for all modes:
+        # Groq -> Edge -> Kokoro -> gTTS.
+        return list(self.engines)
             
     # Singleton access
     @classmethod

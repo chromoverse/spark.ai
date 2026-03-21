@@ -106,8 +106,128 @@ class ChatCacheMixin(BaseCacheManager):
         embedding: Optional[List[float]] = None,
     ) -> None:
         """
+<<<<<<< HEAD
         Write one message to SQLite + LanceDB.
         If no embedding is supplied, one is computed here (blocking, but called in bg tasks).
+=======
+        Add message to BOTH storages:
+        1. SQLite (for fast retrieval of chat history)
+        2. LanceDB (for semantic search with vectors)
+        """
+        timestamp = datetime.now(NEPAL_TZ).isoformat()
+        message_id = f"{user_id}_{int(time.time() * 1000000)}_{uuid.uuid4().hex[:8]}"
+        await self._ensure_client()
+        kv_client = self._get_kv_client()
+        vector_client = self._get_vector_client()
+        
+        if kv_client and vector_client:
+            from app.services.embedding_services import embedding_service
+            try:
+                final_embedding = embedding
+                if not final_embedding:
+                    final_embedding = await embedding_service.embed_single(content)
+                
+                # 1. Add to SQLite (messages table)
+                await kv_client.add_message(user_id, role, content, timestamp, message_id)
+                
+                # 2. Add to LanceDB (vectors table)
+                await vector_client.add_chat_message(user_id, role, content, final_embedding, timestamp)
+                
+                logger.debug(f"✅ Message added to both SQLite + LanceDB: [{role}] {content[:50]}...")
+
+                if bool(getattr(settings, "cache_sync_enabled", True)):
+                    # Desktop local-first: queue sync when unsynced message batch threshold is reached.
+                    try:
+                        asyncio.create_task(get_sync_manager().enqueue_recent_messages_if_needed(user_id))
+                    except Exception as exc:
+                        logger.debug("Failed to enqueue recent_messages sync: %s", exc)
+                return
+            except Exception as e:
+                logger.error(f"❌ Error adding message: {e}", exc_info=True)
+                return
+
+        # Remote cache path (production/dev)
+        message = {
+            "role": role,
+            "content": content,
+            "timestamp": timestamp
+        }
+        messages, _ = await self._read_recent_messages_payload(user_id)
+        messages.append(message)
+        messages = messages[-self._recent_messages_limit() :]
+        await self._write_recent_messages_payload(user_id, messages)
+        if embedding:
+            await self._set_embedding_cache(user_id, content, embedding)
+        else:
+            asyncio.create_task(self._cache_embedding_with_user(content, user_id))
+    
+    async def add_messages_batch(
+        self, 
+        user_id: str, 
+        messages: List[tuple[str, str]]
+    ) -> int:
+        """Add multiple messages efficiently to BOTH storages"""
+        if not messages:
+            return 0
+        await self._ensure_client()
+        kv_client = self._get_kv_client()
+        vector_client = self._get_vector_client()
+        
+        if kv_client and vector_client:
+            from app.services.embedding_services import embedding_service
+            try:
+                contents = [content for _, content in messages]
+                logger.info(f"Generating {len(contents)} embeddings in batch...")
+                embeddings = await embedding_service.embed_batch(contents)
+                
+                success_count = 0
+                for (role, content), embedding in zip(messages, embeddings):
+                    timestamp = datetime.now(NEPAL_TZ).isoformat()
+                    message_id = f"{user_id}_{int(time.time() * 1000000)}_{uuid.uuid4().hex[:8]}"
+                    
+                    # 1. SQLite
+                    await kv_client.add_message(user_id, role, content, timestamp, message_id)
+                    
+                    # 2. LanceDB
+                    result = await vector_client.add_chat_message(
+                        user_id, role, content, embedding, timestamp
+                    )
+                    if result:
+                        success_count += 1
+                    await asyncio.sleep(0.001)
+
+                if bool(getattr(settings, "cache_sync_enabled", True)):
+                    try:
+                        asyncio.create_task(get_sync_manager().enqueue_recent_messages_if_needed(user_id))
+                    except Exception as exc:
+                        logger.debug("Failed to enqueue recent_messages sync after batch write: %s", exc)
+                
+                logger.info(f"✅ Batch added {success_count}/{len(messages)} messages to both storages")
+                return success_count
+            except Exception as e:
+                logger.error(f"❌ Batch add failed: {e}", exc_info=True)
+                return 0
+        
+        # Redis batch logic
+        success_count = 0
+        for role, content in messages:
+            await self.add_message(user_id, role, content)
+            success_count += 1
+        return success_count
+    
+    async def _cache_embedding_with_user(self, text: str, user_id: str) -> None:
+        """Background task to cache embedding"""
+        try:
+            from app.services.embedding_services import embedding_service
+            embedding = await embedding_service.embed_single(text)
+            await self._set_embedding_cache(user_id, text, embedding)
+        except Exception as e:
+            logger.debug(f"Failed to cache embedding: {e}")
+    
+    async def get_last_n_messages(self, user_id: str, n: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get last N messages from SQLite (FAST, NO VECTORS NEEDED)
+>>>>>>> 7ff3f566494ef823f1013bcd9bc269d63d0fb839
         """
         await self._ensure_client()
         kv = self._get_kv_client()

@@ -91,6 +91,35 @@ export interface TranscriptionPayload {
   timestamp: number;
 }
 
+export interface AIStartPayload {
+  requestId: string;
+}
+
+export interface AITokenPayload {
+  requestId: string;
+  token: string;
+}
+
+export interface AIEndPayload {
+  requestId: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface LatencyMetricsPayload {
+  requestId: string;
+  success: boolean;
+  sttReadyMs?: number | null;
+  speechToFirstTtsMs?: number | null;
+  firstLlmTokenMs?: number | null;
+  firstTtsDispatchMs?: number | null;
+  contextMs?: number | null;
+  totalMs?: number | null;
+  emittedChunks?: number;
+  chars?: number;
+  error?: string;
+}
+
 export interface SendMessagePayload {
   senderId: string;
   receiverId: string;
@@ -183,6 +212,12 @@ export interface SocketEvents {
   
   // Transcription
   "transcription-result": (data: TranscriptionPayload) => void;
+
+  // Stream lifecycle events for conversational UI lock/token rendering
+  "ai-start": (data: AIStartPayload) => void;
+  "ai-token": (data: AITokenPayload) => void;
+  "ai-end": (data: AIEndPayload) => void;
+  "latency-metrics": (data: LatencyMetricsPayload) => void;
   
   // Server status
   "server-status": (data: ServerStatus) => void;

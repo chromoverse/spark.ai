@@ -42,7 +42,9 @@ class EdgeEngine(TTSEngine):
         try:
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
-                    yield chunk["data"]
+                    data = chunk.get("data")
+                    if data:
+                        yield data
         except Exception as e:
             # Handle the 403 error gracefully by logging
             if "403" in str(e):

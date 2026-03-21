@@ -10,7 +10,7 @@ import { useEffect } from "react";
 
 function Home() {
   const { user } = useAppSelector((state) => state.auth);
-  console.log("user fomr state", user);
+  
   useAiResponseHandler({
     autoListen: true,
     onPQHSuccess: (payload) => {
