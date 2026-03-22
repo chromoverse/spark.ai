@@ -7,8 +7,8 @@ from tools_plugin.tools.system import app, battery, brightness, sound, network, 
 from tools_plugin.tools.media import music
 
 async def main():
-    tool = music.MusicPlayTool()
-    res = await tool.execute({"title" : "Lover"})
+    tool = music.MusicStatusTool()
+    res = await tool.execute({"title" : "Aau Timi"})
     print(res.data)
 
     

@@ -158,53 +158,91 @@ def _os_default_open(file_path: str) -> Optional[subprocess.Popen]:
                                 stderr=subprocess.DEVNULL)
 
 
-def _launch_online(title: str, artist: str, album: str, source: str) -> Tuple[Optional[subprocess.Popen], str]:
+def _launch_online(
+    title: str, artist: str, album: str, source: str
+) -> Tuple[Optional[subprocess.Popen], str, Optional[int]]:
     """
-    Try each tier in order, return (Popen, method_used).
+    Launch online playback. Returns (player_proc, method_str, aux_pid).
 
-    Tier 1 – mpv  with ytdl:// URI        (mpv handles yt-dlp internally)
-    Tier 2 – vlc / ffplay  with ytdl URL  (extract URL first via yt-dlp)
-    Tier 3 – OS default player            (download to temp via yt-dlp)
+    aux_pid is the yt-dlp PID when piping — must also be killed on stop.
+
+    Tier 1 – mpv  native yt-dlp           (single process, no URL expiry)
+    Tier 2 – yt-dlp pipe → ffplay/vlc     (continuous feed, no URL expiry, no cuts)
+    Tier 3 – yt-dlp download to temp      (guaranteed complete, slight delay)
     """
     _require_ytdlp()
 
-    query     = " ".join(filter(None, [title, artist, album]))
-    query_uri = f"scsearch1:{query}" if source == "soundcloud" else f"ytdl://ytsearch1:{query}"
-    # yt-dlp search syntax for extract-url doesn't use ytdl:// prefix
+    query        = " ".join(filter(None, [title, artist, album]))
+    query_uri    = f"scsearch1:{query}" if source == "soundcloud" else f"ytdl://ytsearch1:{query}"
     ytdlp_search = f"scsearch1:{query}" if source == "soundcloud" else f"ytsearch1:{query}"
+    player       = _detect_cli_player()
 
-    player = _detect_cli_player()
-
-    # ── Tier 1: mpv (native yt-dlp integration) ────────────────────────
+    # ── Tier 1: mpv handles yt-dlp natively — single process, best option ──
     if player == "mpv":
         proc = subprocess.Popen(
             _player_args("mpv", query_uri),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        log.info("Online playback via mpv (tier 1)")
-        return proc, "mpv (native yt-dlp)"
+        log.info("Online playback via mpv native yt-dlp (tier 1)")
+        return proc, "mpv (native yt-dlp)", None
 
-    # ── Tier 2: vlc or ffplay — extract direct URL first ───────────────
-    if player in ("vlc", "ffplay"):
+    # ── Tier 2: pipe yt-dlp stdout → ffplay/vlc stdin ──────────────────
+    #
+    # WHY PIPE instead of URL extraction:
+    #   - Direct CDN URLs expire mid-stream → audio cuts off before song ends
+    #   - yt-dlp continuously downloads and feeds the player in real-time
+    #   - ffplay reads from stdin pipe: playback is 100% complete every time
+    #
+    if player in ("ffplay", "vlc"):
         try:
-            stream_url = _ytdlp_extract_url(ytdlp_search)
-            proc = subprocess.Popen(
-                _player_args(player, stream_url),
-                stdout=subprocess.DEVNULL,
+            # yt-dlp writes raw best-audio bytes to stdout
+            ytdlp_proc = subprocess.Popen(
+                [
+                    "yt-dlp",
+                    "--format", "bestaudio/best",
+                    "--no-playlist",
+                    "-o", "-",          # output to stdout
+                    "-q",               # quiet
+                    ytdlp_search,
+                ],
+                stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
-            log.info("Online playback via %s + yt-dlp URL (tier 2)", player)
-            return proc, f"{player} + yt-dlp stream URL"
-        except Exception as e:
-            log.warning("Tier 2 (%s + URL extract) failed: %s — falling to tier 3", player, e)
 
-    # ── Tier 3: no CLI player — download to temp, OS default ───────────
-    log.info("No CLI player found. Downloading via yt-dlp to temp file (tier 3)...")
+            if player == "ffplay":
+                # ffplay reads from stdin pipe; -autoexit closes when stream ends
+                player_proc = subprocess.Popen(
+                    ["ffplay", "-nodisp", "-loglevel", "quiet",
+                     "-autoexit", "-i", "pipe:0"],
+                    stdin=ytdlp_proc.stdout,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:  # vlc
+                player_proc = subprocess.Popen(
+                    ["vlc", "--intf", "dummy", "--no-video",
+                     "--play-and-exit", "-"],
+                    stdin=ytdlp_proc.stdout,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+
+            # Close our copy of stdout so player gets EOF when yt-dlp exits
+            ytdlp_proc.stdout.close()  # type: ignore[union-attr]
+
+            log.info("Online playback via yt-dlp pipe → %s (tier 2)", player)
+            return player_proc, f"yt-dlp pipe → {player}", ytdlp_proc.pid
+
+        except Exception as e:
+            log.warning("Tier 2 pipe failed: %s — falling to tier 3", e)
+
+    # ── Tier 3: download to temp file then play with OS default ────────
+    log.info("Downloading via yt-dlp to temp file (tier 3)…")
     tmp_path = _ytdlp_download_temp(ytdlp_search)
     proc     = _os_default_open(tmp_path)
-    log.info("Online playback via yt-dlp download + OS default (tier 3): %s", tmp_path)
-    return proc, "yt-dlp download → OS default player"
+    log.info("Playback via yt-dlp download + OS default (tier 3): %s", tmp_path)
+    return proc, "yt-dlp download → OS default player", None
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +357,123 @@ def _kill_player_orphans(player: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Process suspend / resume  (pause / unpause without killing)
+# ---------------------------------------------------------------------------
+
+def _get_process_tree(root_pid: int) -> List[int]:
+    """
+    Return root_pid + every descendant PID.
+    ffplay (and mpv/vlc) spawn child processes for audio output — we must
+    suspend/resume the entire tree or the children keep playing.
+    """
+    pids = [root_pid]
+    try:
+        import psutil  # preferred: pip install psutil
+        for child in psutil.Process(root_pid).children(recursive=True):
+            pids.append(child.pid)
+        return pids
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Fallback: wmic (available on all Windows versions)
+    if sys.platform == "win32":
+        try:
+            r = subprocess.run(
+                ["wmic", "process", "where",
+                 f"(ParentProcessId={root_pid})", "get", "ProcessId", "/format:csv"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in r.stdout.splitlines():
+                parts = line.strip().split(",")
+                if parts and parts[-1].strip().isdigit():
+                    child_pid = int(parts[-1].strip())
+                    if child_pid != root_pid:
+                        pids.append(child_pid)
+        except Exception:
+            pass
+    return pids
+
+
+def _nt_suspend_one(pid: int) -> bool:
+    """Suspend a single PID via NtSuspendProcess. Returns True on success."""
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        ntdll    = ctypes.windll.ntdll
+        handle   = kernel32.OpenProcess(0x0800, False, pid)   # PROCESS_SUSPEND_RESUME
+        if not handle:
+            return False
+        ret = ntdll.NtSuspendProcess(handle)
+        kernel32.CloseHandle(handle)
+        return ret == 0
+    except Exception:
+        return False
+
+
+def _nt_resume_one(pid: int) -> bool:
+    """Resume a single PID via NtResumeProcess. Returns True on success."""
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        ntdll    = ctypes.windll.ntdll
+        handle   = kernel32.OpenProcess(0x0800, False, pid)
+        if not handle:
+            return False
+        ret = ntdll.NtResumeProcess(handle)
+        kernel32.CloseHandle(handle)
+        return ret == 0
+    except Exception:
+        return False
+
+
+def _suspend_pid(pid: int) -> str:
+    """
+    Suspend the entire process tree rooted at pid.
+    Suspending only the parent leaves audio-output child processes running.
+    """
+    tree = _get_process_tree(pid)
+    log.debug("Suspending process tree for pid=%s: %s", pid, tree)
+
+    if sys.platform == "win32":
+        ok  = [p for p in tree if _nt_suspend_one(p)]
+        failed = [p for p in tree if p not in ok]
+        if failed:
+            log.warning("Could not suspend child PIDs: %s", failed)
+        return f"NtSuspendProcess (tree: {ok})" if ok else f"error: all suspends failed {tree}"
+    else:
+        import signal
+        for p in tree:
+            try:
+                os.kill(p, signal.SIGSTOP)
+            except Exception:
+                pass
+        return f"SIGSTOP (tree: {tree})"
+
+
+def _resume_pid(pid: int) -> str:
+    """
+    Resume the entire process tree rooted at pid.
+    Children must be resumed in reverse order (leaves first) to avoid deadlocks.
+    """
+    tree = list(reversed(_get_process_tree(pid)))   # leaves first
+    log.debug("Resuming process tree for pid=%s: %s", pid, tree)
+
+    if sys.platform == "win32":
+        ok = [p for p in tree if _nt_resume_one(p)]
+        return f"NtResumeProcess (tree: {ok})"
+    else:
+        import signal
+        for p in tree:
+            try:
+                os.kill(p, signal.SIGCONT)
+            except Exception:
+                pass
+        return f"SIGCONT (tree: {tree})"
+
+
+# ---------------------------------------------------------------------------
 # Progress tracking via ffprobe
 # ---------------------------------------------------------------------------
 
@@ -351,12 +506,27 @@ def _progress_bar(pct: float, width: int = 20) -> str:
 
 
 def _build_progress(meta: Dict[str, Any]) -> Dict[str, Any]:
-    started_at = meta.get("started_at")
-    duration   = meta.get("duration_seconds")
+    started_at          = meta.get("started_at")
+    duration            = meta.get("duration_seconds")
+    paused_at           = meta.get("paused_at")           # ISO str if currently paused
+    total_paused_secs   = meta.get("total_paused_seconds", 0.0)
+    is_paused           = meta.get("playback_state") == "paused"
+
     if not started_at:
         return {}
     try:
-        elapsed_s = max(0.0, (datetime.now() - datetime.fromisoformat(started_at)).total_seconds())
+        wall_elapsed = max(0.0, (datetime.now() - datetime.fromisoformat(started_at)).total_seconds())
+
+        # Subtract all accumulated pause time so elapsed reflects actual audio position
+        paused_contribution = total_paused_secs
+        if is_paused and paused_at:
+            # Currently paused: add time since paused_at to contribution
+            paused_contribution += max(0.0, (
+                datetime.now() - datetime.fromisoformat(paused_at)
+            ).total_seconds())
+
+        elapsed_s = max(0.0, wall_elapsed - paused_contribution)
+
         out: Dict[str, Any] = {
             "elapsed":         _fmt(elapsed_s),
             "elapsed_seconds": round(elapsed_s, 1),
@@ -532,6 +702,7 @@ class MusicPlayTool(BaseTool):
                     return ToolOutput(success=False, data={},
                                       error="'file_path' is required when source='local'.")
                 proc, method = _launch_local(file_path)
+                aux_pid = None
                 path             = Path(file_path)
                 duration_seconds = _get_duration_seconds(str(path))
                 meta = {
@@ -549,7 +720,7 @@ class MusicPlayTool(BaseTool):
                 if not title:
                     return ToolOutput(success=False, data={},
                                       error="'title' is required for online playback.")
-                proc, method = _launch_online(title, artist, album, source)
+                proc, method, aux_pid = _launch_online(title, artist, album, source)
                 meta = {
                     "source":           source,
                     "player_method":    method,
@@ -562,7 +733,11 @@ class MusicPlayTool(BaseTool):
                 }
 
             pid = proc.pid if proc else None
-            sessions[session_id] = {"pid": pid, "meta": meta}
+            sessions[session_id] = {
+                "pid":     pid,
+                "aux_pid": aux_pid if source != "local" else None,
+                "meta":    meta,
+            }
             _save_sessions(sessions)
 
             self.logger.info(
@@ -604,25 +779,25 @@ class MusicStopTool(BaseTool):
         if not entry:
             return {"session_id": session_id, "error": "session not found"}
 
-        pid  = entry.get("pid")
-        meta = entry.get("meta", {})
+        pid     = entry.get("pid")
+        aux_pid = entry.get("aux_pid")   # yt-dlp PID when using pipe mode
+        meta    = entry.get("meta", {})
 
         if not pid:
             return {"session_id": session_id, "warning": "No PID recorded.", "was_playing": meta}
 
-        if not _pid_alive(pid):
-            return {
-                "session_id":  session_id,
-                "process_id":  pid,
-                "method":      "already finished",
-                "was_playing": meta,
-                "stopped_at":  datetime.now().isoformat(),
-            }
+        method = "already finished"
+        if _pid_alive(pid):
+            method = _kill_pid(pid, force)
 
-        method = _kill_pid(pid, force)
+        # Also kill the yt-dlp feeder process so it doesn't linger
+        if aux_pid and _pid_alive(aux_pid):
+            _kill_pid(aux_pid, force=True)
+
         return {
             "session_id":  session_id,
             "process_id":  pid,
+            "aux_pid":     aux_pid,
             "method":      method,
             "was_playing": meta,
             "stopped_at":  datetime.now().isoformat(),
@@ -752,7 +927,164 @@ class MusicStatusTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# Tool 4 — MusicPauseTool
+# ---------------------------------------------------------------------------
+
+class MusicPauseTool(BaseTool):
+    """
+    Pause an active playback session by suspending the player process.
+    Audio stops immediately; the stream / file position is preserved.
+    Resume with music_resume.
+
+    Params
+    ------
+    session_id : str  – session to pause  (default: "default")
+    """
+
+    def get_tool_name(self) -> str:
+        return "music_pause"
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        session_id = self.get_input(inputs, "session_id", "default")
+
+        try:
+            sessions = _load_sessions()
+            if session_id not in sessions:
+                return ToolOutput(
+                    success=False, data={},
+                    error=f"No session '{session_id}'. Active: {list(sessions.keys())}"
+                )
+
+            entry = sessions[session_id]
+            pid   = entry.get("pid")
+            meta  = entry.get("meta", {})
+
+            if meta.get("playback_state") == "paused":
+                return ToolOutput(
+                    success=False, data={},
+                    error=f"Session '{session_id}' is already paused."
+                )
+
+            if not pid or not _pid_alive(pid):
+                return ToolOutput(success=False, data={}, error="Process is not running.")
+
+            method = _suspend_pid(pid)
+            if method.startswith("error"):
+                return ToolOutput(success=False, data={}, error=method)
+
+            # Record pause timestamp in meta for accurate progress tracking
+            now_iso = datetime.now().isoformat()
+            meta["playback_state"]  = "paused"
+            meta["paused_at"]       = now_iso
+            sessions[session_id]["meta"] = meta
+            _save_sessions(sessions)
+
+            self.logger.info("Paused | session=%s pid=%s method=%s", session_id, pid, method)
+
+            return ToolOutput(
+                success=True,
+                data={
+                    "session_id": session_id,
+                    "process_id": pid,
+                    "method":     method,
+                    "title":      meta.get("title", ""),
+                    "artist":     meta.get("artist", ""),
+                    "progress":   _build_progress(meta),
+                    "paused_at":  now_iso,
+                },
+            )
+
+        except Exception as exc:
+            self.logger.error("music_pause failed: %s", exc)
+            return ToolOutput(success=False, data={}, error=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Tool 5 — MusicResumeTool
+# ---------------------------------------------------------------------------
+
+class MusicResumeTool(BaseTool):
+    """
+    Resume a paused playback session.
+
+    Params
+    ------
+    session_id : str  – session to resume  (default: "default")
+    """
+
+    def get_tool_name(self) -> str:
+        return "music_resume"
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        session_id = self.get_input(inputs, "session_id", "default")
+
+        try:
+            sessions = _load_sessions()
+            if session_id not in sessions:
+                return ToolOutput(
+                    success=False, data={},
+                    error=f"No session '{session_id}'. Active: {list(sessions.keys())}"
+                )
+
+            entry = sessions[session_id]
+            pid   = entry.get("pid")
+            meta  = entry.get("meta", {})
+
+            if meta.get("playback_state") != "paused":
+                return ToolOutput(
+                    success=False, data={},
+                    error=f"Session '{session_id}' is not paused (state: {meta.get('playback_state', 'playing')})."
+                )
+
+            if not pid or not _pid_alive(pid):
+                return ToolOutput(success=False, data={}, error="Process is not running.")
+
+            method = _resume_pid(pid)
+            if method.startswith("error"):
+                return ToolOutput(success=False, data={}, error=method)
+
+            # Accumulate how long we were paused so _build_progress stays accurate
+            paused_at = meta.get("paused_at")
+            if paused_at:
+                pause_duration = max(0.0, (
+                    datetime.now() - datetime.fromisoformat(paused_at)
+                ).total_seconds())
+                meta["total_paused_seconds"] = meta.get("total_paused_seconds", 0.0) + pause_duration
+
+            meta["playback_state"] = "playing"
+            meta["paused_at"]      = None
+            sessions[session_id]["meta"] = meta
+            _save_sessions(sessions)
+
+            now_iso = datetime.now().isoformat()
+            self.logger.info("Resumed | session=%s pid=%s method=%s", session_id, pid, method)
+
+            return ToolOutput(
+                success=True,
+                data={
+                    "session_id": session_id,
+                    "process_id": pid,
+                    "method":     method,
+                    "title":      meta.get("title", ""),
+                    "artist":     meta.get("artist", ""),
+                    "progress":   _build_progress(meta),
+                    "resumed_at": now_iso,
+                },
+            )
+
+        except Exception as exc:
+            self.logger.error("music_resume failed: %s", exc)
+            return ToolOutput(success=False, data={}, error=str(exc))
+
+
+# ---------------------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------------------
 
-__all__ = ["MusicPlayTool", "MusicStopTool", "MusicStatusTool"]
+__all__ = [
+    "MusicPlayTool",
+    "MusicPauseTool",
+    "MusicResumeTool",
+    "MusicStopTool",
+    "MusicStatusTool",
+]

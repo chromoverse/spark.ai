@@ -1105,7 +1105,6 @@
         }
       ]
     },
-
     "media": {
       "description": "Direct music playback via mpv+yt-dlp (online) or local file. System-level audio tracking via pactl / CoreAudio / WASAPI.",
       "tools": [
@@ -1305,6 +1304,108 @@
             "default_confidence": 0.99,
             "default_requires_approval": false,
             "default_timeout_ms": 8000
+          }
+        },
+        {
+          "tool_name": "music_pause",
+          "description": "Pause an active playback session by suspending the player process. Audio stops immediately; position is preserved. Resume with music_resume.",
+          "execution_target": "client",
+          "params_schema": {
+            "session_id": {
+              "type": "string",
+              "required": false,
+              "default": "default",
+              "description": "Session to pause"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "session_id": {
+                "type": "string"
+              },
+              "process_id": {
+                "type": "integer"
+              },
+              "method": {
+                "type": "string",
+                "description": "NtSuspendProcess (Win) or SIGSTOP (Unix)"
+              },
+              "title": {
+                "type": "string"
+              },
+              "artist": {
+                "type": "string"
+              },
+              "progress": {
+                "type": "object",
+                "description": "elapsed / remaining at moment of pause"
+              },
+              "paused_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
+          }
+        },
+        {
+          "tool_name": "music_resume",
+          "description": "Resume a paused playback session. Accumulated pause time is tracked so progress remains accurate.",
+          "execution_target": "client",
+          "params_schema": {
+            "session_id": {
+              "type": "string",
+              "required": false,
+              "default": "default",
+              "description": "Session to resume"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "session_id": {
+                "type": "string"
+              },
+              "process_id": {
+                "type": "integer"
+              },
+              "method": {
+                "type": "string",
+                "description": "NtResumeProcess (Win) or SIGCONT (Unix)"
+              },
+              "title": {
+                "type": "string"
+              },
+              "artist": {
+                "type": "string"
+              },
+              "progress": {
+                "type": "object",
+                "description": "elapsed / remaining after resume"
+              },
+              "resumed_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000
           }
         }
       ]
