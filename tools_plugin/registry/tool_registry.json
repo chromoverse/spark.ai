@@ -844,7 +844,7 @@
       ]
     },
 
-    "ai" : {
+    "ai": {
       "description": "AI and agent management tools",
       "tools": [
         {
@@ -887,8 +887,14 @@
           "output_schema": {
             "success": { "type": "boolean" },
             "data": {
-              "summary": { "type": "string", "description": "This must be max 2 3 sentences covering the main points of the content as this is for text to speech in humatic way." },
-              "formatted_content": { "type": "string", "description": "This can be upt max 10 sentences as this clears up and give information deep." },
+              "summary": {
+                "type": "string",
+                "description": "This must be max 2 3 sentences covering the main points of the content as this is for text to speech in humatic way."
+              },
+              "formatted_content": {
+                "type": "string",
+                "description": "This can be upt max 10 sentences as this clears up and give information deep."
+              },
               "original_length": { "type": "integer" },
               "summary_length": { "type": "integer" },
               "summarized_at": { "type": "string" }
@@ -912,9 +918,22 @@
           "description": "Send a text message to a contact",
           "execution_target": "server",
           "params_schema": {
-            "contact": { "type": "string", "required": true, "description": "Contact name to send message to" },
-            "message": { "type": "string", "required": true, "description": "Text message content" },
-            "platform": { "type": "string", "required": false, "default": "auto", "description": "Platform: auto (from user prefs), whatsapp, facebook, slack. - (if user has no preference, default to whatsapp)" }
+            "contact": {
+              "type": "string",
+              "required": true,
+              "description": "Contact name to send message to"
+            },
+            "message": {
+              "type": "string",
+              "required": true,
+              "description": "Text message content"
+            },
+            "platform": {
+              "type": "string",
+              "required": false,
+              "default": "auto",
+              "description": "Platform: auto (from user prefs), whatsapp, facebook, slack. - (if user has no preference, default to whatsapp)"
+            }
           },
           "output_schema": {
             "success": { "type": "boolean" },
@@ -937,10 +956,27 @@
           "description": "Send a document or file (PDF, ZIP, DOCX, etc.) to a contact",
           "execution_target": "server",
           "params_schema": {
-            "contact": { "type": "string", "required": true, "description": "Contact name to send file to" },
-            "file_path": { "type": "string", "required": true, "description": "Absolute path to the file" },
-            "caption": { "type": "string", "required": false, "default": "", "description": "Optional caption with the file" },
-            "platform": { "type": "string", "required": false, "default": "auto" }
+            "contact": {
+              "type": "string",
+              "required": true,
+              "description": "Contact name to send file to"
+            },
+            "file_path": {
+              "type": "string",
+              "required": true,
+              "description": "Absolute path to the file"
+            },
+            "caption": {
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Optional caption with the file"
+            },
+            "platform": {
+              "type": "string",
+              "required": false,
+              "default": "auto"
+            }
           },
           "output_schema": {
             "success": { "type": "boolean" },
@@ -964,10 +1000,27 @@
           "description": "Send a photo or video to a contact",
           "execution_target": "server",
           "params_schema": {
-            "contact": { "type": "string", "required": true, "description": "Contact name to send media to" },
-            "media_path": { "type": "string", "required": true, "description": "Absolute path to photo or video" },
-            "caption": { "type": "string", "required": false, "default": "", "description": "Optional caption with the media" },
-            "platform": { "type": "string", "required": false, "default": "auto" }
+            "contact": {
+              "type": "string",
+              "required": true,
+              "description": "Contact name to send media to"
+            },
+            "media_path": {
+              "type": "string",
+              "required": true,
+              "description": "Absolute path to photo or video"
+            },
+            "caption": {
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Optional caption with the media"
+            },
+            "platform": {
+              "type": "string",
+              "required": false,
+              "default": "auto"
+            }
           },
           "output_schema": {
             "success": { "type": "boolean" },
@@ -991,8 +1044,16 @@
           "description": "Start an audio call with a contact",
           "execution_target": "server",
           "params_schema": {
-            "contact": { "type": "string", "required": true, "description": "Contact name to call" },
-            "platform": { "type": "string", "required": false, "default": "auto" }
+            "contact": {
+              "type": "string",
+              "required": true,
+              "description": "Contact name to call"
+            },
+            "platform": {
+              "type": "string",
+              "required": false,
+              "default": "auto"
+            }
           },
           "output_schema": {
             "success": { "type": "boolean" },
@@ -1015,8 +1076,16 @@
           "description": "Start a video call with a contact",
           "execution_target": "server",
           "params_schema": {
-            "contact": { "type": "string", "required": true, "description": "Contact name to video call" },
-            "platform": { "type": "string", "required": false, "default": "auto" }
+            "contact": {
+              "type": "string",
+              "required": true,
+              "description": "Contact name to video call"
+            },
+            "platform": {
+              "type": "string",
+              "required": false,
+              "default": "auto"
+            }
           },
           "output_schema": {
             "success": { "type": "boolean" },
@@ -1032,6 +1101,210 @@
             "default_requires_approval": true,
             "default_approval_question": "Start this video call?",
             "default_timeout_ms": 10000
+          }
+        }
+      ]
+    },
+
+    "media": {
+      "description": "Direct music playback via mpv+yt-dlp (online) or local file. System-level audio tracking via pactl / CoreAudio / WASAPI.",
+      "tools": [
+        {
+          "tool_name": "music_play",
+          "description": "Play music immediately — streams YouTube/SoundCloud via mpv+yt-dlp with no browser, or plays a local audio file. Audio starts in the background automatically.",
+          "execution_target": "client",
+          "params_schema": {
+            "title": {
+              "type": "string",
+              "required": true,
+              "description": "Song or track name"
+            },
+            "artist": {
+              "type": "string",
+              "required": false,
+              "description": "Artist or band — improves search match"
+            },
+            "album": {
+              "type": "string",
+              "required": false,
+              "description": "Album name — narrows ambiguous titles"
+            },
+            "source": {
+              "type": "string",
+              "required": false,
+              "default": "youtube",
+              "description": "'youtube' | 'soundcloud' | 'local'"
+            },
+            "file_path": {
+              "type": "string",
+              "required": false,
+              "description": "Absolute path to local audio file — required only when source='local'"
+            },
+            "session_id": {
+              "type": "string",
+              "required": false,
+              "default": "default",
+              "description": "ID to track this session for stop/status control"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "source": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "artist": {
+                "type": "string"
+              },
+              "album": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string",
+                "description": "Search query used — online only"
+              },
+              "file_path": {
+                "type": "string",
+                "description": "Local only"
+              },
+              "file_name": {
+                "type": "string",
+                "description": "Local only"
+              },
+              "format": {
+                "type": "string",
+                "description": "Audio format — local only"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "process_id": {
+                "type": "integer"
+              },
+              "started_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.96,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000
+          }
+        },
+        {
+          "tool_name": "music_stop",
+          "description": "Stop one or all active music sessions launched by music_play.",
+          "execution_target": "client",
+          "params_schema": {
+            "session_id": {
+              "type": "string",
+              "required": false,
+              "default": "default",
+              "description": "Session to stop"
+            },
+            "force": {
+              "type": "boolean",
+              "required": false,
+              "default": false,
+              "description": "Force-kill (SIGKILL) instead of graceful terminate (SIGTERM)"
+            },
+            "stop_all": {
+              "type": "boolean",
+              "required": false,
+              "default": false,
+              "description": "Stop every active session at once"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "session_id": {
+                "type": "string"
+              },
+              "process_id": {
+                "type": "integer"
+              },
+              "method": {
+                "type": "string"
+              },
+              "was_playing": {
+                "type": "object"
+              },
+              "stopped_at": {
+                "type": "string"
+              },
+              "stopped": {
+                "type": "array",
+                "description": "Present when stop_all=true"
+              },
+              "count": {
+                "type": "integer",
+                "description": "Present when stop_all=true"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 6000
+          }
+        },
+        {
+          "tool_name": "music_status",
+          "description": "Two-layer audio status: (1) our tracked sessions with full metadata, (2) OS-level scan of every process emitting audio via pactl / CoreAudio / WASAPI.",
+          "execution_target": "client",
+          "params_schema": {
+            "session_id": {
+              "type": "string",
+              "required": false,
+              "description": "Filter our sessions to one ID. Omit to list all."
+            },
+            "include_system": {
+              "type": "boolean",
+              "required": false,
+              "default": true,
+              "description": "Run OS-level audio scan (pactl / CoreAudio / WASAPI)"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "our_sessions": {
+                "type": "object",
+                "description": "sessions[] array + total count"
+              },
+              "system_audio": {
+                "type": "object",
+                "description": "streams[] array + total + optional error note"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 8000
           }
         }
       ]
