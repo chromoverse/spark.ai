@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import AsyncGenerator, Optional, Any
+from typing import AsyncGenerator, Callable, Optional, Any
 from app.services.tts.manager import tts_manager
 from app.services.tts.voice_selector import VoiceSelector
 
@@ -141,6 +141,7 @@ class TTSService:
         gender: Optional[str] = None,
         chunk_delay: float = 0.0,
         prefer_low_latency: bool = False,
+        interrupt_check: Optional[Callable[[], bool]] = None,
     ) -> bool:
         """
         Stream TTS audio to a WebSocket client.
@@ -180,6 +181,15 @@ class TTSService:
             ):
                 if first_chunk_ms is None:
                     first_chunk_ms = (time.perf_counter() - request_started) * 1000
+                # Interrupt check — zero-cost when not interrupted
+                if interrupt_check and interrupt_check():
+                    logger.info("🛑 TTS stream [%s] interrupted mid-generation", stream_id)
+                    await sio.emit(
+                        "tts-end",
+                        {"success": False, "error": "interrupted", "chunks": chunk_count, "streamId": stream_id},
+                        to=sid,
+                    )
+                    return False
                 await sio.emit(
                     "tts-chunk",
                     {"streamId": stream_id, "data": audio_bytes},

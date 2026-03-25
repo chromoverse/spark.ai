@@ -73,6 +73,10 @@ export interface UserStopSpeakingPayload {
   timestamp: number;
 }
 
+export interface UserInterruptPayload {
+  timestamp: number;
+}
+
 export interface TTSPayload {
   text: string | undefined;
   userId: string;
@@ -183,6 +187,7 @@ export interface SocketEvents {
   "send-user-text-query": (query: string) => void;
   "user-speaking": (data: UserSpeakingPayload) => void;
   "user-stop-speaking": (data: UserStopSpeakingPayload) => void;
+  "user-interrupt": (data: UserInterruptPayload) => void;
   "request-tts": (data: TTSPayload) => void;
   "test-ws": (data?: any) => void;
   
@@ -208,6 +213,7 @@ export interface SocketEvents {
   "tts-start": (payload: { streamId: string; text?: string }) => void;
   "tts-chunk": (payload: { streamId: string; data: ArrayBuffer }) => void;
   "tts-end": (payload: { streamId: string; success: boolean; chunks?: number; error?: string }) => void;
+  "tts-interrupt": () => void;
   "response-tts": (res: { success?: boolean; error?: string }) => void;
   
   // Transcription

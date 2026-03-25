@@ -506,11 +506,19 @@ export const SparkTTSProvider = ({
     on("tts-end", handleEnd);
     on("response-tts", handleError);
 
+    // Server-confirmed interrupt — stop all local playback immediately
+    const handleInterrupt = () => {
+      console.log("🛑 tts-interrupt received — stopping all playback");
+      stop();
+    };
+    on("tts-interrupt", handleInterrupt);
+
     return () => {
       off("tts-start", handleStart);
       off("tts-chunk", handleChunk);
       off("tts-end", handleEnd);
       off("response-tts", handleError);
+      off("tts-interrupt", handleInterrupt);
     };
   }, [socket, on, off, playNextChunk, moveToNextStream]);
 

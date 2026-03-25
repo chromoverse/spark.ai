@@ -15,11 +15,13 @@ from app.socket.user_utils import get_user_from_session, serialize_response
 from app.socket.utils import emit_server_status
 from app.services.chat.chat_service import chat
 from app.services.chat.stream_service import stream_chat_response
+from app.services.interrupt_manager import get_interrupt_manager
 from app.services.stt_session_manager import stt_session_manager
 from app.services.stt_services import transcribe_audio
 from app.services.tts_services import tts_service
 
 logger = logging.getLogger(__name__)
+_interrupt = get_interrupt_manager()
 
 _INVALID_TRANSCRIPTIONS = frozenset({
     "", "[No speech detected]", "[Thank you.]",
@@ -42,6 +44,9 @@ async def _parallel_execute(
     voice_name: str | None = None,
     gender: str = "female",
 ) -> dict:
+    # Clear any previous interrupt so this request runs cleanly
+    _interrupt.clear(user_id)
+
     async def _stream() -> None:
         try:
             await stream_chat_response(
@@ -162,3 +167,16 @@ def register_chat_events():
             logger.error("user-stop-speaking failed sid=%s: %s", sid, exc)
             await sio.emit("query-error", {"error": str(exc), "success": False}, to=sid)
             await stt_session_manager.cleanup(session_id)
+
+    # ── User interrupt: stop all TTS for this user ────────────────────────
+
+    @sio.on("user-interrupt")  # type: ignore
+    async def handle_user_interrupt(sid, data):
+        try:
+            user_id = await get_user_from_session(sid)
+            _interrupt.set(user_id)
+            # Confirm back to client so it can stop playback immediately
+            await sio.emit("tts-interrupt", {}, to=sid)
+            logger.info("🛑 user-interrupt from %s (user=%s)", sid, user_id)
+        except Exception as exc:
+            logger.error("user-interrupt failed sid=%s: %s", sid, exc)

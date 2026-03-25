@@ -27,8 +27,10 @@ from app.ai.providers import llm_chat, llm_stream
 from app.cache import add_message, load_user, get_last_n_messages, process_query_and_get_context
 from app.config import settings
 from app.prompts import stream_prompt
+from app.services.interrupt_manager import get_interrupt_manager
 
 logger = logging.getLogger(__name__)
+_interrupt = get_interrupt_manager()
 
 _SENTENCE_BREAK_RE = re.compile(r'(?<!\.)(?<!…)[.!?]["\'\)\]]?\s+')
 _CLAUSE_BREAK_RE   = re.compile(r'[,;:\u2014]\s+')
@@ -245,6 +247,7 @@ class StreamService:
                     return await tts_service.stream_to_socket(
                         sio=sio, sid=sid, text=chunk,
                         voice=voice_name, gender=gender,
+                        interrupt_check=lambda: _interrupt.is_set(user_id),
                     )
 
             while True:
@@ -252,6 +255,17 @@ class StreamService:
                 try:
                     if chunk is None:
                         break
+                    if _interrupt.is_set(user_id):
+                        logger.info("[%s] TTS consumer interrupted — draining queue", request_id)
+                        queue.task_done()
+                        # Drain remaining items
+                        while not queue.empty():
+                            try:
+                                queue.get_nowait()
+                                queue.task_done()
+                            except asyncio.QueueEmpty:
+                                break
+                        return True
                     tasks.append(asyncio.create_task(_handle(chunk)))
                 finally:
                     queue.task_done()
@@ -276,6 +290,10 @@ class StreamService:
             async for token in llm_stream(**kwargs):
                 if not token:
                     continue
+                # Fast interrupt check — dict lookup + bool, zero-cost when not set
+                if _interrupt.is_set(user_id):
+                    logger.info("[%s] LLM stream interrupted by user", request_id)
+                    break
                 buffer        += token
                 full_response += token
                 while True:

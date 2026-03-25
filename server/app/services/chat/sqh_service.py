@@ -28,9 +28,11 @@ from app.models.pqh_response_model import PQHResponse
 from app.prompts.sqh_prompt import build_messages
 from app.ai.providers import llm_chat
 from app.config import settings
+from app.services.interrupt_manager import get_interrupt_manager
 from .task_summary_speech_service import get_task_summary_speech_service
 
 logger = logging.getLogger(__name__)
+_interrupt = get_interrupt_manager()
 
 
 # ── JSON extraction ────────────────────────────────────────────────────────────
@@ -229,7 +231,7 @@ async def _emit_summary(
     original_query: str = "",
     user_lang: str = "en",
 ) -> None:
-    """Wait for execution to complete, then emit final TTS summary."""
+    """Wait for execution to complete, then emit final TTS summary (only when meaningful)."""
     try:
         event = execution_engine.completion_events.get(user_id)
         if event:
@@ -239,7 +241,19 @@ async def _emit_summary(
     except Exception as exc:
         logger.error("[SQH] completion wait error user=%s: %s", user_id, exc)
 
+    # Skip if user already interrupted (started speaking again)
+    if _interrupt.is_set(user_id):
+        logger.info("⏭️ Skipping summary TTS — user %s interrupted", user_id)
+        return
+
     try:
+        # Smart gate: decide if summary is worth speaking
+        orchestrator = get_orchestrator()
+        snapshot_raw = await orchestrator.build_execution_speech_snapshot(user_id=user_id)
+        if not _should_speak(snapshot_raw, original_query):
+            logger.info("⏭️ Skipping summary TTS — outcome too obvious for user=%s", user_id)
+            return
+
         summary = ack_hint.strip()
         if settings.FINAL_STATE_SUMMARY_TTS_ENABLED:
             summary = await get_task_summary_speech_service().build_summary_text(
@@ -252,8 +266,54 @@ async def _emit_summary(
         if not summary:
             return
 
+        # Final interrupt check before speaking
+        if _interrupt.is_set(user_id):
+            logger.info("⏭️ Skipping summary TTS (post-build) — user %s interrupted", user_id)
+            return
+
         from app.socket.utils import stream_tts_to_client
         await stream_tts_to_client(summary, user_id=user_id)
 
     except Exception as exc:
         logger.error("[SQH] summary emit failed user=%s: %s", user_id, exc)
+
+
+# ── Smart gate: should we speak the summary? ────────────────────────────────────────
+
+# Tools with obvious outcomes the user can see/hear for themselves
+_OBVIOUS_TOOLS = frozenset({
+    "app_open", "app_close", "web_search", "open_url",
+    "play_music", "play_video", "volume_control",
+    "screenshot", "lock_screen", "toggle_wifi",
+})
+
+
+def _should_speak(snapshot_raw: Dict[str, Any], original_query: str = "") -> bool:
+    """
+    Heuristic: skip TTS for simple, obvious task completions.
+    Speak for failures, multi-task batches, or complex outcomes.
+    
+    No LLM call — pure dict inspection, ~0 latency.
+    """
+    summary = snapshot_raw.get("summary", {})
+    tasks = snapshot_raw.get("tasks", [])
+    total     = summary.get("total", 0)
+    completed = summary.get("completed", 0)
+    failed    = summary.get("failed", 0)
+
+    # Always speak if there's a failure
+    if failed > 0:
+        return True
+
+    # Always speak for multi-task completions (user needs a summary)
+    if total > 1:
+        return True
+
+    # Single task, all succeeded — check if it's an obvious tool
+    if total == 1 and completed == 1 and len(tasks) == 1:
+        tool = str(tasks[0].get("tool") or tasks[0].get("task", {}).get("tool", "")).strip().lower()
+        if tool in _OBVIOUS_TOOLS:
+            return False
+
+    # Default: speak
+    return True

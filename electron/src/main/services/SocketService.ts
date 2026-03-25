@@ -237,6 +237,7 @@ class SocketService {
       eventName === "tts-start" ||
       eventName === "tts-chunk" ||
       eventName === "tts-end" ||
+      eventName === "tts-interrupt" ||
       eventName === "response-tts"
     );
   }

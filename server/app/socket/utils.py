@@ -183,6 +183,8 @@ async def stream_tts_to_client(
 
     try:
         from app.services.tts_services import tts_service
+        from app.services.interrupt_manager import get_interrupt_manager
+        _int = get_interrupt_manager()
 
         # Collect target SIDs
         target_sids: set[str] = set()
@@ -206,6 +208,10 @@ async def stream_tts_to_client(
 
         # Stream TTS to each connected session (non-blocking)
         for sid in target_sids:
+            # Skip if user was interrupted
+            if user_id and _int.is_set(user_id):
+                logger.info("⏭️ Skipping TTS stream — user %s interrupted", user_id)
+                return False
             logger.info(f"📡 Streaming TTS to socket {sid}")
             asyncio.create_task(
                 tts_service.stream_to_socket(
@@ -214,6 +220,9 @@ async def stream_tts_to_client(
                     text=text,
                     gender=gender,
                     voice=voice_name,
+                    interrupt_check=(
+                        (lambda uid=user_id: _int.is_set(uid)) if user_id else None
+                    ),
                 )
             )
 

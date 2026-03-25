@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setSelectedInputDeviceId } from "@/store/features/device/deviceSlice";
 import { toggleMicrophoneListening } from "@/store/features/localState/localSlice";
 import { useSocket } from "@/context/socketContextProvider";
+import { useSparkTTS } from "@/context/sparkTTSContext";
 import AudioLevelProgress from "./AudioLevelProgress";
 
 // ─── VAD Thresholds (tightened to reduce room noise false positives) ──────────
@@ -62,6 +63,7 @@ const float32ToPCM16Buffer = (float32Array: Float32Array): ArrayBuffer => {
 export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
   const dispatch = useAppDispatch();
   const { socket, isConnected, emit, on, off } = useSocket();
+  const { isSpeaking: isAiSpeaking } = useSparkTTS();
 
   // Redux state
   const audioInputDevices = useAppSelector(
@@ -81,6 +83,12 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Keep a ref to isAiSpeaking so the VAD callback always sees the latest value
+  const isAiSpeakingRef = useRef(isAiSpeaking);
+  useEffect(() => {
+    isAiSpeakingRef.current = isAiSpeaking;
+  }, [isAiSpeaking]);
 
   // Audio visualization refs
   const streamRef = useRef<MediaStream | null>(null);
@@ -340,6 +348,11 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
         getStream: async () => stream,
         onSpeechStart: () => {
           if (isProcessingRef.current) return;
+          // Interrupt AI speech when user starts talking
+          if (isAiSpeakingRef.current) {
+            emit("user-interrupt", { timestamp: Date.now() });
+            console.log("🛑 User interrupt emitted — AI was speaking");
+          }
           setIsSpeaking(true);
           setIsRecording(true);
           console.log("🎤 Speech started");
