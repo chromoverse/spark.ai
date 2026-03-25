@@ -1,6 +1,6 @@
 {
-  "version": "2.0.0",
-  "total_tools": 36,
+  "version": "2.1.0",
+  "total_tools": 41,
   "tools": [
     {
       "name": "app_open",
@@ -217,6 +217,36 @@
       "description": "Start a video call with a contact",
       "category": "messaging",
       "execution_target": "server"
+    },
+    {
+      "name": "music_play",
+      "description": "Play music directly via yt-dlp pipe (YouTube/SoundCloud) or local file. No browser needed.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "music_pause",
+      "description": "Pause active playback by suspending the player process tree. Position is preserved.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "music_resume",
+      "description": "Resume a paused playback session. Tracks accumulated pause time for accurate progress.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "music_stop",
+      "description": "Stop one or all active music sessions and clean up player + yt-dlp processes.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "music_status",
+      "description": "Rich status report: title, artist, source icon, thumbnail URL, progress bar, and OS-level audio streams.",
+      "category": "media",
+      "execution_target": "client"
     }
   ]
 }

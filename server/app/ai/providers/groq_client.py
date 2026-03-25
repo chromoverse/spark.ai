@@ -9,11 +9,12 @@ from typing import Any, AsyncGenerator, Dict, List
 
 from openai import OpenAI  # type: ignore[import-untyped]
 from app.ai.providers.base_client import BaseClient
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
-GROQ_DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_DEFAULT_MODEL = settings.GROQ_DEFAULT_MODEL
 
 _SENTINEL = object()
 

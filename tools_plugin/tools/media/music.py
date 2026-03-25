@@ -158,6 +158,56 @@ def _os_default_open(file_path: str) -> Optional[subprocess.Popen]:
                                 stderr=subprocess.DEVNULL)
 
 
+def _fetch_track_info(ytdlp_search: str) -> Dict[str, Any]:
+    """
+    Ask yt-dlp for track metadata (title, uploader, duration, thumbnail URL)
+    WITHOUT downloading any media. Runs quickly (~1-2 s) in parallel intent.
+
+    Returns a dict with whatever fields yt-dlp could resolve.
+    Never raises — returns {} on any failure.
+    """
+    try:
+        r = subprocess.run(
+            [
+                "yt-dlp",
+                "--print", "%(title)s\t%(uploader)s\t%(duration)s\t%(thumbnail)s\t%(webpage_url)s",
+                "--no-playlist",
+                "--no-download",
+                "-q",
+                ytdlp_search,
+            ],
+            capture_output=True, text=True, timeout=15
+        )
+        line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+        if not line:
+            return {}
+        parts = line.split("\t")
+        info: Dict[str, Any] = {}
+        labels = ["yt_title", "yt_uploader", "yt_duration_seconds", "thumbnail_url", "webpage_url"]
+        for i, label in enumerate(labels):
+            if i < len(parts) and parts[i] not in ("", "NA", "None"):
+                info[label] = parts[i]
+        if "yt_duration_seconds" in info:
+            try:
+                info["yt_duration_seconds"] = float(info["yt_duration_seconds"])
+            except ValueError:
+                del info["yt_duration_seconds"]
+        return info
+    except Exception:
+        return {}
+
+
+SOURCE_ICONS: Dict[str, str] = {
+    "youtube":     "▶ YouTube",
+    "soundcloud":  "☁ SoundCloud",
+    "local":       "💾 Local File",
+}
+
+
+def _source_icon(source: str) -> str:
+    return SOURCE_ICONS.get(source, f"♪ {source}")
+
+
 def _launch_online(
     title: str, artist: str, album: str, source: str
 ) -> Tuple[Optional[subprocess.Popen], str, Optional[int]]:
@@ -477,6 +527,25 @@ def _resume_pid(pid: int) -> str:
 # Progress tracking via ffprobe
 # ---------------------------------------------------------------------------
 
+def _extract_embedded_art(file_path: str) -> Optional[str]:
+    """
+    Extract the first embedded image (cover art) from an audio file to a temp PNG.
+    Returns the temp file path, or None if unavailable / ffmpeg not installed.
+    """
+    if not _has("ffmpeg"):
+        return None
+    try:
+        out_path = str(Path(tempfile.gettempdir()) / f"music_art_{Path(file_path).stem}.png")
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", file_path,
+             "-an", "-vcodec", "png", "-vframes", "1", out_path],
+            capture_output=True, timeout=8
+        )
+        return out_path if Path(out_path).exists() and Path(out_path).stat().st_size > 0 else None
+    except Exception:
+        return None
+
+
 def _get_duration_seconds(file_path: str) -> Optional[float]:
     if not _has("ffprobe"):
         return None
@@ -705,14 +774,21 @@ class MusicPlayTool(BaseTool):
                 aux_pid = None
                 path             = Path(file_path)
                 duration_seconds = _get_duration_seconds(str(path))
+                # Try to extract embedded album art as a temp PNG for thumbnail
+                thumb_path = _extract_embedded_art(str(path))
                 meta = {
                     "source":           "local",
+                    "source_icon":      _source_icon("local"),
                     "player_method":    method,
                     "file_path":        str(path),
                     "file_name":        path.name,
                     "format":           path.suffix.lstrip(".").upper(),
                     "title":            title or path.stem,
                     "artist":           artist,
+                    "album":            album,
+                    "thumbnail_url":    None,
+                    "thumbnail_local":  thumb_path,
+                    "webpage_url":      None,
                     "duration_seconds": duration_seconds,
                     "started_at":       datetime.now().isoformat(),
                 }
@@ -720,15 +796,23 @@ class MusicPlayTool(BaseTool):
                 if not title:
                     return ToolOutput(success=False, data={},
                                       error="'title' is required for online playback.")
+                ytdlp_search_q = f"scsearch1:{' '.join(filter(None,[title,artist,album]))}" if source == "soundcloud" else f"ytsearch1:{' '.join(filter(None,[title,artist,album]))}"
+                # Fetch rich metadata (thumbnail, resolved title, duration) before launching
+                track_info = _fetch_track_info(ytdlp_search_q)
                 proc, method, aux_pid = _launch_online(title, artist, album, source)
+                resolved_title  = track_info.get("yt_title",    title)
+                resolved_artist = track_info.get("yt_uploader", artist)
                 meta = {
                     "source":           source,
+                    "source_icon":      _source_icon(source),
                     "player_method":    method,
                     "query":            " ".join(filter(None, [title, artist, album])),
-                    "title":            title,
-                    "artist":           artist,
+                    "title":            resolved_title,
+                    "artist":           resolved_artist,
                     "album":            album,
-                    "duration_seconds": None,
+                    "thumbnail_url":    track_info.get("thumbnail_url"),
+                    "webpage_url":      track_info.get("webpage_url"),
+                    "duration_seconds": track_info.get("yt_duration_seconds"),
                     "started_at":       datetime.now().isoformat(),
                 }
 
@@ -880,17 +964,30 @@ class MusicStatusTool(BaseTool):
             if not alive:
                 stale.append(sid)
 
+            playback_state = meta.get("playback_state", "playing") if alive else "finished"
+            state_icon = {"playing": "▶", "paused": "⏸", "finished": "■"}.get(playback_state, "▶")
+
             our_sessions.append({
-                "session_id":    sid,
-                "state":         "▶ playing" if alive else "■ finished",
-                "process_id":    pid,
-                "title":         meta.get("title", ""),
-                "artist":        meta.get("artist", ""),
-                "source":        meta.get("source", ""),
-                "player_method": meta.get("player_method", ""),
-                "file_name":     meta.get("file_name", ""),
-                "started_at":    meta.get("started_at", ""),
-                "progress":      _build_progress(meta) if alive else {},
+                "session_id":      sid,
+                "state":           f"{state_icon} {playback_state}",
+                "process_id":      pid,
+                # ── identity ──────────────────────────────────────────────
+                "title":           meta.get("title", ""),
+                "artist":          meta.get("artist", ""),
+                "album":           meta.get("album", ""),
+                "source":          meta.get("source", ""),
+                "source_icon":     meta.get("source_icon", _source_icon(meta.get("source", ""))),
+                # ── artwork ───────────────────────────────────────────────
+                "thumbnail_url":   meta.get("thumbnail_url"),    # remote URL (online tracks)
+                "thumbnail_local": meta.get("thumbnail_local"),  # local path  (local files)
+                # ── links & file ──────────────────────────────────────────
+                "webpage_url":     meta.get("webpage_url"),
+                "file_name":       meta.get("file_name", ""),
+                "format":          meta.get("format", ""),
+                # ── playback ──────────────────────────────────────────────
+                "player_method":   meta.get("player_method", ""),
+                "started_at":      meta.get("started_at", ""),
+                "progress":        _build_progress(meta) if alive else {},
             })
 
         for sid in stale:
