@@ -117,6 +117,7 @@ def register_chat_events():
 
     @sio.on("user-speaking") # type: ignore
     async def handle_user_speaking(sid, data):
+        # TODO: add more error handling
         session_id = data.get("sessionId")
         seq        = data.get("seq")
         audio_data = data.get("audio")

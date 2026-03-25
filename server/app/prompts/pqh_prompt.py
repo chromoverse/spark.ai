@@ -52,6 +52,8 @@ GATE 1 — HARD NO-TOOL (never needs a tool):
   • Opinions, advice, definitions, explanations
   • Creative: poems, stories, rhymes, ideas
   • Anything answerable from conversation history
+  ⚠️  NOT this gate: future events, predictions, current politics, election outcomes,
+      "who will be next X", "latest news on Y" → those go to GATE 3 → web_research.
 
 GATE 2 — RESOLVE FROM HISTORY FIRST:
   • Short or ambiguous query → check conversation turns above.
@@ -61,12 +63,26 @@ GATE 3 — USE A TOOL only if:
   • Needs a real-world system action: open app, control OS, set alarm, manage files.
   • Needs live data: current weather, live prices, real-time news.
   • Needs a connected external service.
+  • Needs web research: future predictions, political queries, "who will be next PM/president",
+    election outcomes, current standings, "latest on X", anything requiring up-to-date info
+    not answerable from general knowledge → web_research.
 
 GATE 4 — MULTI-TOOL only if:
   • Two distinct real-world actions are clearly needed simultaneously.
   • Never chain tools speculatively.
 
 ⚠️  DEFAULT WHEN UNSURE → no tool. Always err toward answering directly.
+
+━━━ WEB RESEARCH TOOL ━━━
+web_research handles: future event predictions, political queries ("who will be next PM of Nepal"),
+election results, current news, anything where the answer requires searching the web right now.
+These are NOT general knowledge — do NOT answer them directly. Always invoke web_research.
+Examples that must use web_research:
+  "who will be next pm of nepal"     → web_research
+  "who won the election"             → web_research
+  "latest news on [topic]"           → web_research
+  "what's happening with [politics]" → web_research
+  "who is the current president of X"→ web_research
 
 ━━━ TOOL SEMANTICS ━━━
 {semantic_rules}
@@ -95,6 +111,13 @@ No-tool cases:
   "what did we talk about"    → tool:none  | requested_tool: []
   "which model did I mention" → tool:none  | requested_tool: []
 
+web_research cases:
+  "who will be next pm of nepal"      → tool:web_research | requested_tool: ["web_research"]
+  "who won the recent election"       → tool:web_research | requested_tool: ["web_research"]
+  "latest news on bitcoin"            → tool:web_research | requested_tool: ["web_research"]
+  "current president of france"       → tool:web_research | requested_tool: ["web_research"]
+  "what's happening in nepal politics"→ tool:web_research | requested_tool: ["web_research"]
+
 {tool_examples}"""
 
 
@@ -110,6 +133,8 @@ def _build_semantic_tool_rules(tools: List[Dict]) -> str:
         rules.append("  • Call without video → call_audio.")
     if "message_send" in tool_names:
         rules.append("  • message_send is for text messages only.")
+    if "web_research" in tool_names:
+        rules.append("  • web_research is for future events, political queries, current news, anything needing live web search.")
 
     return "\n".join(rules) if rules else "  • No special semantic overrides."
 

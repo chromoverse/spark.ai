@@ -251,7 +251,7 @@ async def _emit_summary(
         orchestrator = get_orchestrator()
         snapshot_raw = await orchestrator.build_execution_speech_snapshot(user_id=user_id)
         if not _should_speak(snapshot_raw, original_query):
-            logger.info("⏭️ Skipping summary TTS — outcome too obvious for user=%s", user_id)
+            logger.info("⏭️ Skipping summary TTS — no tool needs summary for user=%s", user_id)
             return
 
         summary = ack_hint.strip()
@@ -280,40 +280,48 @@ async def _emit_summary(
 
 # ── Smart gate: should we speak the summary? ────────────────────────────────────────
 
-# Tools with obvious outcomes the user can see/hear for themselves
-_OBVIOUS_TOOLS = frozenset({
-    "app_open", "app_close", "web_search", "open_url",
-    "play_music", "play_video", "volume_control",
-    "screenshot", "lock_screen", "toggle_wifi",
-})
+
+def _tool_wants_summary_tts(tool_name: str) -> bool:
+    """Check the tool registry's summary_tts flag for a given tool."""
+    from app.plugins.tools.registry_loader import get_tool_registry
+    registry = get_tool_registry()
+    meta = registry.get_tool(tool_name)
+    if meta is None:
+        return False
+    return bool(meta.metadata.get("summary_tts", False))
 
 
 def _should_speak(snapshot_raw: Dict[str, Any], original_query: str = "") -> bool:
     """
-    Heuristic: skip TTS for simple, obvious task completions.
-    Speak for failures, multi-task batches, or complex outcomes.
-    
-    No LLM call — pure dict inspection, ~0 latency.
+    Registry-driven gate: speak only when a tool's summary_tts flag is true,
+    or when there are failures. No hardcoded tool lists.
+
+    No LLM call — pure dict + registry inspection, ~0 latency.
     """
     summary = snapshot_raw.get("summary", {})
     tasks = snapshot_raw.get("tasks", [])
-    total     = summary.get("total", 0)
-    completed = summary.get("completed", 0)
     failed    = summary.get("failed", 0)
+
+    logger.info("[_should_speak] summary=%s  tasks_count=%d", summary, len(tasks))
 
     # Always speak if there's a failure
     if failed > 0:
+        logger.info("[_should_speak] speaking — %d failure(s)", failed)
         return True
 
-    # Always speak for multi-task completions (user needs a summary)
-    if total > 1:
-        return True
+    # Check if ANY completed tool has summary_tts=true in the registry
+    for task in tasks:
+        status = task.get("status")
+        tool = str(task.get("tool") or task.get("task", {}).get("tool", "")).strip()
+        if status != "completed":
+            logger.info("[_should_speak] skip task %s status=%s", tool, status)
+            continue
+        wants = _tool_wants_summary_tts(tool) if tool else False
+        logger.info("[_should_speak] tool=%s  summary_tts=%s", tool, wants)
+        if wants:
+            logger.info("[_should_speak] speaking — tool '%s' has summary_tts=true", tool)
+            return True
 
-    # Single task, all succeeded — check if it's an obvious tool
-    if total == 1 and completed == 1 and len(tasks) == 1:
-        tool = str(tasks[0].get("tool") or tasks[0].get("task", {}).get("tool", "")).strip().lower()
-        if tool in _OBVIOUS_TOOLS:
-            return False
-
-    # Default: speak
-    return True
+    # No tool needs summary TTS → skip
+    logger.info("[_should_speak] silent — no tool needs summary TTS")
+    return False

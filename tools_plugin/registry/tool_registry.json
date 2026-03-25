@@ -3,7 +3,6 @@
   "last_updated": "2026-03-05",
   "phase": 1,
   "total_tools": 38,
-
   "categories": {
     "system": {
       "description": "System-level operations and monitoring",
@@ -13,21 +12,36 @@
           "description": "Launch installed applications",
           "execution_target": "client",
           "params_schema": {
-            "target": { "type": "string", "required": true },
-            "args": { "type": "array", "required": false }
+            "target": {
+              "type": "string",
+              "required": true
+            },
+            "args": {
+              "type": "array",
+              "required": false
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "process_id": { "type": "integer" },
-              "launch_time": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "process_id": {
+                "type": "integer"
+              },
+              "launch_time": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": true,
-            "default_timeout_ms": 3000
+            "default_timeout_ms": 3000,
+            "summary_tts": false
           }
         },
         {
@@ -35,22 +49,38 @@
           "description": "Kill running processes",
           "execution_target": "client",
           "params_schema": {
-            "target": { "type": "string", "required": true },
-            "force": { "type": "boolean", "required": false, "default": false }
+            "target": {
+              "type": "string",
+              "required": true
+            },
+            "force": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "exit_code": { "type": "integer" },
-              "closed_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "exit_code": {
+                "type": "integer"
+              },
+              "closed_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": true,
             "default_approval_question": "This app has unsaved work. Force close anyway?",
-            "default_timeout_ms": 3000
+            "default_timeout_ms": 3000,
+            "summary_tts": false
           }
         },
         {
@@ -58,7 +88,10 @@
           "description": "Restart apps safely",
           "execution_target": "client",
           "params_schema": {
-            "target": { "type": "string", "required": true },
+            "target": {
+              "type": "string",
+              "required": true
+            },
             "save_state": {
               "type": "boolean",
               "required": false,
@@ -66,19 +99,30 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "old_process_id": { "type": "integer" },
-              "new_process_id": { "type": "integer" },
-              "restart_time": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "old_process_id": {
+                "type": "integer"
+              },
+              "new_process_id": {
+                "type": "integer"
+              },
+              "restart_time": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.92,
             "default_requires_approval": true,
             "default_approval_question": "Should I save the current state before restarting?",
-            "default_timeout_ms": 5000
+            "default_timeout_ms": 5000,
+            "summary_tts": false
           }
         },
         {
@@ -89,23 +133,40 @@
             "metrics": {
               "type": "array",
               "required": false,
-              "default": ["cpu", "ram", "disk"]
+              "default": [
+                "cpu",
+                "ram",
+                "disk"
+              ]
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "cpu_percent": { "type": "number" },
-              "ram_percent": { "type": "number" },
-              "disk_percent": { "type": "number" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "cpu_percent": {
+                "type": "number"
+              },
+              "ram_percent": {
+                "type": "number"
+              },
+              "disk_percent": {
+                "type": "number"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": true
           }
         },
         {
@@ -114,19 +175,32 @@
           "execution_target": "client",
           "params_schema": {},
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "percent": { "type": "number" },
-              "is_charging": { "type": "boolean" },
-              "time_remaining": { "type": "string" },
-              "health": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "percent": {
+                "type": "number"
+              },
+              "is_charging": {
+                "type": "boolean"
+              },
+              "time_remaining": {
+                "type": "string"
+              },
+              "health": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": true
           }
         },
         {
@@ -141,19 +215,32 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "connected": { "type": "boolean" },
-              "local_ip": { "type": "string" },
-              "public_ip": { "type": "string" },
-              "network_name": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "connected": {
+                "type": "boolean"
+              },
+              "local_ip": {
+                "type": "string"
+              },
+              "public_ip": {
+                "type": "string"
+              },
+              "network_name": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.97,
             "default_requires_approval": false,
-            "default_timeout_ms": 3000
+            "default_timeout_ms": 3000,
+            "summary_tts": true
           }
         },
         {
@@ -162,17 +249,26 @@
           "execution_target": "client",
           "params_schema": {},
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "content": { "type": "string" },
-              "content_type": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "content": {
+                "type": "string"
+              },
+              "content_type": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 500
+            "default_timeout_ms": 500,
+            "summary_tts": false
           }
         },
         {
@@ -180,20 +276,32 @@
           "description": "Write to clipboard",
           "execution_target": "client",
           "params_schema": {
-            "content": { "type": "string", "required": true }
+            "content": {
+              "type": "string",
+              "required": true
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "content_length": { "type": "integer" },
-              "copied_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "content_length": {
+                "type": "integer"
+              },
+              "copied_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 500
+            "default_timeout_ms": 500,
+            "summary_tts": false
           }
         },
         {
@@ -201,8 +309,14 @@
           "description": "Send native OS notifications",
           "execution_target": "client",
           "params_schema": {
-            "title": { "type": "string", "required": true },
-            "message": { "type": "string", "required": true },
+            "title": {
+              "type": "string",
+              "required": true
+            },
+            "message": {
+              "type": "string",
+              "required": true
+            },
             "urgency": {
               "type": "string",
               "required": false,
@@ -210,17 +324,26 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "notification_id": { "type": "string" },
-              "sent_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "notification_id": {
+                "type": "string"
+              },
+              "sent_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": false
           }
         },
         {
@@ -233,22 +356,38 @@
               "required": false,
               "default": "full"
             },
-            "save_path": { "type": "string", "required": false }
+            "save_path": {
+              "type": "string",
+              "required": false
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "file_path": { "type": "string" },
-              "in_clipboard": { "type": "boolean" },
-              "resolution": { "type": "string" },
-              "captured_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "file_path": {
+                "type": "string"
+              },
+              "in_clipboard": {
+                "type": "boolean"
+              },
+              "resolution": {
+                "type": "string"
+              },
+              "captured_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.96,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": false
           }
         },
         {
@@ -256,21 +395,35 @@
           "description": "Minimize application window",
           "execution_target": "client",
           "params_schema": {
-            "target": { "type": "string", "required": true }
+            "target": {
+              "type": "string",
+              "required": true
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "target": { "type": "string" },
-              "minimized": { "type": "boolean" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "target": {
+                "type": "string"
+              },
+              "minimized": {
+                "type": "boolean"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": false
           }
         },
         {
@@ -278,21 +431,35 @@
           "description": "Maximize application window",
           "execution_target": "client",
           "params_schema": {
-            "target": { "type": "string", "required": true }
+            "target": {
+              "type": "string",
+              "required": true
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "target": { "type": "string" },
-              "maximized": { "type": "boolean" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "target": {
+                "type": "string"
+              },
+              "maximized": {
+                "type": "boolean"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": false
           }
         },
         {
@@ -300,21 +467,35 @@
           "description": "Bring application to front and focus",
           "execution_target": "client",
           "params_schema": {
-            "target": { "type": "string", "required": true }
+            "target": {
+              "type": "string",
+              "required": true
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "target": { "type": "string" },
-              "focused": { "type": "boolean" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "target": {
+                "type": "string"
+              },
+              "focused": {
+                "type": "boolean"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": false
           }
         },
         {
@@ -323,19 +504,32 @@
           "execution_target": "client",
           "params_schema": {},
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "brightness": { "type": "integer" },
-              "min_brightness": { "type": "integer" },
-              "max_brightness": { "type": "integer" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "brightness": {
+                "type": "integer"
+              },
+              "min_brightness": {
+                "type": "integer"
+              },
+              "max_brightness": {
+                "type": "integer"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": true
           }
         },
         {
@@ -351,19 +545,32 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "previous_brightness": { "type": "integer" },
-              "new_brightness": { "type": "integer" },
-              "amount_changed": { "type": "integer" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "previous_brightness": {
+                "type": "integer"
+              },
+              "new_brightness": {
+                "type": "integer"
+              },
+              "amount_changed": {
+                "type": "integer"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": false
           }
         },
         {
@@ -379,19 +586,32 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "previous_brightness": { "type": "integer" },
-              "new_brightness": { "type": "integer" },
-              "amount_changed": { "type": "integer" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "previous_brightness": {
+                "type": "integer"
+              },
+              "new_brightness": {
+                "type": "integer"
+              },
+              "amount_changed": {
+                "type": "integer"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": false
           }
         },
         {
@@ -400,20 +620,35 @@
           "execution_target": "client",
           "params_schema": {},
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "volume": { "type": "integer" },
-              "is_muted": { "type": "boolean" },
-              "min_volume": { "type": "integer" },
-              "max_volume": { "type": "integer" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "volume": {
+                "type": "integer"
+              },
+              "is_muted": {
+                "type": "boolean"
+              },
+              "min_volume": {
+                "type": "integer"
+              },
+              "max_volume": {
+                "type": "integer"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": true
           }
         },
         {
@@ -429,19 +664,32 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "previous_volume": { "type": "integer" },
-              "new_volume": { "type": "integer" },
-              "amount_changed": { "type": "integer" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "previous_volume": {
+                "type": "integer"
+              },
+              "new_volume": {
+                "type": "integer"
+              },
+              "amount_changed": {
+                "type": "integer"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": false
           }
         },
         {
@@ -457,24 +705,36 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "previous_volume": { "type": "integer" },
-              "new_volume": { "type": "integer" },
-              "amount_changed": { "type": "integer" },
-              "timestamp": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "previous_volume": {
+                "type": "integer"
+              },
+              "new_volume": {
+                "type": "integer"
+              },
+              "amount_changed": {
+                "type": "integer"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 1000
+            "default_timeout_ms": 1000,
+            "summary_tts": false
           }
         }
       ]
     },
-
     "file_system": {
       "description": "File and folder operations",
       "tools": [
@@ -483,8 +743,15 @@
           "description": "Locate files and folders",
           "execution_target": "client",
           "params_schema": {
-            "query": { "type": "string", "required": true },
-            "path": { "type": "string", "required": false, "default": "." },
+            "query": {
+              "type": "string",
+              "required": true
+            },
+            "path": {
+              "type": "string",
+              "required": false,
+              "default": "."
+            },
             "max_results": {
               "type": "integer",
               "required": false,
@@ -492,18 +759,29 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "results": { "type": "array" },
-              "total_found": { "type": "integer" },
-              "search_time_ms": { "type": "number" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "results": {
+                "type": "array"
+              },
+              "total_found": {
+                "type": "integer"
+              },
+              "search_time_ms": {
+                "type": "number"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.94,
             "default_requires_approval": false,
-            "default_timeout_ms": 10000
+            "default_timeout_ms": 10000,
+            "summary_tts": true
           }
         },
         {
@@ -511,22 +789,39 @@
           "description": "Open files with default or specified app",
           "execution_target": "client",
           "params_schema": {
-            "path": { "type": "string", "required": true },
-            "app": { "type": "string", "required": false }
+            "path": {
+              "type": "string",
+              "required": true
+            },
+            "app": {
+              "type": "string",
+              "required": false
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "file_path": { "type": "string" },
-              "opened_with": { "type": "string" },
-              "opened_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "file_path": {
+                "type": "string"
+              },
+              "opened_with": {
+                "type": "string"
+              },
+              "opened_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.97,
             "default_requires_approval": false,
-            "default_timeout_ms": 3000
+            "default_timeout_ms": 3000,
+            "summary_tts": false
           }
         },
         {
@@ -534,8 +829,15 @@
           "description": "Create new files with content",
           "execution_target": "client",
           "params_schema": {
-            "path": { "type": "string", "required": true },
-            "content": { "type": "string", "required": false, "default": "" },
+            "path": {
+              "type": "string",
+              "required": true
+            },
+            "content": {
+              "type": "string",
+              "required": false,
+              "default": ""
+            },
             "overwrite": {
               "type": "boolean",
               "required": false,
@@ -543,19 +845,30 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "file_path": { "type": "string" },
-              "size_bytes": { "type": "integer" },
-              "created_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "file_path": {
+                "type": "string"
+              },
+              "size_bytes": {
+                "type": "integer"
+              },
+              "created_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": true,
             "default_approval_question": "A file already exists at this path. Overwrite it?",
-            "default_timeout_ms": 5000
+            "default_timeout_ms": 5000,
+            "summary_tts": false
           }
         },
         {
@@ -563,7 +876,10 @@
           "description": "Safely delete files",
           "execution_target": "client",
           "params_schema": {
-            "path": { "type": "string", "required": true },
+            "path": {
+              "type": "string",
+              "required": true
+            },
             "permanent": {
               "type": "boolean",
               "required": false,
@@ -571,19 +887,30 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "deleted_path": { "type": "string" },
-              "permanent": { "type": "boolean" },
-              "deleted_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "deleted_path": {
+                "type": "string"
+              },
+              "permanent": {
+                "type": "boolean"
+              },
+              "deleted_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.9,
             "default_requires_approval": true,
             "default_approval_question": "Are you sure you want to delete this file permanently?",
-            "default_timeout_ms": 3000
+            "default_timeout_ms": 3000,
+            "summary_tts": false
           }
         },
         {
@@ -591,8 +918,14 @@
           "description": "Move files to new location",
           "execution_target": "client",
           "params_schema": {
-            "source": { "type": "string", "required": true },
-            "destination": { "type": "string", "required": true },
+            "source": {
+              "type": "string",
+              "required": true
+            },
+            "destination": {
+              "type": "string",
+              "required": true
+            },
             "overwrite": {
               "type": "boolean",
               "required": false,
@@ -600,19 +933,30 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "old_path": { "type": "string" },
-              "new_path": { "type": "string" },
-              "moved_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "old_path": {
+                "type": "string"
+              },
+              "new_path": {
+                "type": "string"
+              },
+              "moved_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.93,
             "default_requires_approval": true,
             "default_approval_question": "Destination file exists. Overwrite it?",
-            "default_timeout_ms": 5000
+            "default_timeout_ms": 5000,
+            "summary_tts": false
           }
         },
         {
@@ -620,8 +964,14 @@
           "description": "Copy files",
           "execution_target": "client",
           "params_schema": {
-            "source": { "type": "string", "required": true },
-            "destination": { "type": "string", "required": true },
+            "source": {
+              "type": "string",
+              "required": true
+            },
+            "destination": {
+              "type": "string",
+              "required": true
+            },
             "overwrite": {
               "type": "boolean",
               "required": false,
@@ -629,19 +979,32 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "source_path": { "type": "string" },
-              "destination_path": { "type": "string" },
-              "size_bytes": { "type": "integer" },
-              "copied_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "source_path": {
+                "type": "string"
+              },
+              "destination_path": {
+                "type": "string"
+              },
+              "size_bytes": {
+                "type": "integer"
+              },
+              "copied_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.96,
             "default_requires_approval": false,
-            "default_timeout_ms": 10000
+            "default_timeout_ms": 10000,
+            "summary_tts": false
           }
         },
         {
@@ -649,21 +1012,35 @@
           "description": "Read content from a file",
           "execution_target": "client",
           "params_schema": {
-            "path": { "type": "string", "required": true }
+            "path": {
+              "type": "string",
+              "required": true
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "content": { "type": "string" },
-              "size_bytes": { "type": "integer" },
-              "path": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "content": {
+                "type": "string"
+              },
+              "size_bytes": {
+                "type": "integer"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": false,
-            "default_timeout_ms": 5000
+            "default_timeout_ms": 5000,
+            "summary_tts": false
           }
         },
         {
@@ -671,8 +1048,15 @@
           "description": "Create new directories",
           "execution_target": "client",
           "params_schema": {
-            "path": { "type": "string", "required": true },
-            "title": { "type": "string", "required": false, "default": "" },
+            "path": {
+              "type": "string",
+              "required": true
+            },
+            "title": {
+              "type": "string",
+              "required": false,
+              "default": ""
+            },
             "recursive": {
               "type": "boolean",
               "required": false,
@@ -680,17 +1064,26 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "folder_path": { "type": "string" },
-              "created_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "folder_path": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.98,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": false
           }
         },
         {
@@ -698,23 +1091,40 @@
           "description": "Organize and clean folders",
           "execution_target": "client",
           "params_schema": {
-            "path": { "type": "string", "required": true },
-            "action": { "type": "string", "required": true }
+            "path": {
+              "type": "string",
+              "required": true
+            },
+            "action": {
+              "type": "string",
+              "required": true
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "files_affected": { "type": "integer" },
-              "action_performed": { "type": "string" },
-              "cleaned_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "files_affected": {
+                "type": "integer"
+              },
+              "action_performed": {
+                "type": "string"
+              },
+              "cleaned_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.88,
             "default_requires_approval": true,
             "default_approval_question": "This will reorganize files in the folder. Continue?",
-            "default_timeout_ms": 30000
+            "default_timeout_ms": 30000,
+            "summary_tts": false
           }
         },
         {
@@ -722,27 +1132,40 @@
           "description": "Organize folder structure ",
           "execution_target": "client",
           "params_schema": {
-            "path": { "type": "string", "required": true }
+            "path": {
+              "type": "string",
+              "required": true
+            }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "files_affected": { "type": "integer" },
-              "action_performed": { "type": "string" },
-              "organized_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "files_affected": {
+                "type": "integer"
+              },
+              "action_performed": {
+                "type": "string"
+              },
+              "organized_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.88,
             "default_requires_approval": false,
             "default_approval_question": "This will reorganize files in the folder. Continue?",
-            "default_timeout_ms": 30000
+            "default_timeout_ms": 30000,
+            "summary_tts": false
           }
         }
       ]
     },
-
     "web": {
       "description": "Web operations and API calls",
       "tools": [
@@ -751,7 +1174,10 @@
           "description": "Search the web for information",
           "execution_target": "server",
           "params_schema": {
-            "query": { "type": "string", "required": true },
+            "query": {
+              "type": "string",
+              "required": true
+            },
             "max_results": {
               "type": "integer",
               "required": false,
@@ -759,19 +1185,32 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "query": { "type": "string" },
-              "results": { "type": "array" },
-              "total_results": { "type": "integer" },
-              "search_time_ms": { "type": "number" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "query": {
+                "type": "string"
+              },
+              "results": {
+                "type": "array"
+              },
+              "total_results": {
+                "type": "integer"
+              },
+              "search_time_ms": {
+                "type": "number"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": false,
-            "default_timeout_ms": 5000
+            "default_timeout_ms": 5000,
+            "summary_tts": true
           }
         },
         {
@@ -779,8 +1218,14 @@
           "description": "Fetches and extracts readable content from a public webpage",
           "execution_target": "server",
           "params_schema": {
-            "base_links": { "type": "array", "required": true },
-            "query": { "type": "string", "required": false },
+            "base_links": {
+              "type": "array",
+              "required": true
+            },
+            "query": {
+              "type": "string",
+              "required": false
+            },
             "max_results": {
               "type": "integer",
               "required": false,
@@ -788,18 +1233,29 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "results": { "type": "array" },
-              "total_results": { "type": "integer" },
-              "search_time_ms": { "type": "number" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "results": {
+                "type": "array"
+              },
+              "total_results": {
+                "type": "integer"
+              },
+              "search_time_ms": {
+                "type": "number"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": false,
-            "default_timeout_ms": 5000
+            "default_timeout_ms": 5000,
+            "summary_tts": true
           }
         },
         {
@@ -807,7 +1263,10 @@
           "description": "Performs deep web research by searching, scraping top results, and summarizing the findings.",
           "execution_target": "server",
           "params_schema": {
-            "query": { "type": "string", "required": true },
+            "query": {
+              "type": "string",
+              "required": true
+            },
             "max_results": {
               "type": "integer",
               "required": false,
@@ -820,30 +1279,44 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
+            "success": {
+              "type": "boolean"
+            },
             "data": {
-              "summary": { "type": "string" },
-              "detailed_content": { "type": "string" },
+              "summary": {
+                "type": "string"
+              },
+              "detailed_content": {
+                "type": "string"
+              },
               "sources": {
                 "type": "array",
                 "items": {
-                  "url": { "type": "string" },
-                  "title": { "type": "string" },
-                  "search_metadata": { "type": "object" }
+                  "url": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "search_metadata": {
+                    "type": "object"
+                  }
                 }
               }
             },
-            "error": { "type": "string" }
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": false,
-            "default_timeout_ms": 60000
+            "default_timeout_ms": 60000,
+            "summary_tts": true
           }
         }
       ]
     },
-
     "ai": {
       "description": "AI and agent management tools",
       "tools": [
@@ -853,22 +1326,37 @@
           "execution_target": "server",
           "params_schema": {},
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "uptime_seconds": { "type": "number" },
-              "current_tasks": { "type": "array" },
-              "resource_usage": {
-                "cpu_percent": { "type": "number" },
-                "ram_percent": { "type": "number" }
-              },
-              "last_updated": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "uptime_seconds": {
+                "type": "number"
+              },
+              "current_tasks": {
+                "type": "array"
+              },
+              "resource_usage": {
+                "cpu_percent": {
+                  "type": "number"
+                },
+                "ram_percent": {
+                  "type": "number"
+                }
+              },
+              "last_updated": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": true
           }
         },
         {
@@ -876,8 +1364,14 @@
           "description": "Summarize AI-related content like logs, conversations, or documents",
           "execution_target": "server",
           "params_schema": {
-            "query": { "type": "string", "required": false },
-            "context": { "type": "string", "required": true },
+            "query": {
+              "type": "string",
+              "required": false
+            },
+            "context": {
+              "type": "string",
+              "required": true
+            },
             "max_length": {
               "type": "integer",
               "required": false,
@@ -885,7 +1379,9 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
+            "success": {
+              "type": "boolean"
+            },
             "data": {
               "summary": {
                 "type": "string",
@@ -895,21 +1391,29 @@
                 "type": "string",
                 "description": "This can be upt max 10 sentences as this clears up and give information deep."
               },
-              "original_length": { "type": "integer" },
-              "summary_length": { "type": "integer" },
-              "summarized_at": { "type": "string" }
+              "original_length": {
+                "type": "integer"
+              },
+              "summary_length": {
+                "type": "integer"
+              },
+              "summarized_at": {
+                "type": "string"
+              }
             },
-            "error": { "type": "string" }
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": true
           }
         }
       ]
     },
-
     "messaging": {
       "description": "Send messages, files, media and make calls across platforms (WhatsApp, Facebook, Slack). Platform resolved from user preferences or explicit override.",
       "tools": [
@@ -936,19 +1440,30 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "contact": { "type": "string" },
-              "platform_used": { "type": "string" },
-              "sent_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "contact": {
+                "type": "string"
+              },
+              "platform_used": {
+                "type": "string"
+              },
+              "sent_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": false,
             "default_approval_question": "Send this message?",
-            "default_timeout_ms": 10000
+            "default_timeout_ms": 10000,
+            "summary_tts": false
           }
         },
         {
@@ -979,20 +1494,33 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "contact": { "type": "string" },
-              "file_name": { "type": "string" },
-              "platform_used": { "type": "string" },
-              "sent_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "contact": {
+                "type": "string"
+              },
+              "file_name": {
+                "type": "string"
+              },
+              "platform_used": {
+                "type": "string"
+              },
+              "sent_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.93,
             "default_requires_approval": true,
             "default_approval_question": "Send this file?",
-            "default_timeout_ms": 15000
+            "default_timeout_ms": 15000,
+            "summary_tts": false
           }
         },
         {
@@ -1023,20 +1551,33 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "contact": { "type": "string" },
-              "media_type": { "type": "string" },
-              "platform_used": { "type": "string" },
-              "sent_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "contact": {
+                "type": "string"
+              },
+              "media_type": {
+                "type": "string"
+              },
+              "platform_used": {
+                "type": "string"
+              },
+              "sent_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.93,
             "default_requires_approval": true,
             "default_approval_question": "Send this media?",
-            "default_timeout_ms": 15000
+            "default_timeout_ms": 15000,
+            "summary_tts": false
           }
         },
         {
@@ -1056,19 +1597,30 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "contact": { "type": "string" },
-              "platform_used": { "type": "string" },
-              "started_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "contact": {
+                "type": "string"
+              },
+              "platform_used": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": true,
             "default_approval_question": "Start this call?",
-            "default_timeout_ms": 10000
+            "default_timeout_ms": 10000,
+            "summary_tts": false
           }
         },
         {
@@ -1088,19 +1640,30 @@
             }
           },
           "output_schema": {
-            "success": { "type": "boolean" },
-            "data": {
-              "contact": { "type": "string" },
-              "platform_used": { "type": "string" },
-              "started_at": { "type": "string" }
+            "success": {
+              "type": "boolean"
             },
-            "error": { "type": "string" }
+            "data": {
+              "contact": {
+                "type": "string"
+              },
+              "platform_used": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
           },
           "metadata": {
             "default_confidence": 0.95,
             "default_requires_approval": true,
             "default_approval_question": "Start this video call?",
-            "default_timeout_ms": 10000
+            "default_timeout_ms": 10000,
+            "summary_tts": false
           }
         }
       ]
@@ -1196,7 +1759,8 @@
           "metadata": {
             "default_confidence": 0.96,
             "default_requires_approval": false,
-            "default_timeout_ms": 5000
+            "default_timeout_ms": 5000,
+            "summary_tts": true
           }
         },
         {
@@ -1259,7 +1823,8 @@
           "metadata": {
             "default_confidence": 0.97,
             "default_requires_approval": false,
-            "default_timeout_ms": 6000
+            "default_timeout_ms": 6000,
+            "summary_tts": false
           }
         },
         {
@@ -1303,7 +1868,8 @@
           "metadata": {
             "default_confidence": 0.99,
             "default_requires_approval": false,
-            "default_timeout_ms": 8000
+            "default_timeout_ms": 8000,
+            "summary_tts": true
           }
         },
         {
@@ -1354,7 +1920,8 @@
           "metadata": {
             "default_confidence": 0.97,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": false
           }
         },
         {
@@ -1405,7 +1972,8 @@
           "metadata": {
             "default_confidence": 0.97,
             "default_requires_approval": false,
-            "default_timeout_ms": 2000
+            "default_timeout_ms": 2000,
+            "summary_tts": false
           }
         }
       ]
