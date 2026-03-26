@@ -77,6 +77,11 @@ export interface UserInterruptPayload {
   timestamp: number;
 }
 
+export interface UserSpeechStartedPayload {
+  sessionId: string;
+  timestamp: number;
+}
+
 export interface TTSPayload {
   text: string | undefined;
   userId: string;
@@ -188,6 +193,7 @@ export interface SocketEvents {
   "user-speaking": (data: UserSpeakingPayload) => void;
   "user-stop-speaking": (data: UserStopSpeakingPayload) => void;
   "user-interrupt": (data: UserInterruptPayload) => void;
+  "user-speech-started": (data: UserSpeechStartedPayload) => void;
   "request-tts": (data: TTSPayload) => void;
   "test-ws": (data?: any) => void;
   

@@ -165,6 +165,7 @@ class StreamService:
         tts_service: Any,
         gender: str = "female",
         voice_name: Optional[str] = None,
+        pre_fetched_context: Optional[Dict[str, Any]] = None,
     ) -> bool:
         query = (query or "").strip()
         if not query:
@@ -172,49 +173,69 @@ class StreamService:
 
         request_id = uuid.uuid4().hex[:8]
 
-        # ── 1. Parallel context load ──────────────────────────────────────────
-        budget_ms = _context_budget_ms()   # 200 ms default (was hardcoded 800 ms)
-
-        user_task    = asyncio.create_task(load_user(user_id))
-        recent_task  = asyncio.create_task(get_last_n_messages(user_id, n=_RECENT_TURNS))
-        context_task = asyncio.create_task(
-            process_query_and_get_context(
-                user_id=user_id,
-                query=query,
-                budget_ms=budget_ms,
-                top_k=_context_top_k(),
-                threshold=0.08,
-                fast_lane=True,
+        # ── 1. Context load — skip if pre-fetched during speech ───────────────
+        if pre_fetched_context:
+            logger.info("[%s] ⚡ Using pre-fetched context (speculative)", request_id)
+            user_details   = pre_fetched_context.get("user_details") or {}
+            recent_context = pre_fetched_context.get("recent_messages") or []
+            query_context  = pre_fetched_context.get("rag_context") or []
+            if not user_details:
+                try:
+                    user_details = await load_user(user_id)
+                except Exception:
+                    logger.error("[%s] failed to load user (fallback)", request_id)
+                    return False
+            # Fire-and-forget persist
+            persist_task = asyncio.create_task(
+                add_message(user_id=user_id, role="user", content=query)
             )
-        )
-        persist_task = asyncio.create_task(
-            add_message(user_id=user_id, role="user", content=query)
-        )
-        persist_task.add_done_callback(
-            lambda t: t.exception() and logger.debug("[%s] persist user msg failed", request_id)
-        )
-
-        try:
-            user_details = await user_task
-        except Exception:
-            logger.error("[%s] failed to load user", request_id)
-            return False
-        if not user_details:
-            return False
-
-        try:
-            recent_context = await recent_task
-        except Exception:
-            recent_context = []
-
-        query_context: List[Dict[str, Any]] = []
-        try:
-            result, _ = await asyncio.wait_for(
-                context_task, timeout=budget_ms / 1000.0
+            persist_task.add_done_callback(
+                lambda t: t.exception() and logger.debug("[%s] persist user msg failed", request_id)
             )
-            query_context = result or []
-        except (asyncio.TimeoutError, Exception):
-            context_task.cancel()
+        else:
+            # Original path — parallel context load
+            budget_ms = _context_budget_ms()
+
+            user_task    = asyncio.create_task(load_user(user_id))
+            recent_task  = asyncio.create_task(get_last_n_messages(user_id, n=_RECENT_TURNS))
+            context_task = asyncio.create_task(
+                process_query_and_get_context(
+                    user_id=user_id,
+                    query=query,
+                    budget_ms=budget_ms,
+                    top_k=_context_top_k(),
+                    threshold=0.08,
+                    fast_lane=True,
+                )
+            )
+            persist_task = asyncio.create_task(
+                add_message(user_id=user_id, role="user", content=query)
+            )
+            persist_task.add_done_callback(
+                lambda t: t.exception() and logger.debug("[%s] persist user msg failed", request_id)
+            )
+
+            try:
+                user_details = await user_task
+            except Exception:
+                logger.error("[%s] failed to load user", request_id)
+                return False
+            if not user_details:
+                return False
+
+            try:
+                recent_context = await recent_task
+            except Exception:
+                recent_context = []
+
+            query_context: List[Dict[str, Any]] = []
+            try:
+                result, _ = await asyncio.wait_for(
+                    context_task, timeout=budget_ms / 1000.0
+                )
+                query_context = result or []
+            except (asyncio.TimeoutError, Exception):
+                context_task.cancel()
 
         # ── 2. Build messages ─────────────────────────────────────────────────
         lang     = _resolve_language(user_details)
@@ -356,8 +377,10 @@ async def stream_chat_response(
     tts_service: Any,
     gender: str = "female",
     voice_name: Optional[str] = None,
+    pre_fetched_context: Optional[Dict[str, Any]] = None,
 ) -> bool:
     return await StreamService().stream_chat_with_tts(
         query=query, user_id=user_id, sio=sio, sid=sid,
         tts_service=tts_service, gender=gender, voice_name=voice_name,
+        pre_fetched_context=pre_fetched_context,
     )

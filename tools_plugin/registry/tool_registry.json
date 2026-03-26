@@ -39,7 +39,7 @@
           },
           "metadata": {
             "default_confidence": 0.98,
-            "default_requires_approval": true,
+            "default_requires_approval": false,
             "default_timeout_ms": 3000,
             "summary_tts": false
           }

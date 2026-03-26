@@ -12,3 +12,7 @@ llm_models/
 *.safetensors
 *.onnx
 voices.json
+
+# Gmail Tokens
+credentials.json
+token.json

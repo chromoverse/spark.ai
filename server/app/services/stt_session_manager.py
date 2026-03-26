@@ -187,6 +187,17 @@ class STTSessionManager:
             session = self._sessions.get(session_id)
             return session.chunk_count if session else 0
 
+    async def get_current_partial_text(self, session_id: str) -> str:
+        """
+        Return the current partial transcript WITHOUT waiting for pending chunks.
+        Used by speculative pre-fetch to build RAG queries from in-progress speech.
+        """
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if not session:
+                return ""
+            return session.get_full_text()
+
     async def get_last_chunk_text(self, session_id: str) -> str:
         """Return the text of the most recent chunk for context continuity."""
         async with self._lock:

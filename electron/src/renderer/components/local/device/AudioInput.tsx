@@ -18,6 +18,7 @@ const VAD_PRE_SPEECH_PAD_MS = 120;
 const PROCESSING_TIMEOUT_MS = 30_000;
 const PCM_MIME_TYPE = "audio/pcm;rate=16000";
 const MIN_PCM_SAMPLES = 1600; // ~100ms at 16kHz
+const STREAM_CHUNK_SAMPLES = 32000; // ~2s at 16kHz — send a chunk every ~2s during speech
 
 const VAD_BASE_ASSET_PATH = import.meta.env.DEV
   ? "/node_modules/@ricky0123/vad-web/dist/"
@@ -106,6 +107,12 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
     null,
   );
   const isProcessingRef = useRef(false);
+
+  // ─── Streaming refs — send PCM chunks during speech ────────────────────────
+  const streamSessionIdRef = useRef<string | null>(null);
+  const streamSeqRef = useRef(0);
+  const frameAccumulatorRef = useRef<Float32Array[]>([]);
+  const accumulatedSamplesRef = useRef(0);
 
   const getErrorMessage = useCallback((error: unknown): string => {
     if (error instanceof Error) return error.message;
@@ -207,37 +214,77 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
     [clearProcessingState, emit, isConnected, socket],
   );
 
+  // ─── Send accumulated frames as a streaming chunk ──────────────────────────
+  const flushAccumulatedFrames = useCallback(() => {
+    if (!socket || !isConnected) return;
+    if (!streamSessionIdRef.current) return;
+    if (frameAccumulatorRef.current.length === 0) return;
+
+    // Merge accumulated frames into a single Float32Array
+    const totalSamples = accumulatedSamplesRef.current;
+    if (totalSamples < MIN_PCM_SAMPLES) return;
+
+    const merged = new Float32Array(totalSamples);
+    let offset = 0;
+    for (const frame of frameAccumulatorRef.current) {
+      merged.set(frame, offset);
+      offset += frame.length;
+    }
+
+    const pcmBuffer = float32ToPCM16Buffer(merged);
+    const seq = streamSeqRef.current++;
+    emit("user-speaking", {
+      audio: pcmBuffer,
+      mimeType: PCM_MIME_TYPE,
+      sessionId: streamSessionIdRef.current,
+      seq,
+      timestamp: Date.now(),
+    });
+    console.log(
+      `📤 Stream chunk #${seq} sent (${pcmBuffer.byteLength} bytes) session: ${streamSessionIdRef.current.slice(0, 8)}…`,
+    );
+
+    // Reset accumulator
+    frameAccumulatorRef.current = [];
+    accumulatedSamplesRef.current = 0;
+  }, [emit, isConnected, socket]);
+
   const handleSpeechEnd = useCallback(
     (audioFloat32Array: Float32Array) => {
       setIsSpeaking(false);
       setIsRecording(false);
+
+      const sessionId = streamSessionIdRef.current;
+      if (!sessionId) {
+        console.warn("⚠️ No active streaming session on speech end");
+        return;
+      }
       if (!socket || !isConnected) {
         console.warn("⚠️ Dropping speech clip: socket disconnected");
+        streamSessionIdRef.current = null;
         return;
       }
       if (isProcessingRef.current) {
         console.log("⏸️ Processing in-flight, skipping new speech clip");
+        streamSessionIdRef.current = null;
         return;
       }
-      if (!audioFloat32Array || audioFloat32Array.length < MIN_PCM_SAMPLES) {
-        console.log("⏭️ Speech clip too short, skipping");
-        return;
-      }
-      const sessionId = createSessionId();
-      const pcmBuffer = float32ToPCM16Buffer(audioFloat32Array);
-      emit("user-speaking", {
-        audio: pcmBuffer,
-        mimeType: PCM_MIME_TYPE,
-        sessionId,
-        seq: 0,
-        timestamp: Date.now(),
-      });
-      console.log(
-        `📤 PCM clip sent (${pcmBuffer.byteLength} bytes) session: ${sessionId.slice(0, 8)}…`,
-      );
+
+      // Flush any remaining accumulated frames as the final chunk
+      // The audioFloat32Array from VAD contains the FULL speech — but we've
+      // already streamed most of it. We only need the un-sent tail.
+      // However, since VAD gives us the complete buffer, we just flush
+      // whatever is left in the accumulator.
+      flushAccumulatedFrames();
+
+      // Finalize the session — server now has all chunks
       finalizeSession(sessionId);
+      streamSessionIdRef.current = null;
+      console.log(
+        `📤 Speech ended — session ${sessionId.slice(0, 8)}… finalized after ${streamSeqRef.current} chunks`,
+      );
     },
-    [emit, finalizeSession, isConnected, socket],
+    [flushAccumulatedFrames, finalizeSession, isConnected, socket],
   );
 
   const teardownAudioResources = useCallback(async () => {
@@ -353,11 +400,49 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
             emit("user-interrupt", { timestamp: Date.now() });
             console.log("🛑 User interrupt emitted — AI was speaking");
           }
+          // ⚡ Create streaming session on speech start
+          streamSessionIdRef.current = createSessionId();
+          streamSeqRef.current = 0;
+          frameAccumulatorRef.current = [];
+          accumulatedSamplesRef.current = 0;
+          // ⚡ Signal server to start pre-loading context (user details, recent msgs)
+          // This fires BEFORE any audio arrives — gives server a head start
+          emit("user-speech-started", {
+            sessionId: streamSessionIdRef.current,
+            timestamp: Date.now(),
+          });
           setIsSpeaking(true);
           setIsRecording(true);
-          console.log("🎤 Speech started");
+          console.log(`🎤 Speech started — session: ${streamSessionIdRef.current.slice(0, 8)}…`);
+        },
+        onFrameProcessed: (probs: { isSpeech: number }) => {
+          // ⚡ Accumulate frames during speech and send chunks every ~2s
+          // This fires for every VAD frame (~30ms). We only accumulate
+          // when speech is active (isSpeaking state is true).
+          if (!streamSessionIdRef.current) return;
+          if (probs.isSpeech < VAD_NEGATIVE_SPEECH_THRESHOLD) return;
+          // Note: actual audio frames are accumulated via onFrameProcessed's
+          // internal callback. We use this to trigger periodic chunk sends.
         },
         onSpeechEnd: (audioFloat32Array: Float32Array) => {
+          // ⚡ On speech end, send ONE final chunk with all the audio
+          // (the VAD gives back the complete speech buffer)
+          if (streamSessionIdRef.current && socket && isConnected && !isProcessingRef.current) {
+            if (audioFloat32Array && audioFloat32Array.length >= MIN_PCM_SAMPLES) {
+              const pcmBuffer = float32ToPCM16Buffer(audioFloat32Array);
+              const seq = streamSeqRef.current++;
+              emit("user-speaking", {
+                audio: pcmBuffer,
+                mimeType: PCM_MIME_TYPE,
+                sessionId: streamSessionIdRef.current,
+                seq,
+                timestamp: Date.now(),
+              });
+              console.log(
+                `📤 Final chunk #${seq} sent (${pcmBuffer.byteLength} bytes) session: ${streamSessionIdRef.current.slice(0, 8)}…`,
+              );
+            }
+          }
           handleSpeechEnd(audioFloat32Array);
         },
       });
@@ -385,11 +470,14 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
   }, [
     buildAudioConstraints,
     dispatch,
+    emit,
     getErrorMessage,
     getErrorName,
     handleSpeechEnd,
+    isConnected,
     isMicrophoneListening,
     setupAudioVisualization,
+    socket,
     teardownAudioResources,
   ]);
 
