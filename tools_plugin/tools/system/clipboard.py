@@ -12,7 +12,15 @@ from ..base import BaseTool, ToolOutput
 
 
 class ClipboardReadTool(BaseTool):
-    """Read clipboard content."""
+    """Read clipboard content.
+
+    Inputs:
+    - (None)
+
+    Outputs:
+    - content (string)
+    - content_type (string)
+    """
 
     def get_tool_name(self) -> str:
         return "clipboard_read"
@@ -146,7 +154,15 @@ if ($text) {
 
 
 class ClipboardWriteTool(BaseTool):
-    """Write content to clipboard."""
+    """Write content to clipboard.
+
+    Inputs:
+    - content (string, required)
+
+    Outputs:
+    - content_length (integer)
+    - copied_at (string)
+    """
 
     def get_tool_name(self) -> str:
         return "clipboard_write"

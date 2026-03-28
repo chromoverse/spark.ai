@@ -14,7 +14,17 @@ from ..base import BaseTool, ToolOutput
 
 
 class BrightnessStatusTool(BaseTool):
-    """Get current screen brightness level."""
+    """Get current screen brightness level.
+
+    Inputs:
+    - (None)
+
+    Outputs:
+    - brightness (integer)
+    - min_brightness (integer)
+    - max_brightness (integer)
+    - timestamp (string)
+    """
 
     def get_tool_name(self) -> str:
         return "brightness_status"
@@ -115,7 +125,17 @@ class BrightnessStatusTool(BaseTool):
 
 
 class BrightnessIncreaseTool(BaseTool):
-    """Increase screen brightness by specified amount (default +10)."""
+    """Increase screen brightness by specified amount (default +10).
+
+    Inputs:
+    - amount (integer, optional): Amount to increase brightness by (default 1)
+
+    Outputs:
+    - previous_brightness (integer)
+    - new_brightness (integer)
+    - amount_changed (integer)
+    - timestamp (string)
+    """
 
     def get_tool_name(self) -> str:
         return "brightness_increase"
@@ -210,7 +230,17 @@ class BrightnessIncreaseTool(BaseTool):
 
 
 class BrightnessDecreaseTool(BaseTool):
-    """Decrease screen brightness by specified amount (default -10)."""
+    """Decrease screen brightness by specified amount (default -10).
+
+    Inputs:
+    - amount (integer, optional): Amount to decrease brightness by (default 1)
+
+    Outputs:
+    - previous_brightness (integer)
+    - new_brightness (integer)
+    - amount_changed (integer)
+    - timestamp (string)
+    """
 
     def get_tool_name(self) -> str:
         return "brightness_decrease"

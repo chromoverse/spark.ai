@@ -738,6 +738,27 @@ class MusicPlayTool(BaseTool):
     source     : str  – "youtube" | "soundcloud" | "local"   (default: "youtube")
     file_path  : str  – absolute path — only for source=local
     session_id : str  – caller ID for stop/status tracking   (default: "default")
+
+    Inputs:
+    - title (string, required): Song or track name
+    - artist (string, optional): Artist or band — improves search match
+    - album (string, optional): Album name — narrows ambiguous titles
+    - source (string, optional): 'youtube' | 'soundcloud' | 'local'
+    - file_path (string, optional): Absolute path to local audio file — required only when source='local'
+    - session_id (string, optional): ID to track this session for stop/status control
+
+    Outputs:
+    - source (string)
+    - title (string)
+    - artist (string)
+    - album (string)
+    - query (string): Search query used — online only
+    - file_path (string): Local only
+    - file_name (string): Local only
+    - format (string): Audio format — local only
+    - session_id (string)
+    - process_id (integer)
+    - started_at (string)
     """
 
     def get_tool_name(self) -> str:
@@ -853,6 +874,20 @@ class MusicStopTool(BaseTool):
     session_id : str  – session to stop             (default: "default")
     force      : bool – hard-kill the process        (default: False)
     stop_all   : bool – stop every active session   (default: False)
+
+    Inputs:
+    - session_id (string, optional): Session to stop
+    - force (boolean, optional): Force-kill (SIGKILL) instead of graceful terminate (SIGTERM)
+    - stop_all (boolean, optional): Stop every active session at once
+
+    Outputs:
+    - session_id (string)
+    - process_id (integer)
+    - method (string)
+    - was_playing (object)
+    - stopped_at (string)
+    - stopped (array): Present when stop_all=true
+    - count (integer): Present when stop_all=true
     """
 
     def get_tool_name(self) -> str:
@@ -937,6 +972,15 @@ class MusicStatusTool(BaseTool):
     ------
     session_id     : str  – show one session only       (optional)
     include_system : bool – run OS-level audio scan     (default: True)
+
+    Inputs:
+    - session_id (string, optional): Filter our sessions to one ID. Omit to list all.
+    - include_system (boolean, optional): Run OS-level audio scan (pactl / CoreAudio / WASAPI)
+
+    Outputs:
+    - our_sessions (object): sessions[] array + total count
+    - system_audio (object): streams[] array + total + optional error note
+    - timestamp (string)
     """
 
     def get_tool_name(self) -> str:
@@ -1036,6 +1080,18 @@ class MusicPauseTool(BaseTool):
     Params
     ------
     session_id : str  – session to pause  (default: "default")
+
+    Inputs:
+    - session_id (string, optional): Session to pause
+
+    Outputs:
+    - session_id (string)
+    - process_id (integer)
+    - method (string): NtSuspendProcess (Win) or SIGSTOP (Unix)
+    - title (string)
+    - artist (string)
+    - progress (object): elapsed / remaining at moment of pause
+    - paused_at (string)
     """
 
     def get_tool_name(self) -> str:
@@ -1107,6 +1163,18 @@ class MusicResumeTool(BaseTool):
     Params
     ------
     session_id : str  – session to resume  (default: "default")
+
+    Inputs:
+    - session_id (string, optional): Session to resume
+
+    Outputs:
+    - session_id (string)
+    - process_id (integer)
+    - method (string): NtResumeProcess (Win) or SIGCONT (Unix)
+    - title (string)
+    - artist (string)
+    - progress (object): elapsed / remaining after resume
+    - resumed_at (string)
     """
 
     def get_tool_name(self) -> str:

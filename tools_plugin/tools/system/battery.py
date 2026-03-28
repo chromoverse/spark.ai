@@ -12,7 +12,17 @@ from ..base import BaseTool, ToolOutput
 
 
 class BatteryStatusTool(BaseTool):
-    """Get battery status and power information."""
+    """Get battery status and power information.
+
+    Inputs:
+    - (None)
+
+    Outputs:
+    - percent (number)
+    - is_charging (boolean)
+    - time_remaining (string)
+    - health (string)
+    """
 
     def get_tool_name(self) -> str:
         return "battery_status"

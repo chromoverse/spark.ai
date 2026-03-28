@@ -13,7 +13,18 @@ from ..base import BaseTool, ToolOutput
 
 
 class FileCreateTool(BaseTool):
-    """Create file tool."""
+    """Create file tool.
+
+    Inputs:
+    - path (string, required)
+    - content (string, optional)
+    - overwrite (boolean, optional)
+
+    Outputs:
+    - file_path (string)
+    - size_bytes (integer)
+    - created_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "file_create"
@@ -64,7 +75,17 @@ class FileCreateTool(BaseTool):
 
 
 class FolderCreateTool(BaseTool):
-    """Create folder tool."""
+    """Create folder tool.
+
+    Inputs:
+    - path (string, required)
+    - title (string, optional)
+    - recursive (boolean, optional)
+
+    Outputs:
+    - folder_path (string)
+    - created_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "folder_create"
@@ -102,7 +123,19 @@ class FolderCreateTool(BaseTool):
             return ToolOutput(success=False, data={}, error=str(e))
 
 class FileCopyTool(BaseTool):
-    """Copy file tool."""
+    """Copy file tool.
+
+    Inputs:
+    - source (string, required)
+    - destination (string, required)
+    - overwrite (boolean, optional)
+
+    Outputs:
+    - source_path (string)
+    - destination_path (string)
+    - size_bytes (integer)
+    - copied_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "file_copy"
@@ -162,7 +195,18 @@ class FileCopyTool(BaseTool):
             return ToolOutput(success=False, data={}, error=str(e))
 
 class FileSearchTool(BaseTool):
-    """File search tool."""
+    """File search tool.
+
+    Inputs:
+    - query (string, required)
+    - path (string, optional)
+    - max_results (integer, optional)
+
+    Outputs:
+    - results (array)
+    - total_found (integer)
+    - search_time_ms (number)
+    """
     
     def get_tool_name(self) -> str:
         return "file_search"
@@ -227,7 +271,16 @@ class FileSearchTool(BaseTool):
             return ToolOutput(success=False, data={}, error=str(e))
 
 class FileReadTool(BaseTool):
-    """Read file tool."""
+    """Read file tool.
+
+    Inputs:
+    - path (string, required)
+
+    Outputs:
+    - content (string)
+    - size_bytes (integer)
+    - path (string)
+    """
     
     def get_tool_name(self) -> str:
         return "file_read"

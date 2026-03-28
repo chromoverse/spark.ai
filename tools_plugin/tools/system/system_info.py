@@ -10,7 +10,17 @@ from ..base import BaseTool, ToolOutput
 
 
 class SystemInfoTool(BaseTool):
-    """Get CPU, RAM, Disk usage."""
+    """Get CPU, RAM, Disk usage.
+
+    Inputs:
+    - metrics (array, optional)
+
+    Outputs:
+    - cpu_percent (number)
+    - ram_percent (number)
+    - disk_percent (number)
+    - timestamp (string)
+    """
 
     def get_tool_name(self) -> str:
         return "system_info"

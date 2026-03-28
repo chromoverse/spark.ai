@@ -213,6 +213,16 @@ class WebSearchTool(BaseTool):
     * Domain blocklist / trustlist   — expanded and tiered
     * Deduplication                  — no two results from the same domain
     * Retry on empty                 — broadens query if first pass returns nothing
+
+    Inputs:
+    - query (string, required)
+    - max_results (integer, optional)
+
+    Outputs:
+    - query (string)
+    - results (array)
+    - total_results (integer)
+    - search_time_ms (number)
     """
 
     def get_tool_name(self) -> str:

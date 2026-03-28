@@ -55,6 +55,16 @@ class WebScrapeTool(BaseTool):
 
     Params schema  : base_links (array, required), query (str), max_results (int, default 10)
     Output schema  : { results: array, total_results: int, search_time_ms: float }
+
+    Inputs:
+    - base_links (array, required)
+    - query (string, optional)
+    - max_results (integer, optional)
+
+    Outputs:
+    - results (array)
+    - total_results (integer)
+    - search_time_ms (number)
     """
 
     def get_tool_name(self) -> str:

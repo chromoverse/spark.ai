@@ -306,6 +306,7 @@ class ExecutionEngine:
             
             resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
             resolved_inputs["_user_id"] = user_id
+            resolved_inputs["user_id"] = user_id
             resolved_inputs["_task_id"] = task.task_id
             task.resolved_inputs = resolved_inputs
             
@@ -417,6 +418,7 @@ class ExecutionEngine:
             
             resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
             resolved_inputs["_user_id"] = user_id
+            resolved_inputs["user_id"] = user_id
             resolved_inputs["_task_id"] = task.task_id
             task.resolved_inputs = resolved_inputs
             
@@ -549,6 +551,7 @@ class ExecutionEngine:
                     if can_resolve:
                         resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
                         resolved_inputs["_user_id"] = user_id
+                        resolved_inputs["user_id"] = user_id
                         resolved_inputs["_task_id"] = task.task_id
                         task.resolved_inputs = resolved_inputs
                         logger.info(f"     📋 Resolved inputs for {task.task_id}")

@@ -110,6 +110,14 @@ class FolderOrganizeTool(BaseTool):
       3. PowerShell commands are built locally (no truncation risk).
       4. restore.bat written BEFORE any files are moved.
       5. OneDrive paused → files moved instantly → OneDrive resumed.
+
+    Inputs:
+    - path (string, required)
+
+    Outputs:
+    - files_affected (integer)
+    - action_performed (string)
+    - organized_at (string)
     """
 
     def get_tool_name(self) -> str:

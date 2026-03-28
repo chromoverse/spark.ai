@@ -9,7 +9,17 @@ from tools_plugin.automation.whatsapp.whatsapp_automation import WhatsAppAutomat
 
 
 class CallVideoTool(BaseTool):
-    """Start a video call with a contact via WhatsApp"""
+    """Start a video call with a contact via WhatsApp
+
+    Inputs:
+    - contact (string, required): Contact name to video call
+    - platform (string, optional)
+
+    Outputs:
+    - contact (string)
+    - platform_used (string)
+    - started_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "call_video"

@@ -8,6 +8,16 @@ from tools_plugin.tools.ai.summarize import AiSummarizeTool
 class WebResearchTool(BaseTool):
     """
     Orchestrates Web Search -> Web Scrape -> AI Summarize in a single flow.
+
+    Inputs:
+    - query (string, required)
+    - max_results (integer, optional)
+    - max_chars (integer, optional)
+
+    Outputs:
+    - summary (string)
+    - detailed_content (string)
+    - sources (array)
     """
     def get_tool_name(self) -> str:
         return "web_research"

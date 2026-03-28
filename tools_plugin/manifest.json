@@ -4,124 +4,9 @@
   "registry_relpath": "registry/tool_registry.json",
   "plugins": [
     {
-      "tool_name": "app_open",
-      "module": "system.app",
-      "class_name": "AppOpenTool"
-    },
-    {
-      "tool_name": "app_close",
-      "module": "system.app",
-      "class_name": "AppCloseTool"
-    },
-    {
-      "tool_name": "app_restart",
-      "module": "system.app",
-      "class_name": "AppRestartTool"
-    },
-    {
-      "tool_name": "app_minimize",
-      "module": "system.app",
-      "class_name": "AppMinimizeTool"
-    },
-    {
-      "tool_name": "app_maximize",
-      "module": "system.app",
-      "class_name": "AppMaximizeTool"
-    },
-    {
-      "tool_name": "app_focus",
-      "module": "system.app",
-      "class_name": "AppFocusTool"
-    },
-    {
-      "tool_name": "battery_status",
-      "module": "system.battery",
-      "class_name": "BatteryStatusTool"
-    },
-    {
-      "tool_name": "brightness_status",
-      "module": "system.brightness",
-      "class_name": "BrightnessStatusTool"
-    },
-    {
-      "tool_name": "brightness_increase",
-      "module": "system.brightness",
-      "class_name": "BrightnessIncreaseTool"
-    },
-    {
-      "tool_name": "brightness_decrease",
-      "module": "system.brightness",
-      "class_name": "BrightnessDecreaseTool"
-    },
-    {
-      "tool_name": "sound_status",
-      "module": "system.sound",
-      "class_name": "SoundStatusTool"
-    },
-    {
-      "tool_name": "sound_increase",
-      "module": "system.sound",
-      "class_name": "SoundIncreaseTool"
-    },
-    {
-      "tool_name": "sound_decrease",
-      "module": "system.sound",
-      "class_name": "SoundDecreaseTool"
-    },
-    {
-      "tool_name": "network_status",
-      "module": "system.network",
-      "class_name": "NetworkStatusTool"
-    },
-    {
-      "tool_name": "clipboard_read",
-      "module": "system.clipboard",
-      "class_name": "ClipboardReadTool"
-    },
-    {
-      "tool_name": "clipboard_write",
-      "module": "system.clipboard",
-      "class_name": "ClipboardWriteTool"
-    },
-    {
-      "tool_name": "screenshot_capture",
-      "module": "system.screenshot",
-      "class_name": "ScreenshotCaptureTool"
-    },
-    {
-      "tool_name": "system_info",
-      "module": "system.system_info",
-      "class_name": "SystemInfoTool"
-    },
-    {
-      "tool_name": "notification_push",
-      "module": "system.notification",
-      "class_name": "NotificationPushTool"
-    },
-    {
-      "tool_name": "file_create",
-      "module": "file_system.operations",
-      "class_name": "FileCreateTool"
-    },
-    {
-      "tool_name": "folder_create",
-      "module": "file_system.operations",
-      "class_name": "FolderCreateTool"
-    },
-    {
-      "tool_name": "file_copy",
-      "module": "file_system.operations",
-      "class_name": "FileCopyTool"
-    },
-    {
-      "tool_name": "file_search",
-      "module": "file_system.operations",
-      "class_name": "FileSearchTool"
-    },
-    {
-      "tool_name": "file_read",
-      "module": "file_system.operations",
-      "class_name": "FileReadTool"
+      "tool_name": "ai_summarize",
+      "module": "ai.summarize",
+      "class_name": "AiSummarizeTool"
     },
     {
       "tool_name": "folder_organize",
@@ -129,94 +14,29 @@
       "class_name": "FolderOrganizeTool"
     },
     {
-      "tool_name": "web_search",
-      "module": "web.search",
-      "class_name": "WebSearchTool"
+      "tool_name": "file_copy",
+      "module": "file_system.operations",
+      "class_name": "FileCopyTool"
     },
     {
-      "tool_name": "web_scrape",
-      "module": "web.scrape",
-      "class_name": "WebScrapeTool"
+      "tool_name": "file_create",
+      "module": "file_system.operations",
+      "class_name": "FileCreateTool"
     },
     {
-      "tool_name": "web_research",
-      "module": "web.research",
-      "class_name": "WebResearchTool"
+      "tool_name": "file_read",
+      "module": "file_system.operations",
+      "class_name": "FileReadTool"
     },
     {
-      "tool_name": "ai_summarize",
-      "module": "ai.summarize",
-      "class_name": "AiSummarizeTool"
+      "tool_name": "file_search",
+      "module": "file_system.operations",
+      "class_name": "FileSearchTool"
     },
     {
-      "tool_name": "message_send",
-      "module": "messaging.message_send",
-      "class_name": "MessageSendTool"
-    },
-    {
-      "tool_name": "message_file",
-      "module": "messaging.message_file",
-      "class_name": "MessageFileTool"
-    },
-    {
-      "tool_name": "message_media",
-      "module": "messaging.message_media",
-      "class_name": "MessageMediaTool"
-    },
-    {
-      "tool_name": "call_audio",
-      "module": "messaging.call_audio",
-      "class_name": "CallAudioTool"
-    },
-    {
-      "tool_name": "call_video",
-      "module": "messaging.call_video",
-      "class_name": "CallVideoTool"
-    },
-    {
-      "tool_name": "music_play",
-      "module": "media.music",
-      "class_name": "MusicPlayTool"
-    },
-    {
-      "tool_name": "music_pause",
-      "module": "media.music",
-      "class_name": "MusicPauseTool"
-    },
-    {
-      "tool_name": "music_resume",
-      "module": "media.music",
-      "class_name": "MusicResumeTool"
-    },
-    {
-      "tool_name": "music_stop",
-      "module": "media.music",
-      "class_name": "MusicStopTool"
-    },
-    {
-      "tool_name": "music_status",
-      "module": "media.music",
-      "class_name": "MusicStatusTool"
-    },
-    {
-      "tool_name": "email_list",
-      "module": "google.gmail",
-      "class_name": "EmailListTool"
-    },
-    {
-      "tool_name": "email_read",
-      "module": "google.gmail",
-      "class_name": "EmailReadTool"
-    },
-    {
-      "tool_name": "email_send",
-      "module": "google.gmail",
-      "class_name": "EmailSendTool"
-    },
-    {
-      "tool_name": "email_reply",
-      "module": "google.gmail",
-      "class_name": "EmailReplyTool"
+      "tool_name": "folder_create",
+      "module": "file_system.operations",
+      "class_name": "FolderCreateTool"
     },
     {
       "tool_name": "email_delete",
@@ -224,9 +44,19 @@
       "class_name": "EmailDeleteTool"
     },
     {
-      "tool_name": "email_trash",
+      "tool_name": "email_label",
       "module": "google.gmail",
-      "class_name": "EmailTrashTool"
+      "class_name": "EmailLabelTool"
+    },
+    {
+      "tool_name": "email_labels_list",
+      "module": "google.gmail",
+      "class_name": "EmailLabelsListTool"
+    },
+    {
+      "tool_name": "email_list",
+      "module": "google.gmail",
+      "class_name": "EmailListTool"
     },
     {
       "tool_name": "email_mark_read",
@@ -239,16 +69,6 @@
       "class_name": "EmailMarkUnreadTool"
     },
     {
-      "tool_name": "email_search",
-      "module": "google.gmail",
-      "class_name": "EmailSearchTool"
-    },
-    {
-      "tool_name": "email_label",
-      "module": "google.gmail",
-      "class_name": "EmailLabelTool"
-    },
-    {
       "tool_name": "email_move",
       "module": "google.gmail",
       "class_name": "EmailMoveTool"
@@ -259,10 +79,200 @@
       "class_name": "EmailOrganizeTool"
     },
     {
-      "tool_name": "email_labels_list",
+      "tool_name": "email_read",
       "module": "google.gmail",
-      "class_name": "EmailLabelsListTool"
+      "class_name": "EmailReadTool"
+    },
+    {
+      "tool_name": "email_reply",
+      "module": "google.gmail",
+      "class_name": "EmailReplyTool"
+    },
+    {
+      "tool_name": "email_search",
+      "module": "google.gmail",
+      "class_name": "EmailSearchTool"
+    },
+    {
+      "tool_name": "email_send",
+      "module": "google.gmail",
+      "class_name": "EmailSendTool"
+    },
+    {
+      "tool_name": "email_trash",
+      "module": "google.gmail",
+      "class_name": "EmailTrashTool"
+    },
+    {
+      "tool_name": "music_pause",
+      "module": "media.music",
+      "class_name": "MusicPauseTool"
+    },
+    {
+      "tool_name": "music_play",
+      "module": "media.music",
+      "class_name": "MusicPlayTool"
+    },
+    {
+      "tool_name": "music_resume",
+      "module": "media.music",
+      "class_name": "MusicResumeTool"
+    },
+    {
+      "tool_name": "music_status",
+      "module": "media.music",
+      "class_name": "MusicStatusTool"
+    },
+    {
+      "tool_name": "music_stop",
+      "module": "media.music",
+      "class_name": "MusicStopTool"
+    },
+    {
+      "tool_name": "call_audio",
+      "module": "messaging.call_audio",
+      "class_name": "CallAudioTool"
+    },
+    {
+      "tool_name": "call_video",
+      "module": "messaging.call_video",
+      "class_name": "CallVideoTool"
+    },
+    {
+      "tool_name": "message_file",
+      "module": "messaging.message_file",
+      "class_name": "MessageFileTool"
+    },
+    {
+      "tool_name": "message_media",
+      "module": "messaging.message_media",
+      "class_name": "MessageMediaTool"
+    },
+    {
+      "tool_name": "message_send",
+      "module": "messaging.message_send",
+      "class_name": "MessageSendTool"
+    },
+    {
+      "tool_name": "app_close",
+      "module": "system.app",
+      "class_name": "AppCloseTool"
+    },
+    {
+      "tool_name": "app_focus",
+      "module": "system.app",
+      "class_name": "AppFocusTool"
+    },
+    {
+      "tool_name": "app_maximize",
+      "module": "system.app",
+      "class_name": "AppMaximizeTool"
+    },
+    {
+      "tool_name": "app_minimize",
+      "module": "system.app",
+      "class_name": "AppMinimizeTool"
+    },
+    {
+      "tool_name": "app_open",
+      "module": "system.app",
+      "class_name": "AppOpenTool"
+    },
+    {
+      "tool_name": "app_restart",
+      "module": "system.app",
+      "class_name": "AppRestartTool"
+    },
+    {
+      "tool_name": "battery_status",
+      "module": "system.battery",
+      "class_name": "BatteryStatusTool"
+    },
+    {
+      "tool_name": "brightness_decrease",
+      "module": "system.brightness",
+      "class_name": "BrightnessDecreaseTool"
+    },
+    {
+      "tool_name": "brightness_increase",
+      "module": "system.brightness",
+      "class_name": "BrightnessIncreaseTool"
+    },
+    {
+      "tool_name": "brightness_status",
+      "module": "system.brightness",
+      "class_name": "BrightnessStatusTool"
+    },
+    {
+      "tool_name": "clipboard_read",
+      "module": "system.clipboard",
+      "class_name": "ClipboardReadTool"
+    },
+    {
+      "tool_name": "clipboard_write",
+      "module": "system.clipboard",
+      "class_name": "ClipboardWriteTool"
+    },
+    {
+      "tool_name": "current_location",
+      "module": "system.location",
+      "class_name": "CurrentLocationTool"
+    },
+    {
+      "tool_name": "network_status",
+      "module": "system.network",
+      "class_name": "NetworkStatusTool"
+    },
+    {
+      "tool_name": "notification_push",
+      "module": "system.notification",
+      "class_name": "NotificationPushTool"
+    },
+    {
+      "tool_name": "lock_screen",
+      "module": "system.screen",
+      "class_name": "LockScreenTool"
+    },
+    {
+      "tool_name": "screenshot_capture",
+      "module": "system.screenshot",
+      "class_name": "ScreenshotCaptureTool"
+    },
+    {
+      "tool_name": "sound_decrease",
+      "module": "system.sound",
+      "class_name": "SoundDecreaseTool"
+    },
+    {
+      "tool_name": "sound_increase",
+      "module": "system.sound",
+      "class_name": "SoundIncreaseTool"
+    },
+    {
+      "tool_name": "sound_status",
+      "module": "system.sound",
+      "class_name": "SoundStatusTool"
+    },
+    {
+      "tool_name": "system_info",
+      "module": "system.system_info",
+      "class_name": "SystemInfoTool"
+    },
+    {
+      "tool_name": "weather_current",
+      "module": "system.weather",
+      "class_name": "WeatherCurrentTool"
+    },
+    {
+      "tool_name": "weather_forecast",
+      "module": "system.weather",
+      "class_name": "WeatherForecastTool"
+    },
+    {
+      "tool_name": "web_research",
+      "module": "web.research",
+      "class_name": "WebResearchTool"
     }
   ],
-  "total_tools": 52
+  "total_tools": 54
 }

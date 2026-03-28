@@ -116,15 +116,15 @@ class EmailListTool(BaseTool):
     List emails from the user's mailbox.
 
     Inputs:
-    - user_id (str, required): The user's ID
-    - label_ids (list, optional): Label IDs to filter by (default: ["INBOX"])
-    - query (str, optional): Gmail search syntax
-    - max_results (int, optional): Max emails to return (default: 20)
+    - label_ids (array, optional): Gmail label IDs to filter by e.g. ['INBOX','UNREAD']
+    - query (string, optional): Gmail search query e.g. 'is:unread from:boss@corp.com'
+    - max_results (integer, optional)
+    - user_id (string, required): The user ID.
 
     Outputs:
-    - emails (list): Lightweight summary list with snippet, subject, sender, date
-    - total_returned (int)
-    - next_page_token (str, optional)
+    - emails (array): List of email summaries (id, thread_id, labels, snippet, from, to, subject, date, is_read)
+    - total_returned (integer)
+    - next_page_token (string)
     """
 
     def get_tool_name(self) -> str:
@@ -201,6 +201,24 @@ class EmailReadTool(BaseTool):
     - body (str): Full text or HTML body
     - snippet (str)
     - attachments (list): Metadata of attachments
+
+    Inputs:
+    - message_id (string, required): Gmail message ID
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - id (string)
+    - thread_id (string)
+    - labels (array)
+    - is_read (boolean)
+    - from (string)
+    - to (string)
+    - cc (string)
+    - subject (string)
+    - date (string)
+    - body (string)
+    - snippet (string)
+    - attachments (array): Metadata only — [{filename, mime_type, attachment_id, size_bytes}]
     """
 
     def get_tool_name(self) -> str:
@@ -275,6 +293,21 @@ class EmailSendTool(BaseTool):
     - message_id (str)
     - thread_id (str)
     - labels (list)
+
+    Inputs:
+    - to (string, required): Recipient email address(es), comma-separated
+    - subject (string, required)
+    - body (string, required): Plain-text email body
+    - cc (string, optional)
+    - bcc (string, optional)
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - message_id (string)
+    - thread_id (string)
+    - to (string)
+    - subject (string)
+    - labels (array)
     """
 
     def get_tool_name(self) -> str:
@@ -328,6 +361,20 @@ class EmailReplyTool(BaseTool):
 
     Outputs:
     - message_id, thread_id, replied_to, to, subject
+
+    Inputs:
+    - message_id (string, required): ID of the message to reply to
+    - body (string, required): Reply body text
+    - to (string, optional): Override recipient (defaults to original sender)
+    - subject (string, optional): Override subject (defaults to Re: <original>)
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - message_id (string)
+    - thread_id (string)
+    - replied_to (string)
+    - to (string)
+    - subject (string)
     """
 
     def get_tool_name(self) -> str:
@@ -397,6 +444,14 @@ class EmailDeleteTool(BaseTool):
     Outputs:
     - deleted_message_id (str)
     - permanent (bool): True
+
+    Inputs:
+    - message_id (string, required)
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - deleted_message_id (string)
+    - permanent (boolean)
     """
 
     def get_tool_name(self) -> str:
@@ -434,6 +489,15 @@ class EmailTrashTool(BaseTool):
     - message_id (str)
     - labels (list)
     - trashed (bool): True
+
+    Inputs:
+    - message_id (string, required)
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - message_id (string)
+    - labels (array)
+    - trashed (boolean)
     """
 
     def get_tool_name(self) -> str:
@@ -476,6 +540,14 @@ class EmailMarkReadTool(BaseTool):
     Outputs:
     - marked_read (list): Updated messages info
     - count (int): Number of updated messages
+
+    Inputs:
+    - message_ids (array, required): List of Gmail message IDs
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - marked_read (array)
+    - count (integer)
     """
 
     def get_tool_name(self) -> str:
@@ -524,6 +596,14 @@ class EmailMarkUnreadTool(BaseTool):
     Outputs:
     - marked_unread (list): Updated messages info
     - count (int): Number of updated messages
+
+    Inputs:
+    - message_ids (array, required)
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - marked_unread (array)
+    - count (integer)
     """
 
     def get_tool_name(self) -> str:
@@ -576,6 +656,17 @@ class EmailSearchTool(BaseTool):
     - emails (list): Search results summary
     - total_returned (int)
     - next_page_token (str, optional)
+
+    Inputs:
+    - query (string, required): Gmail search query e.g. 'from:alice subject:invoice has:attachment'
+    - max_results (integer, optional)
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - query (string)
+    - emails (array)
+    - total_returned (integer)
+    - next_page_token (string)
     """
 
     def get_tool_name(self) -> str:
@@ -649,6 +740,18 @@ class EmailLabelTool(BaseTool):
 
     Outputs:
     - message_id, labels, added, removed
+
+    Inputs:
+    - message_id (string, required)
+    - add_labels (array, optional): Label names or IDs to add
+    - remove_labels (array, optional): Label names or IDs to remove
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - message_id (string)
+    - labels (array)
+    - added (array)
+    - removed (array)
     """
 
     def get_tool_name(self) -> str:
@@ -728,6 +831,18 @@ class EmailMoveTool(BaseTool):
 
     Outputs:
     - message_id, labels, moved_to, removed_from
+
+    Inputs:
+    - message_id (string, required)
+    - destination (string, required): Destination label name or ID (e.g. 'Work', 'Receipts')
+    - remove_from (array, optional): Labels to remove (defaults to INBOX)
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - message_id (string)
+    - labels (array)
+    - moved_to (string)
+    - removed_from (array)
     """
 
     def get_tool_name(self) -> str:
@@ -813,6 +928,17 @@ class EmailOrganizeTool(BaseTool):
 
     Outputs:
     - action, query, affected_count (int)
+
+    Inputs:
+    - query (string, required): Gmail search query to select target emails
+    - action (string, required): mark_read | mark_unread | archive | trash | label:<name> | unlabel:<name>
+    - max_messages (integer, optional): Safety cap on how many emails are affected
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - action (string)
+    - query (string)
+    - affected_count (integer)
     """
 
     def get_tool_name(self) -> str:
@@ -933,6 +1059,13 @@ class EmailLabelsListTool(BaseTool):
     Outputs:
     - labels (list): List of label dicts (id, name, type, messages_total, messages_unread)
     - total (int)
+
+    Inputs:
+    - user_id (string, required): The user ID.
+
+    Outputs:
+    - labels (array): [{id, name, type, messages_total, messages_unread}]
+    - total (integer)
     """
 
     def get_tool_name(self) -> str:

@@ -15,7 +15,18 @@ from ..base import BaseTool, ToolOutput
 
 
 class ScreenshotCaptureTool(BaseTool):
-    """Capture screen or window screenshot."""
+    """Capture screen or window screenshot.
+
+    Inputs:
+    - target (string, optional)
+    - save_path (string, optional)
+
+    Outputs:
+    - file_path (string)
+    - in_clipboard (boolean)
+    - resolution (string)
+    - captured_at (string)
+    """
 
     def get_tool_name(self) -> str:
         return "screenshot_capture"

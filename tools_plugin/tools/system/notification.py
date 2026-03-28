@@ -10,7 +10,17 @@ import subprocess
 
 
 class NotificationPushTool(BaseTool):
-    """Send native OS notifications."""
+    """Send native OS notifications.
+
+    Inputs:
+    - title (string, required)
+    - message (string, required)
+    - urgency (string, optional)
+
+    Outputs:
+    - notification_id (string)
+    - sent_at (string)
+    """
 
     def get_tool_name(self) -> str:
         return "notification_push"

@@ -10,7 +10,20 @@ import os
 
 
 class MessageFileTool(BaseTool):
-    """Send a document or file (PDF, ZIP, DOCX, etc.) to a contact via WhatsApp"""
+    """Send a document or file (PDF, ZIP, DOCX, etc.) to a contact via WhatsApp
+
+    Inputs:
+    - contact (string, required): Contact name to send file to
+    - file_path (string, required): Absolute path to the file
+    - caption (string, optional): Optional caption with the file
+    - platform (string, optional)
+
+    Outputs:
+    - contact (string)
+    - file_name (string)
+    - platform_used (string)
+    - sent_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "message_file"

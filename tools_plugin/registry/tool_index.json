@@ -1,148 +1,16 @@
 {
-  "version": "2.4.0",
+  "version": "2.4.1",
   "total_tools": 54,
   "tools": [
     {
-      "name": "app_open",
-      "description": "Launch installed applications",
-      "category": "system",
-      "execution_target": "client"
+      "name": "ai_summarize",
+      "description": "Summarize AI-related content like logs, conversations, or documents",
+      "category": "ai",
+      "execution_target": "server"
     },
     {
-      "name": "app_close",
-      "description": "Kill running processes",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "app_restart",
-      "description": "Restart apps safely",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "system_info",
-      "description": "Get CPU, RAM, Disk usage",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "battery_status",
-      "description": "Power monitoring and battery info",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "network_status",
-      "description": "Internet connectivity and IP info",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "clipboard_read",
-      "description": "Read clipboard content",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "clipboard_write",
-      "description": "Write to clipboard",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "notification_push",
-      "description": "Send native OS notifications",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "screenshot_capture",
-      "description": "Capture screen or window",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "app_minimize",
-      "description": "Minimize application window",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "app_maximize",
-      "description": "Maximize application window",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "app_focus",
-      "description": "Bring application to front and focus",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "brightness_status",
-      "description": "Get current screen brightness level",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "brightness_increase",
-      "description": "Increase screen brightness by specified amount (default +1)",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "brightness_decrease",
-      "description": "Decrease screen brightness by specified amount (default -1)",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "sound_status",
-      "description": "Get current system volume level and mute status",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "sound_increase",
-      "description": "Increase system volume by specified amount (default +30)",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "sound_decrease",
-      "description": "Decrease system volume by specified amount (default -30)",
-      "category": "system",
-      "execution_target": "client"
-    },
-    {
-      "name": "file_search",
-      "description": "Locate files and folders",
-      "category": "file_system",
-      "execution_target": "client"
-    },
-    {
-      "name": "file_open",
-      "description": "Open files with default or specified app",
-      "category": "file_system",
-      "execution_target": "client"
-    },
-    {
-      "name": "file_create",
-      "description": "Create new files with content",
-      "category": "file_system",
-      "execution_target": "client"
-    },
-    {
-      "name": "file_delete",
-      "description": "Safely delete files",
-      "category": "file_system",
-      "execution_target": "client"
-    },
-    {
-      "name": "file_move",
-      "description": "Move files to new location",
+      "name": "folder_organize",
+      "description": "Organize folder structure ",
       "category": "file_system",
       "execution_target": "client"
     },
@@ -153,8 +21,20 @@
       "execution_target": "client"
     },
     {
+      "name": "file_create",
+      "description": "Create new files with content",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
       "name": "file_read",
       "description": "Read content from a file",
+      "category": "file_system",
+      "execution_target": "client"
+    },
+    {
+      "name": "file_search",
+      "description": "Locate files and folders",
       "category": "file_system",
       "execution_target": "client"
     },
@@ -165,32 +45,122 @@
       "execution_target": "client"
     },
     {
-      "name": "folder_cleanup",
-      "description": "Organize and clean folders",
-      "category": "file_system",
+      "name": "email_delete",
+      "description": "Permanently delete an email \u2014 IRREVERSIBLE. Use email_trash for a safer alternative",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_label",
+      "description": "Add or remove labels on a single email (supports system labels like STARRED, IMPORTANT and custom ones)",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_labels_list",
+      "description": "List all Gmail labels (system + user-created) with unread counts",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_list",
+      "description": "List emails from the mailbox with optional label and query filters",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_mark_read",
+      "description": "Mark one or more emails as read",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_mark_unread",
+      "description": "Mark one or more emails as unread",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_move",
+      "description": "Move an email to a different label/folder by adding the destination label and removing source labels",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_organize",
+      "description": "Bulk-organize emails matching a search query. Actions: mark_read | mark_unread | archive | trash | label:<name> | unlabel:<name>",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_read",
+      "description": "Fetch the full content (headers, body, attachments) of a single email by ID",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_reply",
+      "description": "Reply to an existing email within the same thread",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_search",
+      "description": "Search emails using full Gmail search syntax",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_send",
+      "description": "Compose and send a new email",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_trash",
+      "description": "Move an email to Trash (recoverable within 30 days)",
+      "category": "gmail",
+      "execution_target": "server"
+    },
+    {
+      "name": "music_pause",
+      "description": "Pause an active playback session by suspending the player process. Audio stops immediately; position is preserved. Resume with music_resume.",
+      "category": "media",
       "execution_target": "client"
     },
     {
-      "name": "web_research",
-      "description": "Performs deep web research by searching, scraping top results, and summarizing the findings.",
-      "category": "web",
+      "name": "music_play",
+      "description": "Play music immediately \u2014 streams YouTube/SoundCloud via mpv+yt-dlp with no browser, or plays a local audio file. Audio starts in the background automatically.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "music_resume",
+      "description": "Resume a paused playback session. Accumulated pause time is tracked so progress remains accurate.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "music_status",
+      "description": "Two-layer audio status: (1) our tracked sessions with full metadata, (2) OS-level scan of every process emitting audio via pactl / CoreAudio / WASAPI.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "music_stop",
+      "description": "Stop one or all active music sessions launched by music_play.",
+      "category": "media",
+      "execution_target": "client"
+    },
+    {
+      "name": "call_audio",
+      "description": "Start an audio call with a contact",
+      "category": "messaging",
       "execution_target": "server"
     },
     {
-      "name": "ai_summarize",
-      "description": "Summarize AI-related content like logs, conversations, or documents",
-      "category": "ai",
-      "execution_target": "server"
-    },
-    {
-      "name": "agent_status",
-      "description": "Get current status of the agent",
-      "category": "ai",
-      "execution_target": "server"
-    },
-    {
-      "name": "message_send",
-      "description": "Send a text message to a contact",
+      "name": "call_video",
+      "description": "Start a video call with a contact",
       "category": "messaging",
       "execution_target": "server"
     },
@@ -207,123 +177,153 @@
       "execution_target": "server"
     },
     {
-      "name": "call_audio",
-      "description": "Start an audio call with a contact",
+      "name": "message_send",
+      "description": "Send a text message to a contact",
       "category": "messaging",
       "execution_target": "server"
     },
     {
-      "name": "call_video",
-      "description": "Start a video call with a contact",
-      "category": "messaging",
-      "execution_target": "server"
-    },
-    {
-      "name": "music_play",
-      "description": "Play music directly via yt-dlp pipe (YouTube/SoundCloud) or local file. No browser needed.",
-      "category": "media",
+      "name": "app_close",
+      "description": "Kill running processes",
+      "category": "system",
       "execution_target": "client"
     },
     {
-      "name": "music_pause",
-      "description": "Pause active playback by suspending the player process tree. Position is preserved.",
-      "category": "media",
+      "name": "app_focus",
+      "description": "Bring application to front and focus",
+      "category": "system",
       "execution_target": "client"
     },
     {
-      "name": "music_resume",
-      "description": "Resume a paused playback session. Tracks accumulated pause time for accurate progress.",
-      "category": "media",
+      "name": "app_maximize",
+      "description": "Maximize application window",
+      "category": "system",
       "execution_target": "client"
     },
     {
-      "name": "music_stop",
-      "description": "Stop one or all active music sessions and clean up player + yt-dlp processes.",
-      "category": "media",
+      "name": "app_minimize",
+      "description": "Minimize application window",
+      "category": "system",
       "execution_target": "client"
     },
     {
-      "name": "music_status",
-      "description": "Rich status report: title, artist, source icon, thumbnail URL, progress bar, and OS-level audio streams.",
-      "category": "media",
+      "name": "app_open",
+      "description": "Launch installed applications",
+      "category": "system",
       "execution_target": "client"
     },
     {
-      "name": "email_list",
-      "description": "List emails from the user's mailbox.",
-      "category": "google",
-      "execution_target": "server"
+      "name": "app_restart",
+      "description": "Restart apps safely",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_read",
-      "description": "Fetch the full content of a single email by message ID.",
-      "category": "google",
-      "execution_target": "server"
+      "name": "battery_status",
+      "description": "Power monitoring and battery info",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_send",
-      "description": "Compose and send a new email.",
-      "category": "google",
-      "execution_target": "server"
+      "name": "brightness_decrease",
+      "description": "Decrease screen brightness by specified amount (default -1)",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_reply",
-      "description": "Reply to an existing email (stays in the same thread).",
-      "category": "google",
-      "execution_target": "server"
+      "name": "brightness_increase",
+      "description": "Increase screen brightness by specified amount (default +1)",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_delete",
-      "description": "Permanently delete an email (bypasses Trash).",
-      "category": "google",
-      "execution_target": "server"
+      "name": "brightness_status",
+      "description": "Get current screen brightness level",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_trash",
-      "description": "Move an email to the Gmail Trash (recoverable for 30 days).",
-      "category": "google",
-      "execution_target": "server"
+      "name": "clipboard_read",
+      "description": "Read clipboard content",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_mark_read",
-      "description": "Mark one or more emails as read (removes the UNREAD label).",
-      "category": "google",
-      "execution_target": "server"
+      "name": "clipboard_write",
+      "description": "Write to clipboard",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_mark_unread",
-      "description": "Mark one or more emails as unread (adds the UNREAD label).",
-      "category": "google",
-      "execution_target": "server"
+      "name": "current_location",
+      "description": "Get current location via IP geolocation",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_search",
-      "description": "Search emails using full Gmail search syntax.",
-      "category": "google",
-      "execution_target": "server"
+      "name": "network_status",
+      "description": "Internet connectivity and IP info",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_label",
-      "description": "Add or remove Gmail labels on an email.",
-      "category": "google",
-      "execution_target": "server"
+      "name": "notification_push",
+      "description": "Send native OS notifications",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_move",
-      "description": "Move an email to a different label / folder.",
-      "category": "google",
-      "execution_target": "server"
+      "name": "lock_screen",
+      "description": "Lock the OS screen immediately",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_organize",
-      "description": "Bulk-organize emails that match a Gmail search query.",
-      "category": "google",
-      "execution_target": "server"
+      "name": "screenshot_capture",
+      "description": "Capture screen or window",
+      "category": "system",
+      "execution_target": "client"
     },
     {
-      "name": "email_labels_list",
-      "description": "Return all Gmail labels (system + user-created) for the account.",
-      "category": "google",
+      "name": "sound_decrease",
+      "description": "Decrease system volume by specified amount (default -30)",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "sound_increase",
+      "description": "Increase system volume by specified amount (default +30)",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "sound_status",
+      "description": "Get current system volume level and mute status",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "system_info",
+      "description": "Get CPU, RAM, Disk usage",
+      "category": "system",
+      "execution_target": "client"
+    },
+    {
+      "name": "weather_current",
+      "description": "Get current weather conditions at user location",
+      "category": "weather",
+      "execution_target": "client"
+    },
+    {
+      "name": "weather_forecast",
+      "description": "Get a multi-day weather forecast at user location",
+      "category": "weather",
+      "execution_target": "client"
+    },
+    {
+      "name": "web_research",
+      "description": "Performs deep web research by searching, scraping top results, and summarizing the findings.",
+      "category": "web",
       "execution_target": "server"
     }
   ]

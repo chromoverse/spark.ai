@@ -9,7 +9,18 @@ from tools_plugin.automation.whatsapp.whatsapp_automation import WhatsAppAutomat
 
 
 class MessageSendTool(BaseTool):
-    """Send a text message to a contact via WhatsApp"""
+    """Send a text message to a contact via WhatsApp
+
+    Inputs:
+    - contact (string, required): Contact name to send message to
+    - message (string, required): Text message content
+    - platform (string, optional): Platform: auto (from user prefs), whatsapp, facebook, slack. - (if user has no preference, default to whatsapp)
+
+    Outputs:
+    - contact (string)
+    - platform_used (string)
+    - sent_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "message_send"

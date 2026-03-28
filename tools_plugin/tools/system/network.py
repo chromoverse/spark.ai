@@ -12,8 +12,18 @@ from ..base import BaseTool, ToolOutput
 
 
 class NetworkStatusTool(BaseTool):
-    """Get network connectivity and IP information."""
+    """Get network connectivity and IP information.
 
+    Inputs:
+    - check_internet (boolean, optional)
+
+    Outputs:
+    - connected (boolean)
+    - local_ip (string)
+    - public_ip (string)
+    - network_name (string)
+    """
+    
     def get_tool_name(self) -> str:
         return "network_status"
 

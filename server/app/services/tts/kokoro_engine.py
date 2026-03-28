@@ -44,56 +44,76 @@ class KokoroEngine(TTSEngine):
 
     def __init__(self) -> None:
         self._pipelines: Dict[str, Any] = {}  # kokoro_lang_code → KPipeline
-        self._initialized: bool = False
-        self._lock: asyncio.Lock = asyncio.Lock()
+        self._bg_tasks: Dict[str, asyncio.Task] = {}
+        self._lock = asyncio.Lock()
+
+        # Kick off background load for default English to be ready early, non-blocking
+        try:
+            import kokoro
+            self._bg_tasks["a"] = asyncio.create_task(self._preload_pipeline("a"))
+        except ImportError:
+            pass
 
     def get_engine_name(self) -> str:
         return "kokoro"
 
     async def is_available(self) -> bool:
-        if not self._initialized:
-            await self._initialize()
-        return self._initialized
+        """Fast check to see if we can use this engine (doesn't block on weights load)."""
+        try:
+            import kokoro
+            return True
+        except ImportError:
+            return False
 
-    async def _initialize(self) -> None:
-        """Pre-create the default English pipeline."""
-        async with self._lock:
-            if self._initialized:
-                return
-            try:
-                from kokoro import KPipeline
+    async def _preload_pipeline(self, lang_code: str) -> None:
+        """Background worker to load a pipeline."""
+        def _load():
+            from kokoro import KPipeline
+            start = time.time()
+            return KPipeline(lang_code=lang_code), time.time() - start
 
-                logger.info("🔥 Initializing Kokoro Pipeline (English)...")
-                start = time.time()
-                self._pipelines["a"] = KPipeline(lang_code="a")
-                logger.info(f"✅ Kokoro (English) initialized in {time.time() - start:.2f}s")
-                self._initialized = True
-            except ImportError:
-                logger.error("❌ Kokoro not installed")
-                self._initialized = False
-            except Exception as e:
-                logger.error(f"❌ Kokoro init failed: {e}")
-                self._initialized = False
+        try:
+            logger.info(f"🔥 [Background] Loading Kokoro Pipeline ({lang_code})...")
+            pipeline, elapsed = await asyncio.get_event_loop().run_in_executor(None, _load)
+            async with self._lock:
+                self._pipelines[lang_code] = pipeline
+            logger.info(f"✅ [Background] Kokoro ({lang_code}) ready in {elapsed:.2f}s")
+        except Exception as e:
+            logger.error(f"❌ Kokoro background init failed: {e}")
 
-    def _get_pipeline(self, lang: str) -> Any:
+    async def _get_pipeline(self, lang: str) -> Any:
         """
-        Return the KPipeline for the given language, creating it if needed.
-
-        Args:
-            lang: User-facing language code (e.g. 'hi', 'en', 'ja').
-
-        Returns:
-            The KPipeline instance for the resolved Kokoro lang_code.
+        Return the KPipeline for the given language, creating it lazily if needed.
         """
         kokoro_code = _KOKORO_LANG_MAP.get(lang.lower().strip(), "a")
 
-        if kokoro_code not in self._pipelines:
-            from kokoro import KPipeline
+        async with self._lock:
+            if kokoro_code in self._pipelines:
+                return self._pipelines[kokoro_code]
 
-            logger.info(f"🔥 Creating Kokoro pipeline for lang_code='{kokoro_code}' (from '{lang}')...")
+        # If it's preloading in background, wait for it
+        if kokoro_code in self._bg_tasks and not self._bg_tasks[kokoro_code].done():
+            logger.info(f"⏳ Waiting for background Kokoro load ({kokoro_code})...")
+            await self._bg_tasks[kokoro_code]
+            async with self._lock:
+                if kokoro_code in self._pipelines:
+                    return self._pipelines[kokoro_code]
+
+        # Otherwise, fully load it via executor now
+        def _load():
+            from kokoro import KPipeline
             start = time.time()
-            self._pipelines[kokoro_code] = KPipeline(lang_code=kokoro_code)
-            logger.info(f"✅ Kokoro pipeline '{kokoro_code}' ready in {time.time() - start:.2f}s")
+            return KPipeline(lang_code=kokoro_code), time.time() - start
+
+        try:
+            logger.info(f"🔥 Creating Kokoro pipeline lazy ('{kokoro_code}', from '{lang}')...")
+            pipeline, elapsed = await asyncio.get_event_loop().run_in_executor(None, _load)
+            async with self._lock:
+                self._pipelines[kokoro_code] = pipeline
+            logger.info(f"✅ Kokoro pipeline '{kokoro_code}' lazy loaded in {elapsed:.2f}s")
+        except Exception as e:
+            logger.error(f"❌ Kokoro lazy init failed: {e}")
+            raise RuntimeError(f"Kokoro lazy init failed: {e}")
 
         return self._pipelines[kokoro_code]
 
@@ -121,7 +141,7 @@ class KokoroEngine(TTSEngine):
             raise RuntimeError("Kokoro engine not available")
 
         try:
-            pipeline = self._get_pipeline(lang)
+            pipeline = await self._get_pipeline(lang)
 
             # Run generation in executor to avoid blocking event loop
             def _generate() -> list:

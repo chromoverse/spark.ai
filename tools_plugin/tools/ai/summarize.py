@@ -5,6 +5,19 @@ import json
 
 
 class AiSummarizeTool(BaseTool):
+    """
+    Inputs:
+    - query (string, optional)
+    - context (string, required)
+    - max_length (integer, optional)
+
+    Outputs:
+    - summary (string): This must be max 2 3 sentences covering the main points of the content as this is for text to speech in humatic way.
+    - formatted_content (string): This can be upt max 10 sentences as this clears up and give information deep.
+    - original_length (integer)
+    - summary_length (integer)
+    - summarized_at (string)
+    """
     def get_tool_name(self) -> str:
         return "ai_summarize"
 

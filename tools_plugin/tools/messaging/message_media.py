@@ -10,7 +10,20 @@ import os
 
 
 class MessageMediaTool(BaseTool):
-    """Send a photo or video to a contact via WhatsApp"""
+    """Send a photo or video to a contact via WhatsApp
+
+    Inputs:
+    - contact (string, required): Contact name to send media to
+    - media_path (string, required): Absolute path to photo or video
+    - caption (string, optional): Optional caption with the media
+    - platform (string, optional)
+
+    Outputs:
+    - contact (string)
+    - media_type (string)
+    - platform_used (string)
+    - sent_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "message_media"

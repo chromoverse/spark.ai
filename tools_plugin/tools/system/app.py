@@ -19,7 +19,16 @@ from ...utils.process_manager.process_manager import ProcessManager
 
 
 class AppOpenTool(BaseTool):
-    """Open application, system tool, or URL using SystemSearcher."""
+    """Open application, system tool, or URL using SystemSearcher.
+
+    Inputs:
+    - target (string, required)
+    - args (array, optional)
+
+    Outputs:
+    - process_id (integer)
+    - launch_time (string)
+    """
 
     def get_tool_name(self) -> str:
         return "app_open"
@@ -281,7 +290,16 @@ class AppOpenTool(BaseTool):
 
 
 class AppCloseTool(BaseTool):
-    """Close application tool using ProcessManager."""
+    """Close application tool using ProcessManager.
+
+    Inputs:
+    - target (string, required)
+    - force (boolean, optional)
+
+    Outputs:
+    - exit_code (integer)
+    - closed_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "app_close"
@@ -332,7 +350,17 @@ class AppCloseTool(BaseTool):
 
 
 class AppRestartTool(BaseTool):
-    """Restart application tool."""
+    """Restart application tool.
+
+    Inputs:
+    - target (string, required)
+    - save_state (boolean, optional)
+
+    Outputs:
+    - old_process_id (integer)
+    - new_process_id (integer)
+    - restart_time (string)
+    """
 
     def get_tool_name(self) -> str:
         return "app_restart"
@@ -385,7 +413,16 @@ class AppRestartTool(BaseTool):
 
 
 class AppMinimizeTool(BaseTool):
-    """Minimize application window."""
+    """Minimize application window.
+
+    Inputs:
+    - target (string, required)
+
+    Outputs:
+    - target (string)
+    - minimized (boolean)
+    - timestamp (string)
+    """
     
     def get_tool_name(self) -> str:
         return "app_minimize"
@@ -417,7 +454,16 @@ class AppMinimizeTool(BaseTool):
 
 
 class AppMaximizeTool(BaseTool):
-    """Maximize application window."""
+    """Maximize application window.
+
+    Inputs:
+    - target (string, required)
+
+    Outputs:
+    - target (string)
+    - maximized (boolean)
+    - timestamp (string)
+    """
     
     def get_tool_name(self) -> str:
         return "app_maximize"
@@ -449,7 +495,16 @@ class AppMaximizeTool(BaseTool):
 
 
 class AppFocusTool(BaseTool):
-    """Bring application to front and focus."""
+    """Bring application to front and focus.
+
+    Inputs:
+    - target (string, required)
+
+    Outputs:
+    - target (string)
+    - focused (boolean)
+    - timestamp (string)
+    """
     
     def get_tool_name(self) -> str:
         return "app_focus"

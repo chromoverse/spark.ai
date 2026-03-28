@@ -1,8 +1,8 @@
 {
-  "version": "2.4.0",
+  "version": "2.4.1",
   "last_updated": "2026-03-05",
   "phase": 1,
-  "total_tools": 57,
+  "total_tools": 58,
   "categories": {
     "system": {
       "description": "System-level operations and monitoring",
@@ -133,11 +133,7 @@
             "metrics": {
               "type": "array",
               "required": false,
-              "default": [
-                "cpu",
-                "ram",
-                "disk"
-              ]
+              "default": ["cpu", "ram", "disk"]
             }
           },
           "output_schema": {
@@ -730,6 +726,109 @@
             "default_confidence": 0.98,
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "current_location",
+          "description": "Get current location via IP geolocation",
+          "execution_target": "client",
+          "params_schema": {
+            "detailed": {
+              "type": "boolean",
+              "required": false,
+              "default": false,
+              "description": "Return extra info like timezone, ISP, and accuracy note"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "latitude": {
+                "type": "number"
+              },
+              "longitude": {
+                "type": "number"
+              },
+              "city": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              },
+              "country_code": {
+                "type": "string"
+              },
+              "postal": {
+                "type": "string"
+              },
+              "maps_link": {
+                "type": "string"
+              },
+              "timezone": {
+                "type": "string"
+              },
+              "isp": {
+                "type": "string"
+              },
+              "accuracy_note": {
+                "type": "string"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.9,
+            "default_requires_approval": false,
+            "default_timeout_ms": 6000,
+            "summary_tts": true
+          }
+        },
+        {
+          "tool_name": "lock_screen",
+          "description": "Lock the OS screen immediately",
+          "execution_target": "client",
+          "params_schema": {
+            "delay_seconds": {
+              "type": "integer",
+              "required": false,
+              "default": 0,
+              "description": "Wait N seconds before locking (0 = immediate)"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "locked": {
+                "type": "boolean"
+              },
+              "locked_at": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 3000,
             "summary_tts": false
           }
         }
@@ -2648,6 +2747,196 @@
             "default_requires_approval": false,
             "default_timeout_ms": 3000,
             "summary_tts": false
+          }
+        }
+      ]
+    },
+    "weather" : {
+      "description"  : "Weather and forecast tools",
+      "tools" : [
+        {
+          "tool_name": "weather_current",
+          "description": "Get current weather conditions at user location",
+          "execution_target": "client",
+          "params_schema": {
+            "lat": {
+              "type": "number",
+              "required": false,
+              "description": "Latitude — auto-detected from IP if omitted"
+            },
+            "lon": {
+              "type": "number",
+              "required": false,
+              "description": "Longitude — auto-detected from IP if omitted"
+            },
+            "units": {
+              "type": "string",
+              "required": false,
+              "default": "metric",
+              "description": "metric or imperial"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "location": {
+                "type": "string"
+              },
+              "latitude": {
+                "type": "number"
+              },
+              "longitude": {
+                "type": "number"
+              },
+              "temperature": {
+                "type": "string"
+              },
+              "feels_like": {
+                "type": "string"
+              },
+              "humidity": {
+                "type": "string"
+              },
+              "condition": {
+                "type": "string"
+              },
+              "wind_speed": {
+                "type": "string"
+              },
+              "wind_direction": {
+                "type": "string"
+              },
+              "uv_index": {
+                "type": "number"
+              },
+              "is_day": {
+                "type": "boolean"
+              },
+              "precipitation": {
+                "type": "string"
+              },
+              "units": {
+                "type": "string"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 7000,
+            "summary_tts": true
+          }
+        },
+        {
+          "tool_name": "weather_forecast",
+          "description": "Get a multi-day weather forecast at user location",
+          "execution_target": "client",
+          "params_schema": {
+            "lat": {
+              "type": "number",
+              "required": false,
+              "description": "Latitude — auto-detected from IP if omitted"
+            },
+            "lon": {
+              "type": "number",
+              "required": false,
+              "description": "Longitude — auto-detected from IP if omitted"
+            },
+            "days": {
+              "type": "integer",
+              "required": false,
+              "default": 7,
+              "description": "Number of forecast days, 1–16"
+            },
+            "units": {
+              "type": "string",
+              "required": false,
+              "default": "metric",
+              "description": "metric or imperial"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "location": {
+                "type": "string"
+              },
+              "latitude": {
+                "type": "number"
+              },
+              "longitude": {
+                "type": "number"
+              },
+              "days_returned": {
+                "type": "integer"
+              },
+              "forecast": {
+                "type": "array",
+                "items": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "condition": {
+                    "type": "string"
+                  },
+                  "temp_max": {
+                    "type": "string"
+                  },
+                  "temp_min": {
+                    "type": "string"
+                  },
+                  "feels_like_max": {
+                    "type": "string"
+                  },
+                  "feels_like_min": {
+                    "type": "string"
+                  },
+                  "precipitation_sum": {
+                    "type": "string"
+                  },
+                  "precipitation_probability": {
+                    "type": "string"
+                  },
+                  "wind_speed_max": {
+                    "type": "string"
+                  },
+                  "sunrise": {
+                    "type": "string"
+                  },
+                  "sunset": {
+                    "type": "string"
+                  },
+                  "uv_index_max": {
+                    "type": "number"
+                  }
+                }
+              },
+              "units": {
+                "type": "string"
+              },
+              "timestamp": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 8000,
+            "summary_tts": true
           }
         }
       ]

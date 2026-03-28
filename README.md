@@ -1,45 +1,288 @@
+```
+[POWER ON]
+    ↓
+OS boots
+    ↓
+System services start ──────────────────────────────────────┐
+    ↓                                                        │
+Server starts on :8000          ✅ running                   │
+    ↓                                                        │
+Voice Daemon starts             ✅ running, mic listening    │
+    ↓                                                        │
+[USER LOGIN SCREEN]                                          │
+    ↓                                                        │  
+User logs in                                                 │
+    ↓                                                        │
+Electron starts (autostart)                                  │
+    ↓                                                        │
+Electron connects to server ────────────────────────────────┘
+ws://localhost:8000
+    ↓
+[NORMAL USE]
+User speaks → daemon captures → server processes → Electron shows UI
+    ↓
+[SCREEN LOCKS]
+    ↓
+Electron → stays in RAM, hidden behind lock screen
+Server  → still running ✅ (system level)
+Daemon  → still listening ✅ (system level)
+    ↓
+User speaks → daemon captures → server processes
+            → TTS plays back via speakers ✅ (audio works on lock screen)
+            → Electron UI updates (hidden, but ready)
+    ↓
+[SCREEN UNLOCKS]
+    ↓
+Electron visible again, shows what happened while locked
+```
 
-# Gmail (Multi-Service) OAuth Token Management
-### Stack: FastAPI + MongoDB
 
-A clean architecture for handling OAuth tokens across multiple services (Gmail, Slack, GitHub, etc.) with cloud persistence — so any user device can seamlessly authenticate.
+# YourApp — Always-On Voice Assistant Architecture
+
+## Overview
+
+YourApp runs as **3 persistent processes** that together ensure the assistant is always
+listening, always ready — even before you log in, even when the screen is locked.
 
 ---
 
-## Core Concept
+## The 3 Processes
+
+| # | Process | What It Does | Level | Autostart |
+|---|---|---|---|---|
+| 1 | **Server** | FastAPI backend — STT, RAG, LLM, TTS | System | Boot |
+| 2 | **Voice Daemon** | Mic capture, wake word, audio streaming | System | Boot |
+| 3 | **Electron App** | UI, TTS playback, visual responses | User | Login |
+
+---
+
+## Architecture Diagram
 
 ```
-User Device (any)
-  └── access_token       → memory only, short-lived (1hr)
-      └── on expiry → fetch refresh_token from DB → get new access_token
-
-Cloud MongoDB
-  └── refresh_token      → encrypted at rest, permanent
+OS BOOT
+  │
+  ├──▶ [1] SERVER starts          (system service, port 8000)
+  │         - Groq STT
+  │         - RAG pipeline
+  │         - LLM (streaming tokens)
+  │         - TTS generation
+  │
+  ├──▶ [2] VOICE DAEMON starts    (system service, depends on server)
+  │         - Holds microphone exclusively
+  │         - Wake word detection (openwakeword)
+  │         - Silero VAD (end-of-speech detection)
+  │         - Streams audio chunks → server
+  │         - Plays ding.wav on wake
+  │         - Plays TTS audio when screen is locked
+  │
+USER LOGS IN
+  │
+  └──▶ [3] ELECTRON APP starts    (user autostart)
+            - Connects to already-running server via WebSocket
+            - Shows UI, transcripts, responses
+            - Plays TTS audio when screen is unlocked
+            - Reconnects automatically if server restarts
 ```
 
 ---
 
-## MongoDB Schema
+## Full Voice Flow
 
-One collection. One document per service per user.
+```
+                    ┌─ Groq STT ◀── audio chunks
+User speaks ──▶ Daemon              │
+                    └─ server ◀─────┘
+                         │
+                    ┌────┴────┐
+                    │         │
+                   RAG       (fires on first word, not after silence)
+                    │
+                    └──▶ LLM (transcript + RAG context)
+                              │
+                         streaming tokens
+                              │
+                    ┌─────────┴──────────┐
+                    │                    │
+                   TTS              Electron UI
+              (parallel with        (shows text,
+               token generation)     transcript)
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+    screen locked?       screen unlocked?
+          │                   │
+       Daemon               Electron
+      plays audio           plays audio
+```
 
-```python
-# Collection: oauth_tokens
+---
 
-{
-  "_id":            ObjectId,
-  "user_id":        "uuid-string",         # your app's user ID
-  "service":        "gmail",               # 'gmail' | 'slack' | 'github' | ...
-  "account_email":  "john@gmail.com",      # which account (supports multi-account)
-  "refresh_token":  "ENCRYPTED_STRING",    # AES-256 encrypted, never plain text
-  "scope":          "gmail.modify",        # what permissions were granted
-  "is_active":      True,
-  "connected_at":   datetime,
-  "last_refreshed": datetime
-}
+## Lock Screen Behavior
 
-# Compound index — one row per service per account per user
-Index: { user_id: 1, service: 1, account_email: 1 }  # unique
+```
+[SCREEN LOCKS]
+      │
+      ├── Server        ✅  still running   (system level)
+      ├── Voice Daemon  ✅  still listening  (system level)
+      └── Electron      ✅  in RAM, hidden   (audio output suspended)
+
+[USER SPEAKS WHILE LOCKED]
+      │
+      ├── Daemon hears wake word
+      ├── ding.wav plays immediately        (speakers work on lock screen)
+      ├── Audio streamed to server
+      ├── Server: STT → RAG → LLM → TTS
+      └── Daemon plays TTS response         (via sounddevice, system level)
+
+[SCREEN UNLOCKS]
+      │
+      ├── Electron becomes visible
+      ├── Shows transcript + response from while locked
+      └── Resumes playing TTS directly
+```
+
+---
+
+## Startup Order & Dependencies
+
+```
+Boot
+ │
+ ▼
+[1] Server ──────────────────────────────── starts first
+                                             health: GET /health
+ │  (server healthy)
+ ▼
+[2] Voice Daemon ────────────────────────── starts second
+                                             waits for server /health
+                                             then begins mic capture
+ │  (user logs in)
+ ▼
+[3] Electron ────────────────────────────── starts third
+                                             polls /health every 500ms
+                                             shows loading until server ready
+                                             then opens main window
+```
+
+---
+
+## Audio Pipeline Detail
+
+### While You Speak (parallel)
+```
+Daemon mic capture
+  │
+  ├── chunk 1 (20ms) ──▶ server /audio/chunk ──▶ buffers audio
+  ├── chunk 2 (20ms) ──▶ server /audio/chunk ──▶ fires RAG on first chunk
+  ├── chunk 3 (20ms) ──▶ server /audio/chunk
+  └── ...
+
+RAG is already querying your knowledge base
+while you are still speaking.
+```
+
+### When You Stop Speaking (Silero VAD detects silence)
+```
+Daemon ──▶ server /audio/end
+                │
+                ├── Groq STT (full audio buffer) ──▶ transcript ~200ms
+                │
+                └── RAG result (already done ✅)
+                          │
+                          ▼
+                     LLM prompt:
+                     {transcript} + {rag_context}
+                          │
+                     streaming tokens
+                          │
+               ┌──────────┴──────────┐
+               │                     │
+         TTS chunks              WebSocket
+         generated in          ──▶ Electron
+         parallel                   UI update
+```
+
+### Latency Breakdown
+```
+0ms      wake word detected
+0ms      ding.wav plays              ← user feels heard instantly
+~800ms   user finishes speaking      (VAD detects silence)
+~1000ms  Groq transcript ready       (+200ms)
+~1000ms  RAG already complete        (was running since 0ms)
+~1200ms  LLM first token             (+200ms)
+~1250ms  TTS first chunk plays       (+50ms, parallel)
+
+Total: ~1.25s from stop speaking → hearing response
+```
+
+---
+
+## Autostart Setup by OS
+
+### Windows
+
+| Process | Method | Command |
+|---|---|---|
+| Server | Windows Service | `sc config YourAppServer start= auto` |
+| Daemon | Windows Service | `sc config YourAppDaemon start= auto` |
+| Electron | Registry Run key | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
+
+### macOS
+
+| Process | Method | Location |
+|---|---|---|
+| Server | LaunchDaemon | `/Library/LaunchDaemons/com.yourapp.server.plist` |
+| Daemon | LaunchDaemon | `/Library/LaunchDaemons/com.yourapp.daemon.plist` |
+| Electron | LaunchAgent | `~/Library/LaunchAgents/com.yourapp.electron.plist` |
+
+> **LaunchDaemon** = system level, no user needed  
+> **LaunchAgent** = user level, starts on login
+
+### Linux
+
+| Process | Method | Location |
+|---|---|---|
+| Server | systemd service | `/etc/systemd/system/yourapp-server.service` |
+| Daemon | systemd service | `/etc/systemd/system/yourapp-daemon.service` |
+| Electron | XDG autostart | `~/.config/autostart/yourapp.desktop` |
+
+---
+
+## Install Everything — One Command
+
+```bash
+# Installs all 3 processes + registers autostart for current OS
+# Requires admin/sudo
+
+python scripts/service_manager.py install
+
+# Remove everything
+python scripts/service_manager.py uninstall
+
+# Check status of all 3
+python scripts/service_manager.py status
+```
+
+---
+
+## Process Communication
+
+```
+Voice Daemon  ──── HTTP POST ────▶  Server
+                /audio/chunk          (streams while speaking)
+                /audio/end            (signals stop)
+
+Server        ──── WebSocket ───▶  Electron
+                ws://localhost:8000   (pushes TTS chunks + transcript)
+
+Electron      ──── HTTP GET ────▶  Server
+                /health               (polls on startup until ready)
+
+Server        ──── HTTP ────────▶  Groq API
+                                      (STT transcription)
+
+Server        ──── HTTP ────────▶  LLM API
+                                      (streaming response)
 ```
 
 ---
@@ -47,321 +290,87 @@ Index: { user_id: 1, service: 1, account_email: 1 }  # unique
 ## Project Structure
 
 ```
-app/
-├── main.py
-├── core/
-│   ├── encryption.py        # AES-256 encrypt/decrypt helpers
-│   └── token_cache.py       # in-memory access_token cache (TTL-based)
-├── db/
-│   └── mongo.py             # MongoDB connection (Motor async client)
-├── services/
-│   └── oauth_token_service.py   # save, fetch, revoke tokens
-├── routes/
-│   ├── auth.py              # /auth/gmail/callback  → save token
-│   └── gmail.py             # /gmail/messages       → use token
-└── utils/
-    └── google_client.py     # refresh access_token via Google API
-```
-
----
-
-## Key Flows
-
-### 1. First Login — Save Token
-```
-POST /auth/gmail/callback?code=AUTH_CODE
-  → exchange code with Google
-  → receive { access_token, refresh_token, scope }
-  → encrypt refresh_token
-  → upsert into MongoDB (oauth_tokens)
-  → cache access_token in memory (TTL 55min)
-  → return success
-```
-
-### 2. Any Gmail API Call — Token Middleware
-```
-GET /gmail/messages
-  → check memory cache for valid access_token
-  → if expired or missing:
-      → fetch encrypted refresh_token from MongoDB
-      → decrypt it
-      → POST to Google /oauth2/token
-      → receive new access_token
-      → update memory cache
-  → call Gmail API with valid access_token
-  → return data to client
-```
-
-### 3. New Device — No Re-Auth Needed
-```
-User logs in on mobile
-  → your app authenticates user (JWT / session)
-  → pull refresh_token from MongoDB (user already connected Gmail)
-  → get fresh access_token from Google
-  → ready to use Gmail API ✅
-```
-
-### 4. Disconnect a Service
-```
-DELETE /auth/gmail
-  → set is_active = False in MongoDB
-  → clear from memory cache
-  → optionally: POST to Google /oauth2/revoke
-```
-
----
-
-## Encryption (Core Security Rule)
-
-```python
-# core/encryption.py — prototype
-
-import os
-from cryptography.fernet import Fernet
-
-SECRET_KEY = os.getenv("TOKEN_ENCRYPTION_KEY")  # store in env, never hardcode
-fernet = Fernet(SECRET_KEY)
-
-def encrypt(plain_text: str) -> str:
-    return fernet.encrypt(plain_text.encode()).decode()
-
-def decrypt(cipher_text: str) -> str:
-    return fernet.decrypt(cipher_text.encode()).decode()
-```
-
-> ⚠️ `TOKEN_ENCRYPTION_KEY` lives in `.env` / secrets manager — never in code or DB.
-
----
-
-## Token Service (Prototype)
-
-```python
-# services/oauth_token_service.py
-
-async def save_token(user_id, service, email, refresh_token, scope):
-    await db.oauth_tokens.update_one(
-        { "user_id": user_id, "service": service, "account_email": email },
-        { "$set": {
-            "refresh_token": encrypt(refresh_token),
-            "scope": scope,
-            "is_active": True,
-            "connected_at": datetime.utcnow()
-        }},
-        upsert=True
-    )
-
-async def get_refresh_token(user_id, service, email=None):
-    query = { "user_id": user_id, "service": service, "is_active": True }
-    if email:
-        query["account_email"] = email
-    doc = await db.oauth_tokens.find_one(query)
-    if not doc:
-        raise Exception(f"No active {service} token for user {user_id}")
-    return decrypt(doc["refresh_token"])
-
-async def revoke_token(user_id, service):
-    await db.oauth_tokens.update_one(
-        { "user_id": user_id, "service": service },
-        { "$set": { "is_active": False } }
-    )
-```
-
----
-
-## In-Memory Access Token Cache
-
-```python
-# core/token_cache.py — prototype
-
-from datetime import datetime, timedelta
-
-_cache = {}  # { "user_id:service" : { token, expires_at } }
-
-def get_cached(user_id, service):
-    key = f"{user_id}:{service}"
-    entry = _cache.get(key)
-    if entry and entry["expires_at"] > datetime.utcnow():
-        return entry["token"]
-    return None
-
-def set_cached(user_id, service, access_token, expires_in=3600):
-    _cache[f"{user_id}:{service}"] = {
-        "token": access_token,
-        "expires_at": datetime.utcnow() + timedelta(seconds=expires_in - 60)
-    }
-```
-
-> For multi-instance deployments, replace `_cache` dict with **Redis**.
-
----
-
-## FastAPI Route (Prototype)
-
-```python
-# routes/gmail.py
-
-@router.get("/gmail/messages")
-async def list_messages(user_id: str):
-    # 1. check cache
-    access_token = get_cached(user_id, "gmail")
-
-    # 2. refresh if needed
-    if not access_token:
-        refresh_token = await get_refresh_token(user_id, "gmail")
-        access_token, expires_in = await refresh_access_token(refresh_token)
-        set_cached(user_id, "gmail", access_token, expires_in)
-
-    # 3. call Gmail API
-    messages = await fetch_gmail_messages(access_token)
-    return messages
+yourapp/
+│
+├── server/
+│   ├── main.py                   ← FastAPI app entry point
+│   ├── stt.py                    ← Groq STT integration
+│   ├── rag.py                    ← RAG pipeline
+│   ├── llm.py                    ← LLM streaming
+│   └── tts.py                    ← TTS generation
+│
+├── daemon/
+│   ├── main.py                   ← entry point, listen loop
+│   ├── wake_word.py              ← openwakeword detection
+│   ├── vad.py                    ← Silero VAD (end-of-speech)
+│   ├── audio_stream.py           ← mic capture + chunked POST
+│   └── playback.py               ← ding.wav + TTS audio playback
+│
+├── electron/
+│   ├── main.js                   ← Electron entry, health polling
+│   ├── preload.js
+│   └── renderer/                 ← UI
+│
+├── scripts/
+│   ├── service_manager.py        ← install/uninstall/status all OS
+│   ├── install_service.py        ← Windows Service helper (pywin32)
+│   ├── com.yourapp.server.plist  ← macOS server LaunchDaemon
+│   ├── com.yourapp.daemon.plist  ← macOS daemon LaunchDaemon
+│   └── yourapp-*.service         ← Linux systemd units
+│
+├── assets/
+│   └── ding.wav                  ← wake word feedback sound
+│
+├── .env                          ← GROQ_API_KEY, etc. (absolute path)
+└── README.md                     ← this file
 ```
 
 ---
 
 ## Environment Variables
 
-```env
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=https://yourapp.com/auth/gmail/callback
+Since Server and Daemon run as root/SYSTEM they cannot read your user `.env`.
+Always use an **absolute path** when loading env:
 
-TOKEN_ENCRYPTION_KEY=...     # Fernet key — generate once, store safely
-MONGO_URI=mongodb+srv://...
+```python
+# server/main.py and daemon/main.py — top of file
+from dotenv import load_dotenv
+load_dotenv("/opt/yourapp/.env")      # Linux / macOS
+# load_dotenv("C:/yourapp/.env")      # Windows
+```
+
+`.env` file:
+```
+GROQ_API_KEY=your_key_here
+LLM_API_KEY=your_key_here
+SERVER_PORT=8000
+WAKE_WORD=hey_jarvis
 ```
 
 ---
 
-## Edge Cases to Handle
+## Crash Recovery
 
-| Scenario | Response |
-|---|---|
-| `invalid_grant` from Google | Token revoked by user → set `is_active=False`, prompt re-auth |
-| Google rotates refresh token | Update DB immediately with new refresh token |
-| User connects 2nd Gmail account | New doc with different `account_email` — `UNIQUE` index handles it |
-| Scale to multiple instances | Replace in-memory cache with Redis |
-| Add a new service (Slack, etc.) | Just insert a new doc with `service: "slack"` — zero schema changes |
+All 3 processes restart automatically on crash:
 
----
+| Process | Restart delay | Max retries |
+|---|---|---|
+| Server | 5s | unlimited |
+| Daemon | 3s (after server healthy) | unlimited |
+| Electron | on next login | — |
 
-## Security Checklist
-
-- [ ] Refresh tokens AES-256 encrypted at rest (Fernet)
-- [ ] Encryption key stored in environment / secrets manager
-- [ ] Access tokens never persisted to DB
-- [ ] `is_active` flag for clean revocation
-- [ ] Scopes stored — request only minimum required
-- [ ] HTTPS enforced on all OAuth redirect URIs
-- [ ] Token revocation endpoint exposed to users
-
-Proposed Structure
-server/
-├── app/
-│   ├── features/
-│   │   └── gmail/
-│   │       ├── __init__.py
-│   │       ├── auth.py          # OAuth flow, save/load tokens
-│   │       ├── token_manager.py # get valid access_token (refresh logic)
-│   │       └── router.py        # FastAPI routes: /gmail/connect, /gmail/callback
-│   ├── core/
-│   │   ├── encryption.py        # encrypt/decrypt refresh_token
-│   │   └── token_cache.py       # in-memory access_token cache
-│   └── db/
-│       └── mongo.py             # DB connection
-│
-tools_plugin/
-├── gmail/
-│   ├── __init__.py
-│   ├── read.py                  # list_emails(), get_email()
-│   ├── send.py                  # send_email(), reply()
-│   ├── organize.py              # label(), trash(), delete()
-│   └── _client.py               # gets valid access_token from server, builds service
-
-The Key Principle — Separation of Concerns
-server/app/features/gmail/     →  "I own tokens, auth, security"
-tools_plugin/gmail/            →  "I just DO things with Gmail, I don't care about tokens"
-Tools should never handle tokens directly. They just call one function and get a ready-to-use Gmail service object.
-
-How They Talk to Each Other
-python# tools_plugin/gmail/_client.py
-# This is the BRIDGE between tools and server
-
-from app.features.gmail.token_manager import get_valid_access_token
-from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
-
-async def get_gmail_service(user_id: str):
-    """Tools call this — they get back a ready service, nothing else."""
-    access_token = await get_valid_access_token(user_id)  # handles refresh internally
-    creds = Credentials(token=access_token)
-    return build('gmail', 'v1', credentials=creds)
-python# tools_plugin/gmail/read.py
-# Tool has zero knowledge of tokens
-
-from ._client import get_gmail_service
-
-async def list_emails(user_id: str, max_results: int = 10):
-    service = await get_gmail_service(user_id)   # ← just this
-    results = service.users().messages().list(
-        userId='me', maxResults=max_results
-    ).execute()
-    return results.get('messages', [])
-python# server/app/features/gmail/token_manager.py
-# Server owns ALL token logic
-
-from app.core.token_cache import get_cached, set_cached
-from app.core.encryption import decrypt
-from app.db.mongo import db
-import httpx
-
-async def get_valid_access_token(user_id: str) -> str:
-    # 1. Check memory cache first
-    token = get_cached(user_id, "gmail")
-    if token:
-        return token
-
-    # 2. Pull refresh_token from MongoDB
-    doc = await db.oauth_tokens.find_one({
-        "user_id": user_id, "service": "gmail", "is_active": True
-    })
-    refresh_token = decrypt(doc["refresh_token"])
-
-    # 3. Hit Google for new access_token
-    async with httpx.AsyncClient() as client:
-        resp = await client.post("https://oauth2.googleapis.com/token", data={
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token"
-        })
-    data = resp.json()
-
-    # 4. Cache it locally
-    set_cached(user_id, "gmail", data["access_token"], data["expires_in"])
-    return data["access_token"]
-```
+If server crashes and restarts, daemon automatically reconnects.  
+If daemon crashes and restarts, it re-acquires the mic and resumes.  
+If Electron crashes, it reopens — server and daemon unaffected.
 
 ---
 
-## Full Data Flow
-```
-LLM decides to read Gmail
-        ↓
-tools_plugin/gmail/read.py → list_emails(user_id)
-        ↓
-_client.py → get_gmail_service(user_id)
-        ↓
-token_manager.py → get_valid_access_token(user_id)
-        ↓
-  ┌─────────────────────────────────┐
-  │  memory cache hit? → return it  │
-  │  cache miss?                    │
-  │    → MongoDB: get refresh_token │  ← cloud
-  │    → Google: get access_token   │
-  │    → cache it in memory         │  ← local
-  └─────────────────────────────────┘
-        ↓
-Gmail API called ✅
+## Key Design Principles
 
-Where Things Live
-DataLocationWhyrefresh_tokenMongoDB (encrypted)Permanent, cross-deviceaccess_tokenMemory / token_cache.pyTemporary, 1hr, fastclient_secret.env on serverNever in code or DBcredentials.json.env vars onlyNever committed
-This way your tools_plugin stays completely clean — tomorrow when you add Slack or Calendar tools, they follow the exact same pattern.
+- **Daemon owns the mic** — Electron never touches audio input directly
+- **Server is the brain** — all AI logic lives here, nothing else decides anything  
+- **Electron is just a screen** — renders what server tells it, replaceable
+- **Daemon is dumb** — wake word, ding, record, POST. Nothing else
+- **RAG fires early** — starts on first audio chunk, not after silence
+- **TTS is parallel** — first chunk plays before LLM finishes generating
+- **Graceful degradation** — if Electron is closed, voice still works end-to-end

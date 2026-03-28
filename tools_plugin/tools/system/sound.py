@@ -14,7 +14,18 @@ from ..base import BaseTool, ToolOutput
 
 
 class SoundStatusTool(BaseTool):
-    """Get current system volume level and mute status."""
+    """Get current system volume level and mute status.
+
+    Inputs:
+    - (None)
+
+    Outputs:
+    - volume (integer)
+    - is_muted (boolean)
+    - min_volume (integer)
+    - max_volume (integer)
+    - timestamp (string)
+    """
 
     def get_tool_name(self) -> str:
         return "sound_status"
@@ -143,7 +154,17 @@ class SoundStatusTool(BaseTool):
 
 
 class SoundIncreaseTool(BaseTool):
-    """Increase system volume by specified amount (default +30)."""
+    """Increase system volume by specified amount (default +30).
+
+    Inputs:
+    - amount (integer, optional): Amount to increase volume by (default 30)
+
+    Outputs:
+    - previous_volume (integer)
+    - new_volume (integer)
+    - amount_changed (integer)
+    - timestamp (string)
+    """
 
     def get_tool_name(self) -> str:
         return "sound_increase"
@@ -241,7 +262,17 @@ class SoundIncreaseTool(BaseTool):
 
 
 class SoundDecreaseTool(BaseTool):
-    """Decrease system volume by specified amount (default -30)."""
+    """Decrease system volume by specified amount (default -30).
+
+    Inputs:
+    - amount (integer, optional): Amount to decrease volume by (default 30)
+
+    Outputs:
+    - previous_volume (integer)
+    - new_volume (integer)
+    - amount_changed (integer)
+    - timestamp (string)
+    """
 
     def get_tool_name(self) -> str:
         return "sound_decrease"

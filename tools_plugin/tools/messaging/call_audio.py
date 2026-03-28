@@ -9,7 +9,17 @@ from tools_plugin.automation.whatsapp.whatsapp_automation import WhatsAppAutomat
 
 
 class CallAudioTool(BaseTool):
-    """Start an audio call with a contact via WhatsApp"""
+    """Start an audio call with a contact via WhatsApp
+
+    Inputs:
+    - contact (string, required): Contact name to call
+    - platform (string, optional)
+
+    Outputs:
+    - contact (string)
+    - platform_used (string)
+    - started_at (string)
+    """
     
     def get_tool_name(self) -> str:
         return "call_audio"
