@@ -1,57 +1,84 @@
-import os
-import json
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
+# import os
+# import json
+# from google.oauth2.credentials import Credentials
+# from google.auth.transport.requests import Request
+# from googleapiclient.discovery import build
 
-def test_list_emails():
-    # Load token from file (local only — in prod this comes from DB)
-    with open('token.json', 'r') as f:
-        token_data = json.load(f)
+# def test_list_emails():
+#     # Load token from file (local only — in prod this comes from DB)
+#     with open('token.json', 'r') as f:
+#         token_data = json.load(f)
 
-    creds = Credentials(
-        token=token_data['token'],
-        refresh_token=token_data['refresh_token'],
-        token_uri=token_data['token_uri'],
-        client_id=token_data['client_id'],
-        client_secret=token_data['client_secret'],
-        scopes=token_data['scopes']
-    )
+#     creds = Credentials(
+#         token=token_data['token'],
+#         refresh_token=token_data['refresh_token'],
+#         token_uri=token_data['token_uri'],
+#         client_id=token_data['client_id'],
+#         client_secret=token_data['client_secret'],
+#         scopes=token_data['scopes']
+#     )
 
-    # Auto-refresh if expired
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        print("🔄 Token refreshed")
-        # In prod → update access_token in memory cache here
+#     # Auto-refresh if expired
+#     if creds.expired and creds.refresh_token:
+#         creds.refresh(Request())
+#         print("🔄 Token refreshed")
+#         # In prod → update access_token in memory cache here
 
-    service = build('gmail', 'v1', credentials=creds)
+#     service = build('gmail', 'v1', credentials=creds)
 
-    # Fetch 10 latest emails
-    results = service.users().messages().list(
-        userId='me',
-        maxResults=10
-    ).execute()
+#     # Fetch 10 latest emails
+#     results = service.users().messages().list(
+#         userId='me',
+#         maxResults=10
+#     ).execute()
 
-    messages = results.get('messages', [])
+#     messages = results.get('messages', [])
 
-    if not messages:
-        print('No messages found.')
-        return
+#     if not messages:
+#         print('No messages found.')
+#         return
 
-    print(f'📬 Latest {len(messages)} emails:\n')
-    for msg in messages:
-        detail = service.users().messages().get(
-            userId='me',
-            id=msg['id'],
-            format='metadata',
-            metadataHeaders=['From', 'Subject', 'Date']
-        ).execute()
+#     print(f'📬 Latest {len(messages)} emails:\n')
+#     for msg in messages:
+#         detail = service.users().messages().get(
+#             userId='me',
+#             id=msg['id'],
+#             format='metadata',
+#             metadataHeaders=['From', 'Subject', 'Date']
+#         ).execute()
 
-        headers = {h['name']: h['value'] for h in detail['payload']['headers']}
-        print(f"From    : {headers.get('From', 'N/A')}")
-        print(f"Subject : {headers.get('Subject', 'N/A')}")
-        print(f"Date    : {headers.get('Date', 'N/A')}")
-        print("-" * 50)
+#         headers = {h['name']: h['value'] for h in detail['payload']['headers']}
+#         print(f"From    : {headers.get('From', 'N/A')}")
+#         print(f"Subject : {headers.get('Subject', 'N/A')}")
+#         print(f"Date    : {headers.get('Date', 'N/A')}")
+#         print("-" * 50)
+
+# if __name__ == "__main__":
+#     test_list_emails()
+
+
+import asyncio
+from app.features.gmail._client import get_gmail_service
+from app.db.mongo import connect_to_mongo
+
+async def main():
+    try:
+        await connect_to_mongo()
+        service = await get_gmail_service(user_id="695e2bbaf8efc966aaf9f218")
+        print("Service built:", service)
+        
+        results = service.users().messages().list(userId='me', q='is:unread').execute()
+        messages = results.get('messages', [])
+
+        if not messages:
+            print('No unread messages found.')
+        else:
+            print(f'Found {len(messages)} unread messages.')
+            for msg in messages[:5]:
+                print(f'ID: {msg["id"]}')
+
+    except Exception as e:
+        print(f"Error: {e}")  # ← this should now print the 'no token' error
 
 if __name__ == "__main__":
-    test_list_emails()
+    asyncio.run(main())

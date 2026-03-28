@@ -1,140 +1,3 @@
-Real-Time Voice Assistant – Low-Latency Architecture (RAG + Audio)
-Goal
-
-Design a voice assistant that feels instant:
-
-User stops speaking → assistant responds in <500ms perceived latency
-No blocking pipeline
-Continuous streaming across all stages
-
-Current Problem
-The system is sequential, causing latency accumulation:
-
-Audio → STT → (wait) → RAG → LLM → TTS → Audio Out
-
-Key issues:
-Waiting for final transcript before processing
-RAG query triggered too late
-LLM starts too late
-
-2. Speculative RAG (Key Improvement)
-Problem
-RAG starts too late and blocks response.
-
-Solution
-Start retrieval before user finishes speaking.
-
-Approach
-Step 1: Incremental Query Extraction
-
-From partial transcripts:
-
-Extract keywords
-Detect noun phrases
-Build evolving query
-
-Example:
-
-"what is the capital of fr..."
-→ query: "capital france"
-Step 2: Parallel Vector Search
-Fire async queries to vector DB
-Update top-K results continuously
-Step 3: Context Cache
-
-Maintain in-memory:
-
-current_context_candidates = top_k_results
-
-When user stops:
-→ context is already ready
-
-3. RAG Optimization Strategies
-A. Avoid Always Querying Vector DB
-
-Use lightweight heuristics:
-
-if short_query:
-    skip RAG
-elif no factual pattern:
-    skip RAG
-else:
-    use RAG
-B. Fast Similarity Gate
-Compute embedding of query
-Compare with recent queries (in-memory)
-If similarity high → reuse previous context
-C. Multi-Layer Retrieval
-L1: In-memory cache (fastest)
-L2: SQLite recent messages
-L3: Vector DB (LanceDB)
-
-Query in parallel, not sequentially.
-
-D. Pre-Embedding
-
-Precompute embeddings for:
-
-recent chats
-system prompts
-frequent queries
-
-
-7. End-of-Speech Prediction
-Problem ( silero vad )
-
-Waiting for silence timeout is slow.
-
-Solution
-
-Predict speech ending early using:
-
-drop in audio energy
-short pauses (~150ms)
-punctuation prediction from STT
-
-Trigger response slightly before full stop.
-
-8. Prompt Construction Optimization
-Problem
-
-Prompt building delays LLM call.
-
-Solution
-
-Maintain incremental prompt state:
-
-update prompt as transcript evolves
-avoid rebuilding from scratch
-9. Persistent LLM Session
-Problem
-
-Repeated cold starts.
-
-Solution
-reuse session/context window
-maintain conversation state in memory
-10. Latency Targets
-Stage	Target Time
-STT partial output	100–200ms
-RAG ready	before user stops
-LLM first token	150–300ms
-First audio output	<500ms
-11. Key Engineering Principles
-Never wait for final input
-Everything must be streaming
-Everything must run in parallel
-Predict instead of reacting
-Cache aggressively
-Prefer heuristics over LLM when possible
-
-
-
-
-
-
-
-
 
 # Gmail (Multi-Service) OAuth Token Management
 ### Stack: FastAPI + MongoDB
@@ -389,3 +252,116 @@ MONGO_URI=mongodb+srv://...
 - [ ] Scopes stored — request only minimum required
 - [ ] HTTPS enforced on all OAuth redirect URIs
 - [ ] Token revocation endpoint exposed to users
+
+Proposed Structure
+server/
+├── app/
+│   ├── features/
+│   │   └── gmail/
+│   │       ├── __init__.py
+│   │       ├── auth.py          # OAuth flow, save/load tokens
+│   │       ├── token_manager.py # get valid access_token (refresh logic)
+│   │       └── router.py        # FastAPI routes: /gmail/connect, /gmail/callback
+│   ├── core/
+│   │   ├── encryption.py        # encrypt/decrypt refresh_token
+│   │   └── token_cache.py       # in-memory access_token cache
+│   └── db/
+│       └── mongo.py             # DB connection
+│
+tools_plugin/
+├── gmail/
+│   ├── __init__.py
+│   ├── read.py                  # list_emails(), get_email()
+│   ├── send.py                  # send_email(), reply()
+│   ├── organize.py              # label(), trash(), delete()
+│   └── _client.py               # gets valid access_token from server, builds service
+
+The Key Principle — Separation of Concerns
+server/app/features/gmail/     →  "I own tokens, auth, security"
+tools_plugin/gmail/            →  "I just DO things with Gmail, I don't care about tokens"
+Tools should never handle tokens directly. They just call one function and get a ready-to-use Gmail service object.
+
+How They Talk to Each Other
+python# tools_plugin/gmail/_client.py
+# This is the BRIDGE between tools and server
+
+from app.features.gmail.token_manager import get_valid_access_token
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+
+async def get_gmail_service(user_id: str):
+    """Tools call this — they get back a ready service, nothing else."""
+    access_token = await get_valid_access_token(user_id)  # handles refresh internally
+    creds = Credentials(token=access_token)
+    return build('gmail', 'v1', credentials=creds)
+python# tools_plugin/gmail/read.py
+# Tool has zero knowledge of tokens
+
+from ._client import get_gmail_service
+
+async def list_emails(user_id: str, max_results: int = 10):
+    service = await get_gmail_service(user_id)   # ← just this
+    results = service.users().messages().list(
+        userId='me', maxResults=max_results
+    ).execute()
+    return results.get('messages', [])
+python# server/app/features/gmail/token_manager.py
+# Server owns ALL token logic
+
+from app.core.token_cache import get_cached, set_cached
+from app.core.encryption import decrypt
+from app.db.mongo import db
+import httpx
+
+async def get_valid_access_token(user_id: str) -> str:
+    # 1. Check memory cache first
+    token = get_cached(user_id, "gmail")
+    if token:
+        return token
+
+    # 2. Pull refresh_token from MongoDB
+    doc = await db.oauth_tokens.find_one({
+        "user_id": user_id, "service": "gmail", "is_active": True
+    })
+    refresh_token = decrypt(doc["refresh_token"])
+
+    # 3. Hit Google for new access_token
+    async with httpx.AsyncClient() as client:
+        resp = await client.post("https://oauth2.googleapis.com/token", data={
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token"
+        })
+    data = resp.json()
+
+    # 4. Cache it locally
+    set_cached(user_id, "gmail", data["access_token"], data["expires_in"])
+    return data["access_token"]
+```
+
+---
+
+## Full Data Flow
+```
+LLM decides to read Gmail
+        ↓
+tools_plugin/gmail/read.py → list_emails(user_id)
+        ↓
+_client.py → get_gmail_service(user_id)
+        ↓
+token_manager.py → get_valid_access_token(user_id)
+        ↓
+  ┌─────────────────────────────────┐
+  │  memory cache hit? → return it  │
+  │  cache miss?                    │
+  │    → MongoDB: get refresh_token │  ← cloud
+  │    → Google: get access_token   │
+  │    → cache it in memory         │  ← local
+  └─────────────────────────────────┘
+        ↓
+Gmail API called ✅
+
+Where Things Live
+DataLocationWhyrefresh_tokenMongoDB (encrypted)Permanent, cross-deviceaccess_tokenMemory / token_cache.pyTemporary, 1hr, fastclient_secret.env on serverNever in code or DBcredentials.json.env vars onlyNever committed
+This way your tools_plugin stays completely clean — tomorrow when you add Slack or Calendar tools, they follow the exact same pattern.

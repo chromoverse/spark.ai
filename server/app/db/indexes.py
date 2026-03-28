@@ -21,6 +21,12 @@ async def create_indexes():
             background=True
         )
 
+        await db.oauth_tokens.create_index(
+            [("user_id", 1), ("service", 1), ("account_email", 1)],
+            unique=True,
+            background=True
+        )
+
         logging.info("✅ MongoDB indexes created")
 
     except PyMongoError as e:

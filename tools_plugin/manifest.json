@@ -1,5 +1,5 @@
 {
-  "version": "2.3.0",
+  "version": "2.4.0",
   "source": "tools_plugin",
   "registry_relpath": "registry/tool_registry.json",
   "plugins": [
@@ -173,7 +173,6 @@
       "module": "messaging.call_video",
       "class_name": "CallVideoTool"
     },
-
     {
       "tool_name": "music_play",
       "module": "media.music",
@@ -198,6 +197,72 @@
       "tool_name": "music_status",
       "module": "media.music",
       "class_name": "MusicStatusTool"
+    },
+    {
+      "tool_name": "email_list",
+      "module": "google.gmail",
+      "class_name": "EmailListTool"
+    },
+    {
+      "tool_name": "email_read",
+      "module": "google.gmail",
+      "class_name": "EmailReadTool"
+    },
+    {
+      "tool_name": "email_send",
+      "module": "google.gmail",
+      "class_name": "EmailSendTool"
+    },
+    {
+      "tool_name": "email_reply",
+      "module": "google.gmail",
+      "class_name": "EmailReplyTool"
+    },
+    {
+      "tool_name": "email_delete",
+      "module": "google.gmail",
+      "class_name": "EmailDeleteTool"
+    },
+    {
+      "tool_name": "email_trash",
+      "module": "google.gmail",
+      "class_name": "EmailTrashTool"
+    },
+    {
+      "tool_name": "email_mark_read",
+      "module": "google.gmail",
+      "class_name": "EmailMarkReadTool"
+    },
+    {
+      "tool_name": "email_mark_unread",
+      "module": "google.gmail",
+      "class_name": "EmailMarkUnreadTool"
+    },
+    {
+      "tool_name": "email_search",
+      "module": "google.gmail",
+      "class_name": "EmailSearchTool"
+    },
+    {
+      "tool_name": "email_label",
+      "module": "google.gmail",
+      "class_name": "EmailLabelTool"
+    },
+    {
+      "tool_name": "email_move",
+      "module": "google.gmail",
+      "class_name": "EmailMoveTool"
+    },
+    {
+      "tool_name": "email_organize",
+      "module": "google.gmail",
+      "class_name": "EmailOrganizeTool"
+    },
+    {
+      "tool_name": "email_labels_list",
+      "module": "google.gmail",
+      "class_name": "EmailLabelsListTool"
     }
-  ]
+  ],
+  "total_tools": 52
 }

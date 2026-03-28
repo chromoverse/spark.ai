@@ -1,6 +1,6 @@
 {
-  "version": "2.1.0",
-  "total_tools": 41,
+  "version": "2.4.0",
+  "total_tools": 54,
   "tools": [
     {
       "name": "app_open",
@@ -247,6 +247,84 @@
       "description": "Rich status report: title, artist, source icon, thumbnail URL, progress bar, and OS-level audio streams.",
       "category": "media",
       "execution_target": "client"
+    },
+    {
+      "name": "email_list",
+      "description": "List emails from the user's mailbox.",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_read",
+      "description": "Fetch the full content of a single email by message ID.",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_send",
+      "description": "Compose and send a new email.",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_reply",
+      "description": "Reply to an existing email (stays in the same thread).",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_delete",
+      "description": "Permanently delete an email (bypasses Trash).",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_trash",
+      "description": "Move an email to the Gmail Trash (recoverable for 30 days).",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_mark_read",
+      "description": "Mark one or more emails as read (removes the UNREAD label).",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_mark_unread",
+      "description": "Mark one or more emails as unread (adds the UNREAD label).",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_search",
+      "description": "Search emails using full Gmail search syntax.",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_label",
+      "description": "Add or remove Gmail labels on an email.",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_move",
+      "description": "Move an email to a different label / folder.",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_organize",
+      "description": "Bulk-organize emails that match a Gmail search query.",
+      "category": "google",
+      "execution_target": "server"
+    },
+    {
+      "name": "email_labels_list",
+      "description": "Return all Gmail labels (system + user-created) for the account.",
+      "category": "google",
+      "execution_target": "server"
     }
   ]
 }

@@ -1,8 +1,8 @@
 {
-  "version": "2.2.2",
+  "version": "2.4.0",
   "last_updated": "2026-03-05",
   "phase": 1,
-  "total_tools": 38,
+  "total_tools": 57,
   "categories": {
     "system": {
       "description": "System-level operations and monitoring",
@@ -1673,7 +1673,7 @@
       "tools": [
         {
           "tool_name": "music_play",
-          "description": "Play music immediately — streams YouTube/SoundCloud via mpv+yt-dlp with no browser, or plays a local audio file. Audio starts in the background automatically.",
+          "description": "Play music immediately \u2014 streams YouTube/SoundCloud via mpv+yt-dlp with no browser, or plays a local audio file. Audio starts in the background automatically.",
           "execution_target": "client",
           "params_schema": {
             "title": {
@@ -1684,12 +1684,12 @@
             "artist": {
               "type": "string",
               "required": false,
-              "description": "Artist or band — improves search match"
+              "description": "Artist or band \u2014 improves search match"
             },
             "album": {
               "type": "string",
               "required": false,
-              "description": "Album name — narrows ambiguous titles"
+              "description": "Album name \u2014 narrows ambiguous titles"
             },
             "source": {
               "type": "string",
@@ -1700,7 +1700,7 @@
             "file_path": {
               "type": "string",
               "required": false,
-              "description": "Absolute path to local audio file — required only when source='local'"
+              "description": "Absolute path to local audio file \u2014 required only when source='local'"
             },
             "session_id": {
               "type": "string",
@@ -1728,7 +1728,7 @@
               },
               "query": {
                 "type": "string",
-                "description": "Search query used — online only"
+                "description": "Search query used \u2014 online only"
               },
               "file_path": {
                 "type": "string",
@@ -1740,7 +1740,7 @@
               },
               "format": {
                 "type": "string",
-                "description": "Audio format — local only"
+                "description": "Audio format \u2014 local only"
               },
               "session_id": {
                 "type": "string"
@@ -1973,6 +1973,680 @@
             "default_confidence": 0.97,
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
+            "summary_tts": false
+          }
+        }
+      ]
+    },
+    "gmail": {
+      "description": "Gmail operations \u2014 list, read, send, reply, delete, trash, mark read/unread, search, label, move, and bulk-organize emails.",
+      "tools": [
+        {
+          "tool_name": "email_list",
+          "description": "List emails from the mailbox with optional label and query filters",
+          "execution_target": "server",
+          "params_schema": {
+            "label_ids": {
+              "type": "array",
+              "required": false,
+              "default": [
+                "INBOX"
+              ],
+              "description": "Gmail label IDs to filter by e.g. ['INBOX','UNREAD']"
+            },
+            "query": {
+              "type": "string",
+              "required": false,
+              "default": "",
+              "description": "Gmail search query e.g. 'is:unread from:boss@corp.com'"
+            },
+            "max_results": {
+              "type": "integer",
+              "required": false,
+              "default": 20
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "emails": {
+                "type": "array",
+                "description": "List of email summaries (id, thread_id, labels, snippet, from, to, subject, date, is_read)"
+              },
+              "total_returned": {
+                "type": "integer"
+              },
+              "next_page_token": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 8000,
+            "summary_tts": true
+          }
+        },
+        {
+          "tool_name": "email_read",
+          "description": "Fetch the full content (headers, body, attachments) of a single email by ID",
+          "execution_target": "server",
+          "params_schema": {
+            "message_id": {
+              "type": "string",
+              "required": true,
+              "description": "Gmail message ID"
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "id": {
+                "type": "string"
+              },
+              "thread_id": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "array"
+              },
+              "is_read": {
+                "type": "boolean"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "cc": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "snippet": {
+                "type": "string"
+              },
+              "attachments": {
+                "type": "array",
+                "description": "Metadata only \u2014 [{filename, mime_type, attachment_id, size_bytes}]"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "email_send",
+          "description": "Compose and send a new email",
+          "execution_target": "server",
+          "params_schema": {
+            "to": {
+              "type": "string",
+              "required": true,
+              "description": "Recipient email address(es), comma-separated"
+            },
+            "subject": {
+              "type": "string",
+              "required": true
+            },
+            "body": {
+              "type": "string",
+              "required": true,
+              "description": "Plain-text email body"
+            },
+            "cc": {
+              "type": "string",
+              "required": false,
+              "default": ""
+            },
+            "bcc": {
+              "type": "string",
+              "required": false,
+              "default": ""
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "message_id": {
+                "type": "string"
+              },
+              "thread_id": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "array"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "Send this email?",
+            "default_timeout_ms": 10000,
+            "summary_tts": true
+          }
+        },
+        {
+          "tool_name": "email_reply",
+          "description": "Reply to an existing email within the same thread",
+          "execution_target": "server",
+          "params_schema": {
+            "message_id": {
+              "type": "string",
+              "required": true,
+              "description": "ID of the message to reply to"
+            },
+            "body": {
+              "type": "string",
+              "required": true,
+              "description": "Reply body text"
+            },
+            "to": {
+              "type": "string",
+              "required": false,
+              "description": "Override recipient (defaults to original sender)"
+            },
+            "subject": {
+              "type": "string",
+              "required": false,
+              "description": "Override subject (defaults to Re: <original>)"
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "message_id": {
+                "type": "string"
+              },
+              "thread_id": {
+                "type": "string"
+              },
+              "replied_to": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "Send this reply?",
+            "default_timeout_ms": 10000,
+            "summary_tts": true
+          }
+        },
+        {
+          "tool_name": "email_delete",
+          "description": "Permanently delete an email \u2014 IRREVERSIBLE. Use email_trash for a safer alternative",
+          "execution_target": "server",
+          "params_schema": {
+            "message_id": {
+              "type": "string",
+              "required": true
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "deleted_message_id": {
+                "type": "string"
+              },
+              "permanent": {
+                "type": "boolean"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.88,
+            "default_requires_approval": true,
+            "default_approval_question": "Permanently delete this email? This cannot be undone.",
+            "default_timeout_ms": 5000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "email_trash",
+          "description": "Move an email to Trash (recoverable within 30 days)",
+          "execution_target": "server",
+          "params_schema": {
+            "message_id": {
+              "type": "string",
+              "required": true
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "message_id": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "array"
+              },
+              "trashed": {
+                "type": "boolean"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_approval_question": "Move this email to trash?",
+            "default_timeout_ms": 5000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "email_mark_read",
+          "description": "Mark one or more emails as read",
+          "execution_target": "server",
+          "params_schema": {
+            "message_ids": {
+              "type": "array",
+              "required": true,
+              "description": "List of Gmail message IDs"
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "marked_read": {
+                "type": "array"
+              },
+              "count": {
+                "type": "integer"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "email_mark_unread",
+          "description": "Mark one or more emails as unread",
+          "execution_target": "server",
+          "params_schema": {
+            "message_ids": {
+              "type": "array",
+              "required": true
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "marked_unread": {
+                "type": "array"
+              },
+              "count": {
+                "type": "integer"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "email_search",
+          "description": "Search emails using full Gmail search syntax",
+          "execution_target": "server",
+          "params_schema": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "description": "Gmail search query e.g. 'from:alice subject:invoice has:attachment'"
+            },
+            "max_results": {
+              "type": "integer",
+              "required": false,
+              "default": 20
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "query": {
+                "type": "string"
+              },
+              "emails": {
+                "type": "array"
+              },
+              "total_returned": {
+                "type": "integer"
+              },
+              "next_page_token": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.97,
+            "default_requires_approval": false,
+            "default_timeout_ms": 8000,
+            "summary_tts": true
+          }
+        },
+        {
+          "tool_name": "email_label",
+          "description": "Add or remove labels on a single email (supports system labels like STARRED, IMPORTANT and custom ones)",
+          "execution_target": "server",
+          "params_schema": {
+            "message_id": {
+              "type": "string",
+              "required": true
+            },
+            "add_labels": {
+              "type": "array",
+              "required": false,
+              "default": [],
+              "description": "Label names or IDs to add"
+            },
+            "remove_labels": {
+              "type": "array",
+              "required": false,
+              "default": [],
+              "description": "Label names or IDs to remove"
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "message_id": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "array"
+              },
+              "added": {
+                "type": "array"
+              },
+              "removed": {
+                "type": "array"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.96,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "email_move",
+          "description": "Move an email to a different label/folder by adding the destination label and removing source labels",
+          "execution_target": "server",
+          "params_schema": {
+            "message_id": {
+              "type": "string",
+              "required": true
+            },
+            "destination": {
+              "type": "string",
+              "required": true,
+              "description": "Destination label name or ID (e.g. 'Work', 'Receipts')"
+            },
+            "remove_from": {
+              "type": "array",
+              "required": false,
+              "default": [
+                "INBOX"
+              ],
+              "description": "Labels to remove (defaults to INBOX)"
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "message_id": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "array"
+              },
+              "moved_to": {
+                "type": "string"
+              },
+              "removed_from": {
+                "type": "array"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "email_organize",
+          "description": "Bulk-organize emails matching a search query. Actions: mark_read | mark_unread | archive | trash | label:<name> | unlabel:<name>",
+          "execution_target": "server",
+          "params_schema": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "description": "Gmail search query to select target emails"
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "description": "mark_read | mark_unread | archive | trash | label:<name> | unlabel:<name>"
+            },
+            "max_messages": {
+              "type": "integer",
+              "required": false,
+              "default": 50,
+              "description": "Safety cap on how many emails are affected"
+            },
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "action": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "affected_count": {
+                "type": "integer"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.9,
+            "default_requires_approval": true,
+            "default_approval_question": "This will apply the action to multiple emails matching the query. Continue?",
+            "default_timeout_ms": 30000,
+            "summary_tts": true
+          }
+        },
+        {
+          "tool_name": "email_labels_list",
+          "description": "List all Gmail labels (system + user-created) with unread counts",
+          "execution_target": "server",
+          "params_schema": {
+            "user_id": {
+              "type": "string",
+              "required": true,
+              "description": "The user ID."
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "labels": {
+                "type": "array",
+                "description": "[{id, name, type, messages_total, messages_unread}]"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 3000,
             "summary_tts": false
           }
         }

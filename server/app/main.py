@@ -121,6 +121,8 @@ app.add_middleware(
 
 # Include all HTTP API routes through unified wrapper
 include_api_routes(app)
+from app.features.external_service.router import router as oauth_router
+app.include_router(oauth_router)
 
 # Mount WebSocket
 app.mount("/socket.io", socket_app)

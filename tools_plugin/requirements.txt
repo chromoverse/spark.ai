@@ -16,3 +16,5 @@ pyobjc-framework-AppKit>=10.3; platform_system == "Darwin"
 pyobjc-framework-Quartz>=10.3; platform_system == "Darwin"
 yt-dlp
 pycaw
+google-api-python-client
+google-auth
