@@ -1,0 +1,24 @@
+# voice_daemon dependencies
+# Install: pip install -r requirements.txt
+
+# Audio capture
+sounddevice>=0.4.6
+soundfile>=0.12.1
+numpy>=1.24.0
+
+# Wake word
+openwakeword>=0.6.0
+
+# VAD
+silero-vad>=4.0.0
+torch>=2.0.0          # silero dependency
+
+# Socket.IO client (async)
+python-socketio[asyncio_client]>=5.11.0
+aiohttp>=3.9.0        # transport for socketio async client
+
+# HTTP health check
+httpx>=0.27.0
+
+# Config
+python-dotenv>=1.0.0

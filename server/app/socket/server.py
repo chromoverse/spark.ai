@@ -5,6 +5,7 @@ This module creates the Socket.IO server and handles
 connect/disconnect events with JWT authentication.
 """
 
+import os
 import socketio
 import logging
 from typing import Dict, Set
@@ -44,7 +45,28 @@ async def connect(sid, environ, auth):
     """
     Authenticate with JWT on connect and save user_id to session.
     """
+    auth = auth or {}
     token = auth.get("token", None)
+    client_type = str(auth.get("client_type", "user")).strip().lower()
+
+    if client_type == "daemon":
+        daemon_service_token = os.environ.get("DAEMON_SERVICE_TOKEN", "").strip()
+        if not daemon_service_token:
+            logger.error("❌ Daemon connection rejected: DAEMON_SERVICE_TOKEN is not configured")
+            raise ConnectionRefusedError("Daemon auth is not configured")
+
+        if token != daemon_service_token:
+            logger.warning("⚠️ Invalid daemon token provided by client")
+            raise ConnectionRefusedError("Invalid daemon auth token")
+
+        await sio.save_session(sid, {
+            "user_id": "__daemon__",
+            "client_type": "daemon",
+            "authenticated": True,
+        })
+        logger.info("🤖 Daemon connected with sid %s", sid)
+        return True
+
     if not token:
         logger.warning(f"⚠️ No token provided by client")
         raise ConnectionRefusedError("Missing auth token")
@@ -60,6 +82,7 @@ async def connect(sid, environ, auth):
         # Save user_id to socket session
         await sio.save_session(sid, {
             "user_id": user_id,
+            "client_type": "user",
             "authenticated": True
         })
 
@@ -87,6 +110,7 @@ async def disconnect(sid):
     try:
         session = await sio.get_session(sid)
         user_id = session.get("user_id")
+        client_type = session.get("client_type")
 
         if user_id and user_id in connected_users:
             connected_users[user_id].discard(sid)
@@ -99,6 +123,8 @@ async def disconnect(sid):
                     f"🔌 User {user_id} disconnected sid {sid} "
                     f"({len(connected_users[user_id])} connections remaining)"
                 )
+        elif client_type == "daemon":
+            logger.info("🤖 Daemon disconnected sid %s", sid)
         else:
             logger.info(f"🔌 Client {sid} disconnected (no user session)")
 
