@@ -1366,6 +1366,12 @@
               "type": "string",
               "required": true
             },
+            "mode": {
+              "type": "string",
+              "required": false,
+              "default": "tts",
+              "enum": ["tts", "research"]
+            },
             "max_results": {
               "type": "integer",
               "required": false,

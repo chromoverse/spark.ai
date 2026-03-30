@@ -24,7 +24,7 @@ class WebResearchTool(BaseTool):
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         query = self.get_input(inputs, "query")
-        max_results = int(self.get_input(inputs, "max_results", 3))
+        max_results = int(self.get_input(inputs, "max_results", 10))
         max_chars = int(self.get_input(inputs, "max_chars", 5000))
         
         # Execution context (injected by ExecutionEngine, None in manual testing)

@@ -1,10 +1,11 @@
 from tools.tools.system import app, sound, screenshot , screen, system_info,weather, notification, network, clipboard, brightness
+from tools.tools.web import WebScrapeTool, WebSearchTool, WebResearchTool
 import asyncio
 import json
 
 async def test_tools():
-    tool = clipboard.ClipboardReadTool()
-    result = await tool.execute({"content": "Namaste, this is a test of the clipboard write tool!"})
+    tool = WebResearchTool()
+    result = await tool.execute({"query": "who is current pm of nepal ? and who was last ?"})
     print(json.dumps(result.data, indent=2))
 
 if __name__ == "__main__":
