@@ -1,6 +1,6 @@
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
-from app.ai.providers.manager import llm_chat
+from app.ai.providers.manager import llm_chat # type: ignore
 import json
 
 
