@@ -200,7 +200,7 @@ def generate_all_models_from_registry():
     
     Call this at startup after loading tool registry
     """
-    from tools_plugin.registry.loader import get_tool_registry
+    from app.plugins.tools.registry_loader import get_tool_registry
     
     logger.info("="*70)
     logger.info("📝 Generating Pydantic Models from Schemas")

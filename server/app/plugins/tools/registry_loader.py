@@ -106,7 +106,7 @@ class ToolRegistry:
     def _resolve_registry_path(registry_path: Optional[str]) -> Path:
         if registry_path:
             return Path(registry_path)
-        return PathManager().get_tools_plugin_registry_file()
+        return PathManager().get_tools_registry_file()
 
     def get_tool(self, tool_name: str) -> Optional[ToolMetadata]:
         return self.tools.get(tool_name)

@@ -14,8 +14,8 @@ from typing import Dict, Any
 from datetime import datetime
 
 from ..base import BaseTool, ToolOutput
-from ...utils.searcher.system_searcher import SystemSearcher
-from ...utils.process_manager.process_manager import ProcessManager
+from tools.utils.process_manager.process_manager import ProcessManager
+from tools.utils.searcher.system_searcher import SystemSearcher
 
 
 class AppOpenTool(BaseTool):
@@ -189,7 +189,7 @@ class AppOpenTool(BaseTool):
                 return False
 
             emitter = get_task_emitter()
-            approved = await emitter.request_approval(
+            approved = await emitter.request_approval( # type: ignore
                 user_id=user_id,
                 task_id=approval_task_id,
                 question=question,

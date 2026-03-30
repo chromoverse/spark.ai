@@ -1,6 +1,6 @@
 {
   "version": "2.4.0",
-  "source": "tools_plugin",
+  "source": "server/tools",
   "registry_relpath": "registry/tool_registry.json",
   "plugins": [
     {

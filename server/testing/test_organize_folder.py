@@ -1,4 +1,4 @@
-from tools_plugin.tools.file_system.folder_organize import FolderOrganizeTool
+from tools.tools.file_system.folder_organize import FolderOrganizeTool
 import asyncio
 
 async def main():

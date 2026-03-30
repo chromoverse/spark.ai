@@ -1,36 +1,32 @@
 # SparkAI Tools Developer Manual
 
-This manual explains how to add runtime tools for SparkAI.
-Runtime source of truth is AppData `tools_plugin` (not `app.agent.shared`).
+This manual explains how to add runtime tools for SparkAI. The source of truth is `server/tools`.
 
 ## 1. Required layout
 
-Tool code in this repository is seeded from `tools_plugin/` and synced to:
-- `AppData/Local/SparkAI/tools_plugin`
-
 Runtime layout:
-- `tools_plugin/manifest.json`
-- `tools_plugin/registry/tool_registry.json`
-- `tools_plugin/registry/tool_index.json`
-- `tools_plugin/tools/...`
-- `tools_plugin/automation/...`
-- `tools_plugin/utils/...`
+- `server/tools/manifest.json`
+- `server/tools/registry/tool_registry.json`
+- `server/tools/registry/tool_index.json`
+- `server/tools/tools/...`
+- `server/tools/automation/...`
+- `server/tools/utils/...`
 
-Add implementation under one category package inside `tools/`:
+Add implementation under one category package inside `server/tools/tools/`:
 - `system/`
 - `file_system/`
 - `web/`
 - `ai/`
 - `messaging/`
 
-Each tool class must inherit `BaseTool` and implement:
+Each tool class must inherit `tools.tools.base.BaseTool` and implement:
 - `get_tool_name(self) -> str`
 - `_execute(self, inputs: dict[str, Any]) -> ToolOutput`
 
 ## 2. Register schema
 
 Add or update the tool entry in:
-- `tools_plugin/registry/tool_registry.json`
+- `server/tools/registry/tool_registry.json`
 
 Required fields:
 - `tool_name`
@@ -42,7 +38,7 @@ Required fields:
 
 ## 3. Register plugin mapping
 
-Update root `tools_plugin/manifest.json` and add a plugin entry:
+Update `server/tools/manifest.json` and add a plugin entry:
 
 ```json
 {
@@ -53,7 +49,7 @@ Update root `tools_plugin/manifest.json` and add a plugin entry:
 ```
 
 Rules:
-- `module` is import path relative to runtime `tools/` root.
+- `module` is import path relative to `server/tools/tools/`.
 - `class_name` must match the Python class.
 - `tool_name` must exactly match `get_tool_name()`.
 
@@ -68,10 +64,11 @@ Destructive tools must set approval defaults.
 
 ## 5. Validate changes
 
-Run the tool tester:
+Run the tool tester from the `server/` directory:
 
 ```bash
-python tools_plugin/tool_tester.py
+python -m tools.tool_tester --list
+python -m tools.tool_tester --tool my_tool --inputs "{}"
 ```
 
 Expected checks:
@@ -83,11 +80,9 @@ Expected checks:
 ## 6. Versioning
 
 If you add/remove tool plugins, bump `manifest.json` version.
-Runtime sync compares seed version vs AppData runtime version.
 
-## 7. Runtime sync and SDK
+## 7. Loader
 
 On server startup:
-1. Seed folders from repo `tools_plugin/` sync to `AppData/Local/SparkAI/tools_plugin`.
-2. Runtime tools load from `tools_plugin.tools.*`.
-3. Typed SDK is generated at `.../tools_plugin/generated/python_sdk.py`.
+1. The server reads the manifest and registry from `server/tools`.
+2. Runtime tools load from `tools.tools.*`.

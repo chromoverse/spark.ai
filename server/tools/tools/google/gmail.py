@@ -17,7 +17,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional
 
-from ..base import BaseTool, ToolOutput  # adjust relative import as needed
+from tools.utils.service_client import get_gmail_service
+from ..base import BaseTool, ToolOutput
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,6 @@ async def _svc(inputs: Dict[str, Any]):
     if not user_id:
         raise ValueError("inputs['service'] or inputs['user_id'] is required to authenticate Gmail API.")
     
-    from tools_plugin.utils.service_client import get_gmail_service
     account_email = inputs.get("account_email")
     return await get_gmail_service(user_id=user_id, account_email=account_email)
 

@@ -1,7 +1,7 @@
 # app/agent/__init__.py
 """
 Agent module — hosts agent-facing layers (chat runtime + client adapters).
-Runtime tools/registry are managed externally via tools_plugin.
+Runtime tools and registry are loaded directly from `server/tools`.
 """
 
 from app.agent.runtime import (

@@ -39,7 +39,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 from urllib.parse import urlparse
 
-from tools_plugin.tools.base import BaseTool, ToolOutput
+from ..base import BaseTool, ToolOutput
 from ddgs import DDGS
 
 

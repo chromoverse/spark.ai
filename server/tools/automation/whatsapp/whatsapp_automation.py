@@ -3,26 +3,22 @@ import pyperclip
 import pygetwindow as gw
 import time
 import os
-import sys
 import builtins
 
-# Add the server directory to sys.path for imports to work when running directly
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
-
-from tools_plugin.tools.system.app import AppOpenTool
-from tools_plugin.utils.process_manager.process_manager import ProcessManager
+from tools.tools.system.app import AppOpenTool
+from tools.utils.process_manager.process_manager import ProcessManager
 
 pyautogui.PAUSE = 0.15
 
 # ── Icon paths relative to this file ──────────────────────
 # Structure:
-#   app/agent/shared/automation/whatsapp/whatsapp_automation.py  ← this file
-#   app/agent/shared/automation/whatsapp/icons/btn_plus.png
-#   app/agent/shared/automation/whatsapp/icons/btn_docs.png
-#   app/agent/shared/automation/whatsapp/icons/btn_photos.png
-#   app/agent/shared/automation/whatsapp/icons/btn_call_icon.png
-#   app/agent/shared/automation/whatsapp/icons/btn_audio_call.png
-#   app/agent/shared/automation/whatsapp/icons/btn_video_call.png
+#   tools/automation/whatsapp/whatsapp_automation.py  ← this file
+#   tools/automation/whatsapp/icons/btn_plus.png
+#   tools/automation/whatsapp/icons/btn_docs.png
+#   tools/automation/whatsapp/icons/btn_photos.png
+#   tools/automation/whatsapp/icons/btn_call_icon.png
+#   tools/automation/whatsapp/icons/btn_audio_call.png
+#   tools/automation/whatsapp/icons/btn_video_call.png
 
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "icons")
 

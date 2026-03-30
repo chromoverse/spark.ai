@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 from app.plugins.tools.registry_loader import get_tool_registry
 from app.db.mongo import get_db
 from app.kernel.contracts.models import KernelEvent
-from app.plugins.tools.scripts.runtime_sync import get_runtime_tools_paths
+from app.utils.path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 _mongo_not_ready_warned = False
@@ -166,13 +166,15 @@ class KernelStatsStore:
 
     async def get_runtime_summary(self) -> Dict[str, Any]:
         registry = get_tool_registry()
-        runtime_paths = get_runtime_tools_paths()
-        runtime_manifest = runtime_paths.runtime_manifest
-        runtime_state = runtime_paths.runtime_state
+        path_manager = PathManager()
+        runtime_root = path_manager.get_tools_dir()
+        runtime_manifest = path_manager.get_tools_manifest_file()
         manifest_version = "unknown"
-        source_used = "unknown"
-        sync_status = "unknown"
-        healthy = runtime_paths.runtime_root.exists()
+        healthy = (
+            runtime_root.exists()
+            and runtime_manifest.exists()
+            and path_manager.get_tools_registry_file().exists()
+        )
 
         if runtime_manifest.exists():
             try:
@@ -180,15 +182,6 @@ class KernelStatsStore:
                 manifest_version = str(manifest_data.get("version", "unknown"))
             except Exception:
                 manifest_version = "invalid"
-
-        if runtime_state.exists():
-            try:
-                state_data = json.loads(runtime_state.read_text(encoding="utf-8"))
-                source_used = str(state_data.get("source_used", source_used))
-                sync_status = str(state_data.get("sync_status", sync_status))
-                healthy = bool(state_data.get("healthy", healthy))
-            except Exception:
-                pass
 
         return {
             "total_tools": len(registry.tools),
@@ -198,9 +191,9 @@ class KernelStatsStore:
             "registry_path": registry.registry_path,
             "registry_version": registry.version,
             "runtime_manifest_version": manifest_version,
-            "runtime_root": str(runtime_paths.runtime_root),
-            "runtime_source_used": source_used,
-            "runtime_sync_status": sync_status,
+            "runtime_root": str(runtime_root),
+            "runtime_mode": "direct_package",
+            "runtime_source": "server/tools",
             "runtime_healthy": healthy,
         }
 

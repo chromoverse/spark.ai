@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+
 class PathManager:
     """
     Centralized path manager for Jarvis.
@@ -23,6 +24,27 @@ class PathManager:
     def _get_meipass(self) -> Path:
         """Return PyInstaller _MEIPASS or current directory."""
         return Path(getattr(sys, "_MEIPASS", "."))
+
+    def _resolve_server_dir(self) -> Path:
+        """Resolve the bundled or local server root that owns the tools package."""
+        override = self.env.get("JARVIS_SERVER_DIR")
+        if override:
+            return Path(override)
+
+        if getattr(sys, "frozen", False):
+            candidates = (
+                self.BUNDLE_DIR / "server",
+                self.BUNDLE_DIR,
+                Path(sys.executable).resolve().parent / "server",
+            )
+        else:
+            candidates = (Path(__file__).resolve().parents[2],)
+
+        for candidate in candidates:
+            if (candidate / "app").exists() and (candidate / "tools").exists():
+                return candidate
+
+        return candidates[0]
 
     def _default_user_data_dir(self) -> Path:
         """Determine OS-specific writable user data directory (Local)."""
@@ -58,10 +80,15 @@ class PathManager:
         self.CONFIG_FILE = self.USER_DATA_DIR / "config.json"
         self.LOGS_DIR = self.USER_DATA_DIR / "logs"
         self.MEMORY_DIR = self.USER_DATA_DIR / "memory"
-        self.TOOLS_PLUGIN_DIR = self.USER_DATA_DIR / "tools_plugin"
         self.LOGS_DIR.mkdir(parents=True, exist_ok=True)
         self.MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        self.TOOLS_PLUGIN_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Bundled/local server resources
+        self.SERVER_DIR = self._resolve_server_dir()
+        self.TOOLS_DIR = Path(self.env.get("JARVIS_TOOLS_DIR", self.SERVER_DIR / "tools"))
+        self.TOOLS_MANIFEST_FILE = self.TOOLS_DIR / "manifest.json"
+        self.TOOLS_REGISTRY_FILE = self.TOOLS_DIR / "registry" / "tool_registry.json"
+        self.TOOLS_INDEX_FILE = self.TOOLS_DIR / "registry" / "tool_index.json"
 
     # Accessors
     def get_bundle_dir(self) -> Path:
@@ -69,6 +96,9 @@ class PathManager:
 
     def get_exe_dir(self) -> Optional[Path]:
         return self.EXE_DIR
+
+    def get_server_dir(self) -> Path:
+        return self.SERVER_DIR
 
     def get_user_data_dir(self) -> Path:
         return self.USER_DATA_DIR
@@ -88,27 +118,14 @@ class PathManager:
     def get_config_file(self) -> Path:
         return self.CONFIG_FILE
 
-    def get_tools_plugin_dir(self) -> Path:
-        return self.TOOLS_PLUGIN_DIR
-
-    def get_tools_plugin_manifest_file(self) -> Path:
-        return self.TOOLS_PLUGIN_DIR / "manifest.json"
-
-    def get_tools_plugin_registry_file(self) -> Path:
-        return self.TOOLS_PLUGIN_DIR / "registry" / "tool_registry.json"
-
-    def get_tools_plugin_index_file(self) -> Path:
-        return self.TOOLS_PLUGIN_DIR / "registry" / "tool_index.json"
-
-    def get_tools_plugin_generated_dir(self) -> Path:
-        return self.TOOLS_PLUGIN_DIR / "generated"
-
-    # Backward-compatible aliases. Runtime source of truth is tools_plugin.
     def get_tools_dir(self) -> Path:
-        return self.TOOLS_PLUGIN_DIR
+        return self.TOOLS_DIR
 
     def get_tools_registry_file(self) -> Path:
-        return self.get_tools_plugin_registry_file()
+        return self.TOOLS_REGISTRY_FILE
 
     def get_tools_manifest_file(self) -> Path:
-        return self.get_tools_plugin_manifest_file()
+        return self.TOOLS_MANIFEST_FILE
+
+    def get_tools_index_file(self) -> Path:
+        return self.TOOLS_INDEX_FILE

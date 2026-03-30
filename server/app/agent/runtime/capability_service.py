@@ -42,9 +42,7 @@ class CapabilityService:
     def _derive_limitations(runtime_summary: Dict[str, Any], loaded_models: List[str]) -> List[str]:
         limitations: List[str] = []
         if not runtime_summary.get("runtime_healthy", False):
-            limitations.append("Runtime tools_plugin state is unhealthy.")
-        if runtime_summary.get("runtime_sync_status") == "failed":
-            limitations.append("Last runtime tools sync failed; using fallback runtime if available.")
+            limitations.append("Direct tools runtime is unhealthy.")
         if not loaded_models:
             limitations.append("No ML models loaded in memory yet.")
         if runtime_summary.get("total_tools", 0) == 0:

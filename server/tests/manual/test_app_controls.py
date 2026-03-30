@@ -1,11 +1,12 @@
 import asyncio
-import os
+from pathlib import Path
 import sys
 
-# Adjust path to enable imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+SERVER_ROOT = Path(__file__).resolve().parents[2]
+if str(SERVER_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVER_ROOT))
 
-from tools_plugin.tools.system.operations import (
+from tools.tools.system.operations import (
     AppOpenTool,
     AppCloseTool,
     AppRestartTool,

@@ -1,4 +1,4 @@
-from tools_plugin.tools.messaging.call_audio import CallAudioTool
+from tools.tools.messaging.call_audio import CallAudioTool
 
 async def main():
   tool = CallAudioTool()

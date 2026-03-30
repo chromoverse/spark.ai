@@ -1,6 +1,6 @@
 import asyncio
 
-from tools_plugin.tools.system.operations import (
+from tools.tools.system.operations import (
     AppOpenTool,
     AppCloseTool,
     AppRestartTool,

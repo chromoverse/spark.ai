@@ -1,9 +1,9 @@
 from typing import Any, Dict, List
 
-from tools_plugin.tools.base import BaseTool, ToolOutput
-from tools_plugin.tools.web.search import WebSearchTool
-from tools_plugin.tools.web.scrape import WebScrapeTool
-from tools_plugin.tools.ai.summarize import AiSummarizeTool
+from ..ai.summarize import AiSummarizeTool
+from ..base import BaseTool, ToolOutput
+from .scrape import WebScrapeTool
+from .search import WebSearchTool
 
 class WebResearchTool(BaseTool):
     """

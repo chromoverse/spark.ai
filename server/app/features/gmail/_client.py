@@ -14,10 +14,10 @@ async def get_gmail_service(
     """
     Builds and returns an authenticated Gmail API service object.
 
-    This is the ONLY entry point for tools_plugin.
+    This is the server-side entry point for Gmail-backed tools.
     Tools receive this object as a parameter — they never touch tokens directly.
 
-    Usage in tools_plugin:
+    Usage in direct tools runtime:
         from app.features.gmail._client import get_gmail_service
 
         service = await get_gmail_service(user_id)

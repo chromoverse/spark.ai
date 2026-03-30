@@ -72,7 +72,7 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
         answer = (
             f"Runtime tools loaded: {data['total_tools']} total "
             f"({data['server_tools']} server, {data['client_tools']} client). "
-            f"Runtime status: {runtime_health}, sync={data.get('runtime_sync_status', 'unknown')}."
+            f"Runtime status: {runtime_health}, mode={data.get('runtime_mode', 'unknown')}."
         )
         return _response(query, answer)
 
@@ -182,12 +182,12 @@ def _extract_file_snippet_request(query: str) -> str | None:
 def _normalize_code_search_query(query: str) -> str:
     lowered = query.lower()
     phrase_map = {
-        "runtime sync": "runtime_sync",
+        "runtime status": "runtime_healthy",
         "meta query": "meta_query",
         "tool loader": "RuntimeToolsLoader",
         "orchestrator": "orchestrator",
         "kernel": "kernel",
-        "tools plugin": "tools_plugin",
+        "tool runtime": "tools",
     }
     for phrase, token in phrase_map.items():
         if phrase in lowered:

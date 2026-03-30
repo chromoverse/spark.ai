@@ -34,7 +34,7 @@ class AiSummarizeTool(BaseTool):
 STRICT RULES:
 1. Always respond in English only — regardless of the language in the context.
 2. ALWAYS extract something useful from the CONTEXT. Never say "not mentioned", "not found", "no information", or anything similar. If the exact answer isn't there, derive the closest relevant insight from what IS in the context.
-3. The "summary" must be exactly 1 sentence (max 30 words). It must directly answer the QUERY using the context. It will be read aloud via TTS — make it natural and fluent.
+3. The "summary" must be exactly 1-3 sentence (max 40 words). It must directly answer the QUERY using the context. It will be read aloud via TTS — make it natural and fluent.
 4. "formatted_content" must always be an empty string "".
 5. Never hallucinate facts not grounded in the context.
 

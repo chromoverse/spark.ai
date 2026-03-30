@@ -30,7 +30,7 @@ def _build_index_from_registry() -> List[Dict[str, Any]]:
 
 @lru_cache(maxsize=1)
 def get_tools_index(index_path: str = "") -> List[Dict[str, Any]]:
-    path = Path(index_path) if index_path else PathManager().get_tools_plugin_index_file()
+    path = Path(index_path) if index_path else PathManager().get_tools_index_file()
     if path.exists():
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle).get("tools", [])

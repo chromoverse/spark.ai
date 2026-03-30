@@ -12,7 +12,7 @@ import httpx
 import trafilatura
 from trafilatura.settings import use_config
 
-from tools_plugin.tools.base import BaseTool, ToolOutput
+from ..base import BaseTool, ToolOutput
 
 logger = logging.getLogger(__name__)
 

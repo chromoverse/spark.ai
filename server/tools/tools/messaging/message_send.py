@@ -5,7 +5,7 @@ message_send tool - Send a text message to a contact
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
 from datetime import datetime
-from tools_plugin.automation.whatsapp.whatsapp_automation import WhatsAppAutomation
+from tools.automation.whatsapp.whatsapp_automation import WhatsAppAutomation
 
 
 class MessageSendTool(BaseTool):

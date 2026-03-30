@@ -1,1 +1,1 @@
-"""Utility script modules for runtime tools plugin support."""
+"""Utility script modules for the direct in-package tools runtime."""

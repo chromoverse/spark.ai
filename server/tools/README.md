@@ -1,34 +1,24 @@
-# tools_plugin (Standalone Runtime Package)
+# SparkAI Tools Runtime
 
-This folder is the external seed source for runtime tools.
+`server/tools` is the runtime source of truth for SparkAI tools.
 
-## Purpose
-- Develop tools outside the server package.
-- Sync this package to `AppData/Local/SparkAI/tools_plugin` at server startup.
-- Keep runtime source of truth in AppData.
-
-## Local Development
-1. Run:
-   - `pwsh ./setup_venv.ps1`
-2. Activate:
-   - `.\.venv\Scripts\Activate.ps1`
-3. Validate:
-   - `python tool_tester.py --list`
-   - `python tool_tester.py system_info "{}"`
-   - `python tool_tester.py --tool message_send --inputs "{\"contact\":\"Rajesh Vaiya\",\"message\":\"hello\"}"`
-   - `python tool_tester.py --import tools.messaging.message_send:MessageSendTool --inputs "{\"contact\":\"Rajesh Vaiya\",\"message\":\"hello\"}"`
-
-## Runtime Layout
+## Layout
 - `manifest.json`
 - `registry/tool_registry.json`
 - `registry/tool_index.json`
 - `tools/...`
 - `automation/...`
 - `utils/...`
-- `manual.md`
 - `tool_tester.py`
-- `requirements.txt`
 
-## Notes
-- `requirements.txt` lists runtime dependencies required by tools.
-- Server startup checks these requirements against the main server environment.
+## Local Development
+- Use the main server environment. There is no separate tools virtualenv.
+- Run the tester from the `server/` directory:
+  - `python -m tools.tool_tester --list`
+  - `python -m tools.tool_tester system_info "{}"`
+  - `python -m tools.tool_tester --tool message_send --inputs "{\"contact\":\"Rajesh Vaiya\",\"message\":\"hello\"}"`
+  - `python -m tools.tool_tester --import tools.messaging.message_send:MessageSendTool --inputs "{\"contact\":\"Rajesh Vaiya\",\"message\":\"hello\"}"`
+
+## Runtime Model
+- The server loads tools directly from the `tools.*` package.
+- The registry and manifest are read from this folder.

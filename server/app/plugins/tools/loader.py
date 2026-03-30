@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.utils.path_manager import PathManager
+
 from .registry_loader import get_tool_registry
-from .scripts.runtime_sync import get_runtime_tools_paths
 from .tool_base import get_tool_instance_registry
 
 logger = logging.getLogger(__name__)
@@ -24,22 +25,22 @@ class PluginSpec:
 
 class RuntimeToolsLoader:
     """
-    Load tool implementations from AppData tools_plugin runtime package.
+    Load tool implementations directly from the bundled/local `server/tools` package.
 
     Contract:
-    1. Load plugin specs from runtime manifest.
-    2. Import plugin modules dynamically from tools_plugin namespace.
-    3. Validate tool names against runtime registry.
-    4. Register instantiated tools in global instance registry.
+    1. Load plugin specs from the in-package manifest.
+    2. Import plugin modules dynamically from the `tools.*` namespace.
+    3. Validate tool names against the tool registry.
+    4. Register instantiated tools in the global instance registry.
     """
 
     def __init__(self):
-        self.paths = get_runtime_tools_paths()
+        self.path_manager = PathManager()
         self.registry = get_tool_registry()
 
     def load_runtime_tools(self, runtime_tools_path: Path | None = None):
         instance_registry = get_tool_instance_registry()
-        root = runtime_tools_path or self.paths.runtime_root
+        root = Path(runtime_tools_path) if runtime_tools_path else self.path_manager.get_tools_dir()
         manifest_path = root / "manifest.json"
         tools_path = root / "tools"
 
@@ -96,10 +97,12 @@ class RuntimeToolsLoader:
         return instance_registry
 
     def _load_one(self, spec: PluginSpec) -> Any | None:
-        if spec.module.startswith("tools_plugin.tools."):
+        if spec.module.startswith(("tools.tools.", "tools.automation.", "tools.utils.")):
             module_name = spec.module
+        elif spec.module.startswith("tools."):
+            module_name = f"tools.tools.{spec.module[len('tools.'):]}"
         else:
-            module_name = f"tools_plugin.tools.{spec.module}"
+            module_name = f"tools.tools.{spec.module}"
         module = importlib.import_module(module_name)
         cls = getattr(module, spec.class_name, None)
         if cls is None:
@@ -134,10 +137,9 @@ class RuntimeToolsLoader:
 
     @staticmethod
     def _ensure_runtime_namespace(runtime_root: Path) -> None:
-        runtime_parent = runtime_root.parent
-        parent_str = str(runtime_parent)
-        if parent_str not in sys.path:
-            sys.path.insert(0, parent_str)
+        server_root = str(runtime_root.parent)
+        if server_root not in sys.path:
+            sys.path.insert(0, server_root)
 
     @staticmethod
     def _read_manifest(manifest_path: Path) -> list[PluginSpec]:

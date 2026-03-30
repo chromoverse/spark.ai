@@ -1,4 +1,4 @@
-from tools_plugin.utils.process_manager.process_manager import ProcessManager, Direction
+from tools.utils.process_manager.process_manager import ProcessManager, Direction
 import json
 
 pm = ProcessManager()

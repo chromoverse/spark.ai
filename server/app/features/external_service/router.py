@@ -194,7 +194,7 @@ async def oauth_status(service: str, user_id: str):
 async def internal_get_token(service: str, user_id: str, account_email: Optional[str] = None):
     """
     Internal endpoint to fetch a valid access token.
-    Used by tools plugins to build service instances locally.
+    Used by internal helpers that need to mint service instances locally.
     """
     try:
         get_provider(service)  # validate

@@ -1,4 +1,4 @@
-from tools_plugin.automation.whatsapp.whatsapp_automation import WhatsAppAutomation
+from tools.automation.whatsapp.whatsapp_automation import WhatsAppAutomation
 
 async def main():
   wa = await WhatsAppAutomation().create()
