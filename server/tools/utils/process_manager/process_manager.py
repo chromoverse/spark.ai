@@ -470,6 +470,142 @@ class _WindowsBackendImpl(_WindowsBackend):
         if self._u32().IsZoomed(hwnd): return WindowState.MAXIMIZED
         return WindowState.NORMAL
 
+    def _foreground_hwnd(self) -> int:
+        return (
+            win32gui.GetForegroundWindow()
+            if HAS_WIN32 else self._u32().GetForegroundWindow()
+        )
+
+    def _thread_id(self, hwnd: int) -> int:
+        if not hwnd:
+            return 0
+        if HAS_WIN32:
+            tid, _ = win32process.GetWindowThreadProcessId(hwnd)
+            return int(tid)
+        tid_c = ctypes.c_ulong(0)
+        self._u32().GetWindowThreadProcessId(hwnd, ctypes.byref(tid_c))
+        return int(tid_c.value)
+
+    def _current_thread_id(self) -> int:
+        if HAS_WIN32:
+            return int(win32api.GetCurrentThreadId())
+        return int(ctypes.windll.kernel32.GetCurrentThreadId())
+
+    def _is_foreground(self, hwnd: int) -> bool:
+        return bool(hwnd) and self._foreground_hwnd() == hwnd
+
+    def _ensure_message_queue(self) -> None:
+        # Thread-pool workers do not always create a USER message queue until a
+        # GUI call needs one. Creating it up front makes AttachThreadInput more reliable.
+        with suppress(Exception):
+            msg = _wt.MSG()
+            self._u32().PeekMessageW(ctypes.byref(msg), 0, 0, 0, 0)
+
+    def _attach_thread_input(self, source_tid: int, target_tid: int, attach: bool) -> bool:
+        if not source_tid or not target_tid or source_tid == target_tid:
+            return False
+        if HAS_WIN32:
+            win32process.AttachThreadInput(source_tid, target_tid, attach)
+        else:
+            self._u32().AttachThreadInput(source_tid, target_tid, attach)
+        return True
+
+    def _restore_for_focus(self, hwnd: int) -> None:
+        if HAS_WIN32:
+            placement = win32gui.GetWindowPlacement(hwnd)
+            if placement[1] == win32con.SW_SHOWMINIMIZED:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            else:
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+        else:
+            if self._u32().IsIconic(hwnd):
+                self._u32().ShowWindow(hwnd, self._SW_RESTORE)
+            else:
+                self._u32().ShowWindow(hwnd, self._SW_NORMAL)
+
+    def _raise_window(self, hwnd: int) -> None:
+        flags = self._SWP_NOMOVE | self._SWP_NOSIZE | self._SWP_SHOWWINDOW
+        topmost_flags = flags | self._SWP_NOACTIVATE
+        if HAS_WIN32:
+            win32gui.BringWindowToTop(hwnd)
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, topmost_flags)
+            win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+        else:
+            self._u32().BringWindowToTop(hwnd)
+            self._u32().SetWindowPos(hwnd, self._HWND_TOPMOST, 0, 0, 0, 0, topmost_flags)
+            self._u32().SetWindowPos(hwnd, self._HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+
+    def _allow_foreground(self) -> None:
+        with suppress(Exception):
+            self._u32().AllowSetForegroundWindow(-1)  # ASFW_ANY
+
+    def _pulse_alt_key(self) -> None:
+        with suppress(Exception):
+            if HAS_WIN32:
+                win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_EXTENDEDKEY, 0)
+                win32api.keybd_event(
+                    win32con.VK_MENU,
+                    0,
+                    win32con.KEYEVENTF_EXTENDEDKEY | win32con.KEYEVENTF_KEYUP,
+                    0,
+                )
+            else:
+                self._u32().keybd_event(0x12, 0, 0x0001, 0)
+                self._u32().keybd_event(0x12, 0, 0x0001 | 0x0002, 0)
+
+    def _set_foreground(self, hwnd: int) -> bool:
+        if HAS_WIN32:
+            win32gui.SetForegroundWindow(hwnd)
+            with suppress(Exception):
+                win32gui.SetActiveWindow(hwnd)
+            return True
+
+        result = self._u32().SetForegroundWindow(hwnd)
+        with suppress(Exception):
+            self._u32().SetActiveWindow(hwnd)
+        return bool(result)
+
+    def _attempt_foreground(self, hwnd: int, *, pulse_alt: bool = False) -> bool:
+        self._ensure_message_queue()
+
+        fg = self._foreground_hwnd()
+        my_tid = self._current_thread_id()
+        fg_tid = self._thread_id(fg)
+        target_tid = self._thread_id(hwnd)
+        attached: List[Tuple[int, int]] = []
+
+        if pulse_alt:
+            self._pulse_alt_key()
+            time.sleep(0.03)
+
+        try:
+            self._restore_for_focus(hwnd)
+            self._allow_foreground()
+
+            for other_tid in (fg_tid, target_tid):
+                try:
+                    if self._attach_thread_input(my_tid, other_tid, True):
+                        attached.append((my_tid, other_tid))
+                except Exception as exc:
+                    log.debug("AttachThreadInput(%s, %s, True) failed: %s", my_tid, other_tid, exc)
+
+            self._raise_window(hwnd)
+            self._set_foreground(hwnd)
+        except Exception as exc:
+            log.debug(
+                "Foreground attempt failed for hwnd=%s pulse_alt=%s: %s",
+                hwnd,
+                pulse_alt,
+                exc,
+            )
+        finally:
+            for source_tid, target_tid in reversed(attached):
+                with suppress(Exception):
+                    self._attach_thread_input(source_tid, target_tid, False)
+
+        time.sleep(0.05)
+        return self._is_foreground(hwnd)
+
     def list_windows(self) -> List[WindowInfo]:
         windows: List[WindowInfo] = []
         
@@ -534,53 +670,24 @@ class _WindowsBackendImpl(_WindowsBackend):
     def bring_to_front(self, wid: Any) -> bool:
         hwnd = int(wid)
         try:
-            if HAS_WIN32:
-                # CRITICAL FIX: Check if already foreground window
-                fg = win32gui.GetForegroundWindow()
-                if fg == hwnd:
-                    log.debug(f"Window {hwnd} already in foreground, skipping")
-                    return True
-                
-                # Only restore if minimized - don't move normal windows!
-                placement = win32gui.GetWindowPlacement(hwnd)
-                if placement[1] == win32con.SW_SHOWMINIMIZED:
-                    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                
-                # Attach thread input for reliable focus
-                fg_tid, _ = win32process.GetWindowThreadProcessId(fg)
-                my_tid = win32api.GetCurrentThreadId()
-                attached = fg_tid != my_tid
-                if attached:
-                    win32process.AttachThreadInput(fg_tid, my_tid, True)
-                
-                win32gui.SetForegroundWindow(hwnd)
-                win32gui.BringWindowToTop(hwnd)
-                
-                if attached:
-                    win32process.AttachThreadInput(fg_tid, my_tid, False)
-            else:
-                # ctypes fallback
-                fg_hwnd = self._u32().GetForegroundWindow()
-                
-                # CRITICAL FIX: Check if already foreground
-                if fg_hwnd == hwnd:
-                    log.debug(f"Window {hwnd} already in foreground, skipping")
-                    return True
-                
-                # Only restore if minimized
-                if self._u32().IsIconic(hwnd):
-                    self._u32().ShowWindow(hwnd, self._SW_RESTORE)
-                
-                my_tid = ctypes.windll.kernel32.GetCurrentThreadId()
-                fg_tid  = ctypes.c_ulong(0)
-                self._u32().GetWindowThreadProcessId(fg_hwnd, ctypes.byref(fg_tid))
-                attached = fg_tid.value != my_tid
-                if attached:
-                    self._u32().AttachThreadInput(fg_tid.value, my_tid, True)
-                self._u32().SetForegroundWindow(hwnd)
-                if attached:
-                    self._u32().AttachThreadInput(fg_tid.value, my_tid, False)
-            return True
+            if self._is_foreground(hwnd):
+                log.debug(f"Window {hwnd} already in foreground, skipping")
+                return True
+
+            if self._attempt_foreground(hwnd, pulse_alt=False):
+                return True
+
+            if self._attempt_foreground(hwnd, pulse_alt=True):
+                return True
+
+            log.warning(
+                "Foreground switch refused for hwnd=%s fg=%s target_tid=%s current_tid=%s",
+                hwnd,
+                self._foreground_hwnd(),
+                self._thread_id(hwnd),
+                self._current_thread_id(),
+            )
+            return False
         except Exception as e:
             log.error(f"bring_to_front({wid}): {e}")
             return False

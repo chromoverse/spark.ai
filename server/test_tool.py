@@ -1,11 +1,10 @@
 from tools.tools.system import app, sound, screenshot , screen, system_info,weather, notification, network, clipboard, brightness
-from tools.tools.web import WebScrapeTool, WebSearchTool, WebResearchTool
 import asyncio
 import json
 
 async def test_tools():
-    tool = WebResearchTool()
-    result = await tool.execute({"query": "who is current pm of nepal ? and who was last ?"})
+    tool = app.AppFocusTool()
+    result = await tool.execute({"target": "notepad"})
     print(json.dumps(result.data, indent=2))
 
 if __name__ == "__main__":

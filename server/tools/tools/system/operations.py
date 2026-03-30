@@ -35,6 +35,11 @@ from .sound import (
     SoundDecreaseTool,
 )
 
+from .microphone import (
+    MicMuteTool,
+    MicUnmuteTool,
+)
+
 from .network import NetworkStatusTool
 
 from .clipboard import (
@@ -71,6 +76,8 @@ __all__ = [
     "SoundStatusTool",
     "SoundIncreaseTool",
     "SoundDecreaseTool",
+    "MicMuteTool",
+    "MicUnmuteTool",
     
     # Network tools
     "NetworkStatusTool",

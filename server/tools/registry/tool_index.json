@@ -1,6 +1,6 @@
 {
   "version": "2.4.1",
-  "total_tools": 54,
+  "total_tools": 56,
   "tools": [
     {
       "name": "ai_summarize",
@@ -301,6 +301,18 @@
       "description": "Get current system volume level and mute status",
       "category": "system",
       "execution_target": "client"
+    },
+    {
+      "name": "mic_mute",
+      "description": "Mute the microphone on the connected desktop client",
+      "category": "system",
+      "execution_target": "server"
+    },
+    {
+      "name": "mic_unmute",
+      "description": "Unmute the microphone on the connected desktop client",
+      "category": "system",
+      "execution_target": "server"
     },
     {
       "name": "system_info",

@@ -62,10 +62,12 @@ GATE 2 — RESOLVE FROM HISTORY FIRST:
 GATE 3 — USE A TOOL only if:
   • Needs a real-world system action: open app, control OS, set alarm, manage files.
   • Needs live data: current weather, live prices, real-time news.
+  • If multiple tools could help, choose the ONE tool that is most directly related to the request and most likely to produce the answer with the least indirection.
+  • Prefer a dedicated domain tool over a broad catch-all tool.
   • Needs a connected external service.
   • Needs web research: future predictions, political queries, "who will be next PM/president",
     election outcomes, current standings, "latest on X", anything requiring up-to-date info
-    not answerable from general knowledge → web_research.
+    not answerable from general knowledge and not directly covered by a dedicated tool → web_research.
 
 GATE 4 — MULTI-TOOL only if:
   • Two distinct real-world actions are clearly needed simultaneously.
@@ -73,10 +75,22 @@ GATE 4 — MULTI-TOOL only if:
 
 ⚠️  DEFAULT WHEN UNSURE → no tool. Always err toward answering directly.
 
+━━━ TOOL CHOICE PRIORITY ━━━
+When a tool is needed, rank candidates like this:
+  1. Most specific tool for the exact job
+  2. Most directly useful tool for the user's desired result
+  3. Broad fallback tools only if no dedicated tool clearly fits
+
+Rules:
+  • Specific beats broad.
+  • Direct beats indirect.
+  • Do not choose a generic research/search tool if another available tool already matches the request more closely.
+  • Use web_research only when the task genuinely needs open-ended live web lookup and no dedicated tool is a clearer fit.
+
 ━━━ WEB RESEARCH TOOL ━━━
 web_research handles: future event predictions, political queries ("who will be next PM of Nepal"),
 election results, current news, anything where the answer requires searching the web right now.
-These are NOT general knowledge — do NOT answer them directly. Always invoke web_research.
+These are NOT general knowledge — do NOT answer them directly. Invoke web_research only when it is the best-fit tool, not merely because it is broad.
 Examples that must use web_research:
   "who will be next pm of nepal"     → web_research
   "who won the election"             → web_research
@@ -123,7 +137,11 @@ web_research cases:
 
 def _build_semantic_tool_rules(tools: List[Dict]) -> str:
     tool_names = {t.get("name", "") for t in tools}
-    rules: list[str] = []
+    rules: list[str] = [
+        "  • If a dedicated tool and a generic tool both seem possible, choose the dedicated tool.",
+        "  • Pick the tool whose name/description most directly matches the user's intended result.",
+        "  • Broad fallback tools should be used only when no more specific tool clearly fits.",
+    ]
 
     if "call_audio" in tool_names or "call_video" in tool_names:
         rules.append("  • Call intent (call/dial/ring/phone) → call_audio or call_video. Never message_send.")
@@ -134,7 +152,7 @@ def _build_semantic_tool_rules(tools: List[Dict]) -> str:
     if "message_send" in tool_names:
         rules.append("  • message_send is for text messages only.")
     if "web_research" in tool_names:
-        rules.append("  • web_research is for future events, political queries, current news, anything needing live web search.")
+        rules.append("  • web_research is for future events, political queries, current news, or live web lookup when no more specific tool is a better fit.")
 
     return "\n".join(rules) if rules else "  • No special semantic overrides."
 

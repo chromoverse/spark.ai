@@ -12,6 +12,7 @@ import {
 import {
   toggleMicrophoneListening,
   toggleCameraOn,
+  setMicrophoneListening,
 } from "@/store/features/localState/localSlice";
 import Welcome from "@/pages/Welcome";
 import { useAuthRouting } from "@/hooks/useAuthRouting";
@@ -76,6 +77,17 @@ export default function AppInitializer({
       dispatch(toggleMicrophoneListening());
     });
 
+    const unsubMicControl = window.electronApi.onMicControl(({ action, source }) => {
+      console.log(`🎤 Mic control command received: ${action} (${source ?? "main"})`);
+
+      if (action === "toggle") {
+        dispatch(toggleMicrophoneListening());
+        return;
+      }
+
+      dispatch(setMicrophoneListening(action === "unmute"));
+    });
+
     const unsubDeviceSelect = window.electronApi.onTrayDeviceSelect(
       ({ type, deviceId }) => {
         if (type === "MIC") {
@@ -89,6 +101,7 @@ export default function AppInitializer({
     return () => {
       unsub();
       unsubMicMute();
+      unsubMicControl();
       unsubDeviceSelect();
     };
   }, [dispatch]);

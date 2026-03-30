@@ -1,5 +1,5 @@
 // src/renderer/hooks/useAiResponseHandler.ts
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useSocket } from "@/context/socketContextProvider";
 import { useSparkTTS } from "@/context/sparkTTSContext";
 import type {
@@ -7,6 +7,7 @@ import type {
   TaskRecord,
   TaskOutput,
   TaskExecuteBatchPayload,
+  TaskProgressPayload,
 } from "@shared/socket.types";
 
 interface UseAiResponseHandlerOptions {
@@ -17,6 +18,20 @@ interface UseAiResponseHandlerOptions {
   onTaskBatchComplete?: (results: TaskOutput[]) => void;
   onTaskBatchError?: (error: string) => void;
 }
+
+const GENERIC_TASK_FAILURE_MESSAGE = "I couldn't finish that request.";
+const GENERIC_TASK_FAILURE_SPEECH = "माफ करें सर, वह काम पूरा नहीं हो सका।";
+const TECHNICAL_ERROR_PATTERNS = [
+  /input validation failed/i,
+  /parameter ['"]/i,
+  /must be [a-z]+/i,
+  /got [a-z_]+/i,
+  /cannot resolve bindings/i,
+  /traceback/i,
+  /exception/i,
+  /not found in registry/i,
+  /not implemented/i,
+];
 
 export function useAiResponseHandler(
   options: UseAiResponseHandlerOptions = {},
@@ -38,6 +53,53 @@ export function useAiResponseHandler(
   const [currentPayload, setCurrentPayload] =
     useState<QueryResultPayload | null>(null);
   const [executingTasks, setExecutingTasks] = useState<TaskRecord[]>([]);
+  const lastReportedFailureRef = useRef<string | null>(null);
+
+  const isTechnicalErrorMessage = useCallback((message: string): boolean => {
+    return TECHNICAL_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  }, []);
+
+  const getFirstFailureMessage = useCallback((payload: TaskProgressPayload) => {
+    const failures = payload.summary?.failures;
+    if (!Array.isArray(failures) || failures.length === 0) {
+      return null;
+    }
+    const first = failures[0];
+    return typeof first?.userMessage === "string" && first.userMessage.trim()
+      ? first.userMessage.trim()
+      : null;
+  }, []);
+
+  const resolveFriendlyFailureMessage = useCallback(
+    (preferredMessage?: string | null, fallbackMessage?: string | null) => {
+      const preferred = preferredMessage?.trim();
+      if (preferred) {
+        return preferred;
+      }
+
+      const fallback = fallbackMessage?.trim();
+      if (fallback && !isTechnicalErrorMessage(fallback)) {
+        return fallback;
+      }
+
+      return GENERIC_TASK_FAILURE_MESSAGE;
+    },
+    [isTechnicalErrorMessage],
+  );
+
+  const reportTaskFailure = useCallback(
+    (message: string) => {
+      setError(message);
+      setLoading(false);
+      setExecutingTasks([]);
+
+      if (lastReportedFailureRef.current !== message) {
+        lastReportedFailureRef.current = message;
+        onTaskBatchError?.(message);
+      }
+    },
+    [onTaskBatchError],
+  );
 
   // ============================================
   // PQH HANDLER (Primary Query Handler)
@@ -47,6 +109,7 @@ export function useAiResponseHandler(
       setLoading(true);
       setError(null);
       setCurrentPayload(payload);
+      lastReportedFailureRef.current = null;
 
       try {
         console.log("🤖 [PQH] Processing:", payload);
@@ -90,6 +153,7 @@ export function useAiResponseHandler(
       setLoading(true);
       setError(null);
       setExecutingTasks(payload.tasks);
+      lastReportedFailureRef.current = null;
 
       try {
         console.log(`🎯 [SQH] Received ${payload.tasks.length} tasks`);
@@ -130,10 +194,17 @@ export function useAiResponseHandler(
 
           onTaskBatchComplete?.(response.results);
         } else {
+          const displayMessage = resolveFriendlyFailureMessage(
+            null,
+            response.message,
+          );
           console.error("❌ [SQH] Execution failed:", response.message);
-          setError(response.message);
-          speak("माफ करें सर, कुछ गड़बड़ हो गई।");
-          onTaskBatchError?.(response.message);
+          reportTaskFailure(displayMessage);
+          if (displayMessage === GENERIC_TASK_FAILURE_MESSAGE) {
+            speak(GENERIC_TASK_FAILURE_SPEECH);
+          } else {
+            speak(displayMessage);
+          }
         }
 
         setLoading(false);
@@ -142,14 +213,22 @@ export function useAiResponseHandler(
         const message =
           err instanceof Error ? err.message : "Failed to execute tasks";
         console.error("💥 [SQH] Error:", err);
-        setError(message);
-        setLoading(false);
-        setExecutingTasks([]);
-        speak("माफ करें सर, कुछ गड़बड़ हो गई।");
-        onTaskBatchError?.(message);
+        const displayMessage = resolveFriendlyFailureMessage(null, message);
+        reportTaskFailure(displayMessage);
+        if (displayMessage === GENERIC_TASK_FAILURE_MESSAGE) {
+          speak(GENERIC_TASK_FAILURE_SPEECH);
+        } else {
+          speak(displayMessage);
+        }
       }
     },
-    [speak, onTaskBatchReceived, onTaskBatchComplete, onTaskBatchError],
+    [
+      speak,
+      onTaskBatchReceived,
+      onTaskBatchComplete,
+      reportTaskFailure,
+      resolveFriendlyFailureMessage,
+    ],
   );
 
   // ============================================
@@ -196,16 +275,30 @@ export function useAiResponseHandler(
       handleTaskBatch(data);
     };
 
+    const handleTaskSummary = (data: TaskProgressPayload) => {
+      const failureMessage = getFirstFailureMessage(data);
+      if (!failureMessage) {
+        return;
+      }
+
+      console.log("📡 [SQH] Task summary failure:", data.summary.failures);
+      reportTaskFailure(failureMessage);
+    };
+
     // Register listeners
     on("query-result", handleQueryResult);
     on("task:execute", handleTaskExecuteBatchPayload);
     on("task:execute_batch", handleTaskExecuteBatchPayload);
+    on("task:progress", handleTaskSummary);
+    on("task:summary", handleTaskSummary);
 
     return () => {
       // console.log("👋 Cleaning up AI response listeners");
       off("query-result", handleQueryResult);
       off("task:execute", handleTaskExecuteBatchPayload);
       off("task:execute_batch", handleTaskExecuteBatchPayload);
+      off("task:progress", handleTaskSummary);
+      off("task:summary", handleTaskSummary);
     };
   }, [
     socket,
@@ -213,8 +306,10 @@ export function useAiResponseHandler(
     autoListen,
     handlePQHResponse,
     handleTaskBatch,
+    getFirstFailureMessage,
     on,
     off,
+    reportTaskFailure,
   ]);
 
   // ============================================

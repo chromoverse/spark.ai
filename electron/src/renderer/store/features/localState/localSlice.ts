@@ -33,6 +33,13 @@ const localSlice = createSlice({
         state.isSpeaking = false;
       }
     },
+    setMicrophoneListening: (state, action: PayloadAction<boolean>) => {
+      state.isMicrophoneListening = action.payload;
+      if (!action.payload) {
+        state.isRecording = false;
+        state.isSpeaking = false;
+      }
+    },
     toggleCameraOn: (state) => {
       state.isCameraOn = !state.isCameraOn;
     },
@@ -76,6 +83,7 @@ const localSlice = createSlice({
 
 export const {
   toggleMicrophoneListening,
+  setMicrophoneListening,
   toggleCameraOn,
   setIsRecording,
   setIsSpeaking,

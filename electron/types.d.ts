@@ -61,6 +61,11 @@ export interface ISocketEventForwardPayload {
   data: unknown;
 }
 
+export interface IMicControlPayload {
+  action: "mute" | "unmute" | "toggle";
+  source?: string;
+}
+
 // Payload Mapper - FIXED: Now includes parameters
 export type IEventPayloadMapping = {
   frameWindowAction: IFrameWindowAction;
@@ -99,6 +104,7 @@ export type IEventPayloadMapping = {
   onTrayMediaToggle: { type: "MIC" | "CAMERA" };
   onTrayDeviceSelect: { type: "MIC" | "CAMERA"; deviceId: string };
   onMicMuteToggle: Record<string, never>; // Global shortcut for mic mute/unmute
+  onMicControl: IMicControlPayload;
   updateMediaState: {
     micOn?: boolean;
     cameraOn?: boolean;
@@ -179,6 +185,9 @@ declare global {
       ) => () => void;
       // Global shortcut for mic mute/unmute
       onMicMuteToggle: (callback: () => void) => () => void;
+      onMicControl: (
+        callback: (payload: IMicControlPayload) => void,
+      ) => () => void;
 
       // Authentication API
       onAuthSuccess: () => Promise<{ success: boolean }>;

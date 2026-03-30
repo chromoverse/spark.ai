@@ -4,6 +4,7 @@ import type {
   IFrameWindowAction,
   IOnboardingWindowMode,
   IDeviceUsageStatusManager,
+  IMicControlPayload,
   ISocketConnectionState,
   ISocketEventForwardPayload,
 } from "@root/types";
@@ -66,6 +67,8 @@ contextBridge.exposeInMainWorld("electronApi", {
     callback: (payload: { type: "MIC" | "CAMERA"; deviceId: string }) => void,
   ) => ipcOn("onTrayDeviceSelect", callback),
   onMicMuteToggle: (callback: () => void) => ipcOn("onMicMuteToggle", callback),
+  onMicControl: (callback: (payload: IMicControlPayload) => void) =>
+    ipcOn("onMicControl", callback),
 
   //Authentication API
   onAuthSuccess: () => ipcInvoke("onAuthSuccess"),

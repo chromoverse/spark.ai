@@ -24,6 +24,9 @@ class WebResearchTool(BaseTool):
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         query = self.get_input(inputs, "query")
+        mode = str(self.get_input(inputs, "mode", "research") or "research").strip().lower()
+        if mode not in {"tts", "research"}:
+            mode = "research"
         max_results = int(self.get_input(inputs, "max_results", 10))
         max_chars = int(self.get_input(inputs, "max_chars", 5000))
         
@@ -72,7 +75,13 @@ class WebResearchTool(BaseTool):
 
         # 3. Summarize
         summarize_tool = AiSummarizeTool()
-        summary_result = await summarize_tool.execute({"context": concatenated_content, "query": query})
+        summary_result = await summarize_tool.execute(
+            {
+                "context": concatenated_content,
+                "query": query,
+                "mode": mode,
+            }
+        )
 
         if not summary_result.success:
              return ToolOutput(success=False, data={}, error=f"Summarization failed: {summary_result.error}")

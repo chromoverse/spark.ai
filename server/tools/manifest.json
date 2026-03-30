@@ -254,6 +254,16 @@
       "class_name": "SoundStatusTool"
     },
     {
+      "tool_name": "mic_mute",
+      "module": "system.microphone",
+      "class_name": "MicMuteTool"
+    },
+    {
+      "tool_name": "mic_unmute",
+      "module": "system.microphone",
+      "class_name": "MicUnmuteTool"
+    },
+    {
       "tool_name": "system_info",
       "module": "system.system_info",
       "class_name": "SystemInfoTool"
@@ -274,5 +284,5 @@
       "class_name": "WebResearchTool"
     }
   ],
-  "total_tools": 54
+  "total_tools": 56
 }

@@ -17,6 +17,7 @@ from app.kernel.execution.execution_models import (
     Task, TaskRecord, ExecutionState, TaskStatus, 
     TaskOutput, TaskBatch, ExecutionTarget
 )
+from app.kernel.execution.failure_messages import build_failure_detail
 from app.plugins.tools.registry_loader import get_tool_registry
 from app.kernel.contracts.models import KernelEvent
 from app.kernel.eventing.event_bus import emit_kernel_event
@@ -489,8 +490,103 @@ class TaskOrchestrator:
         state = self.states.get(user_id)
         return state.get_task(task_id) if state else None
     
-    async def get_execution_summary(self, user_id: str) -> Dict[str, int]:
-        """Get execution summary for user"""
+    def _build_summary_payload(self, state: ExecutionState) -> Dict[str, Any]:
+        """Build count summary plus friendly failure details."""
+        summary: Dict[str, Any] = {
+            "total": len(state.tasks),
+            "pending": 0,
+            "running": 0,
+            "completed": 0,
+            "failed": 0,
+            "waiting": 0,
+            "skipped": 0,
+            "emitted": 0,
+            "failures": [],
+        }
+
+        ordered_tasks = sorted(
+            state.tasks.values(),
+            key=lambda task: (task.created_at, task.task_id),
+        )
+
+        for task in ordered_tasks:
+            summary[task.status] += 1
+            if task.status == "failed":
+                summary["failures"].append(
+                    build_failure_detail(
+                        task_id=task.task_id,
+                        tool_name=task.tool,
+                        raw_error=task.error,
+                    )
+                )
+
+        return summary
+
+    def _compact_summary_value(
+        self,
+        value: Any,
+        *,
+        depth: int = 0,
+        max_depth: int = 3,
+        max_items: int = 4,
+        max_string_length: int = 220,
+        max_shallow_string_length: int = 1000,
+    ) -> Any:
+        """Compact nested output data into a speech-safe JSON shape."""
+        if value is None or isinstance(value, (int, float, bool)):
+            return value
+
+        if isinstance(value, str):
+            text = " ".join(value.split())
+            allowed_length = max_shallow_string_length if depth <= 1 else max_string_length
+            if len(text) <= allowed_length:
+                return text
+            return text[:allowed_length].rstrip(" ,.;:") + "..."
+
+        if depth >= max_depth:
+            if isinstance(value, dict):
+                return f"{len(value)} fields"
+            if isinstance(value, (list, tuple, set)):
+                return f"{len(value)} items"
+            return str(value)[:max_string_length]
+
+        if isinstance(value, dict):
+            compacted: Dict[str, Any] = {}
+            for index, (key, item) in enumerate(value.items()):
+                if index >= max_items:
+                    compacted["_more_fields"] = max(0, len(value) - max_items)
+                    break
+                compacted[str(key)] = self._compact_summary_value(
+                    item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                    max_string_length=max_string_length,
+                    max_shallow_string_length=max_shallow_string_length,
+                )
+            return compacted
+
+        if isinstance(value, (list, tuple, set)):
+            sequence = list(value)
+            compacted_list = [
+                self._compact_summary_value(
+                    item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                    max_string_length=max_string_length,
+                    max_shallow_string_length=max_shallow_string_length,
+                )
+                for item in sequence[:max_items]
+            ]
+            if len(sequence) > max_items:
+                compacted_list.append({"_more_items": len(sequence) - max_items})
+            return compacted_list
+
+        return str(value)[:max_string_length]
+
+    async def get_execution_summary(self, user_id: str) -> Dict[str, Any]:
+        """Get execution summary for user, including friendly failure details."""
         async with self._get_lock(user_id):
             state = self.states.get(user_id)
             
@@ -500,30 +596,19 @@ class TaskOrchestrator:
                     "pending": 0,
                     "running": 0,
                     "completed": 0,
-                    "failed": 0
+                    "failed": 0,
+                    "waiting": 0,
+                    "skipped": 0,
+                    "emitted": 0,
+                    "failures": [],
                 }
-            
-            summary = {
-                "total": len(state.tasks),
-                "pending": 0,
-                "running": 0,
-                "completed": 0,
-                "failed": 0,
-                "waiting": 0,
-                "skipped": 0,
-                "emitted": 0
-            }
-            
-            for task in state.tasks.values():
-                summary[task.status] += 1
-            
-            return summary
+            return self._build_summary_payload(state)
 
     async def build_execution_speech_snapshot(
         self,
         user_id: str,
         max_tasks: int = 12,
-        max_data_fields: int = 4,
+        max_data_fields: int = 6,
     ) -> Dict[str, Any]:
         """
         Build a compact, speech-safe snapshot from execution state.
@@ -549,18 +634,7 @@ class TaskOrchestrator:
                     "tasks": [],
                 }
 
-            summary = {
-                "total": len(state.tasks),
-                "pending": 0,
-                "running": 0,
-                "completed": 0,
-                "failed": 0,
-                "waiting": 0,
-                "skipped": 0,
-                "emitted": 0,
-            }
-            for task in state.tasks.values():
-                summary[task.status] += 1
+            summary = self._build_summary_payload(state)
 
             ordered_tasks = sorted(
                 state.tasks.values(),
@@ -571,16 +645,18 @@ class TaskOrchestrator:
             for task in ordered_tasks:
                 output_preview: Dict[str, Any] = {}
                 if task.output and isinstance(task.output.data, dict):
-                    for i, key in enumerate(task.output.data.keys()):
-                        if i >= max_data_fields:
-                            break
-                        value = task.output.data.get(key)
-                        if isinstance(value, (str, int, float, bool)) or value is None:
-                            output_preview[key] = value
-                        elif isinstance(value, (dict, list, tuple, set)):
-                            output_preview[key] = str(value)[:140]
-                        else:
-                            output_preview[key] = str(value)[:140]
+                    output_preview = self._compact_summary_value(
+                        task.output.data,
+                        max_items=max_data_fields,
+                    )
+
+                failure_detail = None
+                if task.status == "failed":
+                    failure_detail = build_failure_detail(
+                        task_id=task.task_id,
+                        tool_name=task.tool,
+                        raw_error=task.error,
+                    )
 
                 tasks.append(
                     {
@@ -590,6 +666,8 @@ class TaskOrchestrator:
                         "status": task.status,
                         "duration_ms": task.duration_ms,
                         "error": task.error,
+                        "raw_error": failure_detail["rawError"] if failure_detail else task.error,
+                        "user_message": failure_detail["userMessage"] if failure_detail else None,
                         "output_success": task.output.success if task.output else None,
                         "output_preview": output_preview,
                     }

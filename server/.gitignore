@@ -5,6 +5,7 @@ env_test.py
 .venv
 env.sample
 __pycache__
+public/voices
 
 # AI models
 llm_models/

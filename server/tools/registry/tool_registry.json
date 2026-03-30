@@ -2,7 +2,7 @@
   "version": "2.4.1",
   "last_updated": "2026-03-05",
   "phase": 1,
-  "total_tools": 58,
+  "total_tools": 60,
   "categories": {
     "system": {
       "description": "System-level operations and monitoring",
@@ -730,6 +730,80 @@
           }
         },
         {
+          "tool_name": "mic_mute",
+          "description": "Mute the microphone on the connected desktop client",
+          "execution_target": "server",
+          "params_schema": {},
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "action": {
+                "type": "string"
+              },
+              "event": {
+                "type": "string"
+              },
+              "mic_muted": {
+                "type": "boolean"
+              },
+              "requested_at": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000,
+            "summary_tts": false
+          }
+        },
+        {
+          "tool_name": "mic_unmute",
+          "description": "Unmute the microphone on the connected desktop client",
+          "execution_target": "server",
+          "params_schema": {},
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "action": {
+                "type": "string"
+              },
+              "event": {
+                "type": "string"
+              },
+              "mic_muted": {
+                "type": "boolean"
+              },
+              "requested_at": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 1000,
+            "summary_tts": false
+          }
+        },
+        {
           "tool_name": "current_location",
           "description": "Get current location via IP geolocation",
           "execution_target": "client",
@@ -1369,7 +1443,7 @@
             "mode": {
               "type": "string",
               "required": false,
-              "default": "tts",
+              "default": "research",
               "enum": ["tts", "research"]
             },
             "max_results": {
@@ -1476,6 +1550,12 @@
             "context": {
               "type": "string",
               "required": true
+            },
+            "mode": {
+              "type": "string",
+              "required": false,
+              "default": "tts",
+              "enum": ["tts", "research"]
             },
             "max_length": {
               "type": "integer",

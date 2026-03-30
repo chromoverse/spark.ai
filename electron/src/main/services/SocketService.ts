@@ -5,6 +5,9 @@ import { ipcWebContentSend } from "../utils/ipcUtils.js";
 
 type SocketConnectionStatePayload = IEventPayloadMapping["socketConnectionState"];
 type SocketEventForwardPayload = IEventPayloadMapping["socketEventForward"];
+type MicControlPayload = IEventPayloadMapping["onMicControl"];
+
+const MIC_CONTROL_EVENT = "device:mic-control";
 
 class SocketService {
   private socket: Socket | null = null;
@@ -149,6 +152,12 @@ class SocketService {
 
     socket.onAny((eventName, ...args) => {
       const data = args.length <= 1 ? args[0] : args;
+
+      if (eventName === MIC_CONTROL_EVENT) {
+        this.handleMicControlEvent(data);
+        return;
+      }
+
       this.broadcastSocketEvent({ event: eventName, data });
     });
 
@@ -230,6 +239,49 @@ class SocketService {
 
       ipcWebContentSend("socketEventForward", target, payload);
     }
+  }
+
+  private handleMicControlEvent(data: unknown): void {
+    const payload = this.normalizeMicControlPayload(data);
+    if (!payload) {
+      console.warn("⚠️ [SocketService] Ignoring invalid mic control payload:", data);
+      return;
+    }
+
+    console.log(
+      `🎤 [SocketService] Mic control received: ${payload.action} (${payload.source ?? "socket"})`,
+    );
+
+    for (const target of this.rendererTargets) {
+      if (target.isDestroyed()) {
+        this.rendererTargets.delete(target);
+        continue;
+      }
+
+      ipcWebContentSend("onMicControl", target, payload);
+    }
+  }
+
+  private normalizeMicControlPayload(data: unknown): MicControlPayload | null {
+    if (!data || typeof data !== "object") {
+      return null;
+    }
+
+    const candidate = data as Partial<MicControlPayload>;
+    const rawAction = typeof candidate.action === "string" ? candidate.action.trim().toLowerCase() : "";
+    if (rawAction !== "mute" && rawAction !== "unmute" && rawAction !== "toggle") {
+      return null;
+    }
+
+    const source =
+      typeof candidate.source === "string" && candidate.source.trim().length > 0
+        ? candidate.source.trim()
+        : "socket";
+
+    return {
+      action: rawAction,
+      source,
+    };
   }
 
   private isSingleTargetTtsEvent(eventName: string): boolean {

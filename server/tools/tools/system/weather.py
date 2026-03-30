@@ -4,6 +4,7 @@ Uses Open-Meteo (free, no API key) + ip-api for auto location.
 """
 
 import urllib.request
+import urllib.error
 import json
 import logging
 from typing import Dict, Any, Optional
@@ -29,10 +30,70 @@ WMO_CODES: Dict[int, str] = {
 }
 
 
-def _fetch_json(url: str) -> Dict:
+def _read_service_error_body(raw_body: str) -> Optional[str]:
+    text = " ".join((raw_body or "").split())
+    if not text:
+        return None
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("reason", "message", "detail", "description"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        error_value = payload.get("error")
+        if isinstance(error_value, str) and error_value.strip():
+            return error_value.strip()
+        return None
+
+    return text
+
+
+def _fetch_json(url: str, service_name: str = "Service") -> Dict:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=6) as res:
-        return json.loads(res.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=6) as res:
+            return json.loads(res.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+
+        detail = _read_service_error_body(body)
+        if detail:
+            raise RuntimeError(f"{service_name} rejected the request: {detail}") from exc
+        raise RuntimeError(f"{service_name} rejected the request (HTTP Error {exc.code}: {exc.reason})") from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise RuntimeError(f"{service_name} request failed: {reason}") from exc
+
+
+def _normalize_coordinates(
+    lat: Optional[float],
+    lon: Optional[float],
+) -> tuple[Optional[float], Optional[float]]:
+    if lat is None and lon is None:
+        return None, None
+    if lat is None or lon is None:
+        raise ValueError("Latitude and longitude must both be provided.")
+
+    try:
+        return float(lat), float(lon)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Latitude and longitude must be valid numbers.") from exc
+
+
+def _normalize_units(units: Any) -> str:
+    value = str(units or "metric").strip().lower()
+    if value not in {"metric", "imperial"}:
+        raise ValueError("Units must be either 'metric' or 'imperial'.")
+    return value
 
 
 def _get_location(lat: Optional[float], lon: Optional[float]) -> Dict[str, Any]:
@@ -41,7 +102,8 @@ def _get_location(lat: Optional[float], lon: Optional[float]) -> Dict[str, Any]:
         return {"lat": lat, "lon": lon, "city": "Custom", "country": ""}
 
     data = _fetch_json(
-        "http://ip-api.com/json/?fields=status,lat,lon,city,regionName,country,countryCode"
+        "http://ip-api.com/json/?fields=status,lat,lon,city,regionName,country,countryCode",
+        service_name="Location service",
     )
     if data.get("status") != "success":
         raise RuntimeError("Could not determine location automatically.")
@@ -90,9 +152,11 @@ class WeatherCurrentTool(BaseTool):
         return "weather_current"
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
-        lat = self.get_input(inputs, "lat", None)
-        lon = self.get_input(inputs, "lon", None)
-        units = self.get_input(inputs, "units", "metric")
+        lat, lon = _normalize_coordinates(
+            self.get_input(inputs, "lat", None),
+            self.get_input(inputs, "lon", None),
+        )
+        units = _normalize_units(self.get_input(inputs, "units", "metric"))
 
         try:
             loc = _get_location(lat, lon)
@@ -117,7 +181,7 @@ class WeatherCurrentTool(BaseTool):
                     "condition": _wmo_description(weather["weather_code"]),
                     "wind_speed": f"{weather['wind_speed_10m']} {speed_unit}",
                     "wind_direction": _wind_direction(weather["wind_direction_10m"]),
-                    "uv_index": weather.get("uv_index", "N/A"),
+                    "uv_index": weather.get("uv_index"),
                     "is_day": bool(weather.get("is_day", 1)),
                     "precipitation": f"{weather.get('precipitation', 0)} mm",
                     "units": units,
@@ -144,7 +208,7 @@ class WeatherCurrentTool(BaseTool):
             f"&forecast_days=1"
         )
 
-        data = _fetch_json(url)
+        data = _fetch_json(url, service_name="Weather service")
         return data["current"]
 
 
@@ -181,10 +245,12 @@ class WeatherForecastTool(BaseTool):
         return "weather_forecast"
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
-        lat = self.get_input(inputs, "lat", None)
-        lon = self.get_input(inputs, "lon", None)
+        lat, lon = _normalize_coordinates(
+            self.get_input(inputs, "lat", None),
+            self.get_input(inputs, "lon", None),
+        )
         days = min(self.get_input(inputs, "days", 7), 16)
-        units = self.get_input(inputs, "units", "metric")
+        units = _normalize_units(self.get_input(inputs, "units", "metric"))
 
         try:
             loc = _get_location(lat, lon)
@@ -251,7 +317,7 @@ class WeatherForecastTool(BaseTool):
             f"&timezone=auto"
         )
 
-        return _fetch_json(url)
+        return _fetch_json(url, service_name="Weather service")
 
 
 # ---------------------------------------------------------------------------

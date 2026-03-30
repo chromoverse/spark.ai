@@ -82,6 +82,12 @@ export interface UserSpeechStartedPayload {
   timestamp: number;
 }
 
+export interface MicControlPayload {
+  action: "mute" | "unmute" | "toggle";
+  source?: string;
+  requested_at?: string;
+}
+
 export interface TTSPayload {
   text: string | undefined;
   userId: string;
@@ -176,9 +182,29 @@ export interface TaskStatusPayload {
   status: TaskStatus;
 }
 
+export interface TaskFailureDetail {
+  taskId: string;
+  tool: string;
+  rawError: string;
+  userMessage: string;
+}
+
+export interface ExecutionSummary {
+  total: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  waiting?: number;
+  skipped?: number;
+  emitted?: number;
+  failures?: TaskFailureDetail[];
+}
+
 export interface TaskProgressPayload {
-  userId: string;
-  summary: Record<string, number | string>;
+  userId?: string;
+  user_id?: string;
+  summary: ExecutionSummary;
 }
 
 // ========================================
@@ -214,6 +240,7 @@ export interface SocketEvents {
   "task:status": (data: TaskStatusPayload) => void;
   "task:progress": (data: TaskProgressPayload) => void;
   "task:summary": (data: TaskProgressPayload) => void;
+  "device:mic-control": (data: MicControlPayload) => void;
   
   // TTS events (payloads carry a streamId for per-stream tracking)
   "tts-start": (payload: { streamId: string; text?: string }) => void;

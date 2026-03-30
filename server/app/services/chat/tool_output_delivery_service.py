@@ -8,8 +8,17 @@ from app.agent.execution_gateway import get_orchestrator
 # Default output field policy per tool.
 # `include_full=True` can still return the complete payload on demand.
 _TOOL_OUTPUT_POLICIES: Dict[str, Dict[str, List[str]]] = {
+    "ai_summarize": {
+        "default_fields": [
+            "summary",
+            "formatted_content",
+            "original_length",
+            "summary_length",
+            "summarized_at",
+        ],
+    },
     "web_research": {
-        "default_fields": ["summary", "sources", "query"],
+        "default_fields": ["summary", "detailed_content", "sources", "query"],
     },
 }
 
