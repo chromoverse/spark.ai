@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,11 +8,13 @@ from unittest.mock import patch
 try:
     from app.path.artifacts import ArtifactStore
     from app.path.manager import PathManager
+    from tools.tools.system.artifacts import ArtifactResolveTool
     from tools.tools.system.screenshot import ScreenshotCaptureTool
     _IMPORT_ERROR = None
 except Exception as exc:  # pragma: no cover - import gate
     ArtifactStore = None  # type: ignore[assignment]
     PathManager = None  # type: ignore[assignment]
+    ArtifactResolveTool = None  # type: ignore[assignment]
     ScreenshotCaptureTool = None  # type: ignore[assignment]
     _IMPORT_ERROR = exc
 
@@ -74,6 +77,39 @@ class ArtifactStoreTests(unittest.TestCase):
             self.assertIsNotNone(record)
             assert record is not None
             self.assertEqual(record.user_id, "u1")
+
+    def test_artifact_resolve_returns_open_hints_for_document(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pm = PathManager(env={"JARVIS_DATA_DIR": temp_dir})
+            store = ArtifactStore(path_manager=pm)
+            documents_dir = pm.get_artifact_dir("documents", user_id="u1")
+            file_path = documents_dir / "weekly_plan.txt"
+            file_path.write_text("artifact", encoding="utf-8")
+
+            record = store.register_file(
+                kind="document",
+                tool_name="file_create",
+                file_path=file_path,
+                user_id="u1",
+                task_id="task_doc",
+                metadata={"title": "Weekly Plan"},
+            )
+
+            with patch("tools.tools.system.artifacts.get_artifact_store", return_value=store):
+                result = asyncio.run(
+                    ArtifactResolveTool().execute(
+                        {"artifact_id": record.artifact_id, "_user_id": "u1"}
+                    )
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.data["artifact_id"], record.artifact_id)
+            self.assertEqual(result.data["kind"], "document")
+            self.assertEqual(result.data["title"], "Weekly Plan")
+            self.assertEqual(result.data["preview_kind"], "text")
+            self.assertEqual(result.data["file_path"], str(file_path.resolve()))
+            expected_app = "notepad" if sys.platform == "win32" else ""
+            self.assertEqual(result.data["preferred_app"], expected_app)
 
 
 if __name__ == "__main__":

@@ -18,8 +18,8 @@ from .file_system.operations import (
     FolderCreateTool,
     FileCopyTool,
     FileSearchTool,
-    FileSearchTool,
-    FileReadTool
+    FileReadTool,
+    FileOpenTool,
 )
 from .system.operations import OpenAppTool, CloseAppTool
 
@@ -117,7 +117,8 @@ def load_client_tools() -> None:
         FileCopyTool(),
         FileSearchTool(),
         FileReadTool(),
-        
+        FileOpenTool(),
+
         # System tools
         OpenAppTool(),
         CloseAppTool(),

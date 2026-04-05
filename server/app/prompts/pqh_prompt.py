@@ -152,6 +152,15 @@ def _build_semantic_tool_rules(tools: List[Dict]) -> str:
         rules.append("  • message_send is for text messages only.")
     if "web_research" in tool_names:
         rules.append("  • web_research is for future events, political queries, current news, or live web lookup when no more specific tool is a better fit.")
+    if "artifact_list" in tool_names:
+        rules.append("  • Requests to browse, list, or find saved screenshots/documents → artifact_list.")
+    if "artifact_resolve" in tool_names and "file_open" in tool_names:
+        rules.append("  • Requests to open the latest/recent/saved/created/generated screenshot, document, note, or file on the user's machine should request BOTH artifact_resolve and file_open.")
+        rules.append("  • file_open alone is for explicit local paths or folders that are already known.")
+    elif "artifact_open" in tool_names:
+        rules.append("  • artifact_open is a direct open action for saved artifacts when no separate client file opener is available.")
+    if "spark_data_open" in tool_names:
+        rules.append("  • Requests to open the SparkAI app-data/storage folder → spark_data_open.")
 
     return "\n".join(rules) if rules else "  • No special semantic overrides."
 

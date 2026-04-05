@@ -297,6 +297,7 @@
             "success": { "type": "boolean" },
             "data": {
               "file_path": { "type": "string" },
+              "absolute_path": { "type": "string" },
               "opened_with": { "type": "string" },
               "opened_at": { "type": "string" }
             },

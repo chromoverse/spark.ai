@@ -6,10 +6,40 @@ Real file system tools that execute on the client machine.
 """
 
 import os
+import subprocess
+import sys
 from typing import Dict, Any
 from datetime import datetime
 
 from ..base import BaseTool, ToolOutput
+
+
+def _is_special_target(path: str) -> bool:
+    lowered = str(path or "").strip().lower()
+    return lowered.startswith("shell:") or lowered.startswith("ms-settings:") or lowered.startswith("::{")
+
+
+def _resolve_open_target(path: str) -> tuple[str, str | None]:
+    candidate = str(path or "").strip().strip('"\'')
+    if not candidate:
+        return "", "Path is required"
+
+    if _is_special_target(candidate):
+        return candidate, None
+
+    resolved = os.path.abspath(os.path.expanduser(candidate))
+    if not os.path.exists(resolved):
+        return "", f"Path not found: {path}"
+    return resolved, None
+
+
+def _shell_open_path(path: str) -> None:
+    if sys.platform == "win32":
+        os.startfile(path)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
 
 
 class CreateFileTool(BaseTool):
@@ -271,4 +301,44 @@ class FileReadTool(BaseTool):
             
         except Exception as e:
             self.logger.error(f"Failed to read file: {e}")
+            return ToolOutput(success=False, data={}, error=str(e))
+
+
+class FileOpenTool(BaseTool):
+    """Open a file, folder, or shell target on the client."""
+
+    def get_tool_name(self) -> str:
+        return "file_open"
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        """Open a file with the default app or an explicitly requested app."""
+        path = inputs.get("path", "")
+        app = str(inputs.get("app", "") or "").strip()
+
+        if not path:
+            return ToolOutput(success=False, data={}, error="Path is required")
+
+        try:
+            resolved_path, error = _resolve_open_target(str(path))
+            if error:
+                return ToolOutput(success=False, data={}, error=error)
+
+            if app:
+                subprocess.Popen([app, resolved_path])
+                opened_with = app
+            else:
+                _shell_open_path(resolved_path)
+                opened_with = "default"
+
+            return ToolOutput(
+                success=True,
+                data={
+                    "file_path": str(path),
+                    "absolute_path": resolved_path,
+                    "opened_with": opened_with,
+                    "opened_at": datetime.now().isoformat(),
+                }
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to open file: {e}")
             return ToolOutput(success=False, data={}, error=str(e))

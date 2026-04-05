@@ -4,7 +4,7 @@ shell_agent:
 - Purpose: let the LLM inspect tool/path context, plan one safe shell step at a
   time, and stop only when the task is complete or blocked.
 - Inputs: goal (required), working_dir?, max_steps?, allow_network?
-- Output: final_answer, steps, step_count, working_dir, completed_at.
+- Outputs: final_answer, steps, step_count, working_dir, completed_at.
 
 GuardedCommandRunner:
 - Purpose: classify commands as read-only, mutating, destructive, or blocked.
@@ -251,20 +251,20 @@ class GuardedCommandRunner:
 class ShellAgentTool(BaseTool):
     """Run a multi-step shell workflow with LLM planning and approval gates.
 
-    Params:
-    - goal: required natural-language task for the shell agent to complete.
-    - working_dir: optional starting directory for command execution.
-    - max_steps: optional step limit. Clamped to a safe range.
-    - allow_network: allow networked commands when true.
-    - user_id: optional explicit user id. Usually injected by the runtime.
-    - _task_id: optional runtime task id used for approval prompts and tracing.
+    Inputs:
+    - goal (string, required): natural-language task for the shell agent to complete
+    - working_dir (string, optional): starting directory for command execution
+    - max_steps (integer, optional): step limit, clamped to a safe range
+    - allow_network (boolean, optional): allow networked commands when true
+    - user_id (string, optional): explicit user id, usually injected by the runtime
+    - _task_id (string, optional): runtime task id used for approval prompts and tracing
 
-    Output:
-    - final_answer: plain-language summary of the run.
-    - steps: per-step planning and execution records.
-    - step_count: number of executed steps.
-    - working_dir: resolved execution directory.
-    - completed_at: ISO timestamp marking the end of the run.
+    Outputs:
+    - final_answer (string): plain-language summary of the run
+    - steps (array): per-step planning and execution records
+    - step_count (integer): number of executed steps
+    - working_dir (string): resolved execution directory
+    - completed_at (string): ISO timestamp marking the end of the run
     """
 
     def __init__(self):

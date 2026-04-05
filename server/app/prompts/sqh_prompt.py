@@ -55,7 +55,7 @@ CRITICAL:
   "execution_target" : "client",
   "depends_on"       : [],
   "inputs"           : {{"arg_name": "value"}},
-  "input_bindings"   : {{"arg_name": "$.tasks.step_1.output.data.field"}},
+  "input_bindings"   : {{"arg_name": "$.step_1.data.field"}},
   "lifecycle_messages": {{
     "on_start"  : "...",
     "on_success": "...",
@@ -107,6 +107,7 @@ def build_user_message(
     tool_schemas_str = json.dumps(tool_schemas, indent=2)
     prefs_str        = json.dumps(user_preferences or {}, indent=2) if user_preferences else "None"
     app_open_rules = ""
+    artifact_open_rules = ""
     if "app_open" in tool_names:
         app_open_rules = """
 
@@ -116,6 +117,19 @@ APP_OPEN INTENT RULES:
 - Local-only requests for installed apps/tools may set inputs.destination = "app" when needed.
 - For plain app opens, set inputs.web_fallback_policy = "validate_then_ask" unless the user clearly does not want web fallback.
 - Keep inputs.target focused on the thing to open, not the full sentence."""
+    if "artifact_resolve" in tool_names and "file_open" in tool_names:
+        artifact_open_rules = """
+
+ARTIFACT OPEN RULES:
+- For requests like "open the latest screenshot" or "open that saved txt file", plan TWO tasks:
+  1. A server-side `artifact_resolve` task to locate the artifact and return `file_path` plus `preferred_app`.
+  2. A client-side `file_open` task that depends on the resolve task.
+- Bind `file_open.path` to `$.<resolve_task_id>.data.file_path`.
+- Bind `file_open.app` to `$.<resolve_task_id>.data.preferred_app`.
+- Prefer `kind="screenshot"` for screenshots/images.
+- Prefer `kind="document"` plus `tool_name="file_create"` for latest/recent created files, notes, plans, or text documents.
+- If the user names the content instead of the path, pass a short `query` to `artifact_resolve` (for example `"about me"` or `"weekly plan"`).
+- Use `artifact_open` only when `file_open` is unavailable or the intent is explicitly to open it directly on the same runtime machine."""
 
     return f"""━━━ PQH ANALYSIS ━━━
 User Query  : "{c.user_query}"
@@ -135,6 +149,7 @@ PREFERENCE RULES:
 - If empty → safe default (youtube for media, chrome for browser, notepad for text).
 - Never invent a preference.
 {app_open_rules}
+{artifact_open_rules}
 
 Generate the execution plan now."""
 

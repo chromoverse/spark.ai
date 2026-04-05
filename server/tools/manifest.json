@@ -324,10 +324,15 @@
       "class_name": "ArtifactListTool"
     },
     {
+      "tool_name": "artifact_resolve",
+      "module": "system.artifacts",
+      "class_name": "ArtifactResolveTool"
+    },
+    {
       "tool_name": "artifact_open",
       "module": "system.artifacts",
       "class_name": "ArtifactOpenTool"
     }
   ],
-  "total_tools": 65
+  "total_tools": 66
 }
