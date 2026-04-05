@@ -277,7 +277,7 @@ class TaskOrchestrator:
                     )
                 )
 
-    async def mark_task_waiting(self, user_id: str, task_id: str) -> None:
+    async def mark_task_waiting(self, user_id: str, task_id: str, request_id: Optional[str] = None) -> None:
         """Mark task as waiting (typically pending user approval)."""
         async with self._get_lock(user_id):
             state = self.states.get(user_id)
@@ -288,6 +288,8 @@ class TaskOrchestrator:
             if task:
                 task.status = "waiting"
                 task.started_at = datetime.now()
+                task.approval_state = "requested"
+                task.approval_request_id = request_id
                 state.updated_at = datetime.now()
                 logger.info(f"[{user_id}] Task {task_id} waiting for approval")
                 await emit_kernel_event(
@@ -299,6 +301,77 @@ class TaskOrchestrator:
                         status="waiting",
                     )
                 )
+
+    async def mark_task_approval_approved(
+        self,
+        user_id: str,
+        task_id: str,
+        request_id: Optional[str] = None,
+    ) -> bool:
+        """Resume a waiting approval-gated task by moving it back to pending."""
+        async with self._get_lock(user_id):
+            state = self.states.get(user_id)
+            if not state:
+                return False
+
+            task = state.get_task(task_id)
+            if not task:
+                return False
+
+            if request_id and task.approval_request_id and task.approval_request_id != request_id:
+                logger.warning(
+                    "⚠️ Ignoring stale approval for %s/%s (expected=%s, got=%s)",
+                    user_id,
+                    task_id,
+                    task.approval_request_id,
+                    request_id,
+                )
+                return False
+
+            task.status = "pending"
+            task.started_at = None
+            task.completed_at = None
+            task.error = None
+            task.output = None
+            task.duration_ms = None
+            task.approval_state = "approved"
+            if request_id:
+                task.approval_request_id = request_id
+            state.updated_at = datetime.now()
+            logger.info(f"[{user_id}] Task {task_id} approved and returned to pending")
+            return True
+
+    async def mark_task_approval_denied(
+        self,
+        user_id: str,
+        task_id: str,
+        request_id: Optional[str] = None,
+        reason: str = "User denied approval",
+    ) -> bool:
+        """Fail a waiting approval-gated task after denial."""
+        async with self._get_lock(user_id):
+            state = self.states.get(user_id)
+            if not state:
+                return False
+
+            task = state.get_task(task_id)
+            if not task:
+                return False
+
+            if request_id and task.approval_request_id and task.approval_request_id != request_id:
+                logger.warning(
+                    "⚠️ Ignoring stale denial for %s/%s (expected=%s, got=%s)",
+                    user_id,
+                    task_id,
+                    task.approval_request_id,
+                    request_id,
+                )
+                return False
+
+            task.approval_state = "denied"
+
+        await self.mark_task_failed(user_id, task_id, reason)
+        return True
     
     async def mark_task_completed(
         self, 
@@ -692,26 +765,20 @@ class TaskOrchestrator:
     
     async def handle_approval(self, user_id: str, task_id: str, approved: bool) -> None:
         """
-        Handle user approval/denial for a task.
-        
-        Called when user clicks Accept/Deny on a notification.
-        
-        Args:
-            user_id: User identifier
-            task_id: Task identifier
-            approved: True if user accepted, False if denied
+        Backward-compatible task approval handler.
+
+        Keeps older callback call sites working while resuming the task instead
+        of marking it completed outright.
         """
         if approved:
-            logger.info(f"[{user_id}] Task {task_id} APPROVED by user")
-            # Mark as completed with approval output
-            output = TaskOutput(
-                success=True,
-                data={"approved": True, "source": "user_notification"}
-            )
-            await self.mark_task_completed(user_id, task_id, output)
+            await self.mark_task_approval_approved(user_id, task_id, request_id=task_id)
         else:
-            logger.info(f"[{user_id}] Task {task_id} DENIED by user")
-            await self.mark_task_failed(user_id, task_id, "User denied approval via notification")
+            await self.mark_task_approval_denied(
+                user_id,
+                task_id,
+                request_id=task_id,
+                reason="User denied approval via notification",
+            )
 
 
 # Global orchestrator instance

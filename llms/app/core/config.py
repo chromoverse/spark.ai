@@ -8,7 +8,7 @@ Environment Variables:
     - HOST: Server host (default: 0.0.0.0)
     - PORT: Server port (default: 8000)
     - DEBUG: Enable debug mode (default: false)
-    - MODEL_NAME: LLM model to use (default: qwen2.5-7b)
+    - MODEL_NAME: LLM model to use (default: gemma-4-e4b)
     - MAX_TOKENS: Default max tokens (default: 512)
     - TEMPERATURE: Default temperature (default: 0.7)
 """
@@ -34,9 +34,8 @@ class Settings(BaseSettings):
     # ---------------------
     # Model Configuration  
     # ---------------------
-    # RECOMMENDED: qwen2.5-coder-1.5b for JSON output (follows instructions precisely)
-    # Other options: smollm2-1.7b, llama-3.2-1b, qwen2.5-1.5b
-    model_name: str = "qwen2.5-7b"  # Best for structured JSON output
+    # Available options: gemma-4-e4b, gemma-4-e2b
+    model_name: str = "gemma-4-e4b"
     max_tokens: int = 512           # Default max tokens for generation
     temperature: float = 0.1        # Low temp for deterministic JSON (0.1-0.3 recommended)
     

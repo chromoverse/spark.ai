@@ -105,7 +105,7 @@ class ChatResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "response": "A decorator is a function that wraps another function...",
-                "model": "qwen2.5-7b",
+                "model": "gemma-4-e4b",
                 "usage": {
                     "prompt_tokens": 24,
                     "completion_tokens": 128

@@ -29,6 +29,7 @@
 
     /* Tailwind CSS */
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["./src/renderer/*"],
       "@shared/*": ["./src/types/*"]

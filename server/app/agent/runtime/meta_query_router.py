@@ -3,17 +3,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from app.agent.runtime.meta_tools import (
-    capability_snapshot_lookup,
-    kernel_best_tools_lookup,
-    kernel_history_lookup,
-    kernel_log_lookup,
-    kernel_success_rate_lookup,
-    kernel_tool_inventory_lookup,
-    repo_read_snippet_lookup,
-    repo_search_lookup,
-)
 from app.models.pqh_response_model import CognitiveState, PQHResponse
+from app.plugins.tools.catalog_service import get_tool_catalog_service
 
 
 def is_meta_query(query: str) -> bool:
@@ -30,6 +21,11 @@ def is_meta_query(query: str) -> bool:
         "tool status",
         "status of tools",
         "their status",
+        "tool params",
+        "tool parameter",
+        "tool arguments",
+        "explain tool",
+        "what is app_",
         "best tools",
         "what can you do",
         "capabilities",
@@ -47,8 +43,11 @@ def is_meta_query(query: str) -> bool:
 
 async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHResponse]:
     text = query.lower()
+    catalog = get_tool_catalog_service()
 
     if "success rate" in text:
+        from app.agent.runtime.meta_tools import kernel_success_rate_lookup
+
         data = await kernel_success_rate_lookup(user_id=user_id)
         answer = (
             f"In the last {data['window_days']} days: total tasks={data['total_tasks']}, "
@@ -67,16 +66,47 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
         or "status of tools" in text
         or "tools do we have" in text
     ):
-        data = await kernel_tool_inventory_lookup(user_id=user_id)
-        runtime_health = "healthy" if data.get("runtime_healthy") else "unhealthy"
+        from app.agent.runtime.meta_tools import kernel_tool_inventory_lookup
+
+        catalog_summary = catalog.summary()
+        runtime = await kernel_tool_inventory_lookup(user_id=user_id)
+        runtime_health = "healthy" if runtime.get("runtime_healthy") else "unhealthy"
         answer = (
-            f"Runtime tools loaded: {data['total_tools']} total "
-            f"({data['server_tools']} server, {data['client_tools']} client). "
-            f"Runtime status: {runtime_health}, mode={data.get('runtime_mode', 'unknown')}."
+            f"Tool catalog: {catalog_summary['total_tools']} total "
+            f"({catalog_summary['by_target']['server']} server, {catalog_summary['by_target']['client']} client). "
+            f"Categories: {', '.join(catalog_summary['categories'])}. "
+            f"Runtime status: {runtime_health}, mode={runtime.get('runtime_mode', 'unknown')}."
         )
         return _response(query, answer)
 
+    requested_tool = _extract_tool_name(query)
+    if requested_tool and any(token in text for token in ("param", "parameter", "argument", "args")):
+        payload = catalog.params(requested_tool, include_examples=True)
+        if payload:
+            required = [
+                name for name, spec in payload.get("params_schema", {}).items()
+                if isinstance(spec, dict) and spec.get("required")
+            ]
+            answer = (
+                f"{requested_tool} parameters: {', '.join(payload.get('params_schema', {}).keys()) or 'none'}. "
+                f"Required: {', '.join(required) or 'none'}."
+            )
+            return _response(query, answer)
+
+    if requested_tool and any(token in text for token in ("explain", "what is", "describe")):
+        payload = catalog.detail(requested_tool, include_examples=True)
+        if payload:
+            semantic_tags = payload.get("semantic_tags", [])
+            answer = (
+                f"{requested_tool}: {payload.get('description', '')} "
+                f"Execution target: {payload.get('execution_target', 'unknown')}. "
+                f"Tags: {', '.join(semantic_tags) or 'none'}."
+            )
+            return _response(query, answer)
+
     if "best tools" in text:
+        from app.agent.runtime.meta_tools import kernel_best_tools_lookup
+
         data = await kernel_best_tools_lookup(user_id=user_id, limit=5)
         items = data.get("items", [])
         if not items:
@@ -85,6 +115,8 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
         return _response(query, "Top tools by weighted score: " + ", ".join(labels))
 
     if "what can you do" in text or "capabilities" in text or "limitation" in text:
+        from app.agent.runtime.meta_tools import capability_snapshot_lookup
+
         data = await capability_snapshot_lookup(user_id=user_id)
         limitations = data.get("limitations", [])
         runtime = data.get("runtime", {})
@@ -97,6 +129,8 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
         return _response(query, answer)
 
     if "log" in text or "error trace" in text:
+        from app.agent.runtime.meta_tools import kernel_log_lookup
+
         logs = await kernel_log_lookup(
             user_id=user_id,
             level=None,
@@ -110,6 +144,8 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
     snippet = _extract_file_snippet_request(query)
     if snippet:
         try:
+            from app.agent.runtime.meta_tools import repo_read_snippet_lookup
+
             data = await repo_read_snippet_lookup(
                 user_id=user_id,
                 file_path=snippet,
@@ -126,6 +162,8 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
             return _response(query, f"Could not read requested file snippet: {exc}")
 
     if any(token in text for token in ("codebase", "source code", "server code", "where is", "which file")):
+        from app.agent.runtime.meta_tools import repo_search_lookup
+
         search_query = _normalize_code_search_query(query)
         data = await repo_search_lookup(user_id=user_id, query=search_query, limit=5, max_bytes=8000)
         items = data.get("items", [])
@@ -136,6 +174,8 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
         return _response(query, answer)
 
     if "task" in text or "history" in text:
+        from app.agent.runtime.meta_tools import kernel_history_lookup
+
         data = await kernel_history_lookup(user_id=user_id, window="90d", limit=5)
         items = data.get("items", [])
         if not items:
@@ -201,4 +241,13 @@ def _normalize_code_search_query(query: str) -> str:
     if not tokens:
         return query
     return tokens[0]
+
+
+def _extract_tool_name(query: str) -> str | None:
+    normalized = query.lower()
+    tool_names = [tool["name"] for tool in get_tool_catalog_service().summary().get("tools", [])]
+    for name in tool_names:
+        if name.lower() in normalized or name.replace("_", " ").lower() in normalized:
+            return name
+    return None
 

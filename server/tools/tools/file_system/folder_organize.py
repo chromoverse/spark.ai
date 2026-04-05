@@ -314,3 +314,35 @@ OUTPUT FORMAT:
             },
             error=None,
         )
+
+
+class FolderCleanupTool(FolderOrganizeTool):
+    """Compatibility alias that reuses folder organization behavior.
+
+    Inputs:
+    - path (string, required)
+
+    Outputs:
+    - files_affected (integer)
+    - action_performed (string)
+    - organized_at (string)
+    - cleaned_at (string)
+    - restore_script (string)
+    - created_dirs (array)
+    - powershell_output (string|null)
+    """
+
+    def get_tool_name(self) -> str:
+        return "folder_cleanup"
+
+    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+        result = await super()._execute(inputs)
+        if result.success and "organized_at" in result.data and "cleaned_at" not in result.data:
+            result.data["cleaned_at"] = result.data["organized_at"]
+        return result
+
+
+__all__ = [
+    "FolderCleanupTool",
+    "FolderOrganizeTool",
+]

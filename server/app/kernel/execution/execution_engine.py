@@ -16,8 +16,10 @@ import logging
 from typing import Any, Dict, Optional
 from datetime import datetime
 import contextlib
+import uuid
 
 from app.kernel.execution.orchestrator import get_orchestrator
+from app.kernel.execution.approval_coordinator import get_approval_coordinator
 from app.kernel.execution.execution_models import TaskRecord, TaskOutput
 from app.kernel.execution.binding_resolver import get_binding_resolver
 from app.kernel.contracts.models import KernelEvent
@@ -308,6 +310,8 @@ class ExecutionEngine:
             resolved_inputs["_user_id"] = user_id
             resolved_inputs["user_id"] = user_id
             resolved_inputs["_task_id"] = task.task_id
+            resolved_inputs["_execution_id"] = state.execution_id
+            resolved_inputs["execution_id"] = state.execution_id
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
@@ -420,6 +424,8 @@ class ExecutionEngine:
             resolved_inputs["_user_id"] = user_id
             resolved_inputs["user_id"] = user_id
             resolved_inputs["_task_id"] = task.task_id
+            resolved_inputs["_execution_id"] = state.execution_id
+            resolved_inputs["execution_id"] = state.execution_id
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
@@ -498,10 +504,19 @@ class ExecutionEngine:
         if not control or not control.requires_approval:
             return True
 
-        question = control.approval_question or f"Allow '{task.tool}' to run?"
-        await self.orchestrator.mark_task_waiting(user_id, task.task_id)
+        current = self.orchestrator.get_task(user_id, task.task_id)
+        if current and current.approval_state == "approved":
+            return True
+        if current and current.approval_state == "requested":
+            return False
 
-        if not self.socket_handler or not hasattr(self.socket_handler, "request_approval"):
+        question = control.approval_question or f"Allow '{task.tool}' to run?"
+        state = self.orchestrator.get_state(user_id)
+        execution_id = state.execution_id if state else ""
+        request_id = f"{task.task_id}::approval::{uuid.uuid4().hex[:8]}"
+        await self.orchestrator.mark_task_waiting(user_id, task.task_id, request_id=request_id)
+
+        if not self.socket_handler or not hasattr(self.socket_handler, "submit_approval_request"):
             await self.orchestrator.mark_task_failed(
                 user_id,
                 task.task_id,
@@ -509,8 +524,29 @@ class ExecutionEngine:
             )
             return False
 
+        async def _handle_response(_user_id: str, _request_id: str, approved: bool) -> None:
+            if approved:
+                await self.orchestrator.mark_task_approval_approved(
+                    user_id,
+                    task.task_id,
+                    request_id=_request_id,
+                )
+            else:
+                await self.orchestrator.mark_task_approval_denied(
+                    user_id,
+                    task.task_id,
+                    request_id=_request_id,
+                    reason="User denied approval",
+                )
+
         try:
-            approved = await self.socket_handler.request_approval(user_id, task.task_id, question)
+            submitted = await self.socket_handler.submit_approval_request(
+                user_id=user_id,
+                task_id=request_id,
+                question=question,
+                execution_id=execution_id,
+                on_response_callback=_handle_response,
+            )
         except Exception as exc:
             await self.orchestrator.mark_task_failed(
                 user_id,
@@ -519,15 +555,17 @@ class ExecutionEngine:
             )
             return False
 
-        if not approved:
+        if not submitted:
             current = self.orchestrator.get_task(user_id, task.task_id)
             if current and current.status == "waiting":
-                await self.orchestrator.mark_task_failed(user_id, task.task_id, "User denied approval")
+                await self.orchestrator.mark_task_failed(
+                    user_id,
+                    task.task_id,
+                    "Approval request could not be delivered",
+                )
             return False
 
-        # Restore active status and continue real tool execution.
-        await self.orchestrator.mark_task_running(user_id, task.task_id)
-        return True
+        return False
     
     async def _emit_client_batch_remote(self, user_id: str, tasks: list[TaskRecord]) -> None:
         """
@@ -553,6 +591,8 @@ class ExecutionEngine:
                         resolved_inputs["_user_id"] = user_id
                         resolved_inputs["user_id"] = user_id
                         resolved_inputs["_task_id"] = task.task_id
+                        resolved_inputs["_execution_id"] = state.execution_id
+                        resolved_inputs["execution_id"] = state.execution_id
                         task.resolved_inputs = resolved_inputs
                         logger.info(f"     📋 Resolved inputs for {task.task_id}")
                 
@@ -614,6 +654,7 @@ class ExecutionEngine:
     
     async def stop_execution(self, user_id: str) -> None:
         """Stop execution for a user (graceful shutdown)"""
+        get_approval_coordinator().cancel_user_requests(user_id)
         task = self.running_engines.get(user_id)
         if task and not task.done():
             task.cancel()

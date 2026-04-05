@@ -27,16 +27,15 @@ def build_system_prompt() -> str:
     available_tools = get_tools_index()
 
     tools_str = "\n".join(
-        f"  {t['name']}: {t.get('description', '').strip()}"
+        _format_tool_line(t)
         for t in available_tools
     )
-    categories   = sorted(set(t.get("category", "general") for t in available_tools))
     semantic_rules = _build_semantic_tool_rules(available_tools)
     tool_examples  = _build_examples(available_tools)
 
     return f"""You are SPARK's Tool Decision Engine. Your only job: decide whether the user query needs a tool, and output strict JSON.
 
-━━━ AVAILABLE TOOLS ({len(available_tools)} tools | categories: {", ".join(categories)}) ━━━
+━━━ AVAILABLE TOOLS ({len(available_tools)} tools) ━━━
 {tools_str}
 
 ━━━ CONVERSATION HISTORY ━━━
@@ -161,13 +160,20 @@ def _build_examples(tools: List[Dict]) -> str:
     seen: set[str] = set()
     lines = ["Tool cases:"]
     for t in tools:
-        cat = t.get("category", "general")
-        if cat not in seen:
-            seen.add(cat)
-            name    = t["name"]
-            desc    = t.get("description", "").strip().lower()[:35]
-            trigger = name.replace("_", " ")
+        name = t["name"]
+        if name not in seen:
+            seen.add(name)
+            desc = t.get("description", "").strip().lower()[:35]
+            examples = t.get("example_triggers") or [name.replace("_", " ")]
+            trigger = str(examples[0]).strip()
             lines.append(f'  "{trigger}" → tool:{name} | requested_tool: ["{name}"]  # {desc}')
         if len(lines) >= 6:
             break
     return "\n".join(lines)
+
+
+def _format_tool_line(tool: Dict) -> str:
+    examples = tool.get("example_triggers") or []
+    example = str(examples[0]).strip() if examples else ""
+    example_suffix = f' Example: "{example}"' if example else ""
+    return f"  {tool['name']}: {tool.get('description', '').strip()}{example_suffix}"

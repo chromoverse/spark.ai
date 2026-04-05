@@ -9,11 +9,14 @@ import webbrowser
 import asyncio
 import logging
 import uuid
-import importlib
-from typing import Dict, Any
+import re
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
+import httpx
+
 from ..base import BaseTool, ToolOutput
+from app.kernel.execution.approval_coordinator import get_approval_coordinator
 from tools.utils.process_manager.process_manager import ProcessManager
 from tools.utils.searcher.system_searcher import SystemSearcher
 
@@ -36,16 +39,25 @@ class AppOpenTool(BaseTool):
     def __init__(self):
         super().__init__()
         self.searcher = SystemSearcher()
+        self.app_focus_tool = AppFocusTool()
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
-        """Find and open an application, tool, or URL."""
-        target: str = str(inputs.get("target", "")).strip()
+        """Open a local app or website based on the requested destination intent."""
+        raw_target: str = str(inputs.get("target", "")).strip()
         raw_args = inputs.get("args", [])
         args: list = raw_args if isinstance(raw_args, list) else []
+        raw_destination = inputs.get("destination", "auto")
+        destination = self._normalize_destination(raw_destination)
+        raw_web_fallback_policy = inputs.get("web_fallback_policy", "validate_then_ask")
+        web_fallback_policy = self._normalize_web_fallback_policy(raw_web_fallback_policy)
         user_id_raw = inputs.get("_user_id")
         user_id = str(user_id_raw).strip() if user_id_raw else ""
         task_id_raw = inputs.get("_task_id")
         task_id = str(task_id_raw).strip() if task_id_raw else ""
+        execution_id_raw = inputs.get("_execution_id") or inputs.get("execution_id")
+        execution_id = str(execution_id_raw).strip() if execution_id_raw else "standalone"
+
+        target, destination = self._normalize_target_and_destination(raw_target, destination)
 
         if not target:
             return ToolOutput(
@@ -54,95 +66,366 @@ class AppOpenTool(BaseTool):
             )
 
         try:
-            # App search can be expensive; keep it off the asyncio event loop.
-            result = await asyncio.to_thread(self.searcher.search_app, target, False)
+            if destination == "browser":
+                website_result = await asyncio.to_thread(
+                    lambda: self.searcher.resolve_website(
+                        target,
+                        include_icon=False,
+                        allow_guess=True,
+                    )
+                )
+                if not website_result:
+                    return ToolOutput(
+                        success=False,
+                        data={
+                            "target": target,
+                            "status": "website_not_valid",
+                        },
+                        error=f"Could not find a reliable website for '{target}'.",
+                    )
 
-            if not result:
+                validated_url = await self._validate_website_result(website_result)
+                if not validated_url:
+                    return ToolOutput(
+                        success=False,
+                        data={
+                            "target": target,
+                            "resolved_path": website_result.get("path"),
+                            "status": "website_not_valid",
+                        },
+                        error=f"Could not verify a reliable website for '{target}'.",
+                    )
+
+                await asyncio.to_thread(webbrowser.open, validated_url)
                 return ToolOutput(
-                    success=False, data={},
-                    error=f"Could not find '{target}' (app, tool, or website)",
+                    success=True,
+                    data={
+                        "target": target,
+                        "resolved_name": website_result.get("name"),
+                        "resolved_path": validated_url,
+                        "type": website_result.get("type", "website"),
+                        "process_id": 0,
+                        "launch_time": datetime.now().isoformat(),
+                        "status": "opened_in_browser",
+                    },
                 )
 
-            path = result.get("path", "")
-            app_type = result.get("type", "unknown")
-            launch_method = result.get("launch_method", "shell")
-            
-            self.logger.info(
-                f"Opening '{target}' -> {path} ({app_type}) via {launch_method}"
-            )
+            local_result = await asyncio.to_thread(self.searcher.search_local_app, target, False)
+            if local_result:
+                return await self._launch_result(target=target, result=local_result, args=args)
 
-            browser_fallback = (
-                self._is_browser_fallback(result)
-                and not self._is_explicit_web_target(target)
-            )
-            if browser_fallback:
-                if not user_id:
-                    return ToolOutput(
-                        success=False,
-                        data={
-                            "target": target,
-                            "resolved_path": path,
-                            "status": "approval_required",
-                        },
-                        error=(
-                            f"'{target}' app not found locally. Browser fallback needs user approval, "
-                            "but no user context was provided."
-                        ),
-                    )
-
-                approved = await self._request_browser_fallback_approval(
-                    user_id=user_id,
-                    task_id=task_id,
-                    target=target,
+            if destination == "app":
+                return ToolOutput(
+                    success=False,
+                    data={"target": target},
+                    error=f"Could not find '{target}' on this system.",
                 )
-                if not approved:
-                    return ToolOutput(
-                        success=False,
-                        data={
-                            "target": target,
-                            "resolved_name": result.get("name"),
-                            "resolved_path": path,
-                            "type": app_type,
-                            "status": "cancelled_by_user",
-                        },
-                        error=f"'{target}' app not found on system and browser fallback was not approved.",
-                    )
 
-            # Dispatch based on type
-            pid = 0
-            status = "launched"
+            if web_fallback_policy == "disabled":
+                return ToolOutput(
+                    success=False,
+                    data={"target": target},
+                    error=f"Could not find '{target}' on this system.",
+                )
 
-            if launch_method == "browser" or app_type in ("url", "website"):
-                await asyncio.to_thread(webbrowser.open, path)
-                status = "opened_in_browser"
+            if not user_id:
+                return ToolOutput(
+                    success=False,
+                    data={"target": target},
+                    error=f"'{target}' app was not found locally and no user context was provided for website fallback.",
+                )
 
-            elif launch_method in ("shell", "run") or app_type in (
-                "protocol", "open_file", "rundll32", "cpl", "lnk",
-            ):
-                await asyncio.to_thread(self._shell_open, path)
-
-            elif launch_method == "run_admin":
-                pid = await asyncio.to_thread(self._run_admin, path)
-
-            else:
-                pid = await asyncio.to_thread(self._launch_executable, path, args, app_type)
-
+            self._speak_web_fallback_check_started(target=target, user_id=user_id)
+            self._schedule_background_web_fallback(
+                target=target,
+                user_id=user_id,
+                task_id=task_id,
+                execution_id=execution_id,
+            )
             return ToolOutput(
                 success=True,
                 data={
                     "target": target,
-                    "resolved_name": result.get("name"),
-                    "resolved_path": path,
-                    "type": app_type,
-                    "process_id": pid,
+                    "resolved_name": None,
+                    "resolved_path": "",
+                    "type": "website",
+                    "process_id": 0,
                     "launch_time": datetime.now().isoformat(),
-                    "status": status,
+                    "status": "web_fallback_check_started",
                 },
             )
 
         except Exception as e:
             self.logger.error(f"Failed to open '{target}': {e}")
             return ToolOutput(success=False, data={}, error=str(e))
+
+    @staticmethod
+    def _normalize_destination(value: Any) -> str:
+        destination = str(value or "auto").strip().lower()
+        return destination if destination in {"auto", "app", "browser"} else "auto"
+
+    @staticmethod
+    def _normalize_web_fallback_policy(value: Any) -> str:
+        policy = str(value or "validate_then_ask").strip().lower()
+        return policy if policy in {"disabled", "validate_then_ask"} else "validate_then_ask"
+
+    def _normalize_target_and_destination(self, target: str, destination: str) -> Tuple[str, str]:
+        cleaned_target = str(target or "").strip()
+        if not cleaned_target:
+            return "", destination
+
+        lowered = cleaned_target.lower()
+        explicit_browser = any(
+            token in lowered
+            for token in (" in browser", " browser", " website", " web", " online")
+        )
+        normalized_target = re.sub(
+            r"\b(in browser|browser|website|web|online)\b",
+            "",
+            cleaned_target,
+            flags=re.IGNORECASE,
+        )
+        normalized_target = re.sub(r"\s+", " ", normalized_target).strip() or cleaned_target
+
+        if destination == "auto" and (explicit_browser or self._is_explicit_web_target(cleaned_target)):
+            destination = "browser"
+        return normalized_target, destination
+
+    async def _launch_result(self, *, target: str, result: Dict[str, Any], args: list) -> ToolOutput:
+        path = result.get("path", "")
+        app_type = result.get("type", "unknown")
+        launch_method = result.get("launch_method", "shell")
+
+        self.logger.info("Opening '%s' -> %s (%s) via %s", target, path, app_type, launch_method)
+
+        pid = 0
+        status = "launched"
+
+        if launch_method == "browser" or app_type in ("url", "website"):
+            await asyncio.to_thread(webbrowser.open, path)
+            status = "opened_in_browser"
+        elif launch_method in ("shell", "run") or app_type in (
+            "protocol", "open_file", "rundll32", "cpl", "lnk",
+        ):
+            await asyncio.to_thread(self._shell_open, path)
+        elif launch_method == "run_admin":
+            pid = await asyncio.to_thread(self._run_admin, path)
+        else:
+            pid = await asyncio.to_thread(self._launch_executable, path, args, app_type)
+
+        focused = False
+        if status == "launched":
+            focused = await self._focus_opened_app(
+                target=target,
+                resolved_name=result.get("name"),
+                path=path,
+                process_id=pid,
+            )
+
+        return ToolOutput(
+            success=True,
+            data={
+                "target": target,
+                "resolved_name": result.get("name"),
+                "resolved_path": path,
+                "type": app_type,
+                "process_id": pid,
+                "launch_time": datetime.now().isoformat(),
+                "status": status,
+                "focused": focused,
+            },
+        )
+
+    async def _focus_opened_app(
+        self,
+        *,
+        target: str,
+        resolved_name: Optional[str],
+        path: str,
+        process_id: int,
+    ) -> bool:
+        focus_inputs = self._build_focus_inputs(
+            target=target,
+            resolved_name=resolved_name,
+            path=path,
+            process_id=process_id,
+        )
+        if not focus_inputs:
+            return False
+
+        max_attempts = 6
+        for attempt in range(max_attempts):
+            for focus_input in focus_inputs:
+                focus_result = await self.app_focus_tool.execute(focus_input)
+                if focus_result.success:
+                    return True
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(0.25)
+
+        self.logger.warning("Opened '%s' but could not focus its window", target)
+        return False
+
+    @staticmethod
+    def _build_focus_inputs(
+        *,
+        target: str,
+        resolved_name: Optional[str],
+        path: str,
+        process_id: int,
+    ) -> list[Dict[str, Any]]:
+        focus_inputs: list[Dict[str, Any]] = []
+        seen_text_targets: set[str] = set()
+
+        if isinstance(process_id, int) and process_id > 0:
+            seed_target = str(resolved_name or target or process_id).strip()
+            focus_inputs.append({"target": seed_target, "process_id": process_id})
+
+        for candidate in (
+            resolved_name,
+            target,
+            AppOpenTool._focus_name_from_path(path),
+        ):
+            text_candidate = str(candidate or "").strip()
+            if not text_candidate:
+                continue
+            lowered = text_candidate.lower()
+            if lowered in seen_text_targets:
+                continue
+            seen_text_targets.add(lowered)
+            focus_inputs.append({"target": text_candidate})
+
+        return focus_inputs
+
+    @staticmethod
+    def _focus_name_from_path(path: str) -> str:
+        cleaned = str(path or "").strip().strip('"')
+        if not cleaned:
+            return ""
+        if cleaned.lower().startswith(("http://", "https://", "www.")):
+            return ""
+        if cleaned.lower().startswith(("shell:", "ms-", "steam://")):
+            return ""
+
+        basename = os.path.basename(cleaned.split(" ", 1)[0].rstrip("\\/"))
+        if not basename:
+            return ""
+        return os.path.splitext(basename)[0]
+
+    async def _validate_website_result(self, result: Dict[str, Any]) -> Optional[str]:
+        candidate_url = str(result.get("path", "")).strip()
+        if not candidate_url:
+            return None
+        return await self._validate_url(candidate_url)
+
+    async def _validate_url(self, url: str) -> Optional[str]:
+        headers = {"User-Agent": "SparkAI/1.0"}
+        timeout = httpx.Timeout(3.0, connect=1.5)
+
+        async with httpx.AsyncClient(
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=True,
+        ) as client:
+            try:
+                response = await client.head(url)
+                if self._looks_like_valid_website_status(response.status_code):
+                    return str(response.url)
+                if response.status_code not in {401, 403, 405}:
+                    return None
+            except Exception:
+                pass
+
+            try:
+                response = await client.get(url)
+                if self._looks_like_valid_website_status(response.status_code):
+                    return str(response.url)
+            except Exception:
+                return None
+
+        return None
+
+    @staticmethod
+    def _looks_like_valid_website_status(status_code: int) -> bool:
+        return 200 <= status_code < 400 or status_code in {401, 403}
+
+    def _schedule_background_web_fallback(
+        self,
+        *,
+        target: str,
+        user_id: str,
+        task_id: str,
+        execution_id: str,
+    ) -> None:
+        background_task = asyncio.create_task(
+            self._run_background_web_fallback(
+                target=target,
+                user_id=user_id,
+                task_id=task_id,
+                execution_id=execution_id or "standalone",
+            )
+        )
+        get_approval_coordinator().track_background_task(
+            user_id=user_id,
+            execution_id=execution_id or "standalone",
+            task=background_task,
+        )
+
+    async def _run_background_web_fallback(
+        self,
+        *,
+        target: str,
+        user_id: str,
+        task_id: str,
+        execution_id: str,
+    ) -> None:
+        try:
+            website_result = await asyncio.to_thread(
+                lambda: self.searcher.resolve_website(
+                    target,
+                    include_icon=False,
+                    allow_guess=True,
+                )
+            )
+            if not website_result:
+                self._speak_website_not_valid(target=target, user_id=user_id)
+                return
+
+            validated_url = await self._validate_website_result(website_result)
+            if not validated_url:
+                self._speak_website_not_valid(target=target, user_id=user_id)
+                return
+
+            request_id = (
+                f"{task_id}::web_fallback::{uuid.uuid4().hex[:8]}"
+                if task_id
+                else f"app_open_web_fallback::{uuid.uuid4().hex[:12]}"
+            )
+            question = (
+                f"'{target}' is not installed locally. "
+                "Do you want me to open its website in your browser?"
+            )
+
+            from app.agent.execution_gateway import get_task_emitter
+
+            async def _handle_response(_user_id: str, _task_id: str, approved: bool) -> None:
+                if not approved:
+                    return
+                await asyncio.to_thread(webbrowser.open, validated_url)
+
+            submitted = await get_task_emitter().submit_approval_request(
+                user_id=user_id,
+                task_id=request_id,
+                question=question,
+                execution_id=execution_id,
+                on_response_callback=_handle_response,
+            )
+            if not submitted:
+                self.logger.warning("Could not submit browser fallback approval for '%s'", target)
+        except asyncio.CancelledError:
+            self.logger.info("Cancelled background website validation for '%s'", target)
+            raise
+        except Exception as exc:
+            self.logger.error("Background website validation failed for '%s': %s", target, exc)
 
     @staticmethod
     def _is_explicit_web_target(target: str) -> bool:
@@ -154,56 +437,22 @@ class AppOpenTool(BaseTool):
         )
 
     @staticmethod
-    def _is_browser_fallback(result: Dict[str, Any]) -> bool:
-        launch_method = str(result.get("launch_method", "")).strip().lower()
-        app_type = str(result.get("type", "")).strip().lower()
-        source = str(result.get("source", "")).strip().lower()
+    def _speak_web_fallback_check_started(*, target: str, user_id: str) -> None:
+        from app.socket.utils import fire_tts
 
-        return (
-            launch_method == "browser"
-            and app_type in {"website", "url"}
-            and source in {"web", "web_fallback"}
+        fire_tts(
+            f"I could not find {target} installed. I am checking whether there is a reliable website instead.",
+            user_id=user_id,
         )
 
-    async def _request_browser_fallback_approval(
-        self,
-        user_id: str,
-        task_id: str,
-        target: str,
-    ) -> bool:
-        approval_task_id = (
-            f"{task_id}::web_fallback::{uuid.uuid4().hex[:8]}"
-            if task_id
-            else f"app_open_web_fallback::{uuid.uuid4().hex[:12]}"
-        )
-        question = (
-            f"'{target}' app was not found on your system. "
-            "Do you want me to open its website in your browser?"
-        )
+    @staticmethod
+    def _speak_website_not_valid(*, target: str, user_id: str) -> None:
+        from app.socket.utils import fire_tts
 
-        try:
-            gateway = importlib.import_module("app.agent.execution_gateway")
-            get_task_emitter = getattr(gateway, "get_task_emitter", None)
-            if not callable(get_task_emitter):
-                self.logger.warning("Approval unavailable: get_task_emitter not found.")
-                return False
-
-            emitter = get_task_emitter()
-            approved = await emitter.request_approval( # type: ignore
-                user_id=user_id,
-                task_id=approval_task_id,
-                question=question,
-            )
-            self.logger.info(
-                "Browser fallback approval for '%s' (user=%s): %s",
-                target,
-                user_id,
-                approved,
-            )
-            return bool(approved)
-        except Exception as exc:
-            self.logger.error("Failed to request browser fallback approval: %s", exc)
-            return False
+        fire_tts(
+            f"I could not find a reliable website for {target}.",
+            user_id=user_id,
+        )
 
     @staticmethod
     def _shell_open(path: str) -> None:
@@ -499,6 +748,7 @@ class AppFocusTool(BaseTool):
 
     Inputs:
     - target (string, required)
+    - process_id (integer, optional)
 
     Outputs:
     - target (string)
@@ -515,22 +765,31 @@ class AppFocusTool(BaseTool):
 
     def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         target = inputs.get("target", "")
-        if not target:
+        process_id = inputs.get("process_id")
+        if isinstance(process_id, bool):
+            process_id = None
+
+        identifier: Any = process_id if isinstance(process_id, int) and process_id > 0 else target
+        if not identifier:
             return ToolOutput(success=False, data={}, error="Target app name is required")
         
         try:
-            success = self.pm.bring_to_focus(target)
+            success = self.pm.bring_to_focus(identifier)
             if success:
                 return ToolOutput(
                     success=True,
                     data={
-                        "target": target,
+                        "target": str(target or identifier),
                         "focused": True,
                         "timestamp": datetime.now().isoformat()
                     }
                 )
             else:
-                return ToolOutput(success=False, data={}, error=f"Failed to focus '{target}' or not found")
+                return ToolOutput(
+                    success=False,
+                    data={},
+                    error=f"Failed to focus '{target or identifier}' or not found",
+                )
         except Exception as e:
             return ToolOutput(success=False, data={}, error=str(e))
 

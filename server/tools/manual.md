@@ -1,88 +1,50 @@
 # SparkAI Tools Developer Manual
 
-This manual explains how to add runtime tools for SparkAI. The source of truth is `server/tools`.
+`server/tools` is the runtime source of truth for SparkAI tools.
 
-## 1. Required layout
+This file is the short overview. The step-by-step authoring workflow now lives
+in [`HOW_TO_ADD_TOOL.md`](HOW_TO_ADD_TOOL.md).
 
-Runtime layout:
-- `server/tools/manifest.json`
-- `server/tools/registry/tool_registry.json`
-- `server/tools/registry/tool_index.json`
-- `server/tools/tools/...`
-- `server/tools/automation/...`
-- `server/tools/utils/...`
+## Runtime layout
 
-Add implementation under one category package inside `server/tools/tools/`:
-- `system/`
-- `file_system/`
-- `web/`
-- `ai/`
-- `messaging/`
+- `server/tools/registry/tool_registry.json`: canonical authored registry
+- `server/tools/registry/tool_index.json`: generated slim index for runtime lookups
+- `server/tools/manifest.json`: generated compatibility manifest
+- `server/tools/tools/...`: tool implementations
+- `server/tools/utils/...`: shared helpers used by tools
+- `server/tools/automation/...`: automation-specific modules
 
-Each tool class must inherit `tools.tools.base.BaseTool` and implement:
-- `get_tool_name(self) -> str`
-- `_execute(self, inputs: dict[str, Any]) -> ToolOutput`
+## High-level rules
 
-## 2. Register schema
+- Implement runtime tools under `tools.tools.*`.
+- Every tool class must inherit `tools.tools.base.BaseTool`.
+- `get_tool_name()` must exactly match the registry entry.
+- Tool class docstrings should include concise `Inputs:` and `Outputs:` sections.
+- Destructive tools should define approval defaults in the registry metadata.
 
-Add or update the tool entry in:
-- `server/tools/registry/tool_registry.json`
+## Generated files
 
-Required fields:
-- `tool_name`
-- `description`
-- `execution_target`
-- `params_schema`
-- `output_schema`
-- `metadata`
+Do not hand-edit `manifest.json` or `registry/tool_index.json`.
 
-## 3. Register plugin mapping
+After changing `tool_registry.json`, regenerate helper files from `server/`:
 
-Update `server/tools/manifest.json` and add a plugin entry:
-
-```json
-{
-  "tool_name": "my_tool",
-  "module": "system.my_module",
-  "class_name": "MyTool"
-}
+```bash
+python scripts/sync_index_manifest_with_registry.py
 ```
 
-Rules:
-- `module` is import path relative to `server/tools/tools/`.
-- `class_name` must match the Python class.
-- `tool_name` must exactly match `get_tool_name()`.
+Validate without rewriting:
 
-## 4. Approval and timeout policy
+```bash
+python scripts/sync_index_manifest_with_registry.py --check
+```
 
-Use `metadata` in registry to set defaults:
-- `default_requires_approval`
-- `default_approval_question`
-- `default_timeout_ms`
+## Local validation
 
-Destructive tools must set approval defaults.
-
-## 5. Validate changes
-
-Run the tool tester from the `server/` directory:
+Run the tool tester from `server/`:
 
 ```bash
 python -m tools.tool_tester --list
-python -m tools.tool_tester --tool my_tool --inputs "{}"
+python -m tools.tool_tester --tool system_info --inputs "{}"
 ```
 
-Expected checks:
-- Manifest validity
-- Tool registry compatibility
-- Plugin import/class loading
-- `tool_name` match with implementation
-
-## 6. Versioning
-
-If you add/remove tool plugins, bump `manifest.json` version.
-
-## 7. Loader
-
-On server startup:
-1. The server reads the manifest and registry from `server/tools`.
-2. Runtime tools load from `tools.tools.*`.
+For the full add/change workflow, use [`HOW_TO_ADD_TOOL.md`](HOW_TO_ADD_TOOL.md).

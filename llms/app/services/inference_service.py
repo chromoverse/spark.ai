@@ -13,6 +13,8 @@ Features:
 """
 
 import os
+import re
+import shutil
 import subprocess
 import zipfile
 import time
@@ -47,28 +49,28 @@ class InferenceService:
     """
 
     # llama.cpp release configuration
-    LLAMA_CPP_VERSION = "b7664"
+    LLAMA_CPP_VERSION = "b8665"
     LLAMA_CPP_RELEASES = {
         "Windows": {
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-cpu-x64.zip  ",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-cpu-x64.zip",
                 "executable": "llama-server.exe",
                 "size_mb": 35
             },
             "gpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-cuda-cu12.2.0-x64.zip  ",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-cuda-12.4-x64.zip",
                 "executable": "llama-server.exe",
                 "size_mb": 450
             },
             "vulkan": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-win-vulkan-x64.zip  ",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-vulkan-x64.zip",
                 "executable": "llama-server.exe",
                 "size_mb": 40
             }
         },
         "Darwin": {  # macOS
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-macos-arm64.tar.gz  ",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-macos-arm64.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 15
             },
@@ -76,17 +78,17 @@ class InferenceService:
         },
         "Linux": {
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64.tar.gz  ",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-ubuntu-x64.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 35
             },
             "gpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64-cuda.tar.gz  ",
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64-cuda.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 400
             },
             "vulkan": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64.tar.gz  ", # Usually packaged in main or separate
+                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-ubuntu-vulkan-x64.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 35
             }
@@ -138,6 +140,52 @@ class InferenceService:
             )
         return release
 
+    def _get_release_tag(self, url: str) -> str:
+        """Extract the release tag from a GitHub release URL."""
+        match = re.search(r"/download/([^/]+)/", url)
+        if match:
+            return match.group(1)
+        return self.LLAMA_CPP_VERSION
+
+    def _get_release_asset_name(self, url: str) -> str:
+        """Get the archive filename from the download URL."""
+        return url.rstrip("/").split("/")[-1]
+
+    def _get_release_install_dir(self, release_info: Dict[str, Any]) -> Path:
+        """Return the versioned install directory for the current binary."""
+        asset_name = self._get_release_asset_name(release_info["url"])
+        if asset_name.endswith(".tar.gz"):
+            dir_name = asset_name[:-7]
+        elif asset_name.endswith(".zip"):
+            dir_name = asset_name[:-4]
+        else:
+            dir_name = Path(asset_name).stem
+        return self.path_manager.get_binaries_dir() / dir_name
+
+    def _find_executable(self, root_dir: Path, exe_name: str) -> Optional[Path]:
+        """Search for an executable inside a directory tree."""
+        if not root_dir.exists():
+            return None
+
+        if root_dir.is_file():
+            return root_dir if root_dir.name == exe_name else None
+
+        direct_path = root_dir / exe_name
+        if direct_path.exists():
+            return direct_path
+
+        for root, _, files in os.walk(root_dir):
+            if exe_name in files:
+                return Path(root) / exe_name
+        return None
+
+    def _needs_binary_refresh(self, binary_path: Path, release_info: Dict[str, Any]) -> bool:
+        """Refresh non-versioned binaries so new model support can be picked up."""
+        expected_dir = self._get_release_install_dir(release_info)
+        expected_dir = expected_dir.resolve()
+        binary_path = binary_path.resolve()
+        return expected_dir != binary_path and expected_dir not in binary_path.parents
+
     def _download_llama_binary(self) -> Path:
         """Download and extract llama.cpp binary."""
         release_info = self._get_release_info()
@@ -147,13 +195,13 @@ class InferenceService:
         print(f"📦 Size: ~{release_info['size_mb']} MB")
         print(f"🎯 Platform: {self.system} ({self.device_type.upper()})")
         
-        url = release_info['url']
+        url = release_info['url'].strip()
         is_zip = url.endswith('.zip')
         ext = '.zip' if is_zip else '.tar.gz'
-        
-        # Unique name for vulkan vs cpu to prevent overwrites if switching
-        variant = f"-{self.device_type}" if self.device_type != 'cpu' else ""
-        archive_path = binaries_dir / f"llama-{self.LLAMA_CPP_VERSION}{variant}{ext}"
+        release_tag = self._get_release_tag(url)
+        asset_name = self._get_release_asset_name(url)
+        install_dir = self._get_release_install_dir(release_info)
+        archive_path = binaries_dir / asset_name
         
         print(f"⬇️  Downloading from GitHub releases...")
         response = requests.get(url, stream=True)
@@ -172,26 +220,27 @@ class InferenceService:
                 progress_bar.update(size)
         
         print(f"📦 Extracting...")
+        if install_dir.exists():
+            shutil.rmtree(install_dir)
+        install_dir.mkdir(parents=True, exist_ok=True)
+
         if is_zip:
             with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(binaries_dir)
+                zip_ref.extractall(install_dir)
         else:
             import tarfile
             with tarfile.open(archive_path, 'r:gz') as tar_ref:
-                tar_ref.extractall(binaries_dir)
+                tar_ref.extractall(install_dir)
         
         exe_name = release_info['executable']
-        extracted_exe = None
-        for root, dirs, files in os.walk(binaries_dir):
-            if exe_name in files:
-                extracted_exe = Path(root) / exe_name
-                break
+        extracted_exe = self._find_executable(install_dir, exe_name)
         
         archive_path.unlink()
         
         if not extracted_exe or not extracted_exe.exists():
             raise FileNotFoundError(f"Could not find {exe_name} after extraction")
         
+        print(f"🧩 Installed llama.cpp release: {release_tag}")
         print(f"✅ Downloaded: {extracted_exe}")
         return extracted_exe
 
@@ -202,6 +251,11 @@ class InferenceService:
         
         bundle_dir = self.path_manager.get_bundle_dir()
         binaries_dir = self.path_manager.get_binaries_dir()
+        install_dir = self._get_release_install_dir(release_info)
+
+        expected_binary = self._find_executable(install_dir, exe_name)
+        if expected_binary:
+            return expected_binary
         
         search_locations = [
             bundle_dir / "tools" / exe_name,
@@ -209,10 +263,10 @@ class InferenceService:
             binaries_dir / exe_name,
         ]
         
-        for root, dirs, files in os.walk(binaries_dir):
+        for root, _, files in os.walk(binaries_dir):
             if exe_name in files:
                 return Path(root) / exe_name
-        
+
         for path in search_locations:
             if path.exists():
                 return path
@@ -235,6 +289,10 @@ class InferenceService:
             )
             
             self.server_path = self._find_llama_binary()
+            if self.server_path and auto_download_binary and self._needs_binary_refresh(self.server_path, self._get_release_info()):
+                print("♻️  Existing llama-server binary is stale for the configured release. Refreshing...")
+                self.server_path = None
+
             if not self.server_path and auto_download_binary:
                 try:
                     self.server_path = self._download_llama_binary()
@@ -249,44 +307,45 @@ class InferenceService:
             self._is_ready = True
             print("\n🎉 Inference service ready!")
 
-    def _start_server(self):
-        """Start the llama-server background process."""
-        print("⏳ Starting llama-server process...")
-        
-        # Determine GPU layers based on device
-        n_gpu_layers = "0"
-        if self.device_type in ["gpu", "vulkan"]:
-            n_gpu_layers = "99"
-            
-        print(f"🔧 Device: {self.device_type.upper()} (GPU Layers: {n_gpu_layers})")
-        
-        cmd = [
-            str(self.server_path),
-            "-m", str(self.model_path),
-            "--host", self.SERVER_HOST,
-            "--port", str(self.SERVER_PORT),
-            "-c", "32768",  # Context window: 32K tokens to support 20K+ input
-            "--n-gpu-layers", n_gpu_layers
-        ]
-        
-        # Start detached process
-        # We don't capture stdout/stderr to avoid buffer deadlocks
-        # They will be inherited by the parent process (visible in console)
-        self.server_process = subprocess.Popen(
-            cmd,
-            # stdout=subprocess.PIPE,  <-- Caused buffer overflow/deadlock
-            # stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-        )
-        
-        # Wait for health check
+    def _get_server_profiles(self) -> List[Dict[str, str]]:
+        """Return startup profiles ordered from preferred to safest."""
+        default_profile = {
+            "label": f"{self.device_type.upper()} default",
+            "context_size": "32768",
+            "n_gpu_layers": "99" if self.device_type in ["gpu", "vulkan"] else "0",
+        }
+
+        if self.device_type == "vulkan" and "gemma" in settings.model_name.lower():
+            return [
+                {
+                    "label": "VULKAN Gemma balanced",
+                    "context_size": "8192",
+                    "n_gpu_layers": "24",
+                },
+                {
+                    "label": "VULKAN Gemma low-VRAM",
+                    "context_size": "4096",
+                    "n_gpu_layers": "12",
+                },
+                {
+                    "label": "VULKAN Gemma CPU-offload fallback",
+                    "context_size": "4096",
+                    "n_gpu_layers": "0",
+                },
+            ]
+
+        return [default_profile]
+
+    def _wait_for_server_ready(self) -> None:
+        """Wait for the local llama-server health endpoint to become ready."""
         print("⏳ Waiting for server to become healthy...", end="", flush=True)
         max_retries = 600  # 10 minutes
         for i in range(max_retries):
-            # Check if process died
+            if self.server_process is None:
+                raise RuntimeError("llama-server process was not started")
+
             if self.server_process.poll() is not None:
                 print(f"\n❌ Server process died with code {self.server_process.returncode}")
-                self.shutdown()
                 raise RuntimeError("llama-server process died unexpectedly")
 
             try:
@@ -294,29 +353,70 @@ class InferenceService:
                 if response.status_code == 200:
                     print(" Done!")
                     return
-                # Optional: debug print for other codes
-                if i % 10 == 0:  # Print every 10s
-                   print(f"({response.status_code})", end="", flush=True)
-                
-                # Server is running but not ready (e.g. 503)
+
+                if i % 10 == 0:
+                    print(f"({response.status_code})", end="", flush=True)
+
                 time.sleep(1)
             except requests.RequestException:
                 time.sleep(1)
                 print(".", end="", flush=True)
-        
-        # If we get here, server didn't start
-        self.shutdown()
+
         raise RuntimeError("Timed out waiting for llama-server to start")
+
+    def _start_server(self):
+        """Start the llama-server background process."""
+        profiles = self._get_server_profiles()
+        last_error: Optional[RuntimeError] = None
+
+        for index, profile in enumerate(profiles):
+            print("⏳ Starting llama-server process...")
+            print(
+                f"🔧 Device: {self.device_type.upper()} | Profile: {profile['label']} "
+                f"(GPU Layers: {profile['n_gpu_layers']}, Context: {profile['context_size']})"
+            )
+
+            cmd = [
+                str(self.server_path),
+                "-m", str(self.model_path),
+                "--host", self.SERVER_HOST,
+                "--port", str(self.SERVER_PORT),
+                "-c", profile["context_size"],
+                "--n-gpu-layers", profile["n_gpu_layers"]
+            ]
+
+            self.server_process = subprocess.Popen(
+                cmd,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+            )
+
+            try:
+                self._wait_for_server_ready()
+                return
+            except RuntimeError as e:
+                last_error = e
+                self.shutdown()
+
+                if index < len(profiles) - 1:
+                    print("⚠️  Startup profile failed. Retrying with a safer Vulkan profile...")
+                    time.sleep(1)
+                    continue
+
+                raise
+
+        if last_error is not None:
+            raise last_error
 
     def shutdown(self):
         """Stop the background server process."""
         if self.server_process:
             print("\n👋 Stopping llama-server...")
-            if os.name == 'nt':
-                # Windows: Force kill process tree
-                subprocess.call(['taskkill', '/F', '/T', '/PID', str(self.server_process.pid)])
-            else:
-                os.killpg(os.getpgid(self.server_process.pid), signal.SIGTERM)
+            if self.server_process.poll() is None:
+                if os.name == 'nt':
+                    # Windows: Force kill process tree
+                    subprocess.call(['taskkill', '/F', '/T', '/PID', str(self.server_process.pid)])
+                else:
+                    os.killpg(os.getpgid(self.server_process.pid), signal.SIGTERM)
             
             self.server_process = None
             self._is_ready = False
@@ -352,6 +452,44 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 
 ws ::= ([ \t\n] ws)?
 '''
+
+    def _format_prompt(self, messages: List[Dict[str, str]], model_name: str) -> str:
+        """Route to the correct chat template based on the active model."""
+        if "gemma" in model_name.lower():
+            return self._gemma_template(messages)
+        return self._legacy_template(messages)
+
+    def _gemma_template(self, messages: List[Dict[str, str]]) -> str:
+        """Gemma 4 native chat template using special turn tokens."""
+        prompt = ""
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "system":
+                prompt += f"<start_of_turn>system\n{content}<end_of_turn>\n"
+            elif role == "user":
+                prompt += f"<start_of_turn>user\n{content}<end_of_turn>\n"
+            elif role == "assistant":
+                prompt += f"<start_of_turn>model\n{content}<end_of_turn>\n"
+        prompt += "<start_of_turn>model\n"
+        return prompt
+
+    def _legacy_template(self, messages: List[Dict[str, str]]) -> str:
+        """Existing User:/Assistant: format for Qwen, Mistral, Llama, etc."""
+        system_content = ""
+        conversation = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "system":
+                system_content = content
+            elif role == "user":
+                conversation.append(f"User: {content}")
+            elif role == "assistant":
+                conversation.append(f"Assistant: {content}")
+        if system_content:
+            return f"{system_content}\n\n" + "\n".join(conversation) + "\nAssistant:"
+        return "\n".join(conversation) + "\nAssistant:"
     
     def generate(
         self,
@@ -384,6 +522,8 @@ ws ::= ([ \t\n] ws)?
             "<|im_end|>",        # Chat format end
             "<|endoftext|>",     # GPT-style end
             "<|eot_id|>",        # Llama-3 specific
+            "<end_of_turn>",     # Gemma 4 turn end token
+            "<start_of_turn>user",  # Gemma 4 user turn start
             "\n\nUser:",         # Conversation restart
             "\n\nAssistant:",    # Duplicate assistant
             "\n\n\n",            # Triple newline (likely garbage)
@@ -519,26 +659,7 @@ ws ::= ([ \t\n] ws)?
             stream: Whether to stream the response
             json_mode: If True, enforces JSON output using grammar
         """
-        # Build clean prompt
-        system_content = ""
-        conversation = []
-        
-        for msg in messages:
-            role = msg.get('role', 'user')
-            content = msg.get('content', '')
-            
-            if role == 'system':
-                system_content = content
-            elif role == 'user':
-                conversation.append(f"User: {content}")
-            elif role == 'assistant':
-                conversation.append(f"Assistant: {content}")
-        
-        # Build final prompt
-        if system_content:
-            prompt = f"{system_content}\n\n" + "\n".join(conversation) + "\nAssistant:"
-        else:
-            prompt = "\n".join(conversation) + "\nAssistant:"
+        prompt = self._format_prompt(messages, settings.model_name)
         
         return self.generate(
             prompt, 

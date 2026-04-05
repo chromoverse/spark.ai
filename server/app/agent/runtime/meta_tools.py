@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from app.agent.runtime.capability_service import get_capability_service
-from app.agent.runtime.smart_context_service import get_smart_context_service
 from app.kernel import KernelEvent, emit_kernel_event
 from app.kernel.persistence.services import get_kernel_stats_service
 
 
 async def kernel_history_lookup(user_id: str, window: str = "90d", limit: int = 10) -> Dict[str, Any]:
+    from app.agent.runtime.smart_context_service import get_smart_context_service
+
     await _emit_meta_tool_event(
         user_id=user_id,
         meta_tool="get_user_task_history",
@@ -22,6 +22,8 @@ async def kernel_history_lookup(user_id: str, window: str = "90d", limit: int = 
 
 
 async def kernel_success_rate_lookup(user_id: str, window: str = "30d") -> Dict[str, Any]:
+    from app.agent.runtime.smart_context_service import get_smart_context_service
+
     await _emit_meta_tool_event(
         user_id=user_id,
         meta_tool="get_user_metrics",
@@ -44,6 +46,8 @@ async def kernel_best_tools_lookup(
     window: str = "30d",
     limit: int = 5,
 ) -> Dict[str, Any]:
+    from app.agent.runtime.smart_context_service import get_smart_context_service
+
     await _emit_meta_tool_event(
         user_id=user_id,
         meta_tool="get_user_tool_metrics",
@@ -64,6 +68,8 @@ async def kernel_log_lookup(
     max_lines: int = 20,
     max_bytes: int = 8_000,
 ) -> Dict[str, Any]:
+    from app.agent.runtime.smart_context_service import get_smart_context_service
+
     await _emit_meta_tool_event(
         user_id=user_id,
         meta_tool="get_user_log_window",
@@ -84,6 +90,8 @@ async def repo_search_lookup(
     limit: int = 5,
     max_bytes: int = 10_000,
 ) -> Dict[str, Any]:
+    from app.agent.runtime.smart_context_service import get_smart_context_service
+
     await _emit_meta_tool_event(
         user_id=user_id,
         meta_tool="repo_search",
@@ -103,6 +111,8 @@ async def repo_read_snippet_lookup(
     line_count: int = 80,
     max_bytes: int = 10_000,
 ) -> Dict[str, Any]:
+    from app.agent.runtime.smart_context_service import get_smart_context_service
+
     await _emit_meta_tool_event(
         user_id=user_id,
         meta_tool="repo_read_snippet",
@@ -121,6 +131,8 @@ async def repo_read_snippet_lookup(
 
 
 async def capability_snapshot_lookup(user_id: str) -> Dict[str, Any]:
+    from app.agent.runtime.capability_service import get_capability_service
+
     await _emit_meta_tool_event(
         user_id=user_id,
         meta_tool="get_capability_snapshot",

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import importlib
-import json
 import logging
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.utils.path_manager import PathManager
+from app.path.manager import PathManager
 
 from .registry_loader import get_tool_registry
 from .tool_base import get_tool_instance_registry
@@ -16,21 +14,14 @@ from .tool_base import get_tool_instance_registry
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class PluginSpec:
-    tool_name: str
-    module: str
-    class_name: str
-
-
 class RuntimeToolsLoader:
     """
     Load tool implementations directly from the bundled/local `server/tools` package.
 
     Contract:
-    1. Load plugin specs from the in-package manifest.
+    1. Load runtime tool metadata from the canonical tool registry.
     2. Import plugin modules dynamically from the `tools.*` namespace.
-    3. Validate tool names against the tool registry.
+    3. Validate tool names against the loaded registry.
     4. Register instantiated tools in the global instance registry.
     """
 
@@ -41,15 +32,10 @@ class RuntimeToolsLoader:
     def load_runtime_tools(self, runtime_tools_path: Path | None = None):
         instance_registry = get_tool_instance_registry()
         root = Path(runtime_tools_path) if runtime_tools_path else self.path_manager.get_tools_dir()
-        manifest_path = root / "manifest.json"
         tools_path = root / "tools"
-
-        if not manifest_path.exists():
-            raise FileNotFoundError(f"Runtime manifest not found: {manifest_path}")
         if not tools_path.exists():
             raise FileNotFoundError(f"Runtime tools dir not found: {tools_path}")
 
-        specs = self._read_manifest(manifest_path)
         self._ensure_runtime_namespace(root)
 
         logger.info("=" * 70)
@@ -57,7 +43,7 @@ class RuntimeToolsLoader:
         logger.info("=" * 70)
 
         loaded_count = 0
-        for spec in specs:
+        for spec in self.registry.get_all_tools().values():
             if instance_registry.has(spec.tool_name):
                 continue
             try:
@@ -96,7 +82,7 @@ class RuntimeToolsLoader:
 
         return instance_registry
 
-    def _load_one(self, spec: PluginSpec) -> Any | None:
+    def _load_one(self, spec) -> Any | None:
         if spec.module.startswith(("tools.tools.", "tools.automation.", "tools.utils.")):
             module_name = spec.module
         elif spec.module.startswith("tools."):
@@ -140,29 +126,6 @@ class RuntimeToolsLoader:
         server_root = str(runtime_root.parent)
         if server_root not in sys.path:
             sys.path.insert(0, server_root)
-
-    @staticmethod
-    def _read_manifest(manifest_path: Path) -> list[PluginSpec]:
-        with manifest_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        specs: list[PluginSpec] = []
-        for item in data.get("plugins", []):
-            tool_name = item.get("tool_name")
-            module = item.get("module")
-            class_name = item.get("class_name")
-
-            if not tool_name or not module or not class_name:
-                continue
-
-            specs.append(
-                PluginSpec(
-                    tool_name=str(tool_name),
-                    module=str(module),
-                    class_name=str(class_name),
-                )
-            )
-        return specs
 
 
 _runtime_tools_loader: RuntimeToolsLoader | None = None

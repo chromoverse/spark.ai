@@ -106,6 +106,16 @@ def build_user_message(
     tool_schemas     = get_tools_schema(tool_names)
     tool_schemas_str = json.dumps(tool_schemas, indent=2)
     prefs_str        = json.dumps(user_preferences or {}, indent=2) if user_preferences else "None"
+    app_open_rules = ""
+    if "app_open" in tool_names:
+        app_open_rules = """
+
+APP_OPEN INTENT RULES:
+- If the user explicitly says "in browser", "website", "web", or "online" → set inputs.destination = "browser".
+- Plain "open X" → set inputs.destination = "auto".
+- Local-only requests for installed apps/tools may set inputs.destination = "app" when needed.
+- For plain app opens, set inputs.web_fallback_policy = "validate_then_ask" unless the user clearly does not want web fallback.
+- Keep inputs.target focused on the thing to open, not the full sentence."""
 
     return f"""━━━ PQH ANALYSIS ━━━
 User Query  : "{c.user_query}"
@@ -124,6 +134,7 @@ PREFERENCE RULES:
 - Use first matching entry (e.g. preferences["movies"][0]).
 - If empty → safe default (youtube for media, chrome for browser, notepad for text).
 - Never invent a preference.
+{app_open_rules}
 
 Generate the execution plan now."""
 

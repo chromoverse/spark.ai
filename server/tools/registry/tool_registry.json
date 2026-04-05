@@ -2,19 +2,29 @@
   "version": "2.4.1",
   "last_updated": "2026-03-05",
   "phase": 1,
-  "total_tools": 60,
+  "total_tools": 67,
   "categories": {
     "system": {
       "description": "System-level operations and monitoring",
       "tools": [
         {
           "tool_name": "app_open",
-          "description": "Launch installed applications",
+          "description": "Open local applications or websites based on user intent",
           "execution_target": "client",
           "params_schema": {
             "target": {
               "type": "string",
               "required": true
+            },
+            "destination": {
+              "type": "string",
+              "required": false,
+              "default": "auto"
+            },
+            "web_fallback_policy": {
+              "type": "string",
+              "required": false,
+              "default": "validate_then_ask"
             },
             "args": {
               "type": "array",
@@ -26,10 +36,25 @@
               "type": "boolean"
             },
             "data": {
+              "target": {
+                "type": "string"
+              },
+              "resolved_name": {
+                "type": "string"
+              },
+              "resolved_path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
               "process_id": {
                 "type": "integer"
               },
               "launch_time": {
+                "type": "string"
+              },
+              "status": {
                 "type": "string"
               }
             },
@@ -42,7 +67,32 @@
             "default_requires_approval": false,
             "default_timeout_ms": 3000,
             "summary_tts": false
-          }
+          },
+          "module": "system.app",
+          "class_name": "AppOpenTool",
+          "examples": [
+            {
+              "user_utterance": "open calculator",
+              "inputs": {
+                "target": "calculator",
+                "destination": "auto"
+              },
+              "notes": "Launch an installed application."
+            },
+            {
+              "user_utterance": "open github in browser",
+              "inputs": {
+                "target": "github",
+                "destination": "browser"
+              },
+              "notes": "Open a website directly in the browser."
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "app",
+            "open"
+          ]
         },
         {
           "tool_name": "app_close",
@@ -81,7 +131,21 @@
             "default_approval_question": "This app has unsaved work. Force close anyway?",
             "default_timeout_ms": 3000,
             "summary_tts": false
-          }
+          },
+          "module": "system.app",
+          "class_name": "AppCloseTool",
+          "examples": [
+            {
+              "user_utterance": "app close",
+              "inputs": {},
+              "notes": "Kill running processes"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "app",
+            "close"
+          ]
         },
         {
           "tool_name": "app_restart",
@@ -123,7 +187,21 @@
             "default_approval_question": "Should I save the current state before restarting?",
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "system.app",
+          "class_name": "AppRestartTool",
+          "examples": [
+            {
+              "user_utterance": "app restart",
+              "inputs": {},
+              "notes": "Restart apps safely"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "app",
+            "restart"
+          ]
         },
         {
           "tool_name": "system_info",
@@ -133,7 +211,11 @@
             "metrics": {
               "type": "array",
               "required": false,
-              "default": ["cpu", "ram", "disk"]
+              "default": [
+                "cpu",
+                "ram",
+                "disk"
+              ]
             }
           },
           "output_schema": {
@@ -163,7 +245,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": true
-          }
+          },
+          "module": "system.system_info",
+          "class_name": "SystemInfoTool",
+          "examples": [
+            {
+              "user_utterance": "system info",
+              "inputs": {},
+              "notes": "Get CPU, RAM, Disk usage"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "system",
+            "info"
+          ]
         },
         {
           "tool_name": "battery_status",
@@ -197,7 +293,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": true
-          }
+          },
+          "module": "system.battery",
+          "class_name": "BatteryStatusTool",
+          "examples": [
+            {
+              "user_utterance": "battery status",
+              "inputs": {},
+              "notes": "Power monitoring and battery info"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "battery",
+            "status"
+          ]
         },
         {
           "tool_name": "network_status",
@@ -237,7 +347,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 3000,
             "summary_tts": true
-          }
+          },
+          "module": "system.network",
+          "class_name": "NetworkStatusTool",
+          "examples": [
+            {
+              "user_utterance": "network status",
+              "inputs": {},
+              "notes": "Internet connectivity and IP info"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "network",
+            "status"
+          ]
         },
         {
           "tool_name": "clipboard_read",
@@ -265,7 +389,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 500,
             "summary_tts": false
-          }
+          },
+          "module": "system.clipboard",
+          "class_name": "ClipboardReadTool",
+          "examples": [
+            {
+              "user_utterance": "clipboard read",
+              "inputs": {},
+              "notes": "Read clipboard content"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "clipboard",
+            "read"
+          ]
         },
         {
           "tool_name": "clipboard_write",
@@ -298,7 +436,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 500,
             "summary_tts": false
-          }
+          },
+          "module": "system.clipboard",
+          "class_name": "ClipboardWriteTool",
+          "examples": [
+            {
+              "user_utterance": "clipboard write",
+              "inputs": {},
+              "notes": "Write to clipboard"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "clipboard",
+            "write"
+          ]
         },
         {
           "tool_name": "notification_push",
@@ -340,7 +492,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": false
-          }
+          },
+          "module": "system.notification",
+          "class_name": "NotificationPushTool",
+          "examples": [
+            {
+              "user_utterance": "notification push",
+              "inputs": {},
+              "notes": "Send native OS notifications"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "notification",
+            "push"
+          ]
         },
         {
           "tool_name": "screenshot_capture",
@@ -373,6 +539,12 @@
               },
               "captured_at": {
                 "type": "string"
+              },
+              "artifact_id": {
+                "type": "string"
+              },
+              "artifact_kind": {
+                "type": "string"
               }
             },
             "error": {
@@ -384,7 +556,23 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": false
-          }
+          },
+          "module": "system.screenshot",
+          "class_name": "ScreenshotCaptureTool",
+          "examples": [
+            {
+              "user_utterance": "take a screenshot",
+              "inputs": {
+                "target": "full"
+              },
+              "notes": "Captures the current screen and stores it as an artifact."
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "screenshot",
+            "capture"
+          ]
         },
         {
           "tool_name": "app_minimize",
@@ -420,7 +608,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": false
-          }
+          },
+          "module": "system.app",
+          "class_name": "AppMinimizeTool",
+          "examples": [
+            {
+              "user_utterance": "app minimize",
+              "inputs": {},
+              "notes": "Minimize application window"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "app",
+            "minimize"
+          ]
         },
         {
           "tool_name": "app_maximize",
@@ -456,7 +658,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": false
-          }
+          },
+          "module": "system.app",
+          "class_name": "AppMaximizeTool",
+          "examples": [
+            {
+              "user_utterance": "app maximize",
+              "inputs": {},
+              "notes": "Maximize application window"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "app",
+            "maximize"
+          ]
         },
         {
           "tool_name": "app_focus",
@@ -492,7 +708,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": false
-          }
+          },
+          "module": "system.app",
+          "class_name": "AppFocusTool",
+          "examples": [
+            {
+              "user_utterance": "app focus",
+              "inputs": {},
+              "notes": "Bring application to front and focus"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "app",
+            "focus"
+          ]
         },
         {
           "tool_name": "brightness_status",
@@ -526,7 +756,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": true
-          }
+          },
+          "module": "system.brightness",
+          "class_name": "BrightnessStatusTool",
+          "examples": [
+            {
+              "user_utterance": "brightness status",
+              "inputs": {},
+              "notes": "Get current screen brightness level"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "brightness",
+            "status"
+          ]
         },
         {
           "tool_name": "brightness_increase",
@@ -567,7 +811,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": false
-          }
+          },
+          "module": "system.brightness",
+          "class_name": "BrightnessIncreaseTool",
+          "examples": [
+            {
+              "user_utterance": "brightness increase",
+              "inputs": {},
+              "notes": "Increase screen brightness by specified amount (default +1)"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "brightness",
+            "increase"
+          ]
         },
         {
           "tool_name": "brightness_decrease",
@@ -608,7 +866,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": false
-          }
+          },
+          "module": "system.brightness",
+          "class_name": "BrightnessDecreaseTool",
+          "examples": [
+            {
+              "user_utterance": "brightness decrease",
+              "inputs": {},
+              "notes": "Decrease screen brightness by specified amount (default -1)"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "brightness",
+            "decrease"
+          ]
         },
         {
           "tool_name": "sound_status",
@@ -645,7 +917,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": true
-          }
+          },
+          "module": "system.sound",
+          "class_name": "SoundStatusTool",
+          "examples": [
+            {
+              "user_utterance": "sound status",
+              "inputs": {},
+              "notes": "Get current system volume level and mute status"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "sound",
+            "status"
+          ]
         },
         {
           "tool_name": "sound_increase",
@@ -686,7 +972,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": false
-          }
+          },
+          "module": "system.sound",
+          "class_name": "SoundIncreaseTool",
+          "examples": [
+            {
+              "user_utterance": "sound increase",
+              "inputs": {},
+              "notes": "Increase system volume by specified amount (default +30)"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "sound",
+            "increase"
+          ]
         },
         {
           "tool_name": "sound_decrease",
@@ -727,7 +1027,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": false
-          }
+          },
+          "module": "system.sound",
+          "class_name": "SoundDecreaseTool",
+          "examples": [
+            {
+              "user_utterance": "sound decrease",
+              "inputs": {},
+              "notes": "Decrease system volume by specified amount (default -30)"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "sound",
+            "decrease"
+          ]
         },
         {
           "tool_name": "mic_mute",
@@ -764,7 +1078,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": false
-          }
+          },
+          "module": "system.microphone",
+          "class_name": "MicMuteTool",
+          "examples": [
+            {
+              "user_utterance": "mic mute",
+              "inputs": {},
+              "notes": "Mute the microphone on the connected desktop client"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "mic",
+            "mute"
+          ]
         },
         {
           "tool_name": "mic_unmute",
@@ -801,7 +1129,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 1000,
             "summary_tts": false
-          }
+          },
+          "module": "system.microphone",
+          "class_name": "MicUnmuteTool",
+          "examples": [
+            {
+              "user_utterance": "mic unmute",
+              "inputs": {},
+              "notes": "Unmute the microphone on the connected desktop client"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "mic",
+            "unmute"
+          ]
         },
         {
           "tool_name": "current_location",
@@ -866,7 +1208,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 6000,
             "summary_tts": true
-          }
+          },
+          "module": "system.location",
+          "class_name": "CurrentLocationTool",
+          "examples": [
+            {
+              "user_utterance": "current location",
+              "inputs": {},
+              "notes": "Get current location via IP geolocation"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "current",
+            "location"
+          ]
         },
         {
           "tool_name": "lock_screen",
@@ -904,7 +1260,96 @@
             "default_requires_approval": false,
             "default_timeout_ms": 3000,
             "summary_tts": false
-          }
+          },
+          "module": "system.screen",
+          "class_name": "LockScreenTool",
+          "examples": [
+            {
+              "user_utterance": "lock screen",
+              "inputs": {},
+              "notes": "Lock the OS screen immediately"
+            }
+          ],
+          "semantic_tags": [
+            "system",
+            "lock",
+            "screen"
+          ]
+        },
+        {
+          "tool_name": "shell_agent",
+          "description": "Run guarded PowerShell or shell steps with LLM guidance until the task is finished",
+          "execution_target": "server",
+          "params_schema": {
+            "goal": {
+              "type": "string",
+              "required": true
+            },
+            "working_dir": {
+              "type": "string",
+              "required": false
+            },
+            "max_steps": {
+              "type": "integer",
+              "required": false,
+              "default": 6
+            },
+            "allow_network": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "final_answer": {
+                "type": "string"
+              },
+              "steps": {
+                "type": "array"
+              },
+              "step_count": {
+                "type": "integer"
+              },
+              "working_dir": {
+                "type": "string"
+              },
+              "completed_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.9,
+            "default_requires_approval": false,
+            "default_timeout_ms": 60000,
+            "summary_tts": true
+          },
+          "module": "system.shell_agent",
+          "class_name": "ShellAgentTool",
+          "examples": [
+            {
+              "user_utterance": "inspect the tools folder and summarize what is there",
+              "inputs": {
+                "goal": "Inspect the tools folder and summarize what is there",
+                "max_steps": 4
+              },
+              "notes": "Runs guarded shell steps until the job is done."
+            }
+          ],
+          "semantic_tags": [
+            "shell",
+            "powershell",
+            "cmd",
+            "automation",
+            "inspection"
+          ]
         }
       ]
     },
@@ -955,7 +1400,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 10000,
             "summary_tts": true
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FileSearchTool",
+          "examples": [
+            {
+              "user_utterance": "file search",
+              "inputs": {},
+              "notes": "Locate files and folders"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "file",
+            "search"
+          ]
         },
         {
           "tool_name": "file_open",
@@ -995,7 +1454,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 3000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FileOpenTool",
+          "examples": [
+            {
+              "user_utterance": "file open",
+              "inputs": {},
+              "notes": "Open files with default or specified app"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "file",
+            "open"
+          ]
         },
         {
           "tool_name": "file_create",
@@ -1042,7 +1515,21 @@
             "default_approval_question": "A file already exists at this path. Overwrite it?",
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FileCreateTool",
+          "examples": [
+            {
+              "user_utterance": "file create",
+              "inputs": {},
+              "notes": "Create new files with content"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "file",
+            "create"
+          ]
         },
         {
           "tool_name": "file_delete",
@@ -1084,7 +1571,21 @@
             "default_approval_question": "Are you sure you want to delete this file permanently?",
             "default_timeout_ms": 3000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FileDeleteTool",
+          "examples": [
+            {
+              "user_utterance": "file delete",
+              "inputs": {},
+              "notes": "Safely delete files"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "file",
+            "delete"
+          ]
         },
         {
           "tool_name": "file_move",
@@ -1130,7 +1631,21 @@
             "default_approval_question": "Destination file exists. Overwrite it?",
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FileMoveTool",
+          "examples": [
+            {
+              "user_utterance": "file move",
+              "inputs": {},
+              "notes": "Move files to new location"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "file",
+            "move"
+          ]
         },
         {
           "tool_name": "file_copy",
@@ -1178,7 +1693,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 10000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FileCopyTool",
+          "examples": [
+            {
+              "user_utterance": "file copy",
+              "inputs": {},
+              "notes": "Copy files"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "file",
+            "copy"
+          ]
         },
         {
           "tool_name": "file_read",
@@ -1214,7 +1743,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FileReadTool",
+          "examples": [
+            {
+              "user_utterance": "file read",
+              "inputs": {},
+              "notes": "Read content from a file"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "file",
+            "read"
+          ]
         },
         {
           "tool_name": "folder_create",
@@ -1257,7 +1800,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.operations",
+          "class_name": "FolderCreateTool",
+          "examples": [
+            {
+              "user_utterance": "folder create",
+              "inputs": {},
+              "notes": "Create new directories"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "folder",
+            "create"
+          ]
         },
         {
           "tool_name": "folder_cleanup",
@@ -1298,7 +1855,21 @@
             "default_approval_question": "This will reorganize files in the folder. Continue?",
             "default_timeout_ms": 30000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.folder_organize",
+          "class_name": "FolderCleanupTool",
+          "examples": [
+            {
+              "user_utterance": "folder cleanup",
+              "inputs": {},
+              "notes": "Organize and clean folders"
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "folder",
+            "cleanup"
+          ]
         },
         {
           "tool_name": "folder_organize",
@@ -1335,7 +1906,21 @@
             "default_approval_question": "This will reorganize files in the folder. Continue?",
             "default_timeout_ms": 30000,
             "summary_tts": false
-          }
+          },
+          "module": "file_system.folder_organize",
+          "class_name": "FolderOrganizeTool",
+          "examples": [
+            {
+              "user_utterance": "folder organize",
+              "inputs": {},
+              "notes": "Organize folder structure "
+            }
+          ],
+          "semantic_tags": [
+            "file_system",
+            "folder",
+            "organize"
+          ]
         }
       ]
     },
@@ -1384,7 +1969,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": true
-          }
+          },
+          "module": "web.search",
+          "class_name": "WebSearchTool",
+          "examples": [
+            {
+              "user_utterance": "web search",
+              "inputs": {},
+              "notes": "Search the web for information"
+            }
+          ],
+          "semantic_tags": [
+            "web",
+            "web",
+            "search"
+          ]
         },
         {
           "tool_name": "web_scrape",
@@ -1429,7 +2028,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": true
-          }
+          },
+          "module": "web.scrape",
+          "class_name": "WebScrapeTool",
+          "examples": [
+            {
+              "user_utterance": "web scrape",
+              "inputs": {},
+              "notes": "Fetches and extracts readable content from a public webpage"
+            }
+          ],
+          "semantic_tags": [
+            "web",
+            "web",
+            "scrape"
+          ]
         },
         {
           "tool_name": "web_research",
@@ -1444,7 +2057,10 @@
               "type": "string",
               "required": false,
               "default": "research",
-              "enum": ["tts", "research"]
+              "enum": [
+                "tts",
+                "research"
+              ]
             },
             "max_results": {
               "type": "integer",
@@ -1492,7 +2108,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 60000,
             "summary_tts": true
-          }
+          },
+          "module": "web.research",
+          "class_name": "WebResearchTool",
+          "examples": [
+            {
+              "user_utterance": "web research",
+              "inputs": {},
+              "notes": "Performs deep web research by searching, scraping top results, and summarizing the findings."
+            }
+          ],
+          "semantic_tags": [
+            "web",
+            "web",
+            "research"
+          ]
         }
       ]
     },
@@ -1509,21 +2139,22 @@
               "type": "boolean"
             },
             "data": {
-              "uptime_seconds": {
-                "type": "number"
+              "user_id": {
+                "type": "string"
               },
-              "current_tasks": {
+              "environment": {
+                "type": "string"
+              },
+              "runtime": {
+                "type": "object"
+              },
+              "models_loaded": {
                 "type": "array"
               },
-              "resource_usage": {
-                "cpu_percent": {
-                  "type": "number"
-                },
-                "ram_percent": {
-                  "type": "number"
-                }
+              "limitations": {
+                "type": "array"
               },
-              "last_updated": {
+              "checked_at": {
                 "type": "string"
               }
             },
@@ -1536,7 +2167,22 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": true
-          }
+          },
+          "module": "ai.agent_status",
+          "class_name": "AgentStatusTool",
+          "examples": [
+            {
+              "user_utterance": "what is your current status",
+              "inputs": {},
+              "notes": "Returns runtime capability status."
+            }
+          ],
+          "semantic_tags": [
+            "agent",
+            "status",
+            "runtime",
+            "capabilities"
+          ]
         },
         {
           "tool_name": "ai_summarize",
@@ -1555,7 +2201,10 @@
               "type": "string",
               "required": false,
               "default": "tts",
-              "enum": ["tts", "research"]
+              "enum": [
+                "tts",
+                "research"
+              ]
             },
             "max_length": {
               "type": "integer",
@@ -1595,7 +2244,102 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": true
-          }
+          },
+          "module": "ai.summarize",
+          "class_name": "AiSummarizeTool",
+          "examples": [
+            {
+              "user_utterance": "ai summarize",
+              "inputs": {},
+              "notes": "Summarize AI-related content like logs, conversations, or documents"
+            }
+          ],
+          "semantic_tags": [
+            "ai",
+            "ai",
+            "summarize"
+          ]
+        },
+        {
+          "tool_name": "tool_catalog",
+          "description": "Inspect the canonical tool catalog, schemas, and examples",
+          "execution_target": "server",
+          "params_schema": {
+            "tool_name": {
+              "type": "string",
+              "required": false
+            },
+            "category": {
+              "type": "string",
+              "required": false
+            },
+            "execution_target": {
+              "type": "string",
+              "required": false
+            },
+            "view": {
+              "type": "string",
+              "required": false,
+              "default": "summary"
+            },
+            "include_examples": {
+              "type": "boolean",
+              "required": false,
+              "default": true
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "view": {
+                "type": "string"
+              },
+              "total_tools": {
+                "type": "integer"
+              },
+              "categories": {
+                "type": "array"
+              },
+              "by_target": {
+                "type": "object"
+              },
+              "tools": {
+                "type": "array"
+              },
+              "tool": {
+                "type": "object"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000,
+            "summary_tts": true
+          },
+          "module": "ai.tool_catalog",
+          "class_name": "ToolCatalogTool",
+          "examples": [
+            {
+              "user_utterance": "what is app_open params",
+              "inputs": {
+                "tool_name": "app_open",
+                "view": "params"
+              },
+              "notes": "Explains a tool from the canonical registry."
+            }
+          ],
+          "semantic_tags": [
+            "tools",
+            "registry",
+            "schemas",
+            "introspection"
+          ]
         }
       ]
     },
@@ -1649,7 +2393,21 @@
             "default_approval_question": "Send this message?",
             "default_timeout_ms": 10000,
             "summary_tts": false
-          }
+          },
+          "module": "messaging.message_send",
+          "class_name": "MessageSendTool",
+          "examples": [
+            {
+              "user_utterance": "message send",
+              "inputs": {},
+              "notes": "Send a text message to a contact"
+            }
+          ],
+          "semantic_tags": [
+            "messaging",
+            "message",
+            "send"
+          ]
         },
         {
           "tool_name": "message_file",
@@ -1706,7 +2464,21 @@
             "default_approval_question": "Send this file?",
             "default_timeout_ms": 15000,
             "summary_tts": false
-          }
+          },
+          "module": "messaging.message_file",
+          "class_name": "MessageFileTool",
+          "examples": [
+            {
+              "user_utterance": "message file",
+              "inputs": {},
+              "notes": "Send a document or file (PDF, ZIP, DOCX, etc.) to a contact"
+            }
+          ],
+          "semantic_tags": [
+            "messaging",
+            "message",
+            "file"
+          ]
         },
         {
           "tool_name": "message_media",
@@ -1763,7 +2535,21 @@
             "default_approval_question": "Send this media?",
             "default_timeout_ms": 15000,
             "summary_tts": false
-          }
+          },
+          "module": "messaging.message_media",
+          "class_name": "MessageMediaTool",
+          "examples": [
+            {
+              "user_utterance": "message media",
+              "inputs": {},
+              "notes": "Send a photo or video to a contact"
+            }
+          ],
+          "semantic_tags": [
+            "messaging",
+            "message",
+            "media"
+          ]
         },
         {
           "tool_name": "call_audio",
@@ -1806,7 +2592,21 @@
             "default_approval_question": "Start this call?",
             "default_timeout_ms": 10000,
             "summary_tts": false
-          }
+          },
+          "module": "messaging.call_audio",
+          "class_name": "CallAudioTool",
+          "examples": [
+            {
+              "user_utterance": "call audio",
+              "inputs": {},
+              "notes": "Start an audio call with a contact"
+            }
+          ],
+          "semantic_tags": [
+            "messaging",
+            "call",
+            "audio"
+          ]
         },
         {
           "tool_name": "call_video",
@@ -1849,7 +2649,21 @@
             "default_approval_question": "Start this video call?",
             "default_timeout_ms": 10000,
             "summary_tts": false
-          }
+          },
+          "module": "messaging.call_video",
+          "class_name": "CallVideoTool",
+          "examples": [
+            {
+              "user_utterance": "call video",
+              "inputs": {},
+              "notes": "Start a video call with a contact"
+            }
+          ],
+          "semantic_tags": [
+            "messaging",
+            "call",
+            "video"
+          ]
         }
       ]
     },
@@ -1946,7 +2760,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": true
-          }
+          },
+          "module": "media.music",
+          "class_name": "MusicPlayTool",
+          "examples": [
+            {
+              "user_utterance": "music play",
+              "inputs": {},
+              "notes": "Play music immediately \u2014 streams YouTube/SoundCloud via mpv+yt-dlp with no browser, or plays a local audio file. Audio starts in the background automatically."
+            }
+          ],
+          "semantic_tags": [
+            "media",
+            "music",
+            "play"
+          ]
         },
         {
           "tool_name": "music_stop",
@@ -2010,7 +2838,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 6000,
             "summary_tts": false
-          }
+          },
+          "module": "media.music",
+          "class_name": "MusicStopTool",
+          "examples": [
+            {
+              "user_utterance": "music stop",
+              "inputs": {},
+              "notes": "Stop one or all active music sessions launched by music_play."
+            }
+          ],
+          "semantic_tags": [
+            "media",
+            "music",
+            "stop"
+          ]
         },
         {
           "tool_name": "music_status",
@@ -2055,7 +2897,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 8000,
             "summary_tts": true
-          }
+          },
+          "module": "media.music",
+          "class_name": "MusicStatusTool",
+          "examples": [
+            {
+              "user_utterance": "music status",
+              "inputs": {},
+              "notes": "Two-layer audio status: (1) our tracked sessions with full metadata, (2) OS-level scan of every process emitting audio via pactl / CoreAudio / WASAPI."
+            }
+          ],
+          "semantic_tags": [
+            "media",
+            "music",
+            "status"
+          ]
         },
         {
           "tool_name": "music_pause",
@@ -2107,7 +2963,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": false
-          }
+          },
+          "module": "media.music",
+          "class_name": "MusicPauseTool",
+          "examples": [
+            {
+              "user_utterance": "music pause",
+              "inputs": {},
+              "notes": "Pause an active playback session by suspending the player process. Audio stops immediately; position is preserved. Resume with music_resume."
+            }
+          ],
+          "semantic_tags": [
+            "media",
+            "music",
+            "pause"
+          ]
         },
         {
           "tool_name": "music_resume",
@@ -2159,7 +3029,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
             "summary_tts": false
-          }
+          },
+          "module": "media.music",
+          "class_name": "MusicResumeTool",
+          "examples": [
+            {
+              "user_utterance": "music resume",
+              "inputs": {},
+              "notes": "Resume a paused playback session. Accumulated pause time is tracked so progress remains accurate."
+            }
+          ],
+          "semantic_tags": [
+            "media",
+            "music",
+            "resume"
+          ]
         }
       ]
     },
@@ -2221,7 +3105,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 8000,
             "summary_tts": true
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailListTool",
+          "examples": [
+            {
+              "user_utterance": "email list",
+              "inputs": {},
+              "notes": "List emails from the mailbox with optional label and query filters"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "list"
+          ]
         },
         {
           "tool_name": "email_read",
@@ -2291,7 +3189,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailReadTool",
+          "examples": [
+            {
+              "user_utterance": "email read",
+              "inputs": {},
+              "notes": "Fetch the full content (headers, body, attachments) of a single email by ID"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "read"
+          ]
         },
         {
           "tool_name": "email_send",
@@ -2359,7 +3271,21 @@
             "default_approval_question": "Send this email?",
             "default_timeout_ms": 10000,
             "summary_tts": true
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailSendTool",
+          "examples": [
+            {
+              "user_utterance": "email send",
+              "inputs": {},
+              "notes": "Compose and send a new email"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "send"
+          ]
         },
         {
           "tool_name": "email_reply",
@@ -2423,7 +3349,21 @@
             "default_approval_question": "Send this reply?",
             "default_timeout_ms": 10000,
             "summary_tts": true
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailReplyTool",
+          "examples": [
+            {
+              "user_utterance": "email reply",
+              "inputs": {},
+              "notes": "Reply to an existing email within the same thread"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "reply"
+          ]
         },
         {
           "tool_name": "email_delete",
@@ -2462,7 +3402,21 @@
             "default_approval_question": "Permanently delete this email? This cannot be undone.",
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailDeleteTool",
+          "examples": [
+            {
+              "user_utterance": "email delete",
+              "inputs": {},
+              "notes": "Permanently delete an email \u2014 IRREVERSIBLE. Use email_trash for a safer alternative"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "delete"
+          ]
         },
         {
           "tool_name": "email_trash",
@@ -2504,7 +3458,21 @@
             "default_approval_question": "Move this email to trash?",
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailTrashTool",
+          "examples": [
+            {
+              "user_utterance": "email trash",
+              "inputs": {},
+              "notes": "Move an email to Trash (recoverable within 30 days)"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "trash"
+          ]
         },
         {
           "tool_name": "email_mark_read",
@@ -2543,7 +3511,22 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailMarkReadTool",
+          "examples": [
+            {
+              "user_utterance": "email mark read",
+              "inputs": {},
+              "notes": "Mark one or more emails as read"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "mark",
+            "read"
+          ]
         },
         {
           "tool_name": "email_mark_unread",
@@ -2581,7 +3564,22 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailMarkUnreadTool",
+          "examples": [
+            {
+              "user_utterance": "email mark unread",
+              "inputs": {},
+              "notes": "Mark one or more emails as unread"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "mark",
+            "unread"
+          ]
         },
         {
           "tool_name": "email_search",
@@ -2631,7 +3629,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 8000,
             "summary_tts": true
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailSearchTool",
+          "examples": [
+            {
+              "user_utterance": "email search",
+              "inputs": {},
+              "notes": "Search emails using full Gmail search syntax"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "search"
+          ]
         },
         {
           "tool_name": "email_label",
@@ -2687,7 +3699,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailLabelTool",
+          "examples": [
+            {
+              "user_utterance": "email label",
+              "inputs": {},
+              "notes": "Add or remove labels on a single email (supports system labels like STARRED, IMPORTANT and custom ones)"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "label"
+          ]
         },
         {
           "tool_name": "email_move",
@@ -2744,7 +3770,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 5000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailMoveTool",
+          "examples": [
+            {
+              "user_utterance": "email move",
+              "inputs": {},
+              "notes": "Move an email to a different label/folder by adding the destination label and removing source labels"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "move"
+          ]
         },
         {
           "tool_name": "email_organize",
@@ -2798,7 +3838,21 @@
             "default_approval_question": "This will apply the action to multiple emails matching the query. Continue?",
             "default_timeout_ms": 30000,
             "summary_tts": true
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailOrganizeTool",
+          "examples": [
+            {
+              "user_utterance": "email organize",
+              "inputs": {},
+              "notes": "Bulk-organize emails matching a search query. Actions: mark_read | mark_unread | archive | trash | label:<name> | unlabel:<name>"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "organize"
+          ]
         },
         {
           "tool_name": "email_labels_list",
@@ -2833,13 +3887,28 @@
             "default_requires_approval": false,
             "default_timeout_ms": 3000,
             "summary_tts": false
-          }
+          },
+          "module": "google.gmail",
+          "class_name": "EmailLabelsListTool",
+          "examples": [
+            {
+              "user_utterance": "email labels list",
+              "inputs": {},
+              "notes": "List all Gmail labels (system + user-created) with unread counts"
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "labels",
+            "list"
+          ]
         }
       ]
     },
-    "weather" : {
-      "description"  : "Weather and forecast tools",
-      "tools" : [
+    "weather": {
+      "description": "Weather and forecast tools",
+      "tools": [
         {
           "tool_name": "weather_current",
           "description": "Get current weather conditions at user location",
@@ -2848,12 +3917,12 @@
             "lat": {
               "type": "number",
               "required": false,
-              "description": "Latitude — auto-detected from IP if omitted"
+              "description": "Latitude \u2014 auto-detected from IP if omitted"
             },
             "lon": {
               "type": "number",
               "required": false,
-              "description": "Longitude — auto-detected from IP if omitted"
+              "description": "Longitude \u2014 auto-detected from IP if omitted"
             },
             "units": {
               "type": "string",
@@ -2919,7 +3988,21 @@
             "default_requires_approval": false,
             "default_timeout_ms": 7000,
             "summary_tts": true
-          }
+          },
+          "module": "system.weather",
+          "class_name": "WeatherCurrentTool",
+          "examples": [
+            {
+              "user_utterance": "weather current",
+              "inputs": {},
+              "notes": "Get current weather conditions at user location"
+            }
+          ],
+          "semantic_tags": [
+            "weather",
+            "weather",
+            "current"
+          ]
         },
         {
           "tool_name": "weather_forecast",
@@ -2929,18 +4012,18 @@
             "lat": {
               "type": "number",
               "required": false,
-              "description": "Latitude — auto-detected from IP if omitted"
+              "description": "Latitude \u2014 auto-detected from IP if omitted"
             },
             "lon": {
               "type": "number",
               "required": false,
-              "description": "Longitude — auto-detected from IP if omitted"
+              "description": "Longitude \u2014 auto-detected from IP if omitted"
             },
             "days": {
               "type": "integer",
               "required": false,
               "default": 7,
-              "description": "Number of forecast days, 1–16"
+              "description": "Number of forecast days, 1\u201316"
             },
             "units": {
               "type": "string",
@@ -3023,7 +4106,167 @@
             "default_requires_approval": false,
             "default_timeout_ms": 8000,
             "summary_tts": true
-          }
+          },
+          "module": "system.weather",
+          "class_name": "WeatherForecastTool",
+          "examples": [
+            {
+              "user_utterance": "weather forecast",
+              "inputs": {},
+              "notes": "Get a multi-day weather forecast at user location"
+            }
+          ],
+          "semantic_tags": [
+            "weather",
+            "weather",
+            "forecast"
+          ]
+        }
+      ]
+    },
+    "artifacts": {
+      "description": "Persistent artifacts created by tools such as screenshots",
+      "tools": [
+        {
+          "tool_name": "artifact_list",
+          "description": "List saved artifacts such as screenshots",
+          "execution_target": "server",
+          "params_schema": {
+            "kind": {
+              "type": "string",
+              "required": false
+            },
+            "tool_name": {
+              "type": "string",
+              "required": false
+            },
+            "limit": {
+              "type": "integer",
+              "required": false,
+              "default": 10
+            },
+            "latest_only": {
+              "type": "boolean",
+              "required": false,
+              "default": false
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "artifacts": {
+                "type": "array"
+              },
+              "total": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.99,
+            "default_requires_approval": false,
+            "default_timeout_ms": 2000,
+            "summary_tts": false
+          },
+          "module": "system.artifacts",
+          "class_name": "ArtifactListTool",
+          "examples": [
+            {
+              "user_utterance": "show my latest screenshots",
+              "inputs": {
+                "kind": "screenshot",
+                "latest_only": false
+              },
+              "notes": "Lists saved artifacts from the artifact store."
+            }
+          ],
+          "semantic_tags": [
+            "artifacts",
+            "screenshots",
+            "storage",
+            "listing"
+          ]
+        },
+        {
+          "tool_name": "artifact_open",
+          "description": "Open a saved artifact such as the latest screenshot",
+          "execution_target": "server",
+          "params_schema": {
+            "artifact_id": {
+              "type": "string",
+              "required": false
+            },
+            "kind": {
+              "type": "string",
+              "required": false
+            },
+            "latest": {
+              "type": "boolean",
+              "required": false,
+              "default": true
+            },
+            "app": {
+              "type": "string",
+              "required": false
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "artifact_id": {
+                "type": "string"
+              },
+              "file_path": {
+                "type": "string"
+              },
+              "opened_with": {
+                "type": "string"
+              },
+              "opened_at": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.98,
+            "default_requires_approval": false,
+            "default_timeout_ms": 4000,
+            "summary_tts": false
+          },
+          "module": "system.artifacts",
+          "class_name": "ArtifactOpenTool",
+          "examples": [
+            {
+              "user_utterance": "open the latest screenshot",
+              "inputs": {
+                "kind": "screenshot",
+                "latest": true
+              },
+              "notes": "Opens a saved artifact by id or latest match."
+            }
+          ],
+          "semantic_tags": [
+            "artifacts",
+            "screenshots",
+            "open",
+            "retrieval"
+          ]
         }
       ]
     }

@@ -3,6 +3,7 @@ Kernel execution data models for task orchestration.
 TaskRecord stores the full Task for complete context.
 """
 
+import uuid
 from typing import Any, Dict, List, Literal, Optional
 from datetime import datetime
 from pydantic import Field
@@ -15,6 +16,7 @@ FailurePolicy = Literal["abort", "continue", "retry"]
 TaskStatus = Literal[
     "pending", "running", "completed", "failed", "waiting", "skipped", "emitted"
 ]
+ApprovalState = Literal["requested", "approved", "denied"]
 
 
 class LifecycleMessages(CamelModel):
@@ -98,6 +100,10 @@ class TaskRecord(CamelModel):
     emitted_at: Optional[datetime] = None
     ack_received_at: Optional[datetime] = None
 
+    # Approval tracking
+    approval_state: Optional[ApprovalState] = None
+    approval_request_id: Optional[str] = None
+
     # ---- Helper properties (not serialized) ----
     @property
     def task_id(self) -> str:
@@ -131,6 +137,7 @@ class ExecutionState(CamelModel):
     """
 
     user_id: str
+    execution_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     tasks: Dict[str, TaskRecord] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

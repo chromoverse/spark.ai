@@ -12,6 +12,10 @@ from typing import List, Optional, Any
 
 from app.kernel.execution.execution_models import TaskRecord
 from app.kernel.execution.orchestrator import get_orchestrator
+from app.kernel.execution.approval_coordinator import (
+    ApprovalCallback,
+    get_approval_coordinator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,41 +123,86 @@ class TaskEmitter:
             return False
 
     async def request_approval(self, user_id: str, task_id: str, question: str) -> bool:
-        """Request user approval for a task"""
+        """Compatibility helper for callers that still need a blocking approval wait."""
+        loop = asyncio.get_running_loop()
+        decision: asyncio.Future[bool] = loop.create_future()
+
+        async def _handle_response(_user_id: str, _task_id: str, approved: bool) -> None:
+            if not decision.done():
+                loop.call_soon_threadsafe(decision.set_result, bool(approved))
+
+        try:
+            submitted = await self.submit_approval_request(
+                user_id=user_id,
+                task_id=task_id,
+                question=question,
+                execution_id="blocking_approval",
+                on_response_callback=_handle_response,
+            )
+            if not submitted:
+                return False
+            try:
+                return await asyncio.wait_for(decision, timeout=120.0)
+            except asyncio.TimeoutError:
+                logger.warning("⏱️ Approval timeout for %s/%s", user_id, task_id)
+                get_approval_coordinator().cancel_request(user_id, task_id)
+                return False
+        except Exception as e:
+            logger.error(f"Failed to request approval: {e}")
+            return False
+
+    async def submit_approval_request(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        question: str,
+        execution_id: str,
+        on_response_callback: ApprovalCallback,
+    ) -> bool:
+        """Register and emit an approval request without waiting inline."""
+        coordinator = get_approval_coordinator()
+        loop = asyncio.get_running_loop()
+        if not coordinator.register_request(
+            user_id=user_id,
+            request_id=task_id,
+            execution_id=execution_id,
+            question=question,
+            callback=on_response_callback,
+        ):
+            return False
+
+        async def _resolve(uid: str, request_id: str, approved: bool) -> None:
+            future = asyncio.run_coroutine_threadsafe(
+                coordinator.resolve_request(uid, request_id, approved),
+                loop,
+            )
+            try:
+                future.result(timeout=5)
+            except Exception as exc:
+                logger.error("Failed to hand off desktop approval response %s/%s: %s", uid, request_id, exc)
+
         try:
             if self.environment == "DESKTOP":
                 logger.info("Desktop mode approval request for task %s", task_id)
-                loop = asyncio.get_running_loop()
-                decision: asyncio.Future[bool] = loop.create_future()
-
-                async def _handle_response(uid: str, tid: str, approved: bool) -> None:
-                    await self.orchestrator.handle_approval(uid, tid, approved)
-                    if not decision.done():
-                        loop.call_soon_threadsafe(decision.set_result, approved)
-
                 from app.agent.desktop_notifications import show_approval_notification
 
                 show_approval_notification(
                     user_id=user_id,
                     task_id=task_id,
                     question=question,
-                    on_response_callback=_handle_response,
+                    on_response_callback=_resolve,
                 )
-                try:
-                    return await asyncio.wait_for(decision, timeout=120.0)
-                except asyncio.TimeoutError:
-                    logger.warning("⏱️ Desktop approval timeout for %s/%s", user_id, task_id)
-                    task = self.orchestrator.get_task(user_id, task_id)
-                    if task and task.status == "waiting":
-                        await self.orchestrator.handle_approval(user_id, task_id, False)
-                    return False
-            else:
-                if self.socket_handler:
-                    return await self.socket_handler.request_approval(user_id, task_id, question)
-                else:
-                    return False
+                return True
+
+            if self.socket_handler and hasattr(self.socket_handler, "emit_approval_request"):
+                return await self.socket_handler.emit_approval_request(user_id, task_id, question)
+
+            coordinator.cancel_request(user_id, task_id)
+            return False
         except Exception as e:
-            logger.error(f"Failed to request approval: {e}")
+            coordinator.cancel_request(user_id, task_id)
+            logger.error(f"Failed to submit approval request: {e}")
             return False
     
     def _enrich_with_server_state(self, user_id: str, task_dict: dict) -> dict:

@@ -35,7 +35,7 @@ class ModelManager:
     
     Usage:
         manager = ModelManager()
-        model_path = manager.get_model_path("qwen2.5-7b")
+        model_path = manager.get_model_path("gemma-4-e4b")
     """
 
     def __init__(
@@ -160,7 +160,7 @@ class ModelManager:
 
     def get_model_path(
         self,
-        model_name: str = "qwen2.5-7b",
+        model_name: str = "gemma-4-e4b",
         auto_download: bool = True
     ) -> Path:
         """
@@ -180,10 +180,9 @@ class ModelManager:
         if model_name not in self.config.get('models', {}):
             raise ValueError(f"Model '{model_name}' not found in config")
         
-        # Fallback to tiny model on CPU for performance
-        if self.device_type == 'cpu' and model_name == "qwen2.5-7b":
-            print("⚠️  CPU detected: Switching to qwen2.5-1.5b for better performance")
-            model_name = "qwen2.5-1.5b"
+        if self.device_type == 'cpu' and model_name == "gemma-4-e4b":
+            print("⚠️  CPU detected: Switching to gemma-4-e2b for better performance")
+            model_name = "gemma-4-e2b"
 
         model_config = self.config['models'][model_name][self.device_type]
         model_path = self.models_dir / model_config['filename']
@@ -213,7 +212,7 @@ class ModelManager:
         self._download_file(model_config['url'], model_path)
         return model_path
 
-    def get_model_info(self, model_name: str = "qwen2.5-7b") -> Dict[str, Any]:
+    def get_model_info(self, model_name: str = "gemma-4-e4b") -> Dict[str, Any]:
         """
         Get model information without downloading.
         

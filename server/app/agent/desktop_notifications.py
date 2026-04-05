@@ -79,12 +79,12 @@ def show_approval_notification(
     question: str,
     on_response_callback: Optional[Callable[[str, str, bool], Awaitable[None]]] = None,
 ) -> None:
-    """Show desktop approval toast; falls back to auto-approve if unavailable."""
+    """Show desktop approval toast; fails closed if interactive approval is unavailable."""
     toaster = _get_toaster()
     if toaster is None:
         logger.info("[NOTIFICATION] Approval needed for %s: %s", task_id, question)
         if on_response_callback:
-            _run_callback_async(on_response_callback, user_id, task_id, True)
+            _run_callback_async(on_response_callback, user_id, task_id, False)
         return
 
     try:
@@ -113,7 +113,7 @@ def show_approval_notification(
     except Exception as exc:
         logger.error("Failed to show approval notification: %s", exc)
         if on_response_callback:
-            _run_callback_async(on_response_callback, user_id, task_id, True)
+            _run_callback_async(on_response_callback, user_id, task_id, False)
 
 
 def show_info_notification(title: str, message: str) -> None:

@@ -3,7 +3,7 @@ import asyncio
 import json
 
 async def test_tools():
-    tool = app.AppFocusTool()
+    tool = screenshot.ScreenshotCaptureTool()
     result = await tool.execute({"target": "notepad"})
     print(json.dumps(result.data, indent=2))
 

@@ -524,6 +524,12 @@ class AppSearcher:
     #  Public API
     # ─────────────────────────────────────────────────────────────────────────
     def find_app(self, query: str, include_icon: bool = True) -> Optional[Dict[str, Any]]:
+        result = self.find_local_app(query, include_icon=include_icon)
+        if result is not None:
+            return result
+        return self.find_website(query, include_icon=include_icon, allow_guess=True)
+
+    def find_local_app(self, query: str, include_icon: bool = True) -> Optional[Dict[str, Any]]:
         q  = query.strip()
         ql = q.lower()
 
@@ -587,21 +593,59 @@ class AppSearcher:
                 )
                 return self._attach_icon(result, include_icon)
 
-        # ── Step 5: KNOWN_WEBSITES exact match ────────────────────────────────
-        if ql in KNOWN_WEBSITES:
-            r = self._make_result(
-                name=q, path=KNOWN_WEBSITES[ql],
-                rtype="website", launch="browser", source="web",
-            )
-            return self._attach_icon(r, include_icon)
+        logger.info("[AppSearcher] no result for '%s'", q)
+        return None
 
-        # ── Step 6: Web fallback ──────────────────────────────────────────────
-        if not self._looks_like_system_query(ql):
+    def find_website(
+        self,
+        query: str,
+        *,
+        include_icon: bool = True,
+        allow_guess: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        q = query.strip()
+        if not q:
+            return None
+
+        normalized_query = self._normalize_website_query(q)
+        ql = normalized_query.lower()
+
+        if self._is_url(normalized_query):
+            result = self._make_result(
+                name=q,
+                path=normalized_query,
+                rtype="url",
+                launch="browser",
+                source="web",
+            )
+            return self._attach_icon(result, include_icon)
+
+        if self._is_domain(normalized_query):
+            url = normalized_query if normalized_query.startswith(("http://", "https://")) else f"https://{normalized_query}"
+            result = self._make_result(
+                name=q,
+                path=url,
+                rtype="url",
+                launch="browser",
+                source="web",
+            )
+            return self._attach_icon(result, include_icon)
+
+        if ql in KNOWN_WEBSITES:
+            result = self._make_result(
+                name=q,
+                path=KNOWN_WEBSITES[ql],
+                rtype="website",
+                launch="browser",
+                source="web",
+            )
+            return self._attach_icon(result, include_icon)
+
+        if allow_guess and not self._looks_like_system_query(ql):
             result = self._web_resolve(q, ql)
             if result:
                 return self._attach_icon(result, include_icon)
 
-        logger.info("[AppSearcher] no result for '%s'", q)
         return None
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1075,6 +1119,12 @@ class AppSearcher:
         tlds = (".com", ".org", ".net", ".io", ".ai", ".dev", ".app",
                 ".co", ".tv", ".me", ".so", ".gg", ".xyz", ".uk", ".us")
         return any(text.lower().endswith(t) for t in tlds) or text.count(".") >= 2
+
+    @staticmethod
+    def _normalize_website_query(text: str) -> str:
+        cleaned = re.sub(r"\b(in browser|browser|website|web site|site|web|online)\b", "", text, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned or text.strip()
 
     @staticmethod
     def _looks_like_system_query(ql: str) -> bool:

@@ -11,6 +11,7 @@ import logging
 from typing import Dict, Set
 
 from app.jwt import config as jwt
+from app.kernel.execution.approval_coordinator import get_approval_coordinator
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,7 @@ async def disconnect(sid):
 
             if not connected_users[user_id]:
                 del connected_users[user_id]
+                get_approval_coordinator().cancel_user_requests(user_id)
                 logger.info(f"👋 User {user_id} fully disconnected (no active connections)")
             else:
                 logger.info(

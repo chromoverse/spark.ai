@@ -11,10 +11,10 @@ The goal is to make tools "path-aware" so LLMs can use natural language paths.
 """
 
 import os
+import ntpath
 import platform
 from pathlib import Path
-from typing import Tuple, Optional
-import re
+from typing import Dict, Tuple, Optional
 
 
 class PathResolver:
@@ -42,13 +42,20 @@ class PathResolver:
     FOLDER_ALIASES = {
         # English
         "desktop": "Desktop",
+        "document": "Documents",
         "documents": "Documents",
+        "download": "Downloads",
         "downloads": "Downloads",
+        "picture": "Pictures",
         "pictures": "Pictures",
+        "photo": "Pictures",
         "photos": "Pictures",
+        "image": "Pictures",
         "images": "Pictures",
+        "song": "Music",
         "music": "Music",
         "audio": "Music",
+        "video": "Videos",
         "videos": "Videos",
         "movies": "Videos",
         "home": "",
@@ -81,15 +88,7 @@ class PathResolver:
     def _setup_system_folders(self):
         """Setup OS-specific folder paths."""
         if self.system == "Windows":
-            # Windows: Use known folders
-            self.known_folders = {
-                "Desktop": self.home / "Desktop",
-                "Documents": self.home / "Documents",
-                "Downloads": self.home / "Downloads",
-                "Pictures": self.home / "Pictures",
-                "Music": self.home / "Music",
-                "Videos": self.home / "Videos",
-            }
+            self.known_folders = self._load_windows_known_folders()
         elif self.system == "Darwin":
             # macOS
             self.known_folders = {
@@ -111,6 +110,73 @@ class PathResolver:
                 "Music": self.home / "Music",
                 "Videos": self.home / "Videos",
             }
+
+    def _load_windows_known_folders(self) -> Dict[str, Path]:
+        """Read Windows user shell folders instead of assuming everything lives under home."""
+        known_folders = {
+            "Desktop": self.home / "Desktop",
+            "Documents": self.home / "Documents",
+            "Downloads": self.home / "Downloads",
+            "Pictures": self.home / "Pictures",
+            "Music": self.home / "Music",
+            "Videos": self.home / "Videos",
+        }
+
+        registry_keys = {
+            "Desktop": "Desktop",
+            "Documents": "Personal",
+            "Downloads": "{374DE290-123F-4565-9164-39C4925E467B}",
+            "Pictures": "My Pictures",
+            "Music": "My Music",
+            "Videos": "My Video",
+        }
+        user_shell_folders = self._read_windows_user_shell_folders()
+
+        for folder_name, registry_key in registry_keys.items():
+            resolved_path = self._normalize_windows_shell_folder_path(
+                user_shell_folders.get(registry_key)
+            )
+            if resolved_path is not None:
+                known_folders[folder_name] = resolved_path
+
+        return known_folders
+
+    @staticmethod
+    def _read_windows_user_shell_folders() -> Dict[str, str]:
+        """Read the Windows Explorer shell-folder registry values."""
+        try:
+            import winreg
+        except Exception:
+            return {}
+
+        values: Dict[str, str] = {}
+        registry_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry_path) as key:
+                index = 0
+                while True:
+                    name, value, _ = winreg.EnumValue(key, index)
+                    values[str(name)] = str(value)
+                    index += 1
+        except OSError:
+            return values
+
+        return values
+
+    def _normalize_windows_shell_folder_path(self, raw_path: Optional[str]) -> Optional[Path]:
+        """Expand registry-backed Windows paths such as %USERPROFILE%\\OneDrive\\Downloads."""
+        if not raw_path:
+            return None
+
+        expanded = os.path.expandvars(str(raw_path)).strip()
+        if not expanded:
+            return None
+
+        if not ntpath.isabs(expanded):
+            expanded = ntpath.join(str(self.home), expanded)
+
+        return Path(ntpath.normpath(expanded))
     
     def resolve(self, path: str, must_exist: bool = False) -> Tuple[str, bool, Optional[str]]:
         """

@@ -28,6 +28,7 @@ from app.models.pqh_response_model import PQHResponse
 from app.prompts.sqh_prompt import build_messages
 from app.ai.providers import llm_chat
 from app.config import settings
+from app.kernel.execution.approval_coordinator import get_approval_coordinator
 from app.services.interrupt_manager import get_interrupt_manager
 from .task_summary_speech_service import get_task_summary_speech_service
 
@@ -195,7 +196,9 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
         # ── Register + start execution ────────────────────────────────────
         orchestrator    = get_orchestrator()
         execution_engine = get_execution_engine()
+        approval_coordinator = get_approval_coordinator()
 
+        approval_coordinator.cancel_user_requests(user_id)
         if execution_engine.is_running(user_id):
             await execution_engine.stop_execution(user_id)
         await orchestrator.cleanup_user_state(user_id)
@@ -205,12 +208,11 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
         if not execution_engine.server_tool_executor:
             execution_engine.set_server_executor(get_server_executor())
 
+        execution_engine.set_client_emitter(get_task_emitter())
+
         if settings.environment == "DESKTOP":
             if not execution_engine.client_tool_executor:
                 execution_engine.set_client_executor(get_client_executor())
-        else:
-            if not execution_engine.socket_handler:
-                execution_engine.set_client_emitter(get_task_emitter())
 
         await execution_engine.start_execution(user_id)
 

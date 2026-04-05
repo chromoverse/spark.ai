@@ -90,6 +90,38 @@ class SystemSearcher:
                         query, result.get("path"), result.get("type"))
         return result
 
+    def search_local_app(self, query: str, include_icon: bool = True) -> Optional[Dict[str, Any]]:
+        if not query or not query.strip():
+            logger.warning("[SystemSearcher] search_local_app: empty query")
+            return None
+        result = self._apps.find_local_app(query.strip(), include_icon=include_icon)
+        if result is None:
+            logger.info("[SystemSearcher] search_local_app: no result for '%s'", query)
+        else:
+            logger.info("[SystemSearcher] search_local_app: '%s' → %s (%s)", query, result.get("path"), result.get("type"))
+        return result
+
+    def resolve_website(
+        self,
+        query: str,
+        *,
+        include_icon: bool = True,
+        allow_guess: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        if not query or not query.strip():
+            logger.warning("[SystemSearcher] resolve_website: empty query")
+            return None
+        result = self._apps.find_website(
+            query.strip(),
+            include_icon=include_icon,
+            allow_guess=allow_guess,
+        )
+        if result is None:
+            logger.info("[SystemSearcher] resolve_website: no result for '%s'", query)
+        else:
+            logger.info("[SystemSearcher] resolve_website: '%s' → %s (%s)", query, result.get("path"), result.get("type"))
+        return result
+
     # ─────────────────────────────────────────────────────────────────────────
     #  search_files
     # ─────────────────────────────────────────────────────────────────────────

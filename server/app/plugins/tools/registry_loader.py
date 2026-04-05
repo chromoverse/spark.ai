@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.utils.path_manager import PathManager
+from app.path.manager import PathManager
+from app.plugins.tools.registry_compiler import (
+    load_registry_document,
+    should_autowrite_generated_tool_files,
+    sync_generated_tool_files,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +19,13 @@ class ToolMetadata:
     tool_name: str
     description: str
     execution_target: str
+    module: str
+    class_name: str
     params_schema: Dict[str, Any]
     output_schema: Dict[str, Any]
     metadata: Dict[str, Any]
+    examples: List[Dict[str, Any]]
+    semantic_tags: List[str]
     category: str
 
 
@@ -57,17 +64,17 @@ class ToolRegistry:
         if force_reload:
             self.clear()
 
+        sync_generated_tool_files(write=should_autowrite_generated_tool_files())
+        try:
+            from app.plugins.tools.tool_index_loader import clear_tools_index_cache
+
+            clear_tools_index_cache()
+        except Exception:
+            pass
         path = self._resolve_registry_path(registry_path)
-        if not path.exists():
-            raise FileNotFoundError(
-                "Runtime tool registry not found. "
-                f"Expected at: {path}"
-            )
+        data = load_registry_document(path)
 
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-
-        self.registry_path = str(path)
+        self.registry_path = str(path.resolve())
         self.version = str(data.get("version", "unknown"))
 
         categories = data.get("categories", {})
@@ -80,9 +87,13 @@ class ToolRegistry:
                     tool_name=tool_name,
                     description=tool_def["description"],
                     execution_target=tool_def["execution_target"],
+                    module=tool_def["module"],
+                    class_name=tool_def["class_name"],
                     params_schema=tool_def["params_schema"],
                     output_schema=tool_def["output_schema"],
                     metadata=tool_def.get("metadata", {}),
+                    examples=tool_def.get("examples", []),
+                    semantic_tags=[str(item).strip() for item in tool_def.get("semantic_tags", []) if str(item).strip()],
                     category=category_name,
                 )
                 self.tools[tool_name] = tool
@@ -103,8 +114,10 @@ class ToolRegistry:
         )
 
     @staticmethod
-    def _resolve_registry_path(registry_path: Optional[str]) -> Path:
+    def _resolve_registry_path(registry_path: Optional[str]):
         if registry_path:
+            from pathlib import Path
+
             return Path(registry_path)
         return PathManager().get_tools_registry_file()
 
