@@ -15,9 +15,9 @@ class TTSManager:
     Manages TTS engines with fallback priority.
 
     Priority order:
-        0. Groq TTS (when groq_mode is enabled)
+        0. Groq TTS (when cloud mode is enabled)
         1. Edge TTS
-        2. Kokoro (desktop only)
+        2. Kokoro (local mode + desktop only — skipped in cloud mode)
         3. gTTS
     """
     
@@ -30,8 +30,8 @@ class TTSManager:
         if self._initialized:
             return
 
-        # Priority 0 — Groq (only when groq_mode is enabled)
-        if settings.groq_mode:
+        # Priority 0 — Groq (only when cloud mode is enabled)
+        if settings.is_cloud_mode:
             try:
                 from app.services.tts.groq_engine import GroqEngine
                 groq = GroqEngine()
@@ -47,14 +47,19 @@ class TTSManager:
             self.engines.append(edge)
             logger.info("✅ TTS: Edge engine enabled")
 
-        # Priority 2: Kokoro (desktop only; production is cloud-first).
-        if settings.environment == "DESKTOP":
+        # Priority 2: Kokoro (local mode + desktop only)
+        # Skipped in cloud mode — Groq + Edge + gTTS form a 3-tier remote chain.
+        if settings.is_local_mode and settings.environment == "DESKTOP":
             kokoro = KokoroEngine()
             if await kokoro.is_available():
                 self.engines.append(kokoro)
                 logger.info("✅ TTS: Kokoro engine enabled")
         else:
-            logger.info("⏭️ TTS: skipping Kokoro init (env=%s)", settings.environment)
+            logger.info(
+                "⏭️ TTS: skipping Kokoro init (mode=%s, env=%s)",
+                settings.inference_mode,
+                settings.environment,
+            )
 
         # Priority 3: gTTS
         gtts = GTTSEngine()
@@ -93,25 +98,50 @@ class TTSManager:
         if prefer_low_latency:
             logger.debug("⚡ TTS low-latency engine order: %s", [engine.get_engine_name() for engine in engines])
 
+        # Per-engine retry policy:
+        # • Up to 3 attempts per engine before moving on to the next.
+        # • If chunks have already been yielded to the caller, do NOT retry —
+        #   that would replay audio mid-stream. Move to the next engine.
+        # • Exponential backoff: 100ms, 200ms.
+        per_engine_attempts = 3
         for engine in engines:
             engine_name = engine.get_engine_name()
-            
-            # Skip if engine doesn't support the language? 
-            # For now we assume engines are versatile or will fail gracefully
-            
-            try:
-                logger.debug(f"🔄 Attempting TTS with {engine_name}...")
-                
-                async for chunk in engine.generate_stream(text, voice, speed, lang):
-                    yield chunk
-                
-                return
-                
-            except Exception as e:
-                logger.warning(f"⚠️ TTS {engine_name} failed: {e}")
-                last_error = e
-                continue
-                
+
+            for attempt in range(1, per_engine_attempts + 1):
+                chunks_yielded = False
+                try:
+                    logger.debug(
+                        "🔄 TTS %s attempt %d/%d…",
+                        engine_name, attempt, per_engine_attempts,
+                    )
+                    async for chunk in engine.generate_stream(text, voice, speed, lang):
+                        chunks_yielded = True
+                        yield chunk
+                    return  # success — entire stream completed
+
+                except Exception as e:
+                    last_error = e
+                    if chunks_yielded:
+                        logger.warning(
+                            "⚠️ TTS %s failed mid-stream after yielding chunks: %s — moving to next engine",
+                            engine_name, e,
+                        )
+                        break  # cannot safely retry — try the next engine
+
+                    if attempt >= per_engine_attempts:
+                        logger.warning(
+                            "⚠️ TTS %s failed all %d attempts: %s",
+                            engine_name, per_engine_attempts, e,
+                        )
+                        break  # exhaust this engine, move to next
+
+                    delay = 0.1 * (2 ** (attempt - 1))
+                    logger.warning(
+                        "⚠️ TTS %s attempt %d/%d failed (%s); retrying in %.0fms",
+                        engine_name, attempt, per_engine_attempts, e, delay * 1000,
+                    )
+                    await asyncio.sleep(delay)
+
         # If we get here, all engines failed
         logger.error("❌ All TTS engines failed")
         if last_error:

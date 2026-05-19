@@ -87,7 +87,24 @@ Keep each under 10 words. Natural, not robotic.
 - Use ONLY tools listed in the user message.
 - Map every task to an exact tool name from the provided schemas.
 - Multi-tool only when two distinct real-world actions are clearly needed.
-- Never chain tools speculatively."""
+- Never chain tools speculatively.
+
+━━━ ARTIFACT MEMORY RULES ━━━
+- When the user references a previously created file, screenshot, or document
+  (e.g. "open the file you created", "show me that screenshot", "open my notes"),
+  check the RECENT ARTIFACTS section in the user message.
+- Match by title/kind/content keywords to find the right artifact_id.
+- Plan: artifact_resolve (server) → file_open (client) with input_bindings.
+- Bind file_open.path to $.resolve_step.data.file_path
+- Bind file_open.app to $.resolve_step.data.preferred_app
+- Use query parameter in artifact_resolve for fuzzy matching.
+
+━━━ SHELL AGENT RULES ━━━
+- For complex tasks like "create a React app", "make a FastAPI server",
+  "create a Python calculator" → use shell_agent with allow_network=true.
+- shell_agent can handle multi-step project scaffolding, file creation,
+  dependency installation, and build processes.
+- Set allow_network=true for any task that might need npm, pip, npx, git, etc."""
 
 
 # ── Dynamic user message — changes per request ────────────────────────────────
@@ -95,6 +112,7 @@ Keep each under 10 words. Natural, not robotic.
 def build_user_message(
     pqh_response: PQHResponse,
     user_preferences: Optional[Dict[str, Any]] = None,
+    user_id: str = "guest",
 ) -> str:
     """
     Dynamic part — PQH context + tool schemas + preferences.
@@ -106,6 +124,23 @@ def build_user_message(
     tool_schemas     = get_tools_schema(tool_names)
     tool_schemas_str = json.dumps(tool_schemas, indent=2)
     prefs_str        = json.dumps(user_preferences or {}, indent=2) if user_preferences else "None"
+
+    # Inject recent artifact context for memory
+    artifact_context = ""
+    try:
+        from app.agent.runtime.artifact_context_service import get_artifact_context_service
+        artifact_context = get_artifact_context_service().get_recent_artifacts_context(
+            user_id=user_id, limit=5, max_bytes=1500,
+        )
+    except Exception:
+        pass
+    artifact_block = ""
+    if artifact_context:
+        artifact_block = f"""
+
+━━━ RECENT ARTIFACTS ━━━
+{artifact_context}"""
+
     app_open_rules = ""
     artifact_open_rules = ""
     if "app_open" in tool_names:
@@ -150,7 +185,7 @@ PREFERENCE RULES:
 - Never invent a preference.
 {app_open_rules}
 {artifact_open_rules}
-
+{artifact_block}
 Generate the execution plan now."""
 
 
@@ -160,6 +195,7 @@ def build_messages(
     pqh_response: PQHResponse,
     user_lang: str = "en",
     user_preferences: Optional[Dict[str, Any]] = None,
+    user_id: str = "guest",
 ) -> List[Dict[str, str]]:
     _LANG = {"hi": "Hindi", "ne": "Nepali", "en": "English"}
     lang_label     = _LANG.get(user_lang, "English")
@@ -167,5 +203,5 @@ def build_messages(
 
     return [
         {"role": "system", "content": build_system_prompt(lang_label, secondary_lang)},
-        {"role": "user",   "content": build_user_message(pqh_response, user_preferences)},
+        {"role": "user",   "content": build_user_message(pqh_response, user_preferences, user_id=user_id)},
     ]

@@ -2,6 +2,7 @@
 Network status and connectivity tools.
 """
 
+import asyncio
 import socket
 import subprocess
 import logging
@@ -32,7 +33,7 @@ class NetworkStatusTool(BaseTool):
         check_internet = self.get_input(inputs, "check_internet", True)
         
         try:
-            network_info = self._get_network_info(check_internet)
+            network_info = await asyncio.to_thread(self._get_network_info, check_internet)
             
             return ToolOutput(
                 success=True,

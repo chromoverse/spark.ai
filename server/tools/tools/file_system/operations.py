@@ -5,6 +5,7 @@ File System Operations Tools for Client
 Real file system tools that execute on the client machine.
 """
 
+import asyncio
 import os
 import re
 import shutil
@@ -232,7 +233,7 @@ class FileCreateTool(BaseTool):
     def get_tool_name(self) -> str:
         return "file_create"
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Create a file with content, storing it as a managed artifact."""
         path = inputs.get("path", "")
         content = inputs.get("content", "")
@@ -348,7 +349,7 @@ class FolderCreateTool(BaseTool):
     def get_tool_name(self) -> str:
         return "folder_create"
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Create a folder/directory."""
         path = inputs.get("path", "")
         recursive = inputs.get("recursive", True)
@@ -399,7 +400,7 @@ class FileCopyTool(BaseTool):
     def get_tool_name(self) -> str:
         return "file_copy"
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Copy a file."""
         source = inputs.get("source", "")
         destination = inputs.get("destination", "")
@@ -469,7 +470,7 @@ class FileSearchTool(BaseTool):
     def get_tool_name(self) -> str:
         return "file_search"
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Search for files."""
         query = inputs.get("query", "")
         search_path = inputs.get("path", ".")
@@ -544,7 +545,7 @@ class FileReadTool(BaseTool):
     def get_tool_name(self) -> str:
         return "file_read"
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Read a file."""
         path = inputs.get("path", "")
 
@@ -614,10 +615,10 @@ class FileOpenTool(BaseTool):
                 return ToolOutput(success=False, data={}, error=error or f"Path not found: {path}")
 
             if app:
-                subprocess.Popen([str(app), resolved_path])
+                await asyncio.to_thread(subprocess.Popen, [str(app), resolved_path])
                 opened_with = str(app)
             else:
-                _shell_open_path(resolved_path)
+                await asyncio.to_thread(_shell_open_path, resolved_path)
                 opened_with = "default"
 
             return ToolOutput(
@@ -651,7 +652,7 @@ class FileDeleteTool(BaseTool):
     def get_tool_name(self) -> str:
         return "file_delete"
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         path = inputs.get("path", "")
         permanent = bool(inputs.get("permanent", False))
 
@@ -710,7 +711,7 @@ class FileMoveTool(BaseTool):
     def get_tool_name(self) -> str:
         return "file_move"
 
-    async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
+    def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         source = inputs.get("source", "")
         destination = inputs.get("destination", "")
         overwrite = bool(inputs.get("overwrite", False))

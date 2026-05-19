@@ -3,11 +3,129 @@
 Base classes for client-side tools with schema validation.
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional, Tuple
 from abc import ABC, abstractmethod
+import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+# ── Input type coercion ──────────────────────────────────────────────────
+# LLMs frequently emit JSON args with the wrong primitive type (e.g. an
+# integer wrapped in quotes). Rather than failing the whole task we try a
+# safe, lossless coercion before reporting a validation error.
+
+_TRUE_STRINGS = {"true", "yes", "y", "on", "1"}
+_FALSE_STRINGS = {"false", "no", "n", "off", "0"}
+
+
+def _is_type_match(value: Any, param_type: Optional[str]) -> bool:
+    """Return True when value already satisfies the expected schema type."""
+    if param_type is None:
+        return True
+    if param_type == "string":
+        return isinstance(value, str)
+    if param_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if param_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if param_type == "boolean":
+        return isinstance(value, bool)
+    if param_type == "array":
+        return isinstance(value, list)
+    if param_type == "object":
+        return isinstance(value, dict)
+    return True
+
+
+def _coerce_value(value: Any, param_type: Optional[str]) -> Tuple[Any, bool]:
+    """Best-effort safe coercion. Returns (coerced_value, success)."""
+    if param_type is None or _is_type_match(value, param_type):
+        return value, True
+
+    try:
+        if param_type == "integer":
+            if isinstance(value, bool):
+                return int(value), True
+            if isinstance(value, float):
+                if value.is_integer():
+                    return int(value), True
+                return value, False
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return value, False
+                try:
+                    return int(stripped), True
+                except ValueError:
+                    pass
+                try:
+                    f = float(stripped)
+                    if f.is_integer():
+                        return int(f), True
+                except ValueError:
+                    pass
+                return value, False
+
+        if param_type == "number":
+            if isinstance(value, bool):
+                return float(value), True
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return value, False
+                try:
+                    return float(stripped), True
+                except ValueError:
+                    return value, False
+
+        if param_type == "boolean":
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if value in (0, 1):
+                    return bool(value), True
+                return value, False
+            if isinstance(value, str):
+                norm = value.strip().lower()
+                if norm in _TRUE_STRINGS:
+                    return True, True
+                if norm in _FALSE_STRINGS:
+                    return False, True
+                return value, False
+
+        if param_type == "string":
+            if isinstance(value, (int, float, bool)):
+                return str(value), True
+
+        if param_type == "array":
+            if isinstance(value, tuple):
+                return list(value), True
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, list):
+                            return parsed, True
+                    except json.JSONDecodeError:
+                        pass
+                if "," in stripped:
+                    return [p.strip() for p in stripped.split(",") if p.strip()], True
+
+        if param_type == "object":
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("{") and stripped.endswith("}"):
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, dict):
+                            return parsed, True
+                    except json.JSONDecodeError:
+                        pass
+    except Exception:
+        return value, False
+
+    return value, False
 
 
 class ToolOutput:
@@ -123,38 +241,41 @@ class BaseTool(ABC):
     
     def _validate_inputs(self, inputs: Dict[str, Any]) -> Optional[str]:
         """
-        Validate inputs against params_schema.
-        
+        Validate inputs against params_schema, coercing safely-convertible
+        primitive types in place (e.g. "15" → 15) so common LLM type
+        mistakes don't fail the task outright.
+
         Returns:
             Error message if validation fails, None if success
         """
         if not self._params_schema:
             return None
-        
+
         for param_name, param_def in self._params_schema.items():
             required = param_def.get("required", False)
             param_type = param_def.get("type")
-            
+
             # Check required params
             if required and param_name not in inputs:
                 return f"Missing required parameter: {param_name}"
-            
-            # Type checking (basic)
+
+            # Type checking with auto-coercion fallback
             if param_name in inputs:
                 value = inputs[param_name]
-                
-                if param_type == "string" and not isinstance(value, str):
-                    return f"Parameter '{param_name}' must be string, got {type(value).__name__}"
-                
-                elif param_type == "integer" and not isinstance(value, int):
-                    return f"Parameter '{param_name}' must be integer, got {type(value).__name__}"
-                
-                elif param_type == "boolean" and not isinstance(value, bool):
-                    return f"Parameter '{param_name}' must be boolean, got {type(value).__name__}"
-                
-                elif param_type == "array" and not isinstance(value, list):
-                    return f"Parameter '{param_name}' must be array, got {type(value).__name__}"
-        
+                if not _is_type_match(value, param_type):
+                    coerced, ok = _coerce_value(value, param_type)
+                    if ok:
+                        self.logger.debug(
+                            "Coerced '%s' from %s to %s for tool %s",
+                            param_name, type(value).__name__, param_type, self.tool_name,
+                        )
+                        inputs[param_name] = coerced
+                        continue
+                    return (
+                        f"Parameter '{param_name}' must be {param_type}, "
+                        f"got {type(value).__name__}"
+                    )
+
         return None
     
     def _validate_output(self, data: Dict[str, Any]) -> Optional[str]:

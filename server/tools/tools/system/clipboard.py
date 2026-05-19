@@ -2,6 +2,7 @@
 Clipboard operations tools for reading and writing clipboard content.
 """
 
+import asyncio
 import sys
 import subprocess
 import logging
@@ -28,7 +29,7 @@ class ClipboardReadTool(BaseTool):
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Read content from the system clipboard."""
         try:
-            content, content_type = self._read_clipboard()
+            content, content_type = await asyncio.to_thread(self._read_clipboard)
             
             return ToolOutput(
                 success=True,
@@ -179,7 +180,7 @@ class ClipboardWriteTool(BaseTool):
             )
         
         try:
-            self._write_clipboard(content)
+            await asyncio.to_thread(self._write_clipboard, content)
             
             return ToolOutput(
                 success=True,

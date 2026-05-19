@@ -10,6 +10,7 @@ import asyncio
 import logging
 import uuid
 import re
+import shlex
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
@@ -40,6 +41,7 @@ class AppOpenTool(BaseTool):
         super().__init__()
         self.searcher = SystemSearcher()
         self.app_focus_tool = AppFocusTool()
+        self.pm = self.app_focus_tool.pm
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Open a local app or website based on the requested destination intent."""
@@ -50,7 +52,7 @@ class AppOpenTool(BaseTool):
         destination = self._normalize_destination(raw_destination)
         raw_web_fallback_policy = inputs.get("web_fallback_policy", "validate_then_ask")
         web_fallback_policy = self._normalize_web_fallback_policy(raw_web_fallback_policy)
-        user_id_raw = inputs.get("_user_id")
+        user_id_raw = inputs.get("_user_id") or inputs.get("user_id")
         user_id = str(user_id_raw).strip() if user_id_raw else ""
         task_id_raw = inputs.get("_task_id")
         task_id = str(task_id_raw).strip() if task_id_raw else ""
@@ -112,7 +114,12 @@ class AppOpenTool(BaseTool):
 
             local_result = await asyncio.to_thread(self.searcher.search_local_app, target, False)
             if local_result:
-                return await self._launch_result(target=target, result=local_result, args=args)
+                return await self._launch_result(
+                    target=target,
+                    result=local_result,
+                    args=args,
+                    user_id=user_id,
+                )
 
             if destination == "app":
                 return ToolOutput(
@@ -191,7 +198,7 @@ class AppOpenTool(BaseTool):
             destination = "browser"
         return normalized_target, destination
 
-    async def _launch_result(self, *, target: str, result: Dict[str, Any], args: list) -> ToolOutput:
+    async def _launch_result(self, *, target: str, result: Dict[str, Any], args: list, user_id: str = "") -> ToolOutput:
         path = result.get("path", "")
         app_type = result.get("type", "unknown")
         launch_method = result.get("launch_method", "shell")
@@ -204,9 +211,7 @@ class AppOpenTool(BaseTool):
         if launch_method == "browser" or app_type in ("url", "website"):
             await asyncio.to_thread(webbrowser.open, path)
             status = "opened_in_browser"
-        elif launch_method in ("shell", "run") or app_type in (
-            "protocol", "open_file", "rundll32", "cpl", "lnk",
-        ):
+        elif launch_method == "shell" or app_type in ("protocol",):
             await asyncio.to_thread(self._shell_open, path)
         elif launch_method == "run_admin":
             pid = await asyncio.to_thread(self._run_admin, path)
@@ -215,25 +220,56 @@ class AppOpenTool(BaseTool):
 
         focused = False
         if status == "launched":
-            focused = await self._focus_opened_app(
+            focused, resolved_pid = await self._focus_opened_app(
                 target=target,
                 resolved_name=result.get("name"),
                 path=path,
                 process_id=pid,
             )
+            if resolved_pid > 0 and pid <= 0:
+                pid = resolved_pid
+
+        self._record_app_launch_state(
+            user_id=user_id,
+            app_name=str(result.get("name") or target or "").strip(),
+            pid=pid,
+            status="ready" if status == "launched" and focused else ("focus_failed" if status == "launched" else status),
+            focused=focused,
+            ready=status == "launched" and focused,
+            reason=(
+                f"{target} is focused and ready for follow-up tool execution."
+                if status == "launched" and focused
+                else f"{target} launched but was not ready for focused interaction yet."
+            ) if status == "launched" else f"{target} opened in browser.",
+            metadata={
+                "target": target,
+                "resolved_path": path,
+                "type": app_type,
+                "launch_method": launch_method,
+            },
+        )
+
+        payload = {
+            "target": target,
+            "resolved_name": result.get("name"),
+            "resolved_path": path,
+            "type": app_type,
+            "process_id": pid,
+            "launch_time": datetime.now().isoformat(),
+            "status": status,
+            "focused": focused,
+        }
+
+        if status == "launched" and not focused:
+            return ToolOutput(
+                success=False,
+                data=payload,
+                error=f"Opened '{target}' but could not focus its window.",
+            )
 
         return ToolOutput(
             success=True,
-            data={
-                "target": target,
-                "resolved_name": result.get("name"),
-                "resolved_path": path,
-                "type": app_type,
-                "process_id": pid,
-                "launch_time": datetime.now().isoformat(),
-                "status": status,
-                "focused": focused,
-            },
+            data=payload,
         )
 
     async def _focus_opened_app(
@@ -243,7 +279,7 @@ class AppOpenTool(BaseTool):
         resolved_name: Optional[str],
         path: str,
         process_id: int,
-    ) -> bool:
+    ) -> Tuple[bool, int]:
         focus_inputs = self._build_focus_inputs(
             target=target,
             resolved_name=resolved_name,
@@ -251,19 +287,65 @@ class AppOpenTool(BaseTool):
             process_id=process_id,
         )
         if not focus_inputs:
-            return False
+            return False, process_id
 
-        max_attempts = 6
-        for attempt in range(max_attempts):
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 8.0
+        resolved_pid = process_id if isinstance(process_id, int) and process_id > 0 else 0
+
+        while loop.time() < deadline:
             for focus_input in focus_inputs:
-                focus_result = await self.app_focus_tool.execute(focus_input)
-                if focus_result.success:
-                    return True
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(0.25)
+                identifier: Any = focus_input.get("process_id") or focus_input.get("target")
+                if not identifier:
+                    continue
+
+                window = await asyncio.to_thread(self.pm.find_window, identifier)
+                if not window:
+                    continue
+
+                if isinstance(window.pid, int) and window.pid > 0:
+                    resolved_pid = window.pid
+
+                focus_identifier: Any = resolved_pid if resolved_pid > 0 else identifier
+                focused = await asyncio.to_thread(self.pm.bring_to_focus, focus_identifier)
+                if focused:
+                    return True, resolved_pid
+
+            await asyncio.sleep(0.15 if resolved_pid > 0 else 0.25)
 
         self.logger.warning("Opened '%s' but could not focus its window", target)
-        return False
+        return False, resolved_pid
+
+    def _record_app_launch_state(
+        self,
+        *,
+        user_id: str,
+        app_name: str,
+        pid: int,
+        status: str,
+        focused: bool,
+        ready: bool,
+        reason: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not user_id or not app_name:
+            return
+        try:
+            from app.agent.runtime.tool_context_service import get_tool_context_service
+
+            get_tool_context_service().record_app_launch(
+                user_id=user_id,
+                app_name=app_name,
+                pid=pid,
+                status=status,
+                focused=focused,
+                ready=ready,
+                ready_checks=1 if ready else 0,
+                reason=reason,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            self.logger.debug("Could not record app launch state for %s: %s", app_name, exc)
 
     @staticmethod
     def _build_focus_inputs(
@@ -467,26 +549,30 @@ class AppOpenTool(BaseTool):
     def _launch_executable(self, path: str, args: list, app_type: str) -> int:
         """Execute a binary, optionally with CLI arguments."""
         try:
+            extra_args = [str(arg) for arg in args]
+
             # UWP apps via shell:AppsFolder path
             if app_type == "uwp_shell":
-                subprocess.Popen(["explorer.exe", path])
-                return 0
+                proc = subprocess.Popen(["explorer.exe", path])
+                return proc.pid
 
             # Special shell GUIDs (God Mode, etc.)
             if app_type == "shell_guid":
-                subprocess.Popen(path, shell=True)
-                return 0
+                proc = subprocess.Popen(["explorer.exe", path])
+                return proc.pid
 
             # MSC snap-ins
             if path.lower().endswith(".msc") or app_type == "msc":
                 if sys.platform == "win32":
-                    os.startfile(path)
+                    proc = subprocess.Popen(["mmc.exe", path] + extra_args)
+                    return proc.pid
                 return 0
 
             # CPL applets
             if path.lower().endswith(".cpl") or app_type == "cpl":
                 if sys.platform == "win32":
-                    os.startfile(path)
+                    proc = subprocess.Popen(["control.exe", path] + extra_args)
+                    return proc.pid
                 return 0
 
             # Windows shortcuts
@@ -509,12 +595,17 @@ class AppOpenTool(BaseTool):
                     proc = subprocess.Popen(["xdg-open", path])
                 return proc.pid
 
+            if sys.platform == "win32" and app_type in {"cmd_args", "rundll32", "open_file"}:
+                command = shlex.split(path, posix=False) + extra_args
+                proc = subprocess.Popen(command)
+                return proc.pid
+
             # .exe / generic executables
             if sys.platform == "win32" and not args:
-                os.startfile(path)
-                return 0
+                proc = subprocess.Popen([path])
+                return proc.pid
 
-            proc = subprocess.Popen([path] + args)
+            proc = subprocess.Popen([path] + extra_args)
             return proc.pid
 
         except Exception as e:
@@ -631,8 +722,8 @@ class AppRestartTool(BaseTool):
             # Close the app
             self.pm.close_process(target)
             
-            # Since this is now completely synchronous inside to_thread, using sleep isn't strictly necessary,
-            # but we can use time.sleep to stall the thread safely.
+            # This synchronous _execute runs in BaseTool.execute() via asyncio.to_thread(),
+            # so a short blocking sleep here won't stall the main event loop.
             import time
             time.sleep(2)
 

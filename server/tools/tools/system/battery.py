@@ -2,6 +2,7 @@
 Battery status and power management tools.
 """
 
+import asyncio
 import sys
 import subprocess
 import logging
@@ -30,7 +31,7 @@ class BatteryStatusTool(BaseTool):
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Get battery status including percentage, charging state, and health."""
         try:
-            battery_info = self._get_battery_info()
+            battery_info = await asyncio.to_thread(self._get_battery_info)
             
             return ToolOutput(
                 success=True,

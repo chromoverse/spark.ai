@@ -66,8 +66,11 @@ MODELS_CONFIG = {
         "device": "auto",
 
         # ── Load policy ───────────────────────────────────────────────────
-        "load":      True,    # eager — STT must be hot before first voice query
-        "lazy_load": False,
+        # Cloud-first profile: Groq STT handles every request and Whisper
+        # is only the fallback. Lazy-load on first fallback hit instead of
+        # eagerly burning ~500 MB at boot.
+        "load":      False,
+        "lazy_load": True,
     },
 
     "emotion": {

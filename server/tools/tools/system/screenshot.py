@@ -2,6 +2,7 @@
 Screenshot capture tools for capturing screen or window.
 """
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -41,7 +42,7 @@ class ScreenshotCaptureTool(BaseTool):
 
         try:
             resolved_save_path = save_path or self._default_save_path(user_id=user_id)
-            result_path, resolution = self._capture_screenshot(target, resolved_save_path)
+            result_path, resolution = await self._capture_screenshot(target, resolved_save_path)
 
             artifact = get_artifact_store().register_file(
                 kind="screenshot",
@@ -75,16 +76,16 @@ class ScreenshotCaptureTool(BaseTool):
         screenshots_dir = PathManager().get_artifact_dir("screenshots", user_id=user_id)
         return str((screenshots_dir / f"spark_screenshot_{timestamp}.png").resolve())
 
-    def _capture_screenshot(self, target: str, save_path: str) -> Tuple[str, str]:
+    async def _capture_screenshot(self, target: str, save_path: str) -> Tuple[str, str]:
         if sys.platform == "win32":
-            return self._capture_screenshot_windows(target, save_path)
+            return await self._capture_screenshot_windows(target, save_path)
         if sys.platform == "darwin":
-            return self._capture_screenshot_macos(target, save_path)
-        return self._capture_screenshot_linux(target, save_path)
+            return await self._capture_screenshot_macos(target, save_path)
+        return await self._capture_screenshot_linux(target, save_path)
 
-    def _capture_screenshot_windows(self, target: str, save_path: str) -> Tuple[str, str]:
+    async def _capture_screenshot_windows(self, target: str, save_path: str) -> Tuple[str, str]:
         del target  # Windows implementation currently captures the primary screen.
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        await asyncio.to_thread(os.makedirs, os.path.dirname(save_path), exist_ok=True)
         ps_script = f"""
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -98,35 +99,35 @@ $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bound
 $bitmap.Save("{save_path.replace(os.sep, '/')}")
 Write-Output "$width`x$height"
 """
-        result = subprocess.run(
+        result = await self._run_subprocess(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
             capture_output=True,
             text=True,
             timeout=10,
         )
-        if result.returncode == 0 and os.path.exists(save_path):
+        if result.returncode == 0 and await asyncio.to_thread(os.path.exists, save_path):
             return save_path, result.stdout.strip() or self._get_image_resolution(save_path)
         raise RuntimeError(result.stderr.strip() or "Failed to capture screenshot on Windows")
 
-    def _capture_screenshot_macos(self, target: str, save_path: str) -> Tuple[str, str]:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    async def _capture_screenshot_macos(self, target: str, save_path: str) -> Tuple[str, str]:
+        await asyncio.to_thread(os.makedirs, os.path.dirname(save_path), exist_ok=True)
         cmd = ["screencapture", "-x"]
         if target in {"window", "region"}:
             cmd.append("-i")
         cmd.append(save_path)
-        result = subprocess.run(cmd, capture_output=True, timeout=10)
-        if result.returncode == 0 and os.path.exists(save_path):
+        result = await self._run_subprocess(cmd, timeout=10)
+        if result.returncode == 0 and await asyncio.to_thread(os.path.exists, save_path):
             return save_path, self._get_image_resolution(save_path)
         raise RuntimeError("Failed to capture screenshot on macOS")
 
-    def _capture_screenshot_linux(self, target: str, save_path: str) -> Tuple[str, str]:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    async def _capture_screenshot_linux(self, target: str, save_path: str) -> Tuple[str, str]:
+        await asyncio.to_thread(os.makedirs, os.path.dirname(save_path), exist_ok=True)
         for cmd in self._linux_candidate_commands(target, save_path):
             try:
-                result = subprocess.run(cmd, capture_output=True, timeout=10)
+                result = await self._run_subprocess(cmd, timeout=10)
             except FileNotFoundError:
                 continue
-            if result.returncode == 0 and os.path.exists(save_path):
+            if result.returncode == 0 and await asyncio.to_thread(os.path.exists, save_path):
                 return save_path, self._get_image_resolution(save_path)
         raise RuntimeError("Failed to capture screenshot on Linux - no suitable tool found")
 

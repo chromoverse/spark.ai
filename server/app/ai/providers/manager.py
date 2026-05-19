@@ -9,6 +9,7 @@ Features:
 - Tracks quota exhaustion in-memory with TTL-based auto-reset
 - Extensible: add new providers by appending to _providers list
 """
+import asyncio
 import logging
 import time
 from typing import Any, List, Dict, Optional, AsyncIterator, Tuple
@@ -17,6 +18,7 @@ from app.ai.providers.base_client import BaseClient, AllKeysExhaustedError
 from app.ai.providers.groq_client import GroqClient
 from app.ai.providers.gemini_client import GeminiClient
 from app.ai.providers.openrouter_client import OpenRouterClient
+from app.utils.async_utils import with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -130,11 +132,17 @@ class LLMManager:
 
             try:
                 logger.info(f"🔹 Trying {provider.provider_name}...")
-                response = await provider.llm_chat(
-                    messages=messages,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
+                response = await with_retry(
+                    lambda p=provider: p.llm_chat(
+                        messages=messages,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    ),
+                    attempts=3,
+                    base_delay=0.2,
+                    name=f"llm-chat:{provider.provider_name}",
+                    do_not_retry_on=(AllKeysExhaustedError,),
                 )
                 logger.info(f"✅ {provider.provider_name} success ({len(response)} chars)")
                 return response, provider.provider_name
@@ -145,7 +153,7 @@ class LLMManager:
                 last_error = e
 
             except Exception as e:
-                logger.error(f"❌ {provider.provider_name} unexpected error: {e}")
+                logger.error(f"❌ {provider.provider_name} unexpected error after retries: {e}")
                 last_error = e
 
         raise AllProvidersExhaustedError(
@@ -171,6 +179,14 @@ class LLMManager:
         """
         last_error: Optional[Exception] = None
 
+        # Per-provider retry policy:
+        # • Up to 3 attempts per provider before falling back to the next.
+        # • If chunks have already been streamed to the caller, do NOT retry —
+        #   that would replay tokens. Move directly to the next provider.
+        # • AllKeysExhaustedError is non-retryable: block this provider and
+        #   move on without consuming retry budget.
+        per_provider_attempts = 3
+
         for provider in self._providers:
             if self._is_provider_blocked(provider):
                 continue
@@ -178,29 +194,65 @@ class LLMManager:
             if not provider.is_available:
                 continue
 
-            try:
-                logger.info(f"🔹 Streaming via {provider.provider_name}...")
+            should_skip_provider = False
+            for attempt in range(1, per_provider_attempts + 1):
+                chunks_yielded = False
                 chunk_count = 0
-                async for chunk in provider.llm_stream(
-                    messages=messages,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                ):
-                    chunk_count += 1
-                    yield chunk
+                try:
+                    logger.info(
+                        f"🔹 Streaming via {provider.provider_name} "
+                        f"(attempt {attempt}/{per_provider_attempts})..."
+                    )
+                    async for chunk in provider.llm_stream(
+                        messages=messages,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    ):
+                        chunks_yielded = True
+                        chunk_count += 1
+                        yield chunk
 
-                logger.info(f"✅ {provider.provider_name} stream done ({chunk_count} chunks)")
-                return  # stream completed
+                    logger.info(
+                        f"✅ {provider.provider_name} stream done ({chunk_count} chunks)"
+                    )
+                    return  # full stream completed successfully
 
-            except AllKeysExhaustedError as e:
-                logger.warning(f"🔴 {provider.provider_name}: all keys exhausted (stream)")
-                self._block_provider(provider)
-                last_error = e
+                except AllKeysExhaustedError as e:
+                    logger.warning(
+                        f"🔴 {provider.provider_name}: all keys exhausted (stream)"
+                    )
+                    self._block_provider(provider)
+                    last_error = e
+                    should_skip_provider = True
+                    break  # don't retry this provider, move to next
 
-            except Exception as e:
-                logger.error(f"❌ {provider.provider_name} stream error: {e}")
-                last_error = e
+                except Exception as e:
+                    last_error = e
+                    if chunks_yielded:
+                        logger.error(
+                            f"❌ {provider.provider_name} mid-stream error after "
+                            f"{chunk_count} chunks: {e}; moving to next provider"
+                        )
+                        should_skip_provider = True
+                        break  # cannot safely retry — try next provider
+
+                    if attempt >= per_provider_attempts:
+                        logger.error(
+                            f"❌ {provider.provider_name} stream exhausted "
+                            f"{per_provider_attempts} attempts: {e}"
+                        )
+                        break  # exhaust this provider
+
+                    delay = 0.2 * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"⚠️ {provider.provider_name} stream attempt "
+                        f"{attempt}/{per_provider_attempts} failed ({e}); "
+                        f"retrying in {delay*1000:.0f}ms"
+                    )
+                    await asyncio.sleep(delay)
+
+            # outer for loop continues to next provider regardless
 
         raise AllProvidersExhaustedError(
             f"All providers exhausted (stream). Last error: {last_error}. "

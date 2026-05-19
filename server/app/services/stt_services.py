@@ -369,26 +369,31 @@ async def transcribe_audio(audio_data: Any, mime_type: str = "audio/webm", **kwa
     """
     Simple transcription - returns only text (backward compatible)
     
-    Routes through Groq STT when groq_mode is enabled, otherwise
-    falls back to local Whisper.
+    Routes through Groq STT when cloud mode is enabled, otherwise
+    falls back to local Whisper. Each cloud attempt is retried up
+    to 3 times with exponential backoff before falling back.
     
     Usage in your routes:
         from app.services.whisper_service import transcribe_audio
         text = await transcribe_audio(audio_data)
     """
     from app.config import settings
+    from app.utils.async_utils import with_retry
 
-    if settings.groq_mode:
+    if settings.is_cloud_mode:
         try:
             from app.services.stt.groq_engine import groq_stt_engine
-            result = await groq_stt_engine.transcribe(audio_data, mime_type, **kwargs)
+            result = await with_retry(
+                lambda: groq_stt_engine.transcribe(audio_data, mime_type, **kwargs),
+                attempts=3, base_delay=0.15, name="groq-stt",
+            )
             text = result.get("text", "")
             if text:
                 return text
             # Fall through to local Whisper if Groq returned nothing
-            logger.warning("⚠️ Groq STT returned no text, falling back to local Whisper")
+            logger.warning("⚠️ Groq STT returned no text after retries, falling back to local Whisper")
         except Exception as e:
-            logger.warning(f"⚠️ Groq STT failed ({e}), falling back to local Whisper")
+            logger.warning(f"⚠️ Groq STT failed after retries ({e}), falling back to local Whisper")
 
     return await whisper_service.transcribe_simple(audio_data, mime_type, **kwargs)
 
@@ -406,15 +411,19 @@ async def transcribe_audio_detailed(
         print(result["text"], result["segments"])
     """
     from app.config import settings
+    from app.utils.async_utils import with_retry
 
-    if settings.groq_mode:
+    if settings.is_cloud_mode:
         try:
             from app.services.stt.groq_engine import groq_stt_engine
-            result = await groq_stt_engine.transcribe(audio_data, mime_type, language)
+            result = await with_retry(
+                lambda: groq_stt_engine.transcribe(audio_data, mime_type, language),
+                attempts=3, base_delay=0.15, name="groq-stt-detailed",
+            )
             if result.get("success"):
                 return result
-            logger.warning("⚠️ Groq STT failed, falling back to local Whisper")
+            logger.warning("⚠️ Groq STT failed after retries, falling back to local Whisper")
         except Exception as e:
-            logger.warning(f"⚠️ Groq STT failed ({e}), falling back to local Whisper")
+            logger.warning(f"⚠️ Groq STT failed after retries ({e}), falling back to local Whisper")
 
     return await whisper_service.transcribe(audio_data, mime_type, language)

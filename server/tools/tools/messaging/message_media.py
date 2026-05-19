@@ -2,6 +2,8 @@
 message_media tool - Send a photo or video to a contact
 """
 
+import asyncio
+
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
 from datetime import datetime
@@ -33,6 +35,7 @@ class MessageMediaTool(BaseTool):
         media_path = self.get_input(inputs, "media_path")
         caption = self.get_input(inputs, "caption", "")
         platform = self.get_input(inputs, "platform", "auto")
+        user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "guest").strip() or "guest"
         
         if not contact:
             return ToolOutput(
@@ -49,7 +52,7 @@ class MessageMediaTool(BaseTool):
             )
         
         # Validate media file exists
-        if not os.path.exists(media_path):
+        if not await asyncio.to_thread(os.path.exists, media_path):
             return ToolOutput(
                 success=False,
                 data={},
@@ -76,10 +79,10 @@ class MessageMediaTool(BaseTool):
                 media_type = "unknown"
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation.create()
+            wa = await WhatsAppAutomation.create(user_id=user_id)
             
             # Send the media (photo/video)
-            sent = wa.send_photo(contact, media_path, caption)
+            sent = await asyncio.to_thread(wa.send_photo, contact, media_path, caption)
             if not sent:
                 return ToolOutput(
                     success=False,

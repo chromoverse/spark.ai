@@ -24,6 +24,7 @@ from app.kernel.execution.execution_models import TaskRecord, TaskOutput
 from app.kernel.execution.binding_resolver import get_binding_resolver
 from app.kernel.contracts.models import KernelEvent
 from app.kernel.eventing.event_bus import emit_kernel_event
+from app.agent.runtime.tool_context_service import get_tool_context_service
 
 logger = logging.getLogger(__name__)
 
@@ -332,12 +333,26 @@ class ExecutionEngine:
 
             if output.success:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
+                # Record in session memory for context-aware follow-ups
+                get_tool_context_service().record_tool_output(
+                    user_id=user_id, task_id=task.task_id, tool_name=task.tool,
+                    output_data=output.data, success=True,
+                )
                 if task.lifecycle_messages and task.lifecycle_messages.on_success:
                     logger.info(f"     {task.lifecycle_messages.on_success}")
                 logger.info(f"  Completed: {task.task_id} ({task.duration_ms}ms)")
                 return True
             else:
                 error = output.error or f"Tool '{task.tool}' returned unsuccessful output"
+                # Record failure + log retry suggestion
+                ctx = get_tool_context_service()
+                ctx.record_tool_output(
+                    user_id=user_id, task_id=task.task_id, tool_name=task.tool,
+                    output_data=output.data, success=False, error=error,
+                )
+                strategy = ctx.suggest_retry_strategy(user_id, task.task_id, task.tool, error)
+                if strategy.get("should_retry"):
+                    logger.info(f"     💡 Retry suggestion: {strategy.get('suggestion')}")
                 await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
                 if task.lifecycle_messages and task.lifecycle_messages.on_failure:
                     logger.info(f"     {task.lifecycle_messages.on_failure}")

@@ -95,9 +95,39 @@ class Settings(BaseSettings):
     gemini_model_name: str
     openrouter_light_model_name: str
     openrouter_reasoning_model_name: str
-    groq_mode: bool = True
+
+    # =========================
+    # Inference mode
+    # =========================
+    # "cloud" — STT/TTS/LLM all served by remote APIs (Groq, Edge, gTTS, etc.).
+    #           Only the embedding model is loaded locally (no cloud embedding yet).
+    # "local" — Local Whisper + Kokoro + LLM are loaded and used.
+    inference_mode: str = "cloud"
     GROQ_DEFAULT_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
     GROQ_REASONING_MODEL: str = "openai/gpt-oss-20b"
+
+    @field_validator("inference_mode", mode="before")
+    @classmethod
+    def _normalize_inference_mode(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower() or "cloud"
+        if normalized in {"cloud", "local"}:
+            return normalized
+        raise ValueError("inference_mode must be one of: cloud, local")
+
+    @property
+    def is_cloud_mode(self) -> bool:
+        """True when STT/TTS/LLM should be served by remote APIs."""
+        return self.inference_mode == "cloud"
+
+    @property
+    def is_local_mode(self) -> bool:
+        """True when STT/TTS/LLM should be served by local models."""
+        return self.inference_mode == "local"
+
+    @property
+    def groq_mode(self) -> bool:
+        """Backward-compat shim — prefer ``is_cloud_mode``."""
+        return self.is_cloud_mode
 
     # =========================
     # Search / Matching

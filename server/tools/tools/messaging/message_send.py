@@ -2,6 +2,8 @@
 message_send tool - Send a text message to a contact
 """
 
+import asyncio
+
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
 from datetime import datetime
@@ -29,6 +31,7 @@ class MessageSendTool(BaseTool):
         contact = self.get_input(inputs, "contact")
         message = self.get_input(inputs, "message")
         platform = self.get_input(inputs, "platform", "auto")
+        user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "guest").strip() or "guest"
         
         if not contact:
             return ToolOutput(
@@ -53,10 +56,10 @@ class MessageSendTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation.create()
+            wa = await WhatsAppAutomation.create(user_id=user_id)
             
             # Send the message
-            sent = wa.send_message(contact, message)
+            sent = await asyncio.to_thread(wa.send_message, contact, message)
             if not sent:
                 return ToolOutput(
                     success=False,

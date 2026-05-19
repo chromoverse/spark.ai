@@ -2,9 +2,131 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
+import subprocess as _subprocess_mod
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+
+# ── Input type coercion ──────────────────────────────────────────────────
+# LLMs frequently emit JSON args with the wrong primitive type (e.g. an
+# integer wrapped in quotes). Rather than failing the whole task we try a
+# safe, lossless coercion before reporting a validation error.
+
+_TRUE_STRINGS = {"true", "yes", "y", "on", "1"}
+_FALSE_STRINGS = {"false", "no", "n", "off", "0"}
+
+
+def _is_type_match(value: Any, param_type: Optional[str]) -> bool:
+    """Return True when value already satisfies the expected schema type."""
+    if param_type is None:
+        return True
+    if param_type == "string":
+        return isinstance(value, str)
+    if param_type == "integer":
+        # bool is a subclass of int — treat it as a separate type.
+        return isinstance(value, int) and not isinstance(value, bool)
+    if param_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if param_type == "boolean":
+        return isinstance(value, bool)
+    if param_type == "array":
+        return isinstance(value, list)
+    if param_type == "object":
+        return isinstance(value, dict)
+    return True
+
+
+def _coerce_value(value: Any, param_type: Optional[str]) -> Tuple[Any, bool]:
+    """Best-effort safe coercion. Returns (coerced_value, success)."""
+    if param_type is None or _is_type_match(value, param_type):
+        return value, True
+
+    try:
+        if param_type == "integer":
+            if isinstance(value, bool):
+                return int(value), True
+            if isinstance(value, float):
+                if value.is_integer():
+                    return int(value), True
+                return value, False
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return value, False
+                # Accept "15", "15.0", "+15", "-3"
+                try:
+                    return int(stripped), True
+                except ValueError:
+                    pass
+                try:
+                    f = float(stripped)
+                    if f.is_integer():
+                        return int(f), True
+                except ValueError:
+                    pass
+                return value, False
+
+        if param_type == "number":
+            if isinstance(value, bool):
+                return float(value), True
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return value, False
+                try:
+                    return float(stripped), True
+                except ValueError:
+                    return value, False
+
+        if param_type == "boolean":
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if value in (0, 1):
+                    return bool(value), True
+                return value, False
+            if isinstance(value, str):
+                norm = value.strip().lower()
+                if norm in _TRUE_STRINGS:
+                    return True, True
+                if norm in _FALSE_STRINGS:
+                    return False, True
+                return value, False
+
+        if param_type == "string":
+            if isinstance(value, (int, float, bool)):
+                return str(value), True
+
+        if param_type == "array":
+            if isinstance(value, tuple):
+                return list(value), True
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, list):
+                            return parsed, True
+                    except json.JSONDecodeError:
+                        pass
+                # Fallback: comma-separated list
+                if "," in stripped:
+                    return [p.strip() for p in stripped.split(",") if p.strip()], True
+
+        if param_type == "object":
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("{") and stripped.endswith("}"):
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, dict):
+                            return parsed, True
+                    except json.JSONDecodeError:
+                        pass
+    except Exception:
+        return value, False
+
+    return value, False
 
 
 class ToolOutput:
@@ -32,6 +154,44 @@ class BaseTool(ABC):
     def set_schemas(self, params_schema: Dict[str, Any], output_schema: Dict[str, Any]) -> None:
         self._params_schema = params_schema
         self._output_schema = output_schema
+
+    # ── Non-blocking helpers for async _execute methods ──────────────────
+
+    async def _run_subprocess(
+        self,
+        cmd: Union[List[str], str],
+        *,
+        capture_output: bool = True,
+        text: bool = True,
+        timeout: int = 30,
+        cwd: Optional[str] = None,
+        shell: bool = False,
+        check: bool = False,
+        **kwargs: Any,
+    ) -> _subprocess_mod.CompletedProcess:
+        """Non-blocking ``subprocess.run`` — safe to call from async ``_execute``.
+
+        Offloads the blocking call to a thread so the event loop stays free.
+        Accepts the same arguments as ``subprocess.run``.
+        """
+        return await asyncio.to_thread(
+            _subprocess_mod.run,
+            cmd,
+            capture_output=capture_output,
+            text=text,
+            timeout=timeout,
+            cwd=cwd,
+            shell=shell,
+            check=check,
+            **kwargs,
+        )
+
+    @staticmethod
+    async def _async_sleep(seconds: float) -> None:
+        """Non-blocking sleep — use instead of ``time.sleep`` inside async ``_execute``."""
+        await asyncio.sleep(seconds)
+
+    # ── Core execution entry-point ───────────────────────────────────────
 
     async def execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         try:
@@ -72,14 +232,19 @@ class BaseTool(ABC):
 
             if param_name in inputs:
                 value = inputs[param_name]
-                if param_type == "string" and not isinstance(value, str):
-                    return f"Parameter '{param_name}' must be string, got {type(value).__name__}"
-                if param_type == "integer" and not isinstance(value, int):
-                    return f"Parameter '{param_name}' must be integer, got {type(value).__name__}"
-                if param_type == "boolean" and not isinstance(value, bool):
-                    return f"Parameter '{param_name}' must be boolean, got {type(value).__name__}"
-                if param_type == "array" and not isinstance(value, list):
-                    return f"Parameter '{param_name}' must be array, got {type(value).__name__}"
+                if not _is_type_match(value, param_type):
+                    coerced, ok = _coerce_value(value, param_type)
+                    if ok:
+                        self.logger.debug(
+                            "Coerced '%s' from %s to %s for tool %s",
+                            param_name, type(value).__name__, param_type, self.tool_name,
+                        )
+                        inputs[param_name] = coerced
+                        continue
+                    return (
+                        f"Parameter '{param_name}' must be {param_type}, "
+                        f"got {type(value).__name__}"
+                    )
 
         return None
 

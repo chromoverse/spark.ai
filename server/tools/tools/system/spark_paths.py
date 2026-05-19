@@ -8,6 +8,7 @@ spark_data_open:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -52,7 +53,7 @@ class SparkDataOpenTool(BaseTool):
         data_dir = path_manager.get_user_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        opened_with = _open_path(str(data_dir))
+        opened_with = await asyncio.to_thread(_open_path, str(data_dir))
         return ToolOutput(
             success=True,
             data={

@@ -27,6 +27,7 @@ Tools
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import json
@@ -58,9 +59,43 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 # Dependency helpers
 # ---------------------------------------------------------------------------
 
+def _venv_bin_dirs() -> List[str]:
+    """Directories where the running Python's installed CLI shims live.
+
+    Important on Windows where the venv's Scripts/ dir isn't on the system PATH
+    unless the venv is activated. Without this, `shutil.which("yt-dlp")` returns
+    None even though `pip install yt-dlp` placed `yt-dlp.exe` in the venv.
+    """
+    dirs: List[str] = []
+    py_dir = Path(sys.executable).parent  # e.g. .venv/Scripts (Win) or .venv/bin (Unix)
+    dirs.append(str(py_dir))
+    # On Unix venvs, sys.executable is in bin/. On Windows, in Scripts/. Add the
+    # sibling dir for completeness in unusual layouts.
+    sibling = py_dir.parent / ("bin" if py_dir.name.lower() == "scripts" else "Scripts")
+    if sibling.exists():
+        dirs.append(str(sibling))
+    return dirs
+
+
+def _resolve_bin(cmd: str) -> Optional[str]:
+    """Locate `cmd` on PATH or in the running Python's bin/Scripts dir.
+
+    Returns the absolute path of the executable, or None if not found.
+    """
+    found = shutil.which(cmd)
+    if found:
+        return found
+    # Fallback: look inside the current interpreter's bin/Scripts dir.
+    for d in _venv_bin_dirs():
+        candidate = shutil.which(cmd, path=d)
+        if candidate:
+            return candidate
+    return None
+
+
 def _has(cmd: str) -> bool:
-    """True if `cmd` is on PATH."""
-    return shutil.which(cmd) is not None
+    """True if `cmd` is resolvable via PATH or the active venv's Scripts/bin dir."""
+    return _resolve_bin(cmd) is not None
 
 
 def _require_ytdlp() -> None:
@@ -74,7 +109,11 @@ def _require_ytdlp() -> None:
 
 
 def _detect_cli_player() -> Optional[str]:
-    """Return the first usable CLI audio player, or None."""
+    """Return the first usable CLI audio player name, or None.
+
+    Returns the bare name (e.g. 'mpv'), not the absolute path. Use
+    `_resolve_bin(name)` to get the absolute path before invoking subprocess.
+    """
     for p in ("mpv", "vlc", "ffplay"):
         if _has(p):
             return p
@@ -82,16 +121,21 @@ def _detect_cli_player() -> Optional[str]:
 
 
 def _player_args(player: str, target: str) -> List[str]:
-    """Build the subprocess argv for a given player + audio target."""
+    """Build the subprocess argv for a given player + audio target.
+
+    argv[0] is resolved to an absolute path so the call works even when the
+    binary lives in the active venv's Scripts/bin dir (not on system PATH).
+    """
+    binary = _resolve_bin(player) or player
     if player == "mpv":
-        return ["mpv", "--no-video", "--really-quiet",
+        return [binary, "--no-video", "--really-quiet",
                 "--ytdl-format=bestaudio/best", target]
     if player == "vlc":
-        return ["vlc", "--intf", "dummy", "--no-video",
+        return [binary, "--intf", "dummy", "--no-video",
                 "--play-and-exit", target]
     if player == "ffplay":
-        return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", target]
-    return [player, target]
+        return [binary, "-nodisp", "-autoexit", "-loglevel", "quiet", target]
+    return [binary, target]
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +147,9 @@ def _ytdlp_extract_url(query_uri: str) -> str:
     Ask yt-dlp for the direct best-audio stream URL without downloading.
     Returns the URL string on success, raises on failure.
     """
+    ytdlp = _resolve_bin("yt-dlp") or "yt-dlp"
     result = subprocess.run(
-        ["yt-dlp", "--get-url", "--format", "bestaudio/best",
+        [ytdlp, "--get-url", "--format", "bestaudio/best",
          "--no-playlist", query_uri],
         capture_output=True, text=True, timeout=30
     )
@@ -125,8 +170,9 @@ def _ytdlp_download_temp(query_uri: str) -> str:
     tmp_dir  = tempfile.mkdtemp(prefix="music_play_")
     out_tmpl = os.path.join(tmp_dir, "%(title)s.%(ext)s")
 
+    ytdlp = _resolve_bin("yt-dlp") or "yt-dlp"
     result = subprocess.run(
-        ["yt-dlp", "--format", "bestaudio/best",
+        [ytdlp, "--format", "bestaudio/best",
          "--extract-audio", "--audio-format", "mp3",
          "--no-playlist", "-o", out_tmpl, query_uri],
         capture_output=True, text=True, timeout=120
@@ -773,16 +819,16 @@ class MusicPlayTool(BaseTool):
         session_id = self.get_input(inputs, "session_id", "default")
 
         # Step 1 — Kill the tracked session (if any) by PID
-        sessions = _load_sessions()
+        sessions = await asyncio.to_thread(_load_sessions)
         if session_id in sessions:
             old_pid = sessions[session_id].get("pid")
-            if old_pid and _pid_alive(old_pid):
-                _kill_pid(old_pid, force=True)
+            if old_pid and await asyncio.to_thread(_pid_alive, old_pid):
+                await asyncio.to_thread(_kill_pid, old_pid, True)
 
         # Step 2 — Kill ALL orphan instances of every player (catches processes
         #           from previous crashed / untracked runs that survived step 1)
         for _p in ("ffplay", "mpv", "vlc"):
-            _kill_player_orphans(_p)
+            await asyncio.to_thread(_kill_player_orphans, _p)
 
         try:
             duration_seconds: Optional[float] = None
@@ -791,12 +837,12 @@ class MusicPlayTool(BaseTool):
                 if not file_path:
                     return ToolOutput(success=False, data={},
                                       error="'file_path' is required when source='local'.")
-                proc, method = _launch_local(file_path)
+                proc, method = await asyncio.to_thread(_launch_local, file_path)
                 aux_pid = None
                 path             = Path(file_path)
-                duration_seconds = _get_duration_seconds(str(path))
+                duration_seconds = await asyncio.to_thread(_get_duration_seconds, str(path))
                 # Try to extract embedded album art as a temp PNG for thumbnail
-                thumb_path = _extract_embedded_art(str(path))
+                thumb_path = await asyncio.to_thread(_extract_embedded_art, str(path))
                 meta = {
                     "source":           "local",
                     "source_icon":      _source_icon("local"),
@@ -819,8 +865,8 @@ class MusicPlayTool(BaseTool):
                                       error="'title' is required for online playback.")
                 ytdlp_search_q = f"scsearch1:{' '.join(filter(None,[title,artist,album]))}" if source == "soundcloud" else f"ytsearch1:{' '.join(filter(None,[title,artist,album]))}"
                 # Fetch rich metadata (thumbnail, resolved title, duration) before launching
-                track_info = _fetch_track_info(ytdlp_search_q)
-                proc, method, aux_pid = _launch_online(title, artist, album, source)
+                track_info = await asyncio.to_thread(_fetch_track_info, ytdlp_search_q)
+                proc, method, aux_pid = await asyncio.to_thread(_launch_online, title, artist, album, source)
                 resolved_title  = track_info.get("yt_title",    title)
                 resolved_artist = track_info.get("yt_uploader", artist)
                 meta = {
@@ -843,7 +889,7 @@ class MusicPlayTool(BaseTool):
                 "aux_pid": aux_pid if source != "local" else None,
                 "meta":    meta,
             }
-            _save_sessions(sessions)
+            await asyncio.to_thread(_save_sessions, sessions)
 
             self.logger.info(
                 "Playback started | session=%s pid=%s method=%s source=%s title=%s",
@@ -928,12 +974,14 @@ class MusicStopTool(BaseTool):
         stop_all   = self.get_input(inputs, "stop_all", False)
 
         try:
-            sessions = _load_sessions()
+            sessions = await asyncio.to_thread(_load_sessions)
 
             if stop_all:
                 ids     = list(sessions.keys())
-                results = [self._kill_session(sid, sessions, force) for sid in ids]
-                _save_sessions(sessions)
+                results = []
+                for sid in ids:
+                    results.append(await asyncio.to_thread(self._kill_session, sid, sessions, force))
+                await asyncio.to_thread(_save_sessions, sessions)
                 return ToolOutput(success=True, data={"stopped": results, "count": len(results)})
 
             if session_id not in sessions:
@@ -943,12 +991,12 @@ class MusicStopTool(BaseTool):
                           f"Active: {list(sessions.keys())}"
                 )
 
-            result = self._kill_session(session_id, sessions, force)
-            _save_sessions(sessions)
+            result = await asyncio.to_thread(self._kill_session, session_id, sessions, force)
+            await asyncio.to_thread(_save_sessions, sessions)
 
             # Also nuke any orphan player processes not tracked in session file
             for _p in ("ffplay", "mpv", "vlc"):
-                _kill_player_orphans(_p)
+                await asyncio.to_thread(_kill_player_orphans, _p)
 
             return ToolOutput(success=True, data=result)
 
@@ -990,7 +1038,7 @@ class MusicStatusTool(BaseTool):
         session_id     = self.get_input(inputs, "session_id", None)
         include_system = self.get_input(inputs, "include_system", True)
 
-        sessions = _load_sessions()
+        sessions = await asyncio.to_thread(_load_sessions)
         stale: List[str] = []
         our_sessions: List[Dict[str, Any]] = []
 
@@ -1003,7 +1051,7 @@ class MusicStatusTool(BaseTool):
         for sid, entry in scope.items():
             pid   = entry.get("pid")
             meta  = entry.get("meta", {})
-            alive = _pid_alive(pid) if pid else False
+            alive = await asyncio.to_thread(_pid_alive, pid) if pid else False
 
             if not alive:
                 stale.append(sid)
@@ -1037,14 +1085,14 @@ class MusicStatusTool(BaseTool):
         for sid in stale:
             del sessions[sid]
         if stale:
-            _save_sessions(sessions)
+            await asyncio.to_thread(_save_sessions, sessions)
 
         system_streams: List[Dict[str, Any]] = []
         system_error:   Optional[str]        = None
 
         if include_system:
             try:
-                system_streams = _system_audio_streams()
+                system_streams = await asyncio.to_thread(_system_audio_streams)
             except Exception as exc:
                 system_error = str(exc)
                 self.logger.warning("System audio scan failed: %s", exc)
@@ -1101,7 +1149,7 @@ class MusicPauseTool(BaseTool):
         session_id = self.get_input(inputs, "session_id", "default")
 
         try:
-            sessions = _load_sessions()
+            sessions = await asyncio.to_thread(_load_sessions)
             if session_id not in sessions:
                 return ToolOutput(
                     success=False, data={},
@@ -1118,10 +1166,10 @@ class MusicPauseTool(BaseTool):
                     error=f"Session '{session_id}' is already paused."
                 )
 
-            if not pid or not _pid_alive(pid):
+            if not pid or not await asyncio.to_thread(_pid_alive, pid):
                 return ToolOutput(success=False, data={}, error="Process is not running.")
 
-            method = _suspend_pid(pid)
+            method = await asyncio.to_thread(_suspend_pid, pid)
             if method.startswith("error"):
                 return ToolOutput(success=False, data={}, error=method)
 
@@ -1130,7 +1178,7 @@ class MusicPauseTool(BaseTool):
             meta["playback_state"]  = "paused"
             meta["paused_at"]       = now_iso
             sessions[session_id]["meta"] = meta
-            _save_sessions(sessions)
+            await asyncio.to_thread(_save_sessions, sessions)
 
             self.logger.info("Paused | session=%s pid=%s method=%s", session_id, pid, method)
 
@@ -1184,7 +1232,7 @@ class MusicResumeTool(BaseTool):
         session_id = self.get_input(inputs, "session_id", "default")
 
         try:
-            sessions = _load_sessions()
+            sessions = await asyncio.to_thread(_load_sessions)
             if session_id not in sessions:
                 return ToolOutput(
                     success=False, data={},
@@ -1201,10 +1249,10 @@ class MusicResumeTool(BaseTool):
                     error=f"Session '{session_id}' is not paused (state: {meta.get('playback_state', 'playing')})."
                 )
 
-            if not pid or not _pid_alive(pid):
+            if not pid or not await asyncio.to_thread(_pid_alive, pid):
                 return ToolOutput(success=False, data={}, error="Process is not running.")
 
-            method = _resume_pid(pid)
+            method = await asyncio.to_thread(_resume_pid, pid)
             if method.startswith("error"):
                 return ToolOutput(success=False, data={}, error=method)
 
@@ -1219,7 +1267,7 @@ class MusicResumeTool(BaseTool):
             meta["playback_state"] = "playing"
             meta["paused_at"]      = None
             sessions[session_id]["meta"] = meta
-            _save_sessions(sessions)
+            await asyncio.to_thread(_save_sessions, sessions)
 
             now_iso = datetime.now().isoformat()
             self.logger.info("Resumed | session=%s pid=%s method=%s", session_id, pid, method)

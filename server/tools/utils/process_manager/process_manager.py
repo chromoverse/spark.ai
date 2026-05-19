@@ -1157,6 +1157,14 @@ class ProcessManager:
         
         return None
 
+    def find_window(self, identifier: Union[str, int]) -> Optional[WindowInfo]:
+        """Return window info for a matching app name or PID without logging warnings."""
+        return self._find_window(identifier)
+
+    def get_focused_window(self) -> Optional[WindowInfo]:
+        """Return the currently focused window, if available."""
+        return self._backend.get_focused_window()
+
     # === Core Function 3: Bring to Focus ===
 
     def bring_to_focus(self, identifier: Union[str, int]) -> bool:

@@ -1,4 +1,5 @@
 
+import asyncio
 from typing import Dict, Any
 from datetime import datetime
 
@@ -39,7 +40,7 @@ class NotificationPushTool(BaseTool):
             )
         
         try:
-            notification_id = self._send_notification(title, message, urgency)
+            notification_id = await asyncio.to_thread(self._send_notification, title, message, urgency)
             
             return ToolOutput(
                 success=True,

@@ -8,6 +8,7 @@ Key fix: pauses OneDrive sync before moving files so operations are
 instant local moves — not slow cloud upload/download round-trips.
 """
 
+import asyncio
 import os
 import json
 import subprocess
@@ -152,6 +153,31 @@ class FolderOrganizeTool(BaseTool):
 
         return commands, move_map, subfolders
 
+    @staticmethod
+    def _list_files(folder_path: str) -> List[str]:
+        return [
+            entry for entry in os.listdir(folder_path)
+            if os.path.isfile(os.path.join(folder_path, entry)) and entry != "restore.bat"
+        ]
+
+    @staticmethod
+    def _filter_existing_files(folder_path: str, category_map: Dict[str, str]) -> Dict[str, str]:
+        return {
+            fname: subfolder
+            for fname, subfolder in category_map.items()
+            if os.path.isfile(os.path.join(folder_path, fname))
+        }
+
+    @staticmethod
+    def _write_restore_script(
+        restore_path: str,
+        folder_path: str,
+        move_map: Dict[str, str],
+        created_dirs: List[str],
+    ) -> None:
+        with open(restore_path, "w", encoding="utf-8") as handle:
+            handle.write(_build_restore_bat(folder_path, move_map, created_dirs))
+
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         folder_path = self.get_input(inputs, "path", "")
 
@@ -160,16 +186,12 @@ class FolderOrganizeTool(BaseTool):
 
         folder_path = os.path.normpath(os.path.expanduser(folder_path))
 
-        if not os.path.isdir(folder_path):
+        if not await asyncio.to_thread(os.path.isdir, folder_path):
             return ToolOutput(success=False, data={}, error=f"Directory not found: {folder_path}")
 
         # ── 1. List files ─────────────────────────────────────────────────────
         try:
-            files = [
-                e for e in os.listdir(folder_path)
-                if os.path.isfile(os.path.join(folder_path, e))
-                and e != "restore.bat"
-            ]
+            files = await asyncio.to_thread(self._list_files, folder_path)
         except Exception as e:
             return ToolOutput(success=False, data={}, error=f"Cannot read folder: {e}")
 
@@ -238,11 +260,7 @@ OUTPUT FORMAT:
             return ToolOutput(success=False, data={}, error="LLM returned empty categories")
 
         # Drop hallucinated filenames
-        category_map = {
-            fname: sf
-            for fname, sf in category_map.items()
-            if os.path.isfile(os.path.join(folder_path, fname))
-        }
+        category_map = await asyncio.to_thread(self._filter_existing_files, folder_path, category_map)
 
         # ── 4. Build commands ─────────────────────────────────────────────────
         commands, move_map, created_dirs = self._build_ps_commands(folder_path, category_map)
@@ -250,8 +268,13 @@ OUTPUT FORMAT:
         # ── 5. Write restore.bat BEFORE touching any files ────────────────────
         restore_path = os.path.join(folder_path, "restore.bat")
         try:
-            with open(restore_path, "w", encoding="utf-8") as f:
-                f.write(_build_restore_bat(folder_path, move_map, created_dirs))
+            await asyncio.to_thread(
+                self._write_restore_script,
+                restore_path,
+                folder_path,
+                move_map,
+                created_dirs,
+            )
             self.logger.info(f"restore.bat written: {restore_path}")
         except Exception as e:
             return ToolOutput(success=False, data={}, error=f"Failed to write restore.bat: {e}")
@@ -277,7 +300,7 @@ OUTPUT FORMAT:
         ])
 
         try:
-            result = subprocess.run(
+            result = await self._run_subprocess(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", full_script],
                 capture_output=True,
                 text=True,

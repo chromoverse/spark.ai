@@ -64,37 +64,57 @@ class WhatsAppAutomation:
     # ══════════════════════════════════════════════════════
 
     @classmethod
-    async def create(cls, confidence: float = 0.8, search_timeout: int = 3) -> "WhatsAppAutomation":
+    async def create(
+        cls,
+        confidence: float = 0.8,
+        search_timeout: int = 3,
+        *,
+        user_id: str = "guest",
+        ready_timeout: float = 20.0,
+    ) -> "WhatsAppAutomation":
         """
         Async factory — opens WhatsApp and waits for it to be ready.
         Usage:  wa = await WhatsAppAutomation.create()
         """
         self = cls(confidence=confidence, search_timeout=search_timeout)
-        open_result = await self.app_open_tool.execute({"target": "WhatsApp"})
+        from app.agent.runtime.tool_context_service import get_tool_context_service
+
+        context = get_tool_context_service()
+        precheck = await context.wait_for_app_ready(
+            user_id=user_id,
+            app_name="WhatsApp",
+            timeout_s=1.5,
+            poll_interval_s=0.25,
+            require_focus=True,
+            stable_count_required=2,
+            ready_check=self._whatsapp_ready_probe,
+            record_launch=False,
+            metadata={"source": "whatsapp_automation_precheck"},
+        )
+        if precheck.get("ready"):
+            _emit("  ✅ WhatsApp already ready.")
+            return self
+
+        open_result = await self.app_open_tool.execute({"target": "WhatsApp", "user_id": user_id})
         if not open_result.success:
             raise RuntimeError(f"Failed to open WhatsApp: {open_result.error or 'unknown error'}")
         _emit("  ⏳ Waiting for WhatsApp to be ready...")
-        focused = self.process_manager.bring_to_focus("WhatsApp")
-        if not focused:
-            # Windows can block foreground focus from background threads/processes.
-            # Try direct pygetwindow activation as a fallback before failing.
-            windows = gw.getWindowsWithTitle("WhatsApp")
-            if windows:
-                try:
-                    win = windows[0]
-                    if getattr(win, "isMinimized", False):
-                        win.restore()
-                        time.sleep(0.2)
-                    win.activate()
-                    time.sleep(0.4)
-                    focused = True
-                except Exception:
-                    focused = False
-            else:
-                focused = False
-        if not focused:
-            _emit("  ⚠️ Could not force WhatsApp to foreground; continuing with best-effort focus")
-        time.sleep(3)   # let the app fully render before clicking
+        wait_result = await context.wait_for_app_ready(
+            user_id=user_id,
+            app_name="WhatsApp",
+            pid=int(open_result.data.get("process_id") or 0),
+            timeout_s=ready_timeout,
+            poll_interval_s=0.4,
+            require_focus=True,
+            stable_count_required=5,
+            ready_check=self._whatsapp_ready_probe,
+            metadata={
+                "source": "whatsapp_automation",
+                "open_task_status": open_result.data.get("status"),
+            },
+        )
+        if not wait_result.get("ready"):
+            raise RuntimeError(wait_result.get("reason") or "WhatsApp did not become ready in time.")
         return self
 
     def _get_window(self):
@@ -124,6 +144,41 @@ class WhatsAppAutomation:
         prevents false matches on VS Code tabs, taskbar, browser, etc.
         """
         return (win.left, win.top, win.width, win.height)
+
+    def _find_button_once(self, image_name: str, confidence: float | None = None, region=None) -> bool:
+        """Single, non-looping UI probe used by the smart readiness layer."""
+        conf = confidence if confidence is not None else self.confidence
+        try:
+            return pyautogui.locateCenterOnScreen(icon(image_name), confidence=conf, region=region) is not None
+        except (pyautogui.ImageNotFoundException, ValueError):
+            return False
+        except Exception:
+            return False
+
+    def _whatsapp_ready_probe(self, *, focus_ok: bool, **_: object) -> tuple[bool, str]:
+        """Fast readiness probe used by ToolContextService while waiting for WhatsApp."""
+        windows = gw.getWindowsWithTitle("WhatsApp")
+        if not windows:
+            return False, "WhatsApp window not found yet."
+
+        win = windows[0]
+        if getattr(win, "isMinimized", False):
+            return False, "WhatsApp window is minimized."
+        if getattr(win, "width", 0) < 320 or getattr(win, "height", 0) < 480:
+            return False, "WhatsApp window is still sizing itself."
+        if not focus_ok:
+            return False, "WhatsApp window is not focused yet."
+
+        region = self._get_wa_region(win)
+        for image_name, label in (
+            ("btn_plus.png", "attachment button"),
+            ("btn_call_icon.png", "call icon"),
+        ):
+            if self._find_button_once(image_name, confidence=0.6, region=region):
+                return True, f"Detected WhatsApp {label}."
+
+        return True, "WhatsApp window is focused and stable."
+
     def _find_button(self, image_path: str, confidence: float | None = None, region=None) -> tuple | None:
         conf  = confidence if confidence is not None else self.confidence
 

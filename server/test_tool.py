@@ -3,8 +3,8 @@ import asyncio
 import json
 
 async def test_tools():
-    tool = artifacts.ArtifactListTool()
-    result = await tool.execute({"kind": "screenshot", "user_id" : "695e2bbaf8efc966aaf9f218"})
+    tool = app.AppOpenTool()
+    result = await tool.execute({"target": "notepad", "user_id" : "695e2bbaf8efc966aaf9f218"})
     print(json.dumps(result.data, indent=2))
 
 if __name__ == "__main__":

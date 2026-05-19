@@ -1,0 +1,64 @@
+# =====================================================================
+# Project root .gitignore
+#
+# Per-folder .gitignore files exist in:
+#   electron/      (Node + editor patterns)
+#   server/        (Python venv, .env, model binaries, OAuth tokens)
+#   server/tools/  (Python venv, generated/)
+#   llms/          (Python venv, __pycache__)
+#
+# This file covers cross-cutting concerns and folders without their own
+# .gitignore (e.g. voice_daemon/, docs/).
+# =====================================================================
+
+# ---- Graphify ------------------------------------------------------
+# graph.json's manifest contains absolute local paths and the whole
+# directory is rebuilt by the post-commit hook, so we don't track it.
+graphify-out/
+
+# ---- Python (cross-cutting) ----------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node (cross-cutting safety net) -------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ---- Secrets / env -------------------------------------------------
+.env
+.env.local
+.env.*.local
+# keep templates
+!.env.example
+!.env.sample
+!env.sample
+
+# ---- OS junk -------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ---- Editors / IDEs ------------------------------------------------
+.idea/
+*.swp
+*.swo
+*.sw?
+*~
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ---- Logs / temp / caches ------------------------------------------
+*.log
+*.tmp
+.cache/

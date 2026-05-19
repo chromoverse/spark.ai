@@ -41,7 +41,7 @@ function AuthMaker() {
       <span className="text-gray-800 text-[15px]">
         Already have an Account?{" "}
         <span onClick={() => navigate("/auth/onboarding")} className="hover:underline cursor-pointer">OnBoarding</span>
-        {/* <span onClick={() => navigate("/auth/sign-in")} className="hover:underline cursor-pointer">Login</span> */}
+        <span onClick={() => navigate("/auth/sign-in")} className="hover:underline cursor-pointer">Login</span>
       </span>
     </div>
   );

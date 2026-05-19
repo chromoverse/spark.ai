@@ -35,7 +35,7 @@ class LockScreenTool(BaseTool):
                 await asyncio.sleep(delay)
 
             platform = sys.platform
-            self._lock(platform)
+            await self._lock(platform)
 
             return ToolOutput(
                 success=True,
@@ -50,7 +50,7 @@ class LockScreenTool(BaseTool):
             self.logger.error(f"Failed to lock screen: {e}")
             return ToolOutput(success=False, data={}, error=str(e))
 
-    def _lock(self, platform: str) -> None:
+    async def _lock(self, platform: str) -> None:
         """Execute the OS-specific lock command."""
 
         if platform == "win32":
@@ -61,13 +61,13 @@ class LockScreenTool(BaseTool):
         elif platform == "darwin":
             # macOS — two methods, try both
             try:
-                subprocess.run(
+                await self._run_subprocess(
                     ["pmset", "displaysleepnow"],
                     check=True, timeout=5
                 )
             except Exception:
                 # fallback — triggers screensaver which respects lock setting
-                subprocess.run(
+                await self._run_subprocess(
                     [
                         "osascript", "-e",
                         'tell application "System Events" to keystroke "q" '
@@ -89,7 +89,7 @@ class LockScreenTool(BaseTool):
 
             for cmd in lock_commands:
                 try:
-                    subprocess.run(cmd, check=True, timeout=5)
+                    await self._run_subprocess(cmd, check=True, timeout=5)
                     return  # success — stop trying
                 except (FileNotFoundError, subprocess.CalledProcessError):
                     continue

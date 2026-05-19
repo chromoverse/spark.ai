@@ -18,6 +18,7 @@ artifact_open:
 
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 import os
 import subprocess
@@ -313,7 +314,7 @@ class ArtifactOpenTool(BaseTool):
         if error or record is None or path is None:
             return ToolOutput(success=False, data={}, error=error or "No matching artifact found")
 
-        opened_with = _open_path(str(path), app=app)
+        opened_with = await asyncio.to_thread(_open_path, str(path), app)
         payload = _build_artifact_payload(record, path)
         return ToolOutput(
             success=True,

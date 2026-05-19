@@ -184,6 +184,20 @@ register("Pinecone runtime warmup (production)", _warmup_pinecone_runtime)
 
 # ── 8. Local ML runtime load (desktop only) ──
 async def _init_local_ml_runtime() -> None:
+    """
+    Set up local ML runtime references and schedule model loading + embedding
+    warmup as a *background task*. The initializer returns immediately so the
+    server can finish startup and accept connections while the embedding model
+    primes in the background.
+
+    Model load policy is in ``app/ml/config.py``:
+      • In cloud mode, only the embedding model is eager (Whisper/emotion lazy).
+      • In local mode, embedding + Whisper are eager.
+
+    Components depending on ``app.state.embedding_ready`` already have
+    graceful fallbacks for the brief window where the primer hasn't completed.
+    """
+    import asyncio
     from app.config import settings
     from app.startup_state import startup_state
 
@@ -199,46 +213,63 @@ async def _init_local_ml_runtime() -> None:
     from app.ml import model_loader, embedding_worker, get_device, get_embedding
     device = get_device()
 
+    # Wire references synchronously so consumers can grab them immediately —
+    # the actual weights and embedding primer come up asynchronously below.
     startup_state.model_loader = model_loader
     startup_state.embedding_worker = embedding_worker
     startup_state.ml_device = device
 
     logger.info("=" * 60)
-    logger.info(" Loading ML models on device: %s", device)
+    logger.info(" Scheduling background ML load on device: %s (mode=%s)", device, settings.inference_mode)
     logger.info("=" * 60)
 
-    success = model_loader.load_all_models()
-    if success:
-        logger.info(" All ML models loaded successfully")
-    else:
-        logger.warning("⚠️  Some ML models failed to load - check logs")
+    async def _background_load_and_warmup() -> None:
+        try:
+            load_started = time.perf_counter()
+            # load_all_models() is sync (uses its own ThreadPoolExecutor for
+            # parallel per-model loading). Push it off the event loop.
+            success = await asyncio.to_thread(model_loader.load_all_models)
+            load_ms = (time.perf_counter() - load_started) * 1000
+            if success:
+                logger.info(" All eager ML models loaded (%.0f ms)", load_ms)
+            else:
+                logger.warning("⚠️ Some ML models failed to load - check logs (%.0f ms)", load_ms)
 
-    # Warmup whatever managed to load (for example embedding even if whisper fails).
-    model_loader.warmup_models()
-    logger.info(" Model warmup step completed")
+            # Warmup is sync too — to_thread it.
+            await asyncio.to_thread(model_loader.warmup_models)
+            logger.info(" Model warmup step completed")
 
-    # Explicitly enforce embedding readiness independent of other model failures.
-    embedding_model = model_loader.get_model("embedding")
-    if embedding_model is None:
-        embedding_model = model_loader.load_model("embedding")
-    if embedding_model is None:
-        logger.warning("⚠️ Embedding model unavailable at startup")
-        return
+            # Explicitly enforce embedding readiness independent of other failures.
+            embedding_model = model_loader.get_model("embedding")
+            if embedding_model is None:
+                embedding_model = await asyncio.to_thread(model_loader.load_model, "embedding")
+            if embedding_model is None:
+                logger.warning("⚠️ Embedding model unavailable after background load")
+                return
 
-    try:
-        primer_started = time.perf_counter()
-        primer_vector = await get_embedding("startup embedding warmup")
-        primer_ms = (time.perf_counter() - primer_started) * 1000
-        startup_state.embedding_ready = bool(primer_vector)
-        logger.info(
-            "✅ Embedding worker primed at startup (dim=%d, elapsed_ms=%.0f)",
-            len(primer_vector),
-            primer_ms,
-        )
-    except Exception as exc:
-        logger.warning("⚠️ Embedding worker startup prime failed: %s", exc)
+            primer_started = time.perf_counter()
+            primer_vector = await get_embedding("startup embedding warmup")
+            primer_ms = (time.perf_counter() - primer_started) * 1000
+            startup_state.embedding_ready = bool(primer_vector)
+            logger.info(
+                "✅ Embedding worker primed in background (dim=%d, elapsed_ms=%.0f)",
+                len(primer_vector),
+                primer_ms,
+            )
+        except Exception as exc:
+            logger.warning("⚠️ Background ML warmup failed: %s", exc)
+
+    # Fire-and-forget — server startup proceeds immediately.
+    # The task is anchored to a module-level reference so the GC doesn't drop it.
+    global _ml_warmup_task
+    _ml_warmup_task = asyncio.create_task(_background_load_and_warmup())
+    _ml_warmup_task.add_done_callback(lambda _t: logger.info("background ML warmup task finished"))
 
 
-register("Local ML runtime (desktop only)", _init_local_ml_runtime)
+# Anchor the background task so asyncio doesn't garbage-collect it mid-flight.
+_ml_warmup_task = None  # type: ignore[var-annotated]
+
+
+register("Local ML runtime (desktop, background)", _init_local_ml_runtime)
 
 

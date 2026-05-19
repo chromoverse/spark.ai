@@ -4,6 +4,7 @@ Sound/Volume control tools for adjusting system audio.
 Default increment/decrement: 30 units (out of 100)
 """
 
+import asyncio
 import sys
 import subprocess
 import logging
@@ -33,7 +34,7 @@ class SoundStatusTool(BaseTool):
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         """Get current volume level and mute status."""
         try:
-            volume, is_muted = self._get_volume_status()
+            volume, is_muted = await asyncio.to_thread(self._get_volume_status)
             
             return ToolOutput(
                 success=True,
@@ -69,7 +70,9 @@ class SoundStatusTool(BaseTool):
             
             # Get current volume (0.0 to 1.0)
             current_volume = volume.GetMasterVolumeLevelScalar()  # type: ignore
-            volume_percent = int(current_volume * 100)
+            # Use round() not int() — pycaw stores scalar as float, so setting
+            # 0.48 lands at ~0.47999999 and int() would truncate to 47.
+            volume_percent = round(current_volume * 100)
             
             # Get mute status
             is_muted = bool(volume.GetMute())  # type: ignore
@@ -178,10 +181,10 @@ class SoundIncreaseTool(BaseTool):
         amount = self.get_input(inputs, "amount", 30)
         
         try:
-            current, _ = self.status_tool._get_volume_status()
+            current, _ = await asyncio.to_thread(self.status_tool._get_volume_status)
             new_volume = min(100, current + amount)
             
-            self._set_volume(new_volume)
+            await asyncio.to_thread(self._set_volume, new_volume)
             
             return ToolOutput(
                 success=True,
@@ -286,10 +289,10 @@ class SoundDecreaseTool(BaseTool):
         amount = self.get_input(inputs, "amount", 30)
         
         try:
-            current, _ = self.status_tool._get_volume_status()
+            current, _ = await asyncio.to_thread(self.status_tool._get_volume_status)
             new_volume = max(0, current - amount)
             
-            self._set_volume(new_volume)
+            await asyncio.to_thread(self._set_volume, new_volume)
             
             return ToolOutput(
                 success=True,

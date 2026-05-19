@@ -122,7 +122,7 @@ def build_system_prompt(
     lang: str,
     user_details: Optional[Dict[str, Any]] = None,
 ) -> str:
-    if settings.groq_mode:
+    if settings.is_cloud_mode:
         return _build_groq_system(lang, user_details)
     return _build_kokoro_system(lang, user_details)
 

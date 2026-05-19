@@ -119,6 +119,7 @@ rsa==4.9.1
 safetensors==0.6.2
 scikit-learn==1.7.2
 scipy==1.16.3
+screen-brightness-control
 selenium
 sentencepiece
 sentence-transformers==5.2.0

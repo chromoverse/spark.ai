@@ -148,6 +148,7 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
             pqh_response=pqh_response,
             user_lang=user_details.get("lang", "en"),
             user_preferences=user_details.get("preferences", {}),
+            user_id=user_id,
         )
         retry_limit  = 1 + max(0, int(getattr(settings, "SQH_PLAN_RETRY_ATTEMPTS", 1)))
         tasks:  List[Task]   = []

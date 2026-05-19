@@ -2,6 +2,8 @@
 call_video tool - Start a video call with a contact
 """
 
+import asyncio
+
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
 from datetime import datetime
@@ -27,6 +29,7 @@ class CallVideoTool(BaseTool):
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         contact = self.get_input(inputs, "contact")
         platform = self.get_input(inputs, "platform", "auto")
+        user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "guest").strip() or "guest"
         
         if not contact:
             return ToolOutput(
@@ -43,10 +46,10 @@ class CallVideoTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation.create()
+            wa = await WhatsAppAutomation.create(user_id=user_id)
             
             # Start video call
-            started = wa.video_call(contact)
+            started = await asyncio.to_thread(wa.video_call, contact)
             if not started:
                 return ToolOutput(
                     success=False,

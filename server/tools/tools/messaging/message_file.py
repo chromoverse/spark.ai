@@ -2,6 +2,8 @@
 message_file tool - Send a document or file to a contact
 """
 
+import asyncio
+
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
 from datetime import datetime
@@ -33,6 +35,7 @@ class MessageFileTool(BaseTool):
         file_path = self.get_input(inputs, "file_path")
         caption = self.get_input(inputs, "caption", "")
         platform = self.get_input(inputs, "platform", "auto")
+        user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "guest").strip() or "guest"
         
         if not contact:
             return ToolOutput(
@@ -49,7 +52,7 @@ class MessageFileTool(BaseTool):
             )
         
         # Validate file exists
-        if not os.path.exists(file_path):
+        if not await asyncio.to_thread(os.path.exists, file_path):
             return ToolOutput(
                 success=False,
                 data={},
@@ -64,10 +67,10 @@ class MessageFileTool(BaseTool):
                 self.logger.warning(f"Platform '{platform}' not supported yet, defaulting to WhatsApp")
             
             # Initialize WhatsApp automation
-            wa = await WhatsAppAutomation.create()
+            wa = await WhatsAppAutomation.create(user_id=user_id)
             
             # Send the file
-            sent = wa.send_file(contact, file_path, caption)
+            sent = await asyncio.to_thread(wa.send_file, contact, file_path, caption)
             if not sent:
                 return ToolOutput(
                     success=False,
