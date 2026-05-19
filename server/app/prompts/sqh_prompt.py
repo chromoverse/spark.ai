@@ -28,6 +28,29 @@ def get_tools_schema(tool_names: List[str]) -> Dict[str, dict]:
     }
 
 
+def _get_system_paths() -> str:
+    """Return well-known OS paths so the LLM never needs to ask the user."""
+    import os
+    from pathlib import Path
+
+    home = Path.home()
+    paths = {
+        "home": str(home),
+        "desktop": str(home / "Desktop"),
+        "downloads": str(home / "Downloads"),
+        "documents": str(home / "Documents"),
+        "pictures": str(home / "Pictures"),
+        "music": str(home / "Music"),
+        "videos": str(home / "Videos"),
+    }
+    # Windows-specific
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        paths["appdata"] = appdata
+
+    return "\n".join(f"  {k}: {v}" for k, v in paths.items())
+
+
 # ── Static system prompt — cached by Groq ─────────────────────────────────────
 
 def build_system_prompt(lang_label: str, secondary_lang: str) -> str:
@@ -88,6 +111,18 @@ Keep each under 10 words. Natural, not robotic.
 - Map every task to an exact tool name from the provided schemas.
 - Multi-tool only when two distinct real-world actions are clearly needed.
 - Never chain tools speculatively.
+
+━━━ INPUT BINDING RULES (CRITICAL) ━━━
+When task B depends on output from task A:
+1. Add A's task_id to B's "depends_on" array.
+2. Add a binding in B's "input_bindings": {{"param": "$.A_task_id.data.field"}}.
+3. Do NOT hardcode paths or values that come from a previous task's output.
+4. Common binding patterns:
+   - file_create → file_open: {{"path": "$.step_1.data.file_path"}}
+   - folder_create → file_create: {{"directory": "$.step_1.data.folder_path"}}
+   - artifact_resolve → file_open: {{"path": "$.step_1.data.file_path"}}
+   - web_search → summarize: {{"text": "$.step_1.data.results"}}
+   - screenshot_capture → file_open: {{"path": "$.step_1.data.file_path"}}
 
 ━━━ ARTIFACT MEMORY RULES ━━━
 - When the user references a previously created file, screenshot, or document
@@ -175,6 +210,9 @@ Tools needed: {tool_names}
 ━━━ TOOL SCHEMAS ━━━
 {tool_schemas_str}
 
+━━━ SYSTEM PATHS ━━━
+{_get_system_paths()}
+
 ━━━ USER PREFERENCES ━━━
 {prefs_str}
 
@@ -183,6 +221,7 @@ PREFERENCE RULES:
 - Use first matching entry (e.g. preferences["movies"][0]).
 - If empty → safe default (youtube for media, chrome for browser, notepad for text).
 - Never invent a preference.
+- When the user says "my desktop", "downloads", "documents" etc., use the paths from SYSTEM PATHS above. Do NOT ask the user for the path.
 {app_open_rules}
 {artifact_open_rules}
 {artifact_block}

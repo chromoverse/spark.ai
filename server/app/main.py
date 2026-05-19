@@ -67,6 +67,20 @@ async def lifespan(app: FastAPI):
     logger.info(" Server is ready to handle requests!")
     logger.info("=" * 60)
     
+    # Start scheduler
+    from app.services.scheduler import get_scheduler_service
+    await get_scheduler_service().start()
+
+    # Discover & load plugins (tool registry must already be loaded by initializers)
+    try:
+        from plugins import get_plugin_manager
+        await get_plugin_manager().discover_and_load()
+        # Rebuild the tools index so PQH sees plugin-shipped tools
+        from app.plugins.tools.tool_index_loader import clear_tools_index_cache
+        clear_tools_index_cache()
+    except Exception as exc:
+        logger.error("Plugin discovery failed: %s", exc, exc_info=True)
+
     yield  # Application is running
     
     # ========== SHUTDOWN ==========
@@ -77,6 +91,16 @@ async def lifespan(app: FastAPI):
     # Flush kernel persistence
     await get_kernel_runtime().stop()
     logger.info(" Kernel runtime stopped")
+
+    # Stop scheduler
+    from app.services.scheduler import get_scheduler_service
+    await get_scheduler_service().stop()
+    logger.info(" Scheduler stopped")
+
+    # Close activity log
+    from app.services.activity import get_activity_log
+    get_activity_log().close()
+    logger.info(" Activity log closed")
 
     # Cleanup database
     await close_mongo_connection()

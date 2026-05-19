@@ -2,7 +2,7 @@
   "version": "2.4.1",
   "last_updated": "2026-04-05",
   "phase": 1,
-  "total_tools": 68,
+  "total_tools": 73,
   "categories": {
     "system": {
       "description": "System-level operations and monitoring",
@@ -1350,6 +1350,204 @@
             "automation",
             "inspection"
           ]
+        },
+        {
+          "tool_name": "shell_execute",
+          "description": "Execute a single shell command on the host system",
+          "execution_target": "server",
+          "params_schema": {
+            "command": {
+              "type": "string",
+              "required": true
+            },
+            "working_dir": {
+              "type": "string",
+              "required": false
+            },
+            "timeout_s": {
+              "type": "number",
+              "required": false,
+              "default": 30
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "stdout": {
+                "type": "string"
+              },
+              "stderr": {
+                "type": "string"
+              },
+              "exit_code": {
+                "type": "integer"
+              },
+              "working_dir": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.9,
+            "default_requires_approval": false,
+            "default_timeout_ms": 30000,
+            "summary_tts": false
+          },
+          "module": "system.shell_execute",
+          "class_name": "ShellExecuteTool",
+          "examples": [
+            {
+              "user_utterance": "list files in my Documents folder",
+              "inputs": {
+                "command": "dir ~/Documents"
+              },
+              "notes": "Runs a single shell command and returns output."
+            }
+          ],
+          "semantic_tags": [
+            "shell",
+            "command",
+            "terminal",
+            "execute",
+            "run"
+          ]
+        },
+        {
+          "tool_name": "set_reminder",
+          "description": "Set a reminder that will notify the user at a specific time",
+          "execution_target": "server",
+          "params_schema": {
+            "label": {
+              "type": "string",
+              "required": true
+            },
+            "trigger_at": {
+              "type": "string",
+              "required": true,
+              "description": "ISO datetime or natural language like '6pm today', 'in 30 minutes'"
+            },
+            "notification_text": {
+              "type": "string",
+              "required": false
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "task_id": {
+                "type": "string"
+              },
+              "trigger_at": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000,
+            "summary_tts": true
+          },
+          "module": "system.set_reminder",
+          "class_name": "SetReminderTool",
+          "examples": [
+            {
+              "user_utterance": "remind me to call Ram at 6pm",
+              "inputs": {
+                "label": "Call Ram",
+                "trigger_at": "6pm today"
+              },
+              "notes": "Sets a one-shot reminder."
+            }
+          ],
+          "semantic_tags": [
+            "reminder",
+            "alarm",
+            "notify",
+            "schedule",
+            "timer"
+          ]
+        },
+        {
+          "tool_name": "schedule_task",
+          "description": "Schedule a recurring task with a cron expression or natural language schedule",
+          "execution_target": "server",
+          "params_schema": {
+            "label": {
+              "type": "string",
+              "required": true
+            },
+            "schedule": {
+              "type": "string",
+              "required": true,
+              "description": "Cron expression or natural language like 'every morning', 'daily', 'every Monday'"
+            },
+            "task_plan": {
+              "type": "array",
+              "required": false,
+              "description": "Pre-built task JSON array to re-execute on schedule"
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "task_id": {
+                "type": "string"
+              },
+              "cron_expression": {
+                "type": "string"
+              },
+              "next_run_at": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.9,
+            "default_requires_approval": false,
+            "default_timeout_ms": 5000,
+            "summary_tts": true
+          },
+          "module": "system.schedule_task",
+          "class_name": "ScheduleTaskTool",
+          "examples": [
+            {
+              "user_utterance": "run the backup script every night at midnight",
+              "inputs": {
+                "label": "Run backup script",
+                "schedule": "every night"
+              },
+              "notes": "Creates a recurring scheduled task."
+            }
+          ],
+          "semantic_tags": [
+            "schedule",
+            "recurring",
+            "cron",
+            "periodic",
+            "automation"
+          ]
         }
       ]
     },
@@ -1788,6 +1986,9 @@
             },
             "data": {
               "folder_path": {
+                "type": "string"
+              },
+              "folder_name": {
                 "type": "string"
               },
               "created_at": {
@@ -3905,6 +4106,124 @@
             "email",
             "labels",
             "list"
+          ]
+        },
+        {
+          "tool_name": "gmail_read",
+          "description": "Read/list emails via the external action bridge with rate limiting and audit logging",
+          "execution_target": "server",
+          "params_schema": {
+            "query": {
+              "type": "string",
+              "required": false,
+              "description": "Gmail search query e.g. 'is:unread', 'from:boss@corp.com'"
+            },
+            "max_results": {
+              "type": "integer",
+              "required": false,
+              "default": 10
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "emails": {
+                "type": "array"
+              },
+              "total_returned": {
+                "type": "integer"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 10000,
+            "summary_tts": true
+          },
+          "module": "google.gmail_bridge",
+          "class_name": "GmailReadTool",
+          "examples": [
+            {
+              "user_utterance": "check my email",
+              "inputs": {},
+              "notes": "Lists recent inbox emails via bridge."
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "read",
+            "inbox",
+            "check"
+          ]
+        },
+        {
+          "tool_name": "gmail_send",
+          "description": "Send an email via the external action bridge with rate limiting and audit logging",
+          "execution_target": "server",
+          "params_schema": {
+            "to": {
+              "type": "string",
+              "required": true
+            },
+            "subject": {
+              "type": "string",
+              "required": true
+            },
+            "body": {
+              "type": "string",
+              "required": true
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "message_id": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": true,
+            "default_timeout_ms": 10000,
+            "summary_tts": true
+          },
+          "module": "google.gmail_bridge",
+          "class_name": "GmailSendTool",
+          "examples": [
+            {
+              "user_utterance": "send an email to john@example.com about the meeting",
+              "inputs": {
+                "to": "john@example.com",
+                "subject": "Meeting",
+                "body": "Hi John, just following up about the meeting."
+              },
+              "notes": "Sends email via bridge with approval required."
+            }
+          ],
+          "semantic_tags": [
+            "gmail",
+            "email",
+            "send",
+            "compose"
           ]
         }
       ]

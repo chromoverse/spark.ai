@@ -13,5 +13,6 @@ class CognitiveState(CamelModel):
  
 class PQHResponse(CamelModel):
     request_id: str = Field(default_factory=lambda: f"pqh_{int(time.time()*1000)}")
-    cognitive_state: CognitiveState 
+    cognitive_state: CognitiveState
     requested_tool: Optional[List[str]] = []
+    needs_clarification: bool = False

@@ -119,6 +119,12 @@ async def disconnect(sid):
             if not connected_users[user_id]:
                 del connected_users[user_id]
                 get_approval_coordinator().cancel_user_requests(user_id)
+                # Cancel any pending clarification questions waiting on this user
+                try:
+                    from app.services.chat.clarification_service import cancel_user_clarifications
+                    cancel_user_clarifications(user_id)
+                except Exception as exc:
+                    logger.error(f"Failed to cancel clarifications for {user_id}: {exc}")
                 logger.info(f"👋 User {user_id} fully disconnected (no active connections)")
             else:
                 logger.info(

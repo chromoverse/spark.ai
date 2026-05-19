@@ -184,6 +184,11 @@ class ExecutionEngine:
                 if not pending and not running and not emitted and not waiting:
                     logger.info(f"All tasks finished for {user_id} — exiting")
                     break
+
+                # Reap stuck emitted/waiting tasks that exceeded their timeout.
+                # Prevents infinite loops when a client disconnects or user
+                # ignores an approval prompt.
+                await self._reap_stuck_tasks(user_id, emitted, waiting)
                 
                 logger.info(f"\n{'─'*70}")
                 logger.info(f"Iteration {iteration} - User: {user_id}")
@@ -265,6 +270,34 @@ class ExecutionEngine:
             logger.info(f"EXECUTION LOOP ENDED: {user_id}")
             logger.info(f"{'='*70}\n")
     
+    # ==================== STUCK TASK REAPER ====================
+
+    _EMITTED_TIMEOUT_S = 120.0   # 2 min — client should ack well before this
+    _WAITING_TIMEOUT_S = 180.0   # 3 min — user should respond to approval
+
+    async def _reap_stuck_tasks(
+        self,
+        user_id: str,
+        emitted: list,
+        waiting: list,
+    ) -> None:
+        """Fail tasks that have been in emitted/waiting state too long."""
+        from datetime import datetime
+
+        now = datetime.now()
+        for task in emitted:
+            if task.emitted_at and (now - task.emitted_at).total_seconds() > self._EMITTED_TIMEOUT_S:
+                error = f"Client did not acknowledge within {self._EMITTED_TIMEOUT_S:.0f}s"
+                logger.warning("Reaping stuck emitted task %s: %s", task.task_id, error)
+                await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
+
+        for task in waiting:
+            started = task.started_at or task.created_at
+            if started and (now - started).total_seconds() > self._WAITING_TIMEOUT_S:
+                error = f"Approval not received within {self._WAITING_TIMEOUT_S:.0f}s"
+                logger.warning("Reaping stuck waiting task %s: %s", task.task_id, error)
+                await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
+
     # ==================== SERVER TASK EXECUTION ====================
     
     async def _execute_server_batch(self, user_id: str, tasks: list[TaskRecord]) -> None:
@@ -316,6 +349,24 @@ class ExecutionEngine:
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
+
+            # Dynamic approval for shell_execute commands that aren't whitelisted
+            if task.tool == "shell_execute" and not (task.control and task.control.requires_approval):
+                from app.services.shell.sandbox import SecuritySandbox
+                from app.services.shell.user_permissions import get_user_permission_store
+                _sandbox = SecuritySandbox()
+                _cmd = resolved_inputs.get("command", "")
+                _allowed, _reason = _sandbox.validate(_cmd)
+                if _reason == "requires_approval" and not get_user_permission_store().is_permitted(user_id, _cmd):
+                    from app.kernel.execution.execution_models import TaskControl
+                    task.task.control = TaskControl(
+                        requires_approval=True,
+                        approval_question=f"Allow command: {_cmd}?",
+                    )
+                    if not await self._handle_approval_gate(user_id, task):
+                        return False
+                    # User approved — grant persistent permission
+                    get_user_permission_store().grant(user_id, _cmd)
             
             # Get timeout
             timeout = None

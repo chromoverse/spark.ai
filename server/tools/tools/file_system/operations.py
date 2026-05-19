@@ -371,6 +371,7 @@ class FolderCreateTool(BaseTool):
                 success=True,
                 data={
                     "folder_path": path,
+                    "folder_name": os.path.basename(expanded_path),
                     "absolute_path": expanded_path,
                     "created_at": datetime.now().isoformat(),
                     "exists": os.path.exists(expanded_path)

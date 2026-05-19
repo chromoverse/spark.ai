@@ -186,12 +186,18 @@ class TaskEmitter:
             if self.environment == "DESKTOP":
                 logger.info("Desktop mode approval request for task %s", task_id)
                 from app.agent.desktop_notifications import show_approval_notification
+                from app.services.shell.user_permissions import get_user_permission_store
+
+                async def _grant_full(uid: str) -> None:
+                    get_user_permission_store().grant_full_access(uid)
+                    logger.info("User %s granted full shell access via notification", uid)
 
                 show_approval_notification(
                     user_id=user_id,
                     task_id=task_id,
                     question=question,
                     on_response_callback=_resolve,
+                    on_full_access_callback=_grant_full,
                 )
                 return True
 

@@ -1,0 +1,27 @@
+# Skill: take a screenshot and send it to someone
+# Template mode — message_media needs "recipient" from user.
+# (Even though screenshot_capture needs no input, the overall skill
+#  needs LLM to extract the recipient name from the query.)
+name: screenshot_and_send
+description: "Take a screenshot and send it to a contact"
+plugin: system
+required_tools:
+  - screenshot_capture
+  - message_media
+trigger_patterns:
+  - "screenshot.* (and|then) send.* to"
+  - "take .* screenshot.* send.* to"
+  - "capture .* screen.* send.* to"
+steps:
+  - task_id: capture
+    tool: screenshot_capture
+    execution_target: server
+  - task_id: send
+    tool: message_media
+    execution_target: client
+    depends_on:
+      - capture
+    inputs_from_user:
+      - recipient
+    input_bindings:
+      media_path: "$.capture.data.file_path"

@@ -307,7 +307,7 @@ async def update_user_details_endpoint(
         ...,
         alias="userId",
         max_length=24,
-        regex="^[a-f0-9]{24}$",
+        pattern="^[a-f0-9]{24}$",
     ),
     payload: Dict[str, Any] = Body(...),
     user=Depends(get_current_user)

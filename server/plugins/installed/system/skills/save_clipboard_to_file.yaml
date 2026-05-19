@@ -1,0 +1,26 @@
+# Skill: save clipboard content to a file
+# Full LLM bypass — clipboard_read needs no user input.
+name: save_clipboard_to_file
+description: "Save whatever is in the clipboard to a new file"
+plugin: system
+required_tools:
+  - clipboard_read
+  - file_create
+trigger_patterns:
+  - "save .* clipboard.* (to|into|as) .* file"
+  - "paste clipboard (to|into|as) .* file"
+  - "clipboard.* (to|into) .* (file|document)"
+  - "save what I copied"
+steps:
+  - task_id: read_clip
+    tool: clipboard_read
+    execution_target: server
+  - task_id: save
+    tool: file_create
+    execution_target: client
+    depends_on:
+      - read_clip
+    inputs:
+      path: "clipboard_content.txt"
+    input_bindings:
+      content: "$.read_clip.data.content"

@@ -73,13 +73,25 @@ def _run_callback_async(callback: Callable[[str, str, bool], Awaitable[None]], u
     ).start()
 
 
+def _run_callback_async_simple(callback: Callable[[str], Awaitable[None]], arg: str) -> None:
+    threading.Thread(
+        target=lambda: asyncio.run(callback(arg)),
+        daemon=True,
+    ).start()
+
+
 def show_approval_notification(
     user_id: str,
     task_id: str,
     question: str,
     on_response_callback: Optional[Callable[[str, str, bool], Awaitable[None]]] = None,
+    on_full_access_callback: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> None:
-    """Show desktop approval toast; fails closed if interactive approval is unavailable."""
+    """Show desktop approval toast with Accept / Always Allow / Deny buttons.
+
+    ``on_full_access_callback(user_id)`` is fired when the user clicks
+    "Always Allow", granting blanket permission for future commands.
+    """
     toaster = _get_toaster()
     if toaster is None:
         logger.info("[NOTIFICATION] Approval needed for %s: %s", task_id, question)
@@ -91,6 +103,7 @@ def show_approval_notification(
         toast = _Toast()
         toast.text_fields = ["SPARK AI - Approval Required", question]
         toast.AddAction(_ToastButton("Accept", arguments=f"approve|{user_id}|{task_id}"))
+        toast.AddAction(_ToastButton("Always Allow", arguments=f"full_access|{user_id}|{task_id}"))
         toast.AddAction(_ToastButton("Deny", arguments=f"deny|{user_id}|{task_id}"))
 
         def on_activated(event: Any) -> None:
@@ -99,6 +112,14 @@ def show_approval_notification(
             if len(parts) != 3:
                 return
             action, uid, tid = parts
+
+            if action == "full_access":
+                if on_full_access_callback:
+                    _run_callback_async_simple(on_full_access_callback, uid)
+                if on_response_callback:
+                    asyncio.run(on_response_callback(uid, tid, True))
+                return
+
             approved = action == "approve"
             if on_response_callback:
                 asyncio.run(on_response_callback(uid, tid, approved))

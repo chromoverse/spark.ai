@@ -1,0 +1,27 @@
+{
+  "name": "ai",
+  "version": "1.0.0",
+  "display_name": "AI Meta",
+  "description": "Self-reflective tools — agent status, summarization, tool catalog introspection.",
+  "author": "spark-core",
+  "capabilities": [
+    "agent_introspection",
+    "summarization",
+    "tool_catalog"
+  ],
+  "tools": [
+    "agent_status",
+    "ai_summarize",
+    "tool_catalog"
+  ],
+  "skills": [],
+  "dependencies": [],
+  "config_schema": {
+    "summarize_max_tokens": {
+      "type": "number",
+      "default": 256,
+      "description": "Maximum tokens for ai_summarize output"
+    }
+  },
+  "enabled": true
+}

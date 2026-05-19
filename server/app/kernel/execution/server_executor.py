@@ -12,6 +12,7 @@ from app.plugins.tools.registry_loader import get_tool_registry as get_schema_re
 from app.plugins.tools.tool_instance_loader import get_tool_for_execution
 from app.kernel.contracts.models import KernelEvent
 from app.kernel.eventing.event_bus import emit_kernel_event
+from app.services.cache.tool_cache import get_tool_result_cache
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +64,22 @@ class ServerToolExecutor:
         inputs = task.resolved_inputs if task.resolved_inputs else task.task.inputs
         user_id = str(inputs.get("_user_id", "guest"))
         t0 = time.perf_counter()
+
+        # Check tool result cache
+        cache = get_tool_result_cache()
+        cached = cache.get(tool_name, inputs)
+        if cached:
+            return TaskOutput(success=cached.success, data=cached.data, error=cached.error)
         
         try:
             # Execute tool (validation happens inside tool.execute())
             logger.info(f"Executing tool: {tool_name}")
             output = await tool.execute(inputs)
             latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+            # Cache successful results
+            if output.success:
+                cache.put(tool_name, inputs, output)
 
             event_type = "tool_invoked" if output.success else "tool_failed"
             await emit_kernel_event(

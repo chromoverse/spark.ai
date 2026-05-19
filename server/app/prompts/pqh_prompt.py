@@ -109,8 +109,26 @@ Examples that must use web_research:
     "answer": "ok",
     "answer_english": "ok"
   }},
-  "requested_tool": ["<tool_name>"] or []
+  "requested_tool": ["<tool_name>"] or [],
+  "needs_clarification": false
 }}
+
+━━━ CLARIFICATION GATE ━━━
+Set "needs_clarification": true ONLY when ALL of these are true:
+  1. A tool IS needed (requested_tool is non-empty).
+  2. A critical input for that tool is genuinely ambiguous or missing.
+  3. You cannot reasonably guess the missing detail from context or conversation history.
+
+Examples requiring clarification:
+  "organize my desktop"     → needs folder names/rules → needs_clarification: true
+  "send a message"          → needs recipient + content → needs_clarification: true
+  "create a project"        → needs name, type, location → needs_clarification: true
+
+Examples that do NOT need clarification:
+  "list files on my desktop"          → all info present → false
+  "open Chrome"                       → all info present → false
+  "set a reminder for 5pm call mom"   → all info present → false
+  "play some music"                   → reasonable default exists → false
 
 ━━━ EXAMPLES ━━━
 

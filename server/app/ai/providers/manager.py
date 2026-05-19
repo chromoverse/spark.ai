@@ -10,6 +10,8 @@ Features:
 - Extensible: add new providers by appending to _providers list
 """
 import asyncio
+import hashlib
+import json
 import logging
 import time
 from typing import Any, List, Dict, Optional, AsyncIterator, Tuple
@@ -69,6 +71,10 @@ class LLMManager:
         # ── In-memory quota block tracker ──
         # provider_name -> timestamp when blocked (auto-expires after TTL)
         self._quota_blocked: Dict[str, float] = {}
+
+        # ── LLM response cache (short TTL for identical prompts) ──
+        self._response_cache: Dict[str, tuple[float, str, str]] = {}
+        self._response_cache_ttl: float = 120.0
 
         available = [p.provider_name for p in self._providers if p.is_available]
         logger.info(f"✅ LLM Manager ready. Available providers: {available}")
@@ -138,6 +144,13 @@ class LLMManager:
         Raises:
             AllProvidersExhaustedError: if every provider in the chain fails
         """
+        # Check response cache
+        prompt_hash = hashlib.md5(json.dumps(messages, default=str).encode()).hexdigest()
+        cached = self._response_cache.get(prompt_hash)
+        if cached and (time.time() - cached[0]) < self._response_cache_ttl:
+            logger.info("LLM cache HIT (%d chars)", len(cached[1]))
+            return cached[1], "cache"
+
         last_error: Optional[Exception] = None
 
         for provider in self._providers:
@@ -166,6 +179,7 @@ class LLMManager:
                     do_not_retry_on=(AllKeysExhaustedError,),
                 )
                 logger.info(f"✅ {provider.provider_name} success ({len(response)} chars)")
+                self._response_cache[prompt_hash] = (time.time(), response, provider.provider_name)
                 return response, provider.provider_name
 
             except AllKeysExhaustedError as e:

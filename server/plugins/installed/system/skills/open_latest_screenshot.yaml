@@ -1,0 +1,27 @@
+# Skill: open the latest screenshot/artifact
+# Full LLM bypass — artifact_resolve with latest=true needs no user-extracted input.
+name: open_latest_screenshot
+description: "Open the most recent screenshot"
+plugin: system
+required_tools:
+  - artifact_resolve
+  - file_open
+trigger_patterns:
+  - "open .*(latest|last|recent) screenshot"
+  - "show .*(latest|last|recent) screenshot"
+  - "open .* screenshot.* (took|taken|captured)"
+steps:
+  - task_id: resolve
+    tool: artifact_resolve
+    execution_target: server
+    inputs:
+      kind: "screenshot"
+      latest: true
+  - task_id: open
+    tool: file_open
+    execution_target: client
+    depends_on:
+      - resolve
+    input_bindings:
+      path: "$.resolve.data.file_path"
+      app: "$.resolve.data.preferred_app"

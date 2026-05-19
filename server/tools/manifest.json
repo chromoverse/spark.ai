@@ -124,6 +124,21 @@
       "class_name": "ShellAgentTool"
     },
     {
+      "tool_name": "shell_execute",
+      "module": "system.shell_execute",
+      "class_name": "ShellExecuteTool"
+    },
+    {
+      "tool_name": "set_reminder",
+      "module": "system.set_reminder",
+      "class_name": "SetReminderTool"
+    },
+    {
+      "tool_name": "schedule_task",
+      "module": "system.schedule_task",
+      "class_name": "ScheduleTaskTool"
+    },
+    {
       "tool_name": "file_search",
       "module": "file_system.operations",
       "class_name": "FileSearchTool"
@@ -309,6 +324,16 @@
       "class_name": "EmailLabelsListTool"
     },
     {
+      "tool_name": "gmail_read",
+      "module": "google.gmail_bridge",
+      "class_name": "GmailReadTool"
+    },
+    {
+      "tool_name": "gmail_send",
+      "module": "google.gmail_bridge",
+      "class_name": "GmailSendTool"
+    },
+    {
       "tool_name": "weather_current",
       "module": "system.weather",
       "class_name": "WeatherCurrentTool"
@@ -334,5 +359,5 @@
       "class_name": "ArtifactOpenTool"
     }
   ],
-  "total_tools": 66
+  "total_tools": 71
 }

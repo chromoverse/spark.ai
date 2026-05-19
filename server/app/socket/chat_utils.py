@@ -15,6 +15,11 @@ from app.socket.server import sio
 from app.socket.user_utils import get_user_from_session, serialize_response
 from app.socket.utils import emit_server_status
 from app.services.chat.chat_service import chat
+from app.services.chat.clarification_service import (
+    has_pending_clarification,
+    resolve_clarification,
+    resolve_user_clarification,
+)
 from app.services.chat.stream_service import stream_chat_response
 from app.services.interrupt_manager import get_interrupt_manager
 from app.services.stt_session_manager import stt_session_manager
@@ -191,6 +196,13 @@ def register_chat_events():
             if not query:
                 raise ValueError("No query provided")
 
+            # If a clarification is pending, treat this text as the answer.
+            # The chat() call that's blocked on it will resume and dispatch SQH.
+            if has_pending_clarification(user_id) and resolve_user_clarification(user_id, query):
+                logger.info("📩 Routed text input to pending clarification user=%s", user_id)
+                await sio.emit("query-result", {"success": True, "clarification_routed": True}, to=sid)
+                return
+
             result = await _parallel_execute(query=query, user_id=user_id, sid=sid)
 
             dict_data = await serialize_response(result.get("chat_result"))
@@ -229,14 +241,18 @@ def register_chat_events():
     async def handle_user_speech_started(sid: str, data: Any):
         """
         Fired the INSTANT speech is detected — before any audio chunk arrives.
-        Triggers speculative pre-fetch of user details + recent messages.
+        Sets interrupt to kill any in-flight TTS, then triggers speculative
+        pre-fetch of user details + recent messages.
         """
         session_id = data.get("sessionId") if isinstance(data, dict) else None
         if not session_id:
             return
         try:
             user_id = await get_user_from_session(sid)
-            logger.info("⚡ user-speech-started: pre-fetching context for session %s…", session_id[:8])
+            # Kill any TTS still streaming — user is talking over it
+            _interrupt.set(user_id)
+            await sio.emit("tts-interrupt", {}, to=sid)
+            logger.info("⚡ user-speech-started: interrupt + pre-fetching for session %s…", session_id[:8])
             asyncio.create_task(_speculative_prefetch(session_id, user_id))
         except Exception:
             pass  # non-critical
@@ -265,6 +281,13 @@ def register_chat_events():
                     "message": "No speech detected",
                 }, to=sid)
                 await speculative_cache.cleanup(session_id)
+                return
+
+            # If a clarification is pending, treat this transcript as the answer.
+            if has_pending_clarification(user_id) and resolve_user_clarification(user_id, text):
+                logger.info("🎙️ Routed voice input to pending clarification user=%s", user_id)
+                await speculative_cache.cleanup(session_id)
+                await sio.emit("query-result", {"success": True, "clarification_routed": True, "transcript": text}, to=sid)
                 return
 
             # ⚡ Grab pre-fetched context from speculative cache
@@ -312,3 +335,37 @@ def register_chat_events():
             logger.info("🛑 user-interrupt from %s (user=%s)", sid, user_id)
         except Exception as exc:
             logger.error("user-interrupt failed sid=%s: %s", sid, exc)
+
+    # ── Clarification response: dedicated event for frontends with a clarify UI ─
+
+    @sio.on("agent:clarify:response")  # type: ignore
+    async def handle_clarify_response(sid: str, data: Any):
+        """
+        Frontend posts the user's answer to a pending clarification request.
+        Payload: { "request_id": str, "answer": str }
+        """
+        try:
+            user_id = await get_user_from_session(sid)
+            payload = data if isinstance(data, dict) else {}
+            request_id = str(payload.get("request_id") or "").strip()
+            answer = str(payload.get("answer") or "").strip()
+
+            if not request_id or not answer:
+                logger.warning("agent:clarify:response: bad payload sid=%s", sid)
+                await sio.emit("agent:clarify:ack", {"success": False, "reason": "bad_payload"}, to=sid)
+                return
+
+            ok = resolve_clarification(request_id, answer)
+            if ok:
+                logger.info("✅ Clarification resolved user=%s request=%s", user_id, request_id)
+            else:
+                logger.warning(
+                    "⚠️ Clarification %s not found / already resolved (user=%s)",
+                    request_id, user_id,
+                )
+
+            await sio.emit("agent:clarify:ack", {"success": ok, "request_id": request_id}, to=sid)
+
+        except Exception as exc:
+            logger.error("agent:clarify:response failed sid=%s: %s", sid, exc, exc_info=True)
+            await sio.emit("agent:clarify:ack", {"success": False, "reason": "server_error"}, to=sid)

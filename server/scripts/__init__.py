@@ -1,1 +1,1 @@
-
+"""SparkAI dev scripts package."""

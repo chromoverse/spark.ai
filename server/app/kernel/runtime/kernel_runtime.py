@@ -22,6 +22,10 @@ class KernelRuntime:
 
         self.event_bus.subscribe(self.persistence_router.write_event)
         self.event_bus.subscribe(self.log_index.record_event)
+
+        from app.services.activity import get_activity_log
+        get_activity_log().subscribe_to_kernel()
+
         await self.persistence_router.start()
 
         self._initialized = True

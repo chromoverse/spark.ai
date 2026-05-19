@@ -213,11 +213,25 @@ class BaseTool(ABC):
                 output_error = self._validate_output(result.data)
                 if output_error:
                     self.logger.warning("Output validation failed: %s", output_error)
+                self._validate_output_contract(result)
 
             return result
         except Exception as exc:
             self.logger.error("%s error: %s", self.tool_name, exc)
             return ToolOutput(success=False, data={}, error=str(exc))
+
+    def _validate_output_contract(self, output: ToolOutput) -> None:
+        """Warn if declared output_schema fields are missing from output.data."""
+        if not output.success or not self._output_schema:
+            return
+        declared = set(self._output_schema.get("data", {}).keys())
+        actual = set(output.data.keys()) if output.data else set()
+        missing = declared - actual
+        if missing:
+            self.logger.warning(
+                "Tool '%s' output missing declared fields: %s (has: %s)",
+                self.tool_name, missing, actual,
+            )
 
     def _validate_inputs(self, inputs: Dict[str, Any]) -> Optional[str]:
         if not self._params_schema:

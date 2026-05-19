@@ -124,6 +124,13 @@ class BindingResolver:
         matches = jsonpath.find(data_root)
         
         if not matches:
+            # Fallback: try flat key lookup in output.data
+            flat_key = parts[-1] if len(parts) > 2 else None
+            if flat_key and isinstance(source_task.output.data, dict):
+                fallback_value = source_task.output.data.get(flat_key)
+                if fallback_value is not None:
+                    logger.info("Binding fallback: found '%s' via flat key in %s", flat_key, task_id)
+                    return fallback_value
             raise ValueError(f"JSONPath matched nothing: {jsonpath_expr}")
         
         # Return first match (JSONPath can return multiple)

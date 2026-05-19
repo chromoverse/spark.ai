@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import re
@@ -26,6 +27,7 @@ class ArtifactRecord:
     mime_type: str
     size_bytes: int
     metadata: Dict[str, Any]
+    content_hash: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -60,6 +62,14 @@ class ArtifactStore:
         if not path.exists():
             raise FileNotFoundError(f"Artifact file not found: {path}")
 
+        # Compute content hash for dedup
+        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+
+        # Check for existing artifact with same hash
+        existing = self._find_by_hash(file_hash)
+        if existing:
+            return existing
+
         effective_label = label or self._label_from_path(path)
         record = ArtifactRecord(
             artifact_id=artifact_id or self._new_artifact_id(kind, effective_label),
@@ -72,6 +82,7 @@ class ArtifactStore:
             mime_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
             size_bytes=path.stat().st_size,
             metadata=dict(metadata or {}),
+            content_hash=file_hash,
         )
 
         self._write_record(record)
@@ -199,6 +210,18 @@ class ArtifactStore:
             json.dumps(record.to_dict(), indent=2, ensure_ascii=True),
             encoding="utf-8",
         )
+
+    def _find_by_hash(self, content_hash: str) -> Optional[ArtifactRecord]:
+        """Return existing record with matching content_hash, or None."""
+        records_dir = self.path_manager.get_artifact_records_dir()
+        for record_path in records_dir.glob("*.json"):
+            try:
+                data = json.loads(record_path.read_text(encoding="utf-8"))
+                if data.get("content_hash") == content_hash:
+                    return ArtifactRecord(**data)
+            except Exception:
+                continue
+        return None
 
     def _record_path(self, artifact_id: str) -> Path:
         safe_id = self.path_manager._safe_path_token(artifact_id)

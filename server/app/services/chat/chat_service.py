@@ -19,6 +19,7 @@ from app.cache import load_user, get_last_n_messages
 from app.ai.providers import llm_chat
 from app.prompts import pqh_prompt
 from .sqh_service import process_sqh
+from .clarification_service import request_clarification
 from app.agent.runtime import is_meta_query, try_handle_meta_query
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,44 @@ async def _run_sqh_background(cleaned_response: PQHResponse, user_details: dict,
         await process_sqh(cleaned_response, user_details)
     except Exception as exc:
         logger.error("[SQH] background failure user=%s: %s", user_id, exc, exc_info=True)
+
+
+async def _resolve_clarification(
+    query: str,
+    pqh_response: PQHResponse,
+    user_id: str,
+    user_details: dict,
+) -> PQHResponse | None:
+    """
+    Ask the user for missing details and fold the answer back into the PQH response.
+
+    Returns:
+        - PQHResponse with enriched cognitive_state.user_query on success
+        - None on timeout/cancel — caller will surface a graceful fallback
+    """
+    try:
+        answer = await request_clarification(
+            user_id=user_id,
+            original_query=query,
+            pqh_response=pqh_response,
+            user_details=user_details,
+        )
+    except asyncio.CancelledError:
+        logger.info("clarification cancelled user=%s", user_id)
+        return None
+    except Exception as exc:
+        logger.error("clarification flow failed user=%s: %s", user_id, exc, exc_info=True)
+        return None
+
+    if not answer:
+        return None
+
+    # Enrich the query so SQH plans with both the original ask and the new detail.
+    enriched = f"{query}\n[user clarification]: {answer.strip()}"
+    pqh_response.cognitive_state.user_query = enriched
+    pqh_response.needs_clarification = False
+    logger.info("clarification resolved user=%s answer=%r", user_id, answer[:80])
+    return pqh_response
 
 
 def _build_messages(
@@ -124,6 +163,25 @@ async def chat(
 
         # Fire SQH if tools were requested
         if cleaned.requested_tool:
+            # Multi-turn clarification: PQH flagged the request as ambiguous.
+            # Pause here, ask the user one question, then continue with the enriched
+            # query so SQH can plan with full context.
+            if cleaned.needs_clarification:
+                cleaned = await _resolve_clarification(
+                    query=query,
+                    pqh_response=cleaned,
+                    user_id=user_id,
+                    user_details=user_details,
+                )
+                if cleaned is None or not cleaned.requested_tool:
+                    # Clarification timed out or user gave nothing usable —
+                    # return the graceful fallback PQH built and skip SQH.
+                    return cleaned or _error(
+                        "I didn't catch the details — could you try again?",
+                        "neutral",
+                        query,
+                    )
+
             if wait_for_execution:
                 await _execute_and_wait(cleaned, user_details, user_id, execution_timeout)
             else:

@@ -1,7 +1,7 @@
 {
   "version": "2.4.1",
   "source": "tool_registry.json",
-  "total_tools": 66,
+  "total_tools": 71,
   "tools": [
     {
       "name": "app_open",
@@ -170,6 +170,27 @@
       "description": "Run guarded PowerShell or shell steps with LLM guidance until the task is finished",
       "example_triggers": [
         "inspect the tools folder and summarize what is there"
+      ]
+    },
+    {
+      "name": "shell_execute",
+      "description": "Execute a single shell command on the host system",
+      "example_triggers": [
+        "list files in my Documents folder"
+      ]
+    },
+    {
+      "name": "set_reminder",
+      "description": "Set a reminder that will notify the user at a specific time",
+      "example_triggers": [
+        "remind me to call Ram at 6pm"
+      ]
+    },
+    {
+      "name": "schedule_task",
+      "description": "Schedule a recurring task with a cron expression or natural language schedule",
+      "example_triggers": [
+        "run the backup script every night at midnight"
       ]
     },
     {
@@ -429,6 +450,20 @@
       "description": "List all Gmail labels (system + user-created) with unread counts",
       "example_triggers": [
         "email labels list"
+      ]
+    },
+    {
+      "name": "gmail_read",
+      "description": "Read/list emails via the external action bridge with rate limiting and audit logging",
+      "example_triggers": [
+        "check my email"
+      ]
+    },
+    {
+      "name": "gmail_send",
+      "description": "Send an email via the external action bridge with rate limiting and audit logging",
+      "example_triggers": [
+        "send an email to john@example.com about the meeting"
       ]
     },
     {

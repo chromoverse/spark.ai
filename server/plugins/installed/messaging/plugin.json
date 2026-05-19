@@ -1,0 +1,31 @@
+{
+  "name": "messaging",
+  "version": "1.0.0",
+  "display_name": "Messaging & Calls",
+  "description": "Send messages, share media/files, and place audio/video calls.",
+  "author": "spark-core",
+  "capabilities": [
+    "send_text",
+    "send_media",
+    "send_file",
+    "audio_call",
+    "video_call"
+  ],
+  "tools": [
+    "message_send",
+    "message_file",
+    "message_media",
+    "call_audio",
+    "call_video"
+  ],
+  "skills": [],
+  "dependencies": [],
+  "config_schema": {
+    "default_messaging_app": {
+      "type": "string",
+      "default": "whatsapp",
+      "description": "Preferred app when the query doesn't specify one"
+    }
+  },
+  "enabled": true
+}

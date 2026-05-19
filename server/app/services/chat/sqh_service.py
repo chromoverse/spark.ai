@@ -136,6 +136,83 @@ def _unpack(data: Union[dict, list, None]) -> Tuple[List[Dict[str, Any]], Option
     return [], None
 
 
+def _skill_user_inputs(pqh_response: PQHResponse) -> Dict[str, Any]:
+    """Best-effort dict of values a skill's `inputs_from_user` can pull from."""
+    query = (pqh_response.cognitive_state.user_query or "").strip()
+    return {"query": query, "user_query": query, "text": query}
+
+
+def _build_skill_template_hint(skill) -> str:
+    """Build a prompt appendix that tells the LLM to use this exact DAG structure.
+
+    The LLM still extracts inputs from the user query, but it doesn't need to
+    invent the task_ids, depends_on, or input_bindings — those come from the
+    skill definition.
+    """
+    import json as _json
+
+    steps = []
+    for s in skill.steps:
+        step = {
+            "task_id": s.task_id,
+            "tool": s.tool,
+            "execution_target": s.execution_target,
+        }
+        if s.depends_on:
+            step["depends_on"] = s.depends_on
+        if s.input_bindings:
+            step["input_bindings"] = s.input_bindings
+        if s.inputs_from_user:
+            step["inputs"] = {k: "<FILL FROM QUERY>" for k in s.inputs_from_user}
+        steps.append(step)
+
+    template_json = _json.dumps({"tasks": steps}, indent=2)
+    return (
+        "\n\n━━━ SKILL TEMPLATE (USE THIS STRUCTURE) ━━━\n"
+        "A pre-defined recipe matches this query. Use EXACTLY this task structure.\n"
+        "Your ONLY job: fill in the \"inputs\" values by extracting them from the user query.\n"
+        "Do NOT change task_ids, tools, depends_on, or input_bindings.\n"
+        f"\n{template_json}\n"
+    )
+
+
+def _validate_skill_template_output(tasks: List[Task], skill) -> List[Task]:
+    """Repair LLM output to match the skill template's structure.
+
+    If the LLM deviated (wrong task_ids, missing bindings, extra steps), we
+    force the template's structure back while keeping the LLM-extracted inputs.
+    """
+    template_steps = skill.steps
+    if len(tasks) != len(template_steps):
+        logger.warning(
+            "[SQH] Skill template mismatch: expected %d tasks, got %d — forcing template.",
+            len(template_steps), len(tasks),
+        )
+
+    # Map LLM-generated inputs by tool name (best-effort match)
+    llm_inputs_by_tool: Dict[str, Dict[str, Any]] = {}
+    for t in tasks:
+        llm_inputs_by_tool.setdefault(t.tool, t.inputs)
+
+    # Rebuild from template, injecting LLM-extracted inputs
+    repaired: List[Task] = []
+    for step in template_steps:
+        inputs = dict(step.inputs)
+        llm_inputs = llm_inputs_by_tool.get(step.tool, {})
+        for k, v in llm_inputs.items():
+            if not k.startswith("_") and v is not None:
+                inputs[k] = v
+        repaired.append(Task(
+            task_id=step.task_id,
+            tool=step.tool,
+            execution_target=step.execution_target,
+            depends_on=list(step.depends_on),
+            inputs=inputs,
+            input_bindings=dict(step.input_bindings),
+        ))
+    return repaired
+
+
 # ── Main service ───────────────────────────────────────────────────────────────
 
 async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -> None:
@@ -144,52 +221,102 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
     original_query = pqh_response.cognitive_state.user_query or ""
 
     try:
-        messages     = build_messages(
-            pqh_response=pqh_response,
-            user_lang=user_details.get("lang", "en"),
-            user_preferences=user_details.get("preferences", {}),
-            user_id=user_id,
-        )
-        retry_limit  = 1 + max(0, int(getattr(settings, "SQH_PLAN_RETRY_ATTEMPTS", 1)))
-        tasks:  List[Task]   = []
-        ack:    Optional[str] = None
-        last_error: Optional[Exception] = None
+        # ── Skill short-circuit ──────────────────────────────────────────
+        # If a registered skill's trigger pattern matches the query AND every
+        # required tool is available, we can either:
+        #   A) Fully bypass the LLM (if the skill's first step needs no user-
+        #      extracted inputs — e.g. screenshot_and_open)
+        #   B) Give the LLM the skill's DAG as a template so it only fills
+        #      inputs (faster + more reliable than generating the whole plan)
+        ack: Optional[str] = None
+        tasks: List[Task] = []
+        used_skill: bool = False
+        skill_template_hint: str = ""
+        try:
+            from plugins import get_skill_engine
+            requested = pqh_response.requested_tool or []
+            skill = get_skill_engine().match_skill(original_query, requested)
+            if skill:
+                # Check if the skill can run without LLM input extraction:
+                # NO step has inputs_from_user → full bypass
+                needs_llm_inputs = any(s.inputs_from_user for s in skill.steps)
+                if not needs_llm_inputs:
+                    tasks = get_skill_engine().expand_to_tasks(skill)
+                    if tasks:
+                        used_skill = True
+                        ack = f"Got it."
+                        logger.info(
+                            "[SQH] skill full-bypass: %s (%d steps)",
+                            skill.name, len(tasks),
+                        )
+                else:
+                    # Provide the skill structure as a hint to the LLM so it
+                    # only needs to fill in inputs (not invent the DAG).
+                    skill_template_hint = _build_skill_template_hint(skill)
+                    logger.info(
+                        "[SQH] skill template hint: %s (LLM fills inputs)",
+                        skill.name,
+                    )
+        except Exception as exc:
+            logger.warning("[SQH] skill match raised, falling back to LLM: %s", exc)
 
-        for attempt in range(1, retry_limit + 1):
-            raw, _ = await llm_chat(messages=messages)
+        if used_skill:
+            # Skip LLM plan generation entirely
+            messages = []  # type: ignore[var-annotated]
+            last_error = None
+        else:
+            messages     = build_messages(
+                pqh_response=pqh_response,
+                user_lang=user_details.get("lang", "en"),
+                user_preferences=user_details.get("preferences", {}),
+                user_id=user_id,
+            )
+            # If a skill matched but needs LLM to fill inputs, append the
+            # template as a strong hint so the LLM doesn't reinvent the DAG.
+            if skill_template_hint:
+                messages[-1]["content"] += skill_template_hint
+            retry_limit  = 1 + max(0, int(getattr(settings, "SQH_PLAN_RETRY_ATTEMPTS", 1)))
+            last_error: Optional[Exception] = None
 
-            try:
-                if not raw:
-                    raise ValueError("empty LLM response")
+            for attempt in range(1, retry_limit + 1):
+                raw, _ = await llm_chat(messages=messages)
 
-                data = extract_json(raw)
-                if data is None:
-                    raise ValueError("no valid JSON in response")
+                try:
+                    if not raw:
+                        raise ValueError("empty LLM response")
 
-                tasks_data, ack = _unpack(data)
-                tasks = [Task(**t) for t in tasks_data]
+                    data = extract_json(raw)
+                    if data is None:
+                        raise ValueError("no valid JSON in response")
 
-                if not tasks:
-                    raise ValueError("no tasks in plan")
+                    tasks_data, ack = _unpack(data)
+                    tasks = [Task(**t) for t in tasks_data]
 
-                last_error = None
-                break
+                    if not tasks:
+                        raise ValueError("no tasks in plan")
 
-            except Exception as exc:
-                last_error = exc
-                logger.warning("[SQH] attempt %d/%d failed: %s", attempt, retry_limit, exc)
-                if attempt >= retry_limit:
+                    # If a skill template was used, validate the LLM respected it.
+                    if skill_template_hint and skill:
+                        tasks = _validate_skill_template_output(tasks, skill)
+
+                    last_error = None
                     break
-                # Append retry instruction to last user message
-                messages = messages[:-1] + [{
-                    "role": "user",
-                    "content": (
-                        messages[-1]["content"]
-                        + "\n\nRETRY: Previous output was invalid. "
-                        "Return ONLY raw JSON. `tasks` must be a non-empty array. "
-                        "No markdown, no explanation."
-                    ),
-                }]
+
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("[SQH] attempt %d/%d failed: %s", attempt, retry_limit, exc)
+                    if attempt >= retry_limit:
+                        break
+                    # Append retry instruction to last user message
+                    messages = messages[:-1] + [{
+                        "role": "user",
+                        "content": (
+                            messages[-1]["content"]
+                            + "\n\nRETRY: Previous output was invalid. "
+                            "Return ONLY raw JSON. `tasks` must be a non-empty array. "
+                            "No markdown, no explanation."
+                        ),
+                    }]
 
         if last_error or not tasks:
             raise ValueError(str(last_error or "no tasks generated"))

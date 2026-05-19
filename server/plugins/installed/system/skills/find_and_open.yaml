@@ -1,0 +1,25 @@
+# Skill: find a file and open it
+# Template mode — file_search needs "query" from user.
+name: find_and_open
+description: "Search for a file by name and open it"
+plugin: system
+required_tools:
+  - file_search
+  - file_open
+trigger_patterns:
+  - "find .* and open"
+  - "locate .* and open"
+  - "search for .* and open"
+steps:
+  - task_id: search
+    tool: file_search
+    execution_target: client
+    inputs_from_user:
+      - query
+  - task_id: open
+    tool: file_open
+    execution_target: client
+    depends_on:
+      - search
+    input_bindings:
+      path: "$.search.data.file_path"

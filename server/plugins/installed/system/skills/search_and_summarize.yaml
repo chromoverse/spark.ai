@@ -1,0 +1,27 @@
+# Skill: search the web and summarize results
+# Template mode — web_search needs "query" extracted from user utterance.
+name: search_and_summarize
+description: "Search the web for something and summarize the results"
+plugin: system
+required_tools:
+  - web_search
+  - ai_summarize
+trigger_patterns:
+  - "search .* and summarize"
+  - "look up .* and (summarize|give me a summary)"
+  - "find .* online and summarize"
+steps:
+  - task_id: search
+    tool: web_search
+    execution_target: server
+    inputs_from_user:
+      - query
+  - task_id: summarize
+    tool: ai_summarize
+    execution_target: server
+    depends_on:
+      - search
+    input_bindings:
+      context: "$.search.data.results"
+    inputs:
+      mode: "tts"

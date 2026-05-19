@@ -1,0 +1,28 @@
+{
+  "name": "media",
+  "version": "1.0.0",
+  "display_name": "Media Playback",
+  "description": "Play, pause, resume, stop, and inspect music or video playback.",
+  "author": "spark-core",
+  "capabilities": [
+    "music_playback",
+    "playback_status"
+  ],
+  "tools": [
+    "music_play",
+    "music_stop",
+    "music_status",
+    "music_pause",
+    "music_resume"
+  ],
+  "skills": [],
+  "dependencies": [],
+  "config_schema": {
+    "default_music_app": {
+      "type": "string",
+      "default": "youtube",
+      "description": "Default media source if the user doesn't specify one"
+    }
+  },
+  "enabled": true
+}

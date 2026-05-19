@@ -1,0 +1,23 @@
+# Skill: take a screenshot and open it
+# Full LLM bypass — screenshot_capture needs no user-extracted inputs.
+name: screenshot_and_open
+description: "Take a screenshot and open it"
+plugin: system
+required_tools:
+  - screenshot_capture
+  - file_open
+trigger_patterns:
+  - "take .* screenshot.* (and|then) open"
+  - "screenshot.* (and|then) (open|show)"
+  - "capture .* screen.* (and|then) open"
+steps:
+  - task_id: capture
+    tool: screenshot_capture
+    execution_target: server
+  - task_id: open
+    tool: file_open
+    execution_target: client
+    depends_on:
+      - capture
+    input_bindings:
+      path: "$.capture.data.file_path"

@@ -28,6 +28,20 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "redirect_uri_env": "GOOGLE_REDIRECT_URI",
         "default_redirect_uri": "http://localhost:8000/auth/gmail/callback",
     },
+    "google_calendar": {
+        "display_name": "Google Calendar",
+        "scopes": [
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/userinfo.email",
+        ],
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "userinfo_uri": "https://www.googleapis.com/oauth2/v2/userinfo",
+        "client_id_env": "GOOGLE_CLIENT_ID",
+        "client_secret_env": "GOOGLE_CLIENT_SECRET",
+        "redirect_uri_env": "GOOGLE_CALENDAR_REDIRECT_URI",
+        "default_redirect_uri": "http://localhost:8000/auth/google_calendar/callback",
+    },
     # ── future ──────────────────────────────────────────────────────────────
     # "slack": {
     #     "display_name": "Slack",

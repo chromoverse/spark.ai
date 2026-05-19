@@ -1,0 +1,91 @@
+{
+  "name": "system",
+  "version": "1.0.0",
+  "display_name": "System Control",
+  "description": "OS-level operations — apps, files, shell, clipboard, screen, scheduler, weather, and artifact storage.",
+  "author": "spark-core",
+  "capabilities": [
+    "app_control",
+    "file_system",
+    "shell",
+    "clipboard",
+    "screen",
+    "media_control",
+    "system_info",
+    "scheduler",
+    "weather",
+    "artifacts"
+  ],
+  "tools": [
+    "app_open",
+    "app_close",
+    "app_restart",
+    "app_minimize",
+    "app_maximize",
+    "app_focus",
+    "system_info",
+    "battery_status",
+    "network_status",
+    "clipboard_read",
+    "clipboard_write",
+    "notification_push",
+    "screenshot_capture",
+    "brightness_status",
+    "brightness_increase",
+    "brightness_decrease",
+    "sound_status",
+    "sound_increase",
+    "sound_decrease",
+    "mic_mute",
+    "mic_unmute",
+    "current_location",
+    "lock_screen",
+    "shell_agent",
+    "shell_execute",
+    "set_reminder",
+    "schedule_task",
+    "file_search",
+    "file_open",
+    "file_create",
+    "file_delete",
+    "file_move",
+    "file_copy",
+    "file_read",
+    "folder_create",
+    "folder_cleanup",
+    "folder_organize",
+    "weather_current",
+    "weather_forecast",
+    "artifact_list",
+    "artifact_resolve",
+    "artifact_open"
+  ],
+  "skills": [
+    {"name": "create_and_open", "file": "skills/create_and_open.yaml"},
+    {"name": "screenshot_and_open", "file": "skills/screenshot_and_open.yaml"},
+    {"name": "search_and_summarize", "file": "skills/search_and_summarize.yaml"},
+    {"name": "open_latest_screenshot", "file": "skills/open_latest_screenshot.yaml"},
+    {"name": "find_and_open", "file": "skills/find_and_open.yaml"},
+    {"name": "save_clipboard_to_file", "file": "skills/save_clipboard_to_file.yaml"},
+    {"name": "screenshot_and_send", "file": "skills/screenshot_and_send.yaml"}
+  ],
+  "dependencies": [],
+  "config_schema": {
+    "shell_timeout_default": {
+      "type": "number",
+      "default": 30,
+      "description": "Default timeout (seconds) for shell_execute commands"
+    },
+    "require_approval_for_shell": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether non-whitelisted shell commands need user approval"
+    },
+    "scheduler_poll_interval_s": {
+      "type": "number",
+      "default": 30,
+      "description": "Scheduler poll interval in seconds"
+    }
+  },
+  "enabled": true
+}

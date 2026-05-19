@@ -1,11 +1,11 @@
-from tools.tools.system import app, sound, screenshot , screen, system_info,weather, notification, network, clipboard, brightness, shell_agent, artifacts
-import asyncio
-import json
-
-async def test_tools():
-    tool = app.AppOpenTool()
-    result = await tool.execute({"target": "notepad", "user_id" : "695e2bbaf8efc966aaf9f218"})
-    print(json.dumps(result.data, indent=2))
-
+  
+from scripts.tool_tester import list_tools, describe_tool, test_tool, tools
+  
+list_tools()                          # all tools, grouped by category
+# describe_tool("app_open")             # full schema + examples
+# await test_tool("app_open", target="chrome")
+# await tools.app_open(target="chrome") # IDE autocompletes after stub gen
+  
 if __name__ == "__main__":
-  asyncio.run(test_tools())
+  import asyncio
+  asyncio.run(test_tool("sound_increase", target="chrome"))  

@@ -425,6 +425,12 @@ class StreamService:
             bg.add_done_callback(
                 lambda t: t.exception() and logger.debug("[%s] persist assistant msg failed", request_id)
             )
+            # Log to activity log for searchable history
+            try:
+                from app.services.activity import get_activity_log
+                get_activity_log().log_conversation(user_id, request_id, query, msg)
+            except Exception:
+                pass
 
         return success
 

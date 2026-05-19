@@ -1,0 +1,32 @@
+{
+  "name": "web",
+  "version": "1.0.0",
+  "display_name": "Web Research",
+  "description": "Web search, scraping, and live research.",
+  "author": "spark-core",
+  "capabilities": [
+    "web_search",
+    "web_scrape",
+    "web_research"
+  ],
+  "tools": [
+    "web_search",
+    "web_scrape",
+    "web_research"
+  ],
+  "skills": [],
+  "dependencies": [],
+  "config_schema": {
+    "default_search_engine": {
+      "type": "string",
+      "default": "duckduckgo",
+      "description": "Search backend used by web_search when unspecified"
+    },
+    "max_scrape_chars": {
+      "type": "number",
+      "default": 8000,
+      "description": "Max characters to return from a single page scrape"
+    }
+  },
+  "enabled": true
+}

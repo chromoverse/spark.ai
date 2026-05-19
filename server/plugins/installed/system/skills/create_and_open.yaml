@@ -1,0 +1,30 @@
+# Skill: create a file with content and open it
+# Trigger examples:
+#   "create a file called notes.txt with hello and open it"
+#   "make a python file called demo.py and open it"
+name: create_and_open
+description: "Create a file with content and open it"
+plugin: system
+required_tools:
+  - file_create
+  - file_open
+trigger_patterns:
+  - "create .*(file|note|document).* and open"
+  - "make .*(file|note|document).* and open"
+  - "create .* and open it"
+  - "write .*(file|note|document).* and open"
+steps:
+  - task_id: create
+    tool: file_create
+    execution_target: server
+    inputs_from_user:
+      - name
+      - content
+      - directory
+  - task_id: open
+    tool: file_open
+    execution_target: client
+    depends_on:
+      - create
+    input_bindings:
+      path: "$.create.data.file_path"
