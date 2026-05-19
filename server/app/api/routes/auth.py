@@ -32,8 +32,19 @@ async def register_user(request: Request, user: UserModel):
     existing_user = await db.users.find_one({"email": user.email})
 
     if existing_user and existing_user["is_user_verified"] == True:
+        created_at = existing_user.get("created_at")
+        days_ago = ""
+        if created_at:
+            if isinstance(created_at, str):
+                from dateutil.parser import parse as parse_dt
+                created_at = parse_dt(created_at)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            delta = datetime.now(timezone.utc) - created_at
+            days = delta.days
+            days_ago = f" {days} day{'s' if days != 1 else ''} ago" if days > 0 else " today"
         return send_error(
-            message="User with this email already exists",
+            message=f"User with this email already registered{days_ago}. Please sign in instead.",
             status_code=409
         )
     

@@ -1,342 +1,139 @@
-import React, { useState } from "react";
-import { ArrowLeft, Mail, Lock, CheckCircle2, Sparkles } from "lucide-react";
-import { RippleButton } from "@/components/ui/ripple-button";
+import { useState } from "react";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import AuthLanderBg from "../../assets/AuthLanderBg.jpg";
 import axiosInstance, { type ApiResponse } from "@/utils/axiosConfig";
 import type { AuthResponse } from "@shared/auth.types";
 import { toast } from "sonner";
 import { useAppDispatch } from "@/store/hooks";
-import { verifyOtp } from "@/store/features/auth/authThunks";
+import { getCurrentUser } from "@/store/features/auth/authThunks";
+import MinimalHeader from "@/components/local/MinimalHeader";
 
 function SignInPage() {
   const navigate = useNavigate();
-  const dispatch = useAppDispatch()
+  const dispatch = useAppDispatch();
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [emailError, setEmailError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
+  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const handleEmailSubmit = async () => {
     setEmailError("");
-
-    if (!email) {
-      setEmailError("Email is required");
-      return;
-    }
-
-    if (!validateEmail(email)) {
-      setEmailError("Please enter a valid email address");
-      return;
-    }
+    if (!email) { setEmailError("Email is required"); return; }
+    if (!validateEmail(email)) { setEmailError("Invalid email"); return; }
 
     setIsLoading(true);
-
     try {
-      const response : ApiResponse = await axiosInstance.post("/auth/sign-in", { email });
-      console.log("Signin response:", response);
-      if(response.success){
-        setStep(2);
-      }
-      if(response.data){
-        toast.success(response.data.message || response.message)
-      }
+      const response: ApiResponse = await axiosInstance.post("/auth/sign-in", { email });
+      if (response.success) setStep(2);
+      if (response.data) toast.success(response.data.message || response.message);
     } catch (error) {
-      console.error("Error Signining:", error);
+      console.error("Sign in error:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleOtpSubmit = async () => {
-    if (!otp || otp.length !== 6) {
-      return;
-    }
-
-     try {
-       const response : AuthResponse = await axiosInstance.post("/auth/verify-otp", {
-         email,
-         otp,
-       });
-       console.log("OTP verification response:", response);
-       if (response.success) {
-        navigate("/");
+    if (!otp || otp.length !== 6) return;
+    setIsLoading(true);
+    try {
+      const data: AuthResponse = await axiosInstance.post("/auth/verify-otp", { email, otp });
+      if (data.access_token && data.refresh_token) {
+        await window.electronApi.saveToken("access_token", data.access_token);
+        await window.electronApi.saveToken("refresh_token", data.refresh_token);
+        await dispatch(getCurrentUser());
+        await window.electronApi.onAuthSuccess();
+        navigate("/home", { replace: true });
       }
-     } catch (error) {
-       console.error("Error verifying OTP:", error);
-     }
-  };
-
-
-  const handleBack = () => {
-    if (step === 1) {
-      navigate("/");
-    } else {
-      setStep(1);
-      setOtp("");
+    } catch (error: any) {
+      toast.error(error?.error?.message || "Verification failed");
+    } finally {
+      setIsLoading(false);
     }
-  };
-
-  const handleResendOtp = () => {
-    // TODO: Add resend OTP action here
-    console.log("Resend OTP");
   };
 
   return (
-    <div
-      className="h-screen w-screen webkit-drag-drag select-none overflow-hidden flex items-center justify-center p-4 relative"
-      style={{
-        backgroundImage: `url(${AuthLanderBg})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      }}
-    >
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob" />
-        <div className="absolute top-40 right-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000" />
-        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000" />
-      </div>
-
-      <div className="w-full max-w-md relative z-10 webkit-drag-nodrag select-none">
-        <div
-          className="rounded-3xl shadow-2xl p-8 relative backdrop-blur-xl overflow-hidden"
-          style={{
-            background: "rgba(255, 255, 255, 0.75)",
-            borderColor: "rgba(173, 216, 230, 0.5)",
-            boxShadow:
-              "0 20px 60px rgba(0, 0, 0, 0.12), 0 0 100px rgba(173, 216, 230, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
-          }}
-        >
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <button
-                onClick={handleBack}
-                className="text-gray-700 hover:text-blue-600 transition-all duration-300 p-2 rounded-xl hover:bg-white/60 hover:shadow-lg group"
-                disabled={isLoading}
-              >
-                <ArrowLeft
-                  size={22}
-                  className="group-hover:-translate-x-1 transition-transform duration-300"
-                />
-              </button>
-              <div className="flex items-center gap-2 flex-1">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  {step === 1 ? "SignIn" : "Verify Email"}
-                </h1>
-              </div>
-            </div>
-            <p className="text-gray-600 text-sm flex items-center gap-2">
-              {step === 1 ? (
-                <>
-                  <span>Enter your email address to get started</span>
-                </>
-              ) : (
-                <>
-                  <span>
-                    We've sent a verification code to <strong>{email}</strong>
-                  </span>
-                </>
-              )}
-            </p>
-          </div>
-
-          {/* Step 1: Email Input */}
-          <div
-            className={`transition-all duration-500 ease-in-out ${
-              step === 1
-                ? "opacity-100 translate-x-0"
-                : "opacity-0 translate-x-8 absolute pointer-events-none"
-            }`}
+    <div className="h-screen w-screen bg-[#0a0a0f] text-white flex flex-col select-none">
+      <MinimalHeader />
+      <div className="flex-1 flex items-center justify-center">
+        <div className="w-full max-w-sm px-6">
+          {/* Back */}
+          <button
+            onClick={() => step === 1 ? navigate("/welcome") : (setStep(1), setOtp(""))}
+            className="mb-6 text-slate-400 hover:text-white flex items-center gap-2 text-sm transition-colors"
           >
-            <div className="space-y-6 select-text">
-              <div>
-                <label
-                  htmlFor="email"
-                  className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2"
-                >
-                  <Mail size={16} className="text-blue-500" />
-                  Email address
-                </label>
-                <div className="relative">
-                  <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setEmailError("");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleEmailSubmit();
-                      }
-                    }}
-                    className="w-full pl-4 pr-4 py-3 border-2 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition-all backdrop-blur-sm text-black"
-                    style={{
-                      background: "rgba(255, 255, 255, 0.9)",
-                      borderColor: emailError
-                        ? "rgba(239, 68, 68, 0.5)"
-                        : "rgba(173, 216, 230, 0.4)",
-                      boxShadow: "0 4px 16px rgba(173, 216, 230, 0.15)",
-                    }}
-                    placeholder="you@example.com"
-                    disabled={isLoading}
-                  />
-                </div>
-                {emailError && (
-                  <p className="mt-2 text-sm text-red-500 font-medium flex items-center gap-1">
-                    <span className="w-1 h-1 bg-red-500 rounded-full" />
-                    {emailError}
-                  </p>
-                )}
-              </div>
+            <ArrowLeft size={16} /> Back
+          </button>
 
-              <RippleButton
+          <h1 className="text-2xl font-semibold mb-2">
+            {step === 1 ? "Sign In" : "Verify Email"}
+          </h1>
+          <p className="text-slate-400 text-sm mb-8">
+            {step === 1
+              ? "Enter your email to continue"
+              : <>Code sent to <span className="text-white">{email}</span></>}
+          </p>
+
+          {step === 1 ? (
+            <div className="space-y-4">
+              <div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setEmailError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleEmailSubmit()}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  placeholder="you@example.com"
+                  disabled={isLoading}
+                />
+                {emailError && <p className="mt-1.5 text-xs text-red-400">{emailError}</p>}
+              </div>
+              <button
                 onClick={handleEmailSubmit}
                 disabled={isLoading}
-                className="w-full py-3.5 font-semibold"
-                rippleColor="#93C5FD"
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
               >
-                {isLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Sending...
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    Continue
-                    <ArrowLeft size={18} className="rotate-180" />
-                  </span>
-                )}
-              </RippleButton>
-            </div>
-          </div>
-
-          {/* Step 2: OTP Input */}
-          <div
-            className={`transition-all duration-500 ease-in-out ${
-              step === 2
-                ? "opacity-100 translate-x-0"
-                : "opacity-0 -translate-x-8 absolute pointer-events-none"
-            }`}
-          >
-            <div className="space-y-6">
-              <div>
-                <label
-                  htmlFor="otp"
-                  className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2"
-                >
-                  <Lock size={16} className="text-indigo-500" />
-                  Verification code
-                </label>
-                <div className="relative">
-                  <input
-                    id="otp"
-                    type="text"
-                    value={otp}
-                    onChange={(e) =>
-                      setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && otp.length === 6) {
-                        handleOtpSubmit();
-                      }
-                    }}
-                    className="w-full px-4 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-all text-center text-3xl tracking-widest font-bold backdrop-blur-sm"
-                    style={{
-                      background: "rgba(255, 255, 255, 0.9)",
-                      borderColor: "rgba(173, 216, 230, 0.4)",
-                      boxShadow: "0 4px 16px rgba(173, 216, 230, 0.15)",
-                      color: "#4338ca",
-                      letterSpacing: "0.5em",
-                    }}
-                    placeholder="● ● ● ● ● ●"
-                    maxLength={6}
-                    disabled={isLoading}
-                  />
-                  {otp.length === 6 && (
-                    <CheckCircle2
-                      size={24}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-green-500 animate-in fade-in zoom-in duration-300"
-                    />
-                  )}
-                </div>
-              </div>
-
-              <RippleButton
-                onClick={handleOtpSubmit}
-                disabled={isLoading || otp.length !== 6}
-                className="w-full py-3.5 font-semibold"
-                rippleColor="#93C5FD"
-              >
-                {isLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Verifying...
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <CheckCircle2
-                      size={24}
-                      className={`${
-                        otp.length === 6 ? "text-green-500 " : ""
-                      } animate-in fade-in zoom-in duration-300`}
-                    />
-                    Verify
-                  </span>
-                )}
-              </RippleButton>
-
-              <button
-                onClick={handleResendOtp}
-                className="w-full text-sm font-medium text-gray-600 hover:text-blue-600 transition-all duration-300 py-2 rounded-xl hover:bg-white/40 hover:shadow-sm"
-                disabled={isLoading}
-              >
-                Didn't receive code?{" "}
-                <span className="underline underline-offset-2 decoration-2 decoration-blue-400">
-                  Resend
-                </span>
+                {isLoading ? "Sending..." : "Continue"}
               </button>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={(e) => e.key === "Enter" && otp.length === 6 && handleOtpSubmit()}
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-center text-2xl tracking-[0.4em] font-mono placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  placeholder="000000"
+                  maxLength={6}
+                  disabled={isLoading}
+                />
+                {otp.length === 6 && (
+                  <CheckCircle2 size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-green-400" />
+                )}
+              </div>
+              <button
+                onClick={handleOtpSubmit}
+                disabled={isLoading || otp.length !== 6}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+              >
+                {isLoading ? "Verifying..." : "Verify"}
+              </button>
+              <button
+                onClick={handleEmailSubmit}
+                className="w-full text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                disabled={isLoading}
+              >
+                Resend code
+              </button>
+            </div>
+          )}
         </div>
-
-        {/* Bottom text */}
-        <p className="text-center text-sm text-gray-500 mt-6 backdrop-blur-sm bg-white/30 rounded-full px-4 py-2 inline-block w-full">
-          Secure registration powered by OTP verification
-        </p>
       </div>
-
-      <style>{`
-        @keyframes blob {
-          0%, 100% {
-            transform: translate(0, 0) scale(1);
-          }
-          33% {
-            transform: translate(30px, -50px) scale(1.1);
-          }
-          66% {
-            transform: translate(-20px, 20px) scale(0.9);
-          }
-        }
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-        }
-      `}</style>
     </div>
   );
 }

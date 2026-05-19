@@ -13,22 +13,13 @@ interface ApiKeysSectionProps {
 }
 
 export default function ApiKeysSection({
-  eyebrow,
-  title,
-  description,
-  config,
-  values,
-  onChange,
+  eyebrow, title, description, config, values, onChange,
 }: ApiKeysSectionProps) {
   return (
-    <div className="space-y-8">
-      <SectionHeader
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
-      />
+    <div>
+      <SectionHeader eyebrow={eyebrow} title={title} description={description} />
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
         <TokenListEditor
           providerLabel={config.title}
           values={values}

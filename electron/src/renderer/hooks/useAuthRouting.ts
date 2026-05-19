@@ -46,13 +46,17 @@ export function useAuthRouting() {
       
       // Ensure we don't dispatch Main Window actions from the Secondary (AI Panel) Window
       if (location.pathname !== "/ai-panel" && location.pathname !== "/auth/onboarding") {
-        if (isAuthenticated) {
-          console.log("🚀 Auth Success - Switching to AI Panel");
-          window.electronApi.onAuthSuccess();
-          
-          // Navigate to /home seamlessly so when user opens from Tray, it shows Home
-          navigate("/home", { replace: true });
-        } else {
+        if (isAuthenticated && user) {
+          const onboardingDone = user.customAttributes?.onboarding_completed === true;
+          if (!onboardingDone) {
+            // New user hasn't completed onboarding
+            navigate("/auth/onboarding", { replace: true });
+          } else {
+            console.log("🚀 Auth Success - Switching to AI Panel");
+            window.electronApi.onAuthSuccess();
+            navigate("/home", { replace: true });
+          }
+        } else if (!isAuthenticated) {
           console.log("⚠️ Auth Failed/Missing - Revealing Main Window");
           window.electronApi.onAuthFailure();
         }
@@ -60,7 +64,7 @@ export function useAuthRouting() {
         console.log("🚀 Auth checks intentionally paused on AI Panel / onboarding");
       }
     }
-  }, [isLoading, isAuthenticated, navigate, location.pathname]);
+  }, [isLoading, isAuthenticated, user, navigate, location.pathname]);
 
   return { isLoading, isAuthenticated, user };
 }

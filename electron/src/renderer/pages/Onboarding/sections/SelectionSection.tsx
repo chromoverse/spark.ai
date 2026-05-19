@@ -1,4 +1,3 @@
-import OptionTile from "../components/OptionTile";
 import SectionHeader from "../components/SectionHeader";
 import type { ChoiceOption } from "../types";
 
@@ -12,44 +11,38 @@ interface SelectionSectionProps {
   onChange: (value: string) => void;
 }
 
-const columnsMap = {
-  one: "grid gap-4",
-  two: "grid gap-4 md:grid-cols-2",
-  three: "grid gap-4 md:grid-cols-3",
+const colsMap = {
+  one: "grid gap-2",
+  two: "grid gap-2 md:grid-cols-2",
+  three: "grid gap-2 md:grid-cols-3",
 };
 
 export default function SelectionSection({
-  eyebrow,
-  title,
-  description,
-  options,
-  value,
-  columns = "two",
-  onChange,
+  eyebrow, title, description, options, value, columns = "two", onChange,
 }: SelectionSectionProps) {
   return (
-    <div className="space-y-8">
-      <SectionHeader
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
-      />
+    <div>
+      <SectionHeader eyebrow={eyebrow} title={title} description={description} />
 
-      <div className={columnsMap[columns]}>
-        {options.map((option) => (
-          <OptionTile
-            key={option.value}
-            active={value === option.value}
-            label={option.label}
-            description={option.description}
-            badge={option.badge}
-            disabled={option.disabled}
-            onClick={() => {
-              if (!option.disabled) {
-                onChange(option.value);
-              }
-            }}
-          />
+      <div className={colsMap[columns]}>
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            disabled={opt.disabled}
+            onClick={() => !opt.disabled && onChange(opt.value)}
+            className={`px-4 py-4 rounded-lg text-left transition-colors ${
+              opt.disabled ? "opacity-40 cursor-not-allowed " : ""
+            }${
+              value === opt.value
+                ? "bg-white/10 border border-slate-500"
+                : "border border-slate-800 hover:border-slate-600"
+            }`}
+          >
+            <p className="text-sm font-medium text-white">{opt.label}</p>
+            {opt.description && <p className="text-xs text-slate-500 mt-0.5">{opt.description}</p>}
+            {opt.badge && <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{opt.badge}</span>}
+          </button>
         ))}
       </div>
     </div>

@@ -11,6 +11,8 @@ import SignUp from "./pages/SignUp";
 import SignInPage from "./pages/SignInPage";
 import AiPanel from "./pages/AiPanel/AiPanel";
 import Onboarding from "./pages/Onboarding";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import About from "./pages/About";
 
 export default function App() {
   return (
@@ -24,6 +26,8 @@ export default function App() {
             <Route path="/auth/sign-up" element={<SignUp />} />
             <Route path="/auth/sign-in" element={<SignInPage />} />
             <Route path="/auth/onboarding" element={<Onboarding />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/about" element={<About />} />
           </Route>
 
           {/* Protected Routes */}

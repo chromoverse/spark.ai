@@ -1,10 +1,5 @@
-import SummaryCard from "../components/SummaryCard";
 import SectionHeader from "../components/SectionHeader";
-import {
-  maskToken,
-  prettifyValue,
-  resolveHeardAboutSparkValue,
-} from "../utils";
+import { maskToken, prettifyValue, resolveHeardAboutSparkValue } from "../utils";
 
 interface SummarySectionProps {
   eyebrow: string;
@@ -27,89 +22,46 @@ interface SummarySectionProps {
   };
 }
 
-function TokenSummary({
-  label,
-  values,
-}: {
-  label: string;
-  values: string[];
-}) {
-  const activeTokens = values.map((value) => value.trim()).filter(Boolean);
-
+function Item({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[24px] border border-white/10 bg-black/15 px-5 py-4">
-      <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
-        {label}
-      </p>
-      <p className="mt-2 text-sm font-medium text-white">
-        {activeTokens.length > 0
-          ? `${activeTokens.length} token${activeTokens.length > 1 ? "s" : ""}`
-          : "No keys added"}
-      </p>
-      {activeTokens.length > 0 ? (
-        <div className="mt-3 space-y-2">
-          {activeTokens.slice(0, 3).map((token, index) => (
-            <p key={`${label}-${index}`} className="text-xs text-slate-400">
-              {maskToken(token)}
-            </p>
-          ))}
-          {activeTokens.length > 3 ? (
-            <p className="text-xs text-slate-500">
-              +{activeTokens.length - 3} more hidden entries
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+    <div className="px-4 py-3 bg-slate-900 rounded-lg">
+      <p className="text-[11px] text-slate-500 uppercase tracking-wider">{label}</p>
+      <p className="mt-1 text-sm text-white">{value || "Not set"}</p>
     </div>
   );
 }
 
-export default function SummarySection({
-  eyebrow,
-  title,
-  description,
-  voiceDisplayName,
-  draft,
-}: SummarySectionProps) {
+function TokenSummary({ label, values }: { label: string; values: string[] }) {
+  const active = values.filter((v) => v.trim());
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col space-y-8">
-      <SectionHeader
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
-      />
+    <div className="px-4 py-3 bg-slate-900 rounded-lg">
+      <p className="text-[11px] text-slate-500 uppercase tracking-wider">{label}</p>
+      <p className="mt-1 text-sm text-white">{active.length} key{active.length !== 1 ? "s" : ""}</p>
+      {active.slice(0, 2).map((t, i) => (
+        <p key={i} className="text-xs text-slate-500 mt-0.5">{maskToken(t)}</p>
+      ))}
+    </div>
+  );
+}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard label="Name" value={draft.preferredName || "Not set"} />
-        <SummaryCard label="Profile gender" value={prettifyValue(draft.gender)} />
-        <SummaryCard
-          label="Heard about Spark"
-          value={resolveHeardAboutSparkValue(
-            draft.heardAboutSpark,
-            draft.heardAboutSparkCustom,
-          )}
-        />
-        <SummaryCard
-          label="Spark tone"
-          value={prettifyValue(draft.interactionStyle)}
-        />
-        <SummaryCard label="Language" value={prettifyValue(draft.language)} />
-        <SummaryCard label="AI voice gender" value={prettifyValue(draft.aiGender)} />
-        <SummaryCard
-          label="AI voice name"
-          value={voiceDisplayName || draft.aiVoiceName || "Not set"}
-        />
+export default function SummarySection({ eyebrow, title, description, voiceDisplayName, draft }: SummarySectionProps) {
+  return (
+    <div>
+      <SectionHeader eyebrow={eyebrow} title={title} description={description} />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <Item label="Name" value={draft.preferredName} />
+        <Item label="Gender" value={prettifyValue(draft.gender)} />
+        <Item label="Heard about" value={resolveHeardAboutSparkValue(draft.heardAboutSpark, draft.heardAboutSparkCustom)} />
+        <Item label="Tone" value={prettifyValue(draft.interactionStyle)} />
+        <Item label="Language" value={prettifyValue(draft.language)} />
+        <Item label="Voice" value={voiceDisplayName || draft.aiVoiceName || "Not set"} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3 mt-4">
         <TokenSummary label="Gemini" values={draft.geminiApiKeys} />
         <TokenSummary label="Groq" values={draft.groqApiKeys} />
-        <TokenSummary label="OpenRouter (optional)" values={draft.openrouterApiKeys} />
-      </div>
-
-      <div className="rounded-[26px] border border-white/10 bg-white/6 p-5 text-sm leading-7 text-slate-300">
-        Spark will write these values to your profile only when you confirm on
-        this screen. Blank token rows are ignored automatically.
+        <TokenSummary label="OpenRouter" values={draft.openrouterApiKeys} />
       </div>
     </div>
   );
