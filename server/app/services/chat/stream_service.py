@@ -35,10 +35,52 @@ _interrupt = get_interrupt_manager()
 _SENTENCE_BREAK_RE = re.compile(r'(?<!\.)(?<!…)[.!?]["\'\)\]]?\s+')
 _CLAUSE_BREAK_RE   = re.compile(r'[,;:\u2014]\s+')
 
-_RECENT_TURNS      = 5      # reduced from 8 — fewer DB rows, same quality
+_RECENT_TURNS      = 3      # reduced from 5 — saves ~1-2K tokens/call
 _LLM_TEMPERATURE   = 0.3
 _LLM_MAX_TOKENS    = 220
 _TTS_CONCURRENCY   = 2      # concurrent TTS requests (tune to your TTS service)
+_RAG_MAX_TOKENS    = 800    # cap RAG context injected into prompt (~200 words)
+
+
+def _is_simple_query(query: str) -> bool:
+    """
+    Fast heuristic: returns True if query is simple enough for a lightweight model.
+    Costs 0ms — pure string checks.
+    """
+    words = query.strip().split()
+    n = len(words)
+    q = query.lower()
+
+    # Very short queries are always simple
+    if n <= 4:
+        return True
+
+    # Explicit complex signals → use big model
+    _COMPLEX_SIGNALS = (
+        "explain", "analyze", "compare", "summarize", "write code",
+        "implement", "debug", "refactor", "research", "plan",
+        "step by step", "pros and cons", "difference between",
+        "how does", "why does", "what causes",
+    )
+    if any(s in q for s in _COMPLEX_SIGNALS):
+        return False
+
+    # Simple intent patterns
+    _SIMPLE_SIGNALS = (
+        "tell me a joke", "joke about", "what time", "what's the time",
+        "hello", "hi ", "hey ", "good morning", "good night",
+        "thank", "thanks", "set a reminder", "set reminder",
+        "play ", "open ", "turn on", "turn off",
+        "what's the weather", "weather in",
+    )
+    if any(s in q for s in _SIMPLE_SIGNALS):
+        return True
+
+    # Medium-length queries without complex signals → simple
+    if n <= 10:
+        return True
+
+    return False
 
 
 def _context_budget_ms() -> int:
@@ -63,11 +105,22 @@ def _fallback_text(lang: str) -> str:
 
 
 def _format_rag_chunks(query_context: List[Dict[str, Any]]) -> str:
+    """Format RAG chunks, capped at _RAG_MAX_TOKENS (~4 chars/token estimate)."""
     lines = []
+    char_budget = _RAG_MAX_TOKENS * 4  # rough token→char conversion
+    used = 0
     for i, chunk in enumerate(query_context, 1):
         content = str(chunk.get("content") or "").strip()
-        if content:
-            lines.append(f"[{i}] {content}")
+        if not content:
+            continue
+        if used + len(content) > char_budget:
+            # Truncate last chunk to fit
+            remaining = char_budget - used
+            if remaining > 50:
+                lines.append(f"[{i}] {content[:remaining]}…")
+            break
+        lines.append(f"[{i}] {content}")
+        used += len(content)
     return "\n".join(lines)
 
 
@@ -88,6 +141,9 @@ def _build_messages(
         role    = str(turn.get("role", "user"))
         content = str(turn.get("content") or "").strip()
         if role in {"user", "assistant"} and content:
+            # Cap each turn to ~150 tokens to limit input bloat
+            if len(content) > 600:
+                content = content[:600] + "…"
             messages.append({"role": role, "content": content})
 
     rag_text = _format_rag_chunks(query_context)
@@ -134,20 +190,24 @@ def _chunk_thresholds(first_chunk: bool) -> Tuple[int, int, int]:
     return max(2, base_min - 2), max(3, base_soft - 2), base_max
 
 
-def _model_kwargs(messages: List[Dict[str, str]]) -> Dict[str, Any]:
+def _model_kwargs(messages: List[Dict[str, str]], query: str = "") -> Dict[str, Any]:
     """
     Build LLM call kwargs.
 
-    FIX: Always inject GROQ_DEFAULT_MODEL when it is configured — previously
-    this was gated on `settings.groq_mode`, so stream_service would omit the
-    model while the mini-test always passed it explicitly, causing different
-    behaviour between the two call sites.
+    Routes simple queries to GROQ_FALLBACK_MODEL (lighter, faster, fewer tokens)
+    and complex queries to GROQ_DEFAULT_MODEL.
     """
     kwargs: Dict[str, Any] = dict(
         messages=messages,
         temperature=_LLM_TEMPERATURE,
         max_tokens=_LLM_MAX_TOKENS,
     )
+    if query and _is_simple_query(query):
+        model = str(getattr(settings, "GROQ_FALLBACK_MODEL", "")).strip()
+        if model:
+            kwargs["model"] = model
+            logger.debug("🟢 Simple query → lightweight model: %s", model)
+            return kwargs
     model = str(getattr(settings, "GROQ_DEFAULT_MODEL", "")).strip()
     if model:
         kwargs["model"] = model
@@ -245,7 +305,7 @@ class StreamService:
             query_context=query_context,
             user_details=user_details,
         )
-        kwargs = _model_kwargs(messages)
+        kwargs = _model_kwargs(messages, query=query)
 
         # ── 3. LLM stream → TTS queue ─────────────────────────────────────────
         queue: asyncio.Queue[Optional[str]] = asyncio.Queue()

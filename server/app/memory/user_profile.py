@@ -1,0 +1,236 @@
+"""
+Tier 1: User Profile Memory
+
+A persistent, evolving summary of the user that lives in the system prompt.
+Zero latency cost — it's pre-loaded in memory and injected into every prompt.
+
+Storage: Redis (hot) → MongoDB (persistent)
+Update: After conversations via background learning (Tier 3)
+
+The profile contains:
+- Key facts (name, location, occupation, projects)
+- Preferences (communication style, topics of interest)
+- Habits (time patterns, recurring requests)
+- Personality notes (humor style, energy level)
+"""
+
+import json
+import logging
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+NEPAL_TZ = timezone(timedelta(hours=5, minutes=45))
+
+# In-memory TTL before re-checking Redis
+_MEMORY_TTL_SECONDS = 300  # 5 min — profile rarely changes mid-session
+
+# Max facts stored per user
+_MAX_FACTS = 50
+
+# Default empty profile
+_EMPTY_PROFILE = {
+    "facts": [],
+    "preferences": {},
+    "habits": [],
+    "personality_notes": "",
+    "summary": "",
+    "updated_at": None,
+    "version": 1,
+}
+
+
+class UserProfileMemory:
+    """
+    In-memory + Redis-backed user profile for instant system prompt injection.
+
+    Usage:
+        profile_memory = get_user_profile_memory()
+        summary = await profile_memory.get_prompt_block(user_id)
+        # Returns a string ready to inject into system prompt
+    """
+
+    _instance: Optional["UserProfileMemory"] = None
+    _profiles: Dict[str, Dict[str, Any]] = {}  # user_id → profile
+    _timestamps: Dict[str, float] = {}  # user_id → last_load_time
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    # ── Read path (0ms when cached) ──────────────────────────────────────
+
+    async def get_profile(self, user_id: str) -> Dict[str, Any]:
+        """Get full profile dict. Returns from memory if fresh."""
+        now = time.time()
+        if user_id in self._profiles:
+            age = now - self._timestamps.get(user_id, 0)
+            if age < _MEMORY_TTL_SECONDS:
+                return self._profiles[user_id]
+
+        # Try Redis
+        profile = await self._load_from_redis(user_id)
+        if profile:
+            self._profiles[user_id] = profile
+            self._timestamps[user_id] = now
+            return profile
+
+        # Try MongoDB
+        profile = await self._load_from_db(user_id)
+        if profile:
+            await self._save_to_redis(user_id, profile)
+            self._profiles[user_id] = profile
+            self._timestamps[user_id] = now
+            return profile
+
+        # No profile yet — return empty
+        self._profiles[user_id] = _EMPTY_PROFILE.copy()
+        self._timestamps[user_id] = now
+        return self._profiles[user_id]
+
+    async def get_prompt_block(self, user_id: str) -> str:
+        """
+        Returns a formatted string for injection into the system prompt.
+        This is the key method — called every request, must be instant.
+        """
+        profile = await self.get_profile(user_id)
+        summary = profile.get("summary", "")
+        if not summary:
+            # Build from facts if no summary exists
+            facts = profile.get("facts", [])
+            prefs = profile.get("preferences", {})
+            if not facts and not prefs:
+                return ""
+            parts = []
+            if facts:
+                parts.append("Known facts: " + "; ".join(facts[:15]))
+            if prefs:
+                pref_str = "; ".join(f"{k}: {v}" for k, v in list(prefs.items())[:10])
+                parts.append("Preferences: " + pref_str)
+            return "\n".join(parts)
+        return summary
+
+    # ── Write path (called by Tier 3 background learning) ────────────────
+
+    async def add_facts(self, user_id: str, new_facts: List[str]) -> None:
+        """Add new facts to the user profile."""
+        if not new_facts:
+            return
+        profile = await self.get_profile(user_id)
+        existing = set(profile.get("facts", []))
+        for fact in new_facts:
+            fact = fact.strip()
+            if fact and fact not in existing:
+                existing.add(fact)
+        profile["facts"] = list(existing)[:_MAX_FACTS]
+        profile["updated_at"] = datetime.now(NEPAL_TZ).isoformat()
+        await self._persist(user_id, profile)
+
+    async def update_preferences(self, user_id: str, prefs: Dict[str, str]) -> None:
+        """Update user preferences (merge)."""
+        if not prefs:
+            return
+        profile = await self.get_profile(user_id)
+        profile.setdefault("preferences", {}).update(prefs)
+        profile["updated_at"] = datetime.now(NEPAL_TZ).isoformat()
+        await self._persist(user_id, profile)
+
+    async def set_summary(self, user_id: str, summary: str) -> None:
+        """Set the compiled profile summary (generated by Tier 3)."""
+        profile = await self.get_profile(user_id)
+        profile["summary"] = summary
+        profile["updated_at"] = datetime.now(NEPAL_TZ).isoformat()
+        await self._persist(user_id, profile)
+
+    async def add_habits(self, user_id: str, habits: List[str]) -> None:
+        """Add observed habits."""
+        if not habits:
+            return
+        profile = await self.get_profile(user_id)
+        existing = set(profile.get("habits", []))
+        for h in habits:
+            h = h.strip()
+            if h:
+                existing.add(h)
+        profile["habits"] = list(existing)[:20]
+        profile["updated_at"] = datetime.now(NEPAL_TZ).isoformat()
+        await self._persist(user_id, profile)
+
+    # ── Persistence ──────────────────────────────────────────────────────
+
+    async def _persist(self, user_id: str, profile: Dict[str, Any]) -> None:
+        """Save to memory + Redis + MongoDB."""
+        self._profiles[user_id] = profile
+        self._timestamps[user_id] = time.time()
+        await self._save_to_redis(user_id, profile)
+        await self._save_to_db(user_id, profile)
+
+    async def _load_from_redis(self, user_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            from app.cache.base_manager import BaseCacheManager
+            client = BaseCacheManager().client
+            if not client:
+                return None
+            # Use local KV for desktop mode
+            from app.cache.local_kv_manager import LocalKVManager
+            if isinstance(client, LocalKVManager):
+                data = await client.get(f"user_profile:{user_id}")
+            else:
+                data = await client.get(f"user_profile:{user_id}")
+            if data:
+                return json.loads(data)
+        except Exception as e:
+            logger.debug("Redis profile load failed: %s", e)
+        return None
+
+    async def _save_to_redis(self, user_id: str, profile: Dict[str, Any]) -> None:
+        try:
+            from app.cache.base_manager import BaseCacheManager
+            client = BaseCacheManager().client
+            if not client:
+                return
+            from app.cache.local_kv_manager import LocalKVManager
+            if isinstance(client, LocalKVManager):
+                await client.set(f"user_profile:{user_id}", json.dumps(profile))
+            else:
+                await client.set(f"user_profile:{user_id}", json.dumps(profile))
+        except Exception as e:
+            logger.debug("Redis profile save failed: %s", e)
+
+    async def _load_from_db(self, user_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            from app.db.mongo import get_db
+            db = get_db()
+            doc = await db.user_profiles.find_one({"user_id": user_id})
+            if doc:
+                doc.pop("_id", None)
+                return doc
+        except Exception as e:
+            logger.debug("MongoDB profile load failed: %s", e)
+        return None
+
+    async def _save_to_db(self, user_id: str, profile: Dict[str, Any]) -> None:
+        try:
+            from app.db.mongo import get_db
+            db = get_db()
+            await db.user_profiles.update_one(
+                {"user_id": user_id},
+                {"$set": {**profile, "user_id": user_id}},
+                upsert=True,
+            )
+        except Exception as e:
+            logger.debug("MongoDB profile save failed: %s", e)
+
+    # ── Cache invalidation ───────────────────────────────────────────────
+
+    def invalidate(self, user_id: str) -> None:
+        """Force reload on next access."""
+        self._profiles.pop(user_id, None)
+        self._timestamps.pop(user_id, None)
+
+
+def get_user_profile_memory() -> UserProfileMemory:
+    return UserProfileMemory()

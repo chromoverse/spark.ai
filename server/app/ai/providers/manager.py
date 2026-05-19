@@ -103,6 +103,23 @@ class LLMManager:
             f"🚫 {provider.provider_name} blocked for {QUOTA_BLOCK_TTL}s (all keys exhausted)"
         )
 
+    def _model_belongs_to(self, provider: BaseClient, model: Optional[str]) -> bool:
+        """Check if the requested model is native to this provider."""
+        if not model:
+            return True  # no model specified, use default
+        # Each provider uses its own default — if the model matches, it belongs
+        if model == provider.default_model:
+            return True
+        # Provider-specific prefixes
+        name = provider.provider_name.lower()
+        if name == "groq" and ("llama" in model or "mixtral" in model or "gemma" in model or "gpt-oss" in model):
+            return True
+        if name == "gemini" and "gemini" in model:
+            return True
+        if name == "openrouter":
+            return True  # OpenRouter supports everything
+        return False
+
     # ────────────────────────── Public API ──────────────────────────
 
     async def chat(
@@ -130,12 +147,16 @@ class LLMManager:
             if not provider.is_available:
                 continue
 
+            # Only pass caller's model to the first provider that matches it.
+            # Fallback providers use their own default model.
+            use_model = model if self._model_belongs_to(provider, model) else None
+
             try:
                 logger.info(f"🔹 Trying {provider.provider_name}...")
                 response = await with_retry(
-                    lambda p=provider: p.llm_chat(
+                    lambda p=provider, m=use_model: p.llm_chat(
                         messages=messages,
-                        model=model,
+                        model=m,
                         temperature=temperature,
                         max_tokens=max_tokens,
                     ),
@@ -194,6 +215,10 @@ class LLMManager:
             if not provider.is_available:
                 continue
 
+            # Only pass caller's model to the provider that owns it.
+            # Fallback providers use their own default model.
+            use_model = model if self._model_belongs_to(provider, model) else None
+
             should_skip_provider = False
             for attempt in range(1, per_provider_attempts + 1):
                 chunks_yielded = False
@@ -205,7 +230,7 @@ class LLMManager:
                     )
                     async for chunk in provider.llm_stream(
                         messages=messages,
-                        model=model,
+                        model=use_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
                     ):
