@@ -41,6 +41,10 @@ pnpm-debug.log*
 !.env.sample
 !env.sample
 
+# ---- One-off key scripts (never commit API keys) -------------------
+**/add_key.py
+**/add_key*.py
+
 # ---- OS junk -------------------------------------------------------
 .DS_Store
 Thumbs.db
