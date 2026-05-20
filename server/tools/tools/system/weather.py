@@ -153,8 +153,8 @@ class WeatherCurrentTool(BaseTool):
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         lat, lon = _normalize_coordinates(
-            self.get_input(inputs, "lat", None),
-            self.get_input(inputs, "lon", None),
+            self.get_input(inputs, "lat", None) or self.get_input(inputs, "latitude", None),
+            self.get_input(inputs, "lon", None) or self.get_input(inputs, "longitude", None),
         )
         units = _normalize_units(self.get_input(inputs, "units", "metric"))
 
@@ -246,8 +246,8 @@ class WeatherForecastTool(BaseTool):
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         lat, lon = _normalize_coordinates(
-            self.get_input(inputs, "lat", None),
-            self.get_input(inputs, "lon", None),
+            self.get_input(inputs, "lat", None) or self.get_input(inputs, "latitude", None),
+            self.get_input(inputs, "lon", None) or self.get_input(inputs, "longitude", None),
         )
         days = min(self.get_input(inputs, "days", 7), 16)
         units = _normalize_units(self.get_input(inputs, "units", "metric"))

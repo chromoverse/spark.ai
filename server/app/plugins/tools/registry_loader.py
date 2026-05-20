@@ -94,7 +94,7 @@ class ToolRegistry:
                     metadata=tool_def.get("metadata", {}),
                     examples=tool_def.get("examples", []),
                     semantic_tags=[str(item).strip() for item in tool_def.get("semantic_tags", []) if str(item).strip()],
-                    category=category_name,
+                    category=tool_def.get("category", category_name),
                 )
                 self.tools[tool_name] = tool
                 loaded_names.append(tool_name)

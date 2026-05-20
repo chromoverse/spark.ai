@@ -91,6 +91,58 @@ def _try_resolve_missing_from_predecessors(
     return None
 
 
+
+async def _llm_diagnose_and_fix(
+    task: TaskRecord,
+    current_inputs: Dict[str, Any],
+    error: str,
+    get_task_output_fn: Optional[Callable[[str], Optional[TaskOutput]]],
+) -> Optional[Dict[str, Any]]:
+    """Use LLM to diagnose the error and suggest fixed inputs."""
+    import json
+
+    # Gather predecessor outputs for context
+    predecessor_data = {}
+    if get_task_output_fn and task.depends_on:
+        for dep_id in task.depends_on:
+            dep_out = get_task_output_fn(dep_id)
+            if dep_out and dep_out.data:
+                predecessor_data[dep_id] = dep_out.data
+
+    # Build a compact prompt
+    prompt = f"""A tool execution failed. Diagnose and fix the inputs.
+
+TOOL: {task.tool}
+ERROR: {error}
+CURRENT INPUTS: {json.dumps({k:v for k,v in current_inputs.items() if not k.startswith('_')}, default=str)}
+PREDECESSOR OUTPUTS: {json.dumps(predecessor_data, default=str)[:2000]}
+
+Rules:
+- The error is likely a wrong input format or missing/mismatched field name.
+- Look at predecessor outputs and map the correct values to the tool's expected inputs.
+- Return ONLY a JSON object with the fixed inputs (only the keys that need changing).
+- If you cannot fix it, return {{}}.
+
+OUTPUT (strict JSON, no explanation):"""
+
+    try:
+        from app.ai.providers.router import routed_chat
+        raw, _ = await routed_chat("lightweight", messages=[{"role": "user", "content": prompt}], temperature=0.0, max_tokens=300)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0]
+        fixes = json.loads(raw)
+        if fixes and isinstance(fixes, dict):
+            patched = dict(current_inputs)
+            patched.update(fixes)
+            logger.info(f"🧠 LLM diagnosed fix for {task.tool}: {list(fixes.keys())}")
+            return patched
+    except Exception as e:
+        logger.debug(f"LLM diagnosis failed for {task.tool}: {e}")
+
+    return None
+
+
 async def watched_execute(
     user_id: str,
     task: TaskRecord,
@@ -152,7 +204,18 @@ async def watched_execute(
             await asyncio.sleep(0.1)
             continue
 
-        # Strategy 2: Check standard retry rules
+        # Strategy 2: LLM-assisted error diagnosis — ask LLM to fix inputs
+        patched_by_llm = await _llm_diagnose_and_fix(task, current_inputs, error, get_task_output_fn)
+        if patched_by_llm:
+            current_inputs = patched_by_llm
+            msg = f"⟳ Watcher: LLM diagnosed error and patched inputs, retrying {task.tool}"
+            logger.info(msg)
+            if on_retry:
+                await on_retry(user_id, attempt + 1, msg)
+            await asyncio.sleep(0.1)
+            continue
+
+        # Strategy 3: Check standard retry rules
         strategy = ctx.suggest_retry_strategy(user_id, task.task_id, task.tool, error)
 
         if not strategy.get("should_retry"):

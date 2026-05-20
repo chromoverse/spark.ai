@@ -31,6 +31,14 @@ from app.agent.runtime.tool_context_service import get_tool_context_service
 logger = logging.getLogger(__name__)
 
 
+async def _emit_tool_detail(user_id: str, event_type: str, task_id: str, tool_name: str, **kwargs) -> None:
+    """Emit a detailed tool event for live logs."""
+    try:
+        await emit_spark_log(user_id, event_type, task_id=task_id, tool_name=tool_name, payload=kwargs)
+    except Exception:
+        pass
+
+
 async def _emit_progress_event(user_id: str, summary: dict) -> None:
     try:
         from app.socket.utils import socket_emit
@@ -354,6 +362,7 @@ class ExecutionEngine:
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
+            await _emit_tool_detail(user_id, "tool_params", task.task_id, task.tool, inputs={k: str(v)[:150] for k, v in resolved_inputs.items() if not k.startswith("_") and k not in ("user_id", "execution_id")}, message=f"{task.tool}({', '.join(f'{k}={str(v)[:50]}' for k, v in resolved_inputs.items() if not k.startswith('_') and k not in ('user_id', 'execution_id'))})")
 
             # Dynamic approval for shell_execute commands that aren't whitelisted
             if task.tool == "shell_execute" and not (task.control and task.control.requires_approval):
@@ -390,6 +399,7 @@ class ExecutionEngine:
 
             async def _on_server_retry(_uid: str, attempt: int, msg: str) -> None:
                 await _emit_progress_event(_uid, {"retry": True, "task_id": task.task_id, "attempt": attempt, "message": msg})
+                await _emit_tool_detail(_uid, "tool_retry", task.task_id, task.tool, attempt=attempt, message=msg)
 
             watcher_result = await watched_execute(
                 user_id=user_id,
@@ -402,10 +412,12 @@ class ExecutionEngine:
             output = watcher_result.output
 
             if watcher_result.recovered:
-                logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
+                            logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
+                            await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
 
             if output.success:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
+                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=task.duration_ms, message=f"✓ {task.tool} completed in {task.duration_ms}ms")
                 # Record in session memory for context-aware follow-ups
                 get_tool_context_service().record_tool_output(
                     user_id=user_id, task_id=task.task_id, tool_name=task.tool,
@@ -417,6 +429,7 @@ class ExecutionEngine:
                 return True
             else:
                 error = output.error or f"Tool '{task.tool}' returned unsuccessful output"
+                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, success=False, error=error[:200], message=f"✗ {task.tool} failed: {error[:100]}")
                 ctx = get_tool_context_service()
                 ctx.record_tool_output(
                     user_id=user_id, task_id=task.task_id, tool_name=task.tool,
@@ -530,6 +543,7 @@ class ExecutionEngine:
             task.resolved_inputs = resolved_inputs
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
+            await _emit_tool_detail(user_id, "tool_params", task.task_id, task.tool, inputs={k: str(v)[:150] for k, v in resolved_inputs.items() if not k.startswith("_") and k not in ("user_id", "execution_id")}, message=f"{task.tool}({', '.join(f'{k}={str(v)[:50]}' for k, v in resolved_inputs.items() if not k.startswith('_') and k not in ('user_id', 'execution_id'))})")
             
             # Execute via watcher (auto-retry on retryable failures)
             client_executor = self.client_tool_executor
@@ -555,7 +569,8 @@ class ExecutionEngine:
             output = watcher_result.output
 
             if watcher_result.recovered:
-                logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
+                            logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
+                            await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
 
             if output.success:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output)

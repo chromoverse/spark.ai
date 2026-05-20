@@ -11,6 +11,11 @@
 # .gitignore (e.g. voice_daemon/, docs/).
 # =====================================================================
 
+.clauderc
+.clauderc.json
+.clauderc.yaml
+.claude/
+
 # ---- Graphify ------------------------------------------------------
 # graph.json's manifest contains absolute local paths and the whole
 # directory is rebuilt by the post-commit hook, so we don't track it.

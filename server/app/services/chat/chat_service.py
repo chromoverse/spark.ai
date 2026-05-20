@@ -11,35 +11,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 
 from app.utils import clean_pqh_response
 from app.models.pqh_response_model import CognitiveState, PQHResponse
 from app.cache import load_user, get_last_n_messages
 from app.ai.providers import llm_chat, routed_chat
-from app.prompts import pqh_prompt
+from app.prompts import pqh_prompt_v2 as pqh_prompt
 from .sqh_service import process_sqh
 from .clarification_service import request_clarification
 from app.agent.runtime import is_meta_query, try_handle_meta_query
 
 logger = logging.getLogger(__name__)
 
-_CALL_INTENT_RE  = re.compile(r"\b(call|dial|ring|phone)\b",        flags=re.IGNORECASE)
-_VIDEO_INTENT_RE = re.compile(r"\b(video|video\s+call|facetime)\b", flags=re.IGNORECASE)
-
 _RECENT_TURNS = 5
-
-
-def _normalize_requested_tools(query: str, response: PQHResponse) -> None:
-    """Remap message_send → call_audio/call_video when query has call intent."""
-    if not (response.requested_tool and "message_send" in response.requested_tool):
-        return
-    lower = (query or "").lower()
-    if not _CALL_INTENT_RE.search(lower):
-        return
-    replacement = "call_video" if _VIDEO_INTENT_RE.search(lower) else "call_audio"
-    response.requested_tool = [replacement]
-    logger.warning("PQH guardrail: message_send → %s (query=%r)", replacement, query)
 
 
 async def _run_sqh_background(cleaned_response: PQHResponse, user_details: dict, user_id: str) -> None:
@@ -159,10 +143,9 @@ async def chat(
             return clean_pqh_response._create_error_pqh_response("Empty AI response", "neutral")
 
         cleaned = clean_pqh_response.clean_pqh_response(raw_response, "neutral")
-        _normalize_requested_tools(query, cleaned)
 
-        # Fire SQH if tools were requested
-        if cleaned.requested_tool:
+        # Fire SQH if a category was picked (tool action needed)
+        if cleaned.category:
             # Multi-turn clarification: PQH flagged the request as ambiguous.
             # Pause here, ask the user one question, then continue with the enriched
             # query so SQH can plan with full context.
@@ -173,7 +156,7 @@ async def chat(
                     user_id=user_id,
                     user_details=user_details,
                 )
-                if cleaned is None or not cleaned.requested_tool:
+                if cleaned is None or not cleaned.category:
                     # Clarification timed out or user gave nothing usable —
                     # return the graceful fallback PQH built and skip SQH.
                     return cleaned or _error(

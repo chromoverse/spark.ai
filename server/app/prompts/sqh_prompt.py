@@ -160,9 +160,18 @@ def build_user_message(
     """
     Dynamic part — PQH context + tool schemas + preferences.
     Changes every SQH call, so it is never cached.
+
+    If PQH returned a category, SQH sees ALL tools in that category
+    and picks the exact tool(s) to use.
     """
     c = pqh_response.cognitive_state
-    tool_names = pqh_response.requested_tool or []
+
+    # Determine which tools to show SQH
+    if pqh_response.category:
+        from app.prompts.tool_categories import get_tools_in_category
+        tool_names = get_tools_in_category(pqh_response.category)
+    else:
+        tool_names = []
 
     tool_schemas     = get_tools_schema(tool_names)
     tool_schemas_str = json.dumps(tool_schemas, indent=2)
@@ -209,11 +218,19 @@ ARTIFACT OPEN RULES:
 - If the user names the content instead of the path, pass a short `query` to `artifact_resolve` (for example `"about me"` or `"weekly plan"`).
 - Use `artifact_open` only when `file_open` is unavailable or the intent is explicitly to open it directly on the same runtime machine."""
 
-    return f"""━━━ PQH ANALYSIS ━━━
+    category_instruction = ""
+    if pqh_response.category:
+        category_instruction = f"""
+━━━ CATEGORY: {pqh_response.category} ━━━
+PQH classified this request into the "{pqh_response.category}" category.
+Pick the BEST tool(s) from the schemas below that match the user's exact intent.
+"""
+
+    return f"""{category_instruction}━━━ PQH ANALYSIS ━━━
 User Query  : "{c.user_query}"
 PQH Thought : "{c.thought_process}"
 PQH Answer  : "{c.answer}"
-Tools needed: {tool_names}
+Available tools: {tool_names}
 
 ━━━ TOOL SCHEMAS ━━━
 {tool_schemas_str}

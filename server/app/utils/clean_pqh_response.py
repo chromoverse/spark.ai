@@ -105,15 +105,15 @@ def _reconstruct_pqh_response(raw_data: str, emotion: str) -> PQHResponse:
             answer_english=cog_state.get("answer_english", "Unable to process response.")
         )
         
-        # Extract requested_tool
-        requested_tool = data.get("requested_tool", [])
-        if not isinstance(requested_tool, list):
-            requested_tool = [requested_tool] if requested_tool else []
+        # Extract category (new v2 field)
+        category = data.get("category") or None
+        if category and not isinstance(category, str):
+            category = None
         
         return PQHResponse(
             request_id=request_id,
             cognitive_state=cognitive_state,
-            requested_tool=requested_tool
+            category=category,
         )
     
     except Exception as e:
@@ -135,7 +135,7 @@ def _create_error_pqh_response(raw_data: str, emotion: str) -> PQHResponse:
             answer=raw_data[:200] if raw_data else "Response processing failed.",
             answer_english="Unable to process response. Please try again."
         ),
-        requested_tool=[]
+        category=None,
     )
 
 

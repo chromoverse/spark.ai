@@ -191,7 +191,7 @@ async def handle_tts_request_with_parallel_chat(
             await emit_server_status("TTS failed", "ERROR", sid)
         
         if result["chat_result"]:
-            logger.info(f"Chat completed with tools: {result['chat_result'].requested_tool}")
+            logger.info(f"Chat completed with category: {result['chat_result'].category}")
         
     except Exception as e:
         logger.exception("TTS-PARALLEL ERROR:")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 from . import CamelModel
 import time
 
@@ -14,5 +14,5 @@ class CognitiveState(CamelModel):
 class PQHResponse(CamelModel):
     request_id: str = Field(default_factory=lambda: f"pqh_{int(time.time()*1000)}")
     cognitive_state: CognitiveState
-    requested_tool: Optional[List[str]] = []
+    category: Optional[str] = None
     needs_clarification: bool = False

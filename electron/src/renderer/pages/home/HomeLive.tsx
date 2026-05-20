@@ -68,16 +68,32 @@ function mergeLog(entries: DisplayEntry[], log: SparkLogPayload): DisplayEntry[]
     timestamp: log.timestamp,
     message: payload.message,
     query: payload.query,
-    latency_ms: payload.latency_ms,
+    latency_ms: payload.latency_ms ?? payload.duration_ms,
     task_id: log.task_id,
   };
 
-  // For task events, update existing entry in-place instead of adding new row
+  // For task lifecycle events, update existing entry in-place
   if (log.task_id && (log.event_type === "tool_invoked" || log.event_type === "tool_failed" || log.event_type === "task_completed")) {
-    const idx = entries.findLastIndex((e) => e.task_id === log.task_id);
+    const idx = entries.findLastIndex((e) => e.task_id === log.task_id && e.event_type === "task_running");
     if (idx !== -1) {
       const updated = [...entries];
-      updated[idx] = { ...updated[idx], status: log.status || newEntry.status, latency_ms: payload.latency_ms, message: payload.message || updated[idx].message };
+      updated[idx] = { ...updated[idx], status: log.status || newEntry.status, latency_ms: payload.latency_ms ?? payload.duration_ms, message: payload.message || updated[idx].message };
+      return updated;
+    }
+  }
+
+  // tool_output updates the task_running entry with final status
+  if (log.task_id && log.event_type === "tool_output") {
+    const idx = entries.findLastIndex((e) => e.task_id === log.task_id && e.event_type === "task_running");
+    if (idx !== -1) {
+      const updated = [...entries];
+      const success = payload.success;
+      updated[idx] = {
+        ...updated[idx],
+        status: success ? "completed" : "failed",
+        latency_ms: payload.duration_ms || updated[idx].latency_ms,
+        message: payload.message || updated[idx].message,
+      };
       return updated;
     }
   }
@@ -92,17 +108,28 @@ function EntryRow({ entry }: { entry: DisplayEntry }) {
   const isPlan = entry.event_type === "plan_created";
   const isTask = entry.event_type === "task_running" || entry.event_type === "tool_invoked" || entry.event_type === "tool_failed" || entry.event_type === "task_completed";
   const isResponse = entry.event_type === "ai_response";
+  const isParams = entry.event_type === "tool_params";
+  const isRetry = entry.event_type === "tool_retry";
+  const isRecovered = entry.event_type === "tool_recovered";
+  const isToolOutput = entry.event_type === "tool_output";
 
   const statusColor =
     entry.status === "success" || entry.status === "completed" ? "text-green-400 border-green-500/20 bg-green-500/5" :
     entry.status === "failed" || entry.status === "error" ? "text-red-400 border-red-500/20 bg-red-500/5" :
     entry.status === "running" ? "text-blue-400 border-blue-500/20 bg-blue-500/5" :
+    isParams ? "text-slate-300 border-slate-700/30 bg-slate-800/20" :
+    isRetry ? "text-yellow-400 border-yellow-500/20 bg-yellow-500/5" :
+    isRecovered ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/5" :
     "text-slate-400 border-slate-700/50 bg-slate-800/30";
 
   const statusIcon =
     entry.status === "success" || entry.status === "completed" ? "✓" :
     entry.status === "failed" || entry.status === "error" ? "✗" :
-    entry.status === "running" ? "⟳" : "•";
+    entry.status === "running" ? "⟳" :
+    isParams ? "📋" :
+    isRetry ? "⟳" :
+    isRecovered ? "🔄" :
+    isToolOutput ? "📤" : "•";
 
   return (
     <div className={`px-3 py-2 rounded-lg border text-xs ${statusColor} transition-all duration-300`}>
@@ -112,7 +139,10 @@ function EntryRow({ entry }: { entry: DisplayEntry }) {
         {isPlan && <span className="text-purple-300 font-medium">Plan</span>}
         {isTask && <span className="text-white font-medium">{entry.tool_name?.replace(/_/g, " ")}</span>}
         {isResponse && <span className="text-cyan-300 font-medium">Spark</span>}
-        {!isQuery && !isPlan && !isTask && !isResponse && (
+        {isParams && <span className="text-slate-300 font-medium">{entry.tool_name?.replace(/_/g, " ")}</span>}
+        {isRetry && <span className="text-yellow-300 font-medium">retry {entry.tool_name?.replace(/_/g, " ")}</span>}
+        {isRecovered && <span className="text-emerald-300 font-medium">recovered</span>}
+        {!isQuery && !isPlan && !isTask && !isResponse && !isParams && !isRetry && !isRecovered && (
           <span className="text-white font-medium">{entry.tool_name || entry.event_type.replace(/_/g, " ")}</span>
         )}
         {entry.latency_ms != null && (

@@ -83,7 +83,7 @@ async def request_clarification(
     lang_map = {"hi": "Hindi", "ne": "Nepali", "en": "English"}
     lang = lang_map.get(user_details.get("lang", "en"), "English")
 
-    tools = pqh_response.requested_tool or []
+    tools = [pqh_response.category] if pqh_response.category else []
     thought = pqh_response.cognitive_state.thought_process
 
     question = await generate_clarification_question(

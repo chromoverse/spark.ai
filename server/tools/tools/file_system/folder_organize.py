@@ -180,6 +180,13 @@ class FolderOrganizeTool(BaseTool):
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         folder_path = self.get_input(inputs, "path", "")
+        user_id = inputs.get("_user_id", "")
+        task_id = inputs.get("_task_id", "")
+
+        # Live logging
+        from app.utils.tool_logger import ToolLogger
+        tl = ToolLogger(user_id, task_id, "folder_organize")
+        await tl.log_params({"path": folder_path})
 
         if not folder_path:
             return ToolOutput(success=False, data={}, error="Path is required")
@@ -204,6 +211,8 @@ class FolderOrganizeTool(BaseTool):
                     "organized_at": datetime.now().isoformat(),
                 },
             )
+
+        await tl.log_step(f"Found {len(files)} files to categorize")
 
         # ── 2. LLM categorization (filenames only — tiny response, no truncation) ──
         prompt = f"""You are a file organization assistant. Assign each file below to the most appropriate subfolder.
@@ -235,6 +244,7 @@ OUTPUT FORMAT:
                 temperature=0.1,
                 max_tokens=4000,
             )
+            await tl.log_llm_call("categorize files", model="lightweight", tokens=len(response_text) // 4)
         except Exception as e:
             return ToolOutput(success=False, data={}, error=f"LLM call failed: {e}")
 
@@ -281,9 +291,8 @@ OUTPUT FORMAT:
             return ToolOutput(success=False, data={}, error=f"Failed to write restore.bat: {e}")
 
         # ── 6. Pause OneDrive → move files → resume OneDrive ─────────────────
-        # Without this, every Move-Item on an OneDrive folder triggers a cloud
-        # sync cycle, making 50 moves take 5-8 minutes instead of 2 seconds.
         self.logger.info(f"Running {len(commands)} PowerShell command(s)…")
+        await tl.log_step(f"Moving {len(category_map)} files into {len(created_dirs)} folders")
 
         onedrive = "$env:LOCALAPPDATA\\Microsoft\\OneDrive\\OneDrive.exe"
         full_script = "\n".join([
@@ -325,6 +334,7 @@ OUTPUT FORMAT:
 
         files_affected = len(category_map)
         self.logger.info(f"Organized {files_affected} file(s). Restore: {restore_path}")
+        await tl.log_output(success=True, data={"files_affected": files_affected, "folders": created_dirs})
 
         # Notify Windows Explorer to refresh
         from .operations import _notify_shell_change
