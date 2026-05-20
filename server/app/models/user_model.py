@@ -21,10 +21,9 @@ class UserModel(CamelModel):
     verification_token_expires: Optional[datetime] = None
     refresh_token: Optional[str] = None  # ⚠️ never expose
 
-    # --- API KEYS ---
-    gemini_api_keys: List[str] = Field(default_factory=list)
-    openrouter_api_keys: List[str] = Field(default_factory=list)
-    groq_api_keys: List[str] = Field(default_factory=list)
+    # --- API KEYS (generic dict — add any provider without model changes) ---
+    # Structure: {"groq": ["key1","key2"], "cerebras": ["key1"], ...}
+    api_keys: Dict[str, List[str]] = Field(default_factory=dict)
     
 
     # --- UTM / Tracking ---
@@ -72,11 +71,7 @@ class UserUpdateQuery(BaseModel):
     email: Optional[EmailStr] = None
     gender: Optional[str] = None
 
-    gemini_api_key: Optional[str] = None
-    openrouter_api_key: Optional[str] = None
-    gemini_api_keys: Optional[List[str]] = None
-    openrouter_api_keys: Optional[List[str]] = None
-    groq_api_keys: Optional[List[str]] = None
+    api_keys: Optional[Dict[str, List[str]]] = None
 
     accepts_promotional_emails: Optional[bool] = None
     language: Optional[str] = None
@@ -125,9 +120,7 @@ class UserResponse(CamelModel):
     theme: str
     notifications_enabled: bool
 
-    gemini_api_keys: List[str] = Field(default_factory=list)
-    openrouter_api_keys: List[str] = Field(default_factory=list)
-    groq_api_keys: List[str] = Field(default_factory=list)
+    api_keys: Dict[str, List[str]] = Field(default_factory=dict)
 
     categories_of_interest: List[str]
     favorite_brands: List[str]

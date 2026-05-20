@@ -78,8 +78,29 @@ export const sections: SectionMeta[] = [
       "OpenRouter is optional and acts as a fallback for supported routed model calls.",
   },
   {
+    id: "cerebrasKeys",
+    eyebrow: "09 / API Entry",
+    title: "Add your Cerebras API keys.",
+    description:
+      "Cerebras is optional. It provides fast inference for streaming and reasoning tasks.",
+  },
+  {
+    id: "sambanovaKeys",
+    eyebrow: "10 / API Entry",
+    title: "Add your SambaNova API keys.",
+    description:
+      "SambaNova is optional. Used for deep thinking and long content generation.",
+  },
+  {
+    id: "mistralKeys",
+    eyebrow: "11 / API Entry",
+    title: "Add your Mistral API keys.",
+    description:
+      "Mistral is optional. Used for summarization tasks with generous free tier.",
+  },
+  {
     id: "summary",
-    eyebrow: "09 / Launch",
+    eyebrow: "12 / Launch",
     title: "Review your setup before Spark goes live.",
     description: "Everything stays in memory until this step. The final action syncs the profile once.",
   },
@@ -218,6 +239,9 @@ const GROQ_HELP_URL = "https://console.groq.com/keys";
 const GROQ_ENABLE_URL =
   "https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english";
 const OPENROUTER_HELP_URL = "https://openrouter.ai/settings/keys";
+const CEREBRAS_HELP_URL = "https://cloud.cerebras.ai/platform/#/api-keys";
+const SAMBANOVA_HELP_URL = "https://cloud.sambanova.ai/apis";
+const MISTRAL_HELP_URL = "https://console.mistral.ai/api-keys/";
 export const MIN_GEMINI_API_KEYS = 1;
 export const MIN_GROQ_API_KEYS = 1;
 
@@ -276,6 +300,60 @@ export const apiSectionConfigs: Record<ApiProvider, ApiSectionConfig> = {
         label: "Open OpenRouter key page",
         url: OPENROUTER_HELP_URL,
         description: "Generate OpenRouter API keys in account settings.",
+      },
+    ],
+  },
+  cerebras: {
+    provider: "cerebras",
+    title: "Cerebras API keys",
+    description:
+      "Optional. Cerebras provides ultra-fast inference (2,400 requests/day free). Great for streaming chat.",
+    minimumRequired: 0,
+    optional: true,
+    helpTitle: "See how to get API key",
+    helpDescription:
+      "Sign up at Cerebras Cloud, go to API Keys, create a key and paste it here.",
+    links: [
+      {
+        label: "Open Cerebras API keys",
+        url: CEREBRAS_HELP_URL,
+        description: "Create Cerebras API keys in the cloud platform.",
+      },
+    ],
+  },
+  sambanova: {
+    provider: "sambanova",
+    title: "SambaNova API keys",
+    description:
+      "Optional. SambaNova offers 200K tokens/min free — ideal for long content generation and deep reasoning.",
+    minimumRequired: 0,
+    optional: true,
+    helpTitle: "See how to get API key",
+    helpDescription:
+      "Sign up at SambaNova Cloud, navigate to APIs, and create your key.",
+    links: [
+      {
+        label: "Open SambaNova API page",
+        url: SAMBANOVA_HELP_URL,
+        description: "Generate SambaNova API keys in cloud settings.",
+      },
+    ],
+  },
+  mistral: {
+    provider: "mistral",
+    title: "Mistral API keys",
+    description:
+      "Optional. Mistral offers ~1 billion tokens/month free — used for summarization tasks.",
+    minimumRequired: 0,
+    optional: true,
+    helpTitle: "See how to get API key",
+    helpDescription:
+      "Sign up at Mistral Console, go to API Keys, and create your key.",
+    links: [
+      {
+        label: "Open Mistral API keys",
+        url: MISTRAL_HELP_URL,
+        description: "Generate Mistral API keys in the console.",
       },
     ],
   },

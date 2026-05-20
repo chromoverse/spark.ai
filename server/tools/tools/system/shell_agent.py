@@ -586,7 +586,6 @@ class ShellAgentTool(BaseTool):
         step_index: int,
         allow_network: bool,
     ) -> Dict[str, Any]:
-        from app.ai.providers import llm_chat
 
         tool_name = self._extract_tool_name(goal)
         catalog_context = get_tool_catalog_service().query(
@@ -650,7 +649,8 @@ class ShellAgentTool(BaseTool):
             {"role": "system", "content": _PLANNER_SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=True)},
         ]
-        raw, _provider = await llm_chat(messages=messages, temperature=0.1, max_tokens=600)
+        from app.ai.providers.router import routed_chat
+        raw, _provider = await routed_chat("streaming", messages=messages, temperature=0.1, max_tokens=600)
         return self._extract_json(raw)
 
     async def _summarize_run(
@@ -660,7 +660,6 @@ class ShellAgentTool(BaseTool):
         working_dir: str,
         history: List[Dict[str, Any]],
     ) -> str:
-        from app.ai.providers import llm_chat
 
         compact = [
             {
@@ -686,7 +685,8 @@ class ShellAgentTool(BaseTool):
                 ),
             },
         ]
-        raw, _provider = await llm_chat(messages=messages, temperature=0.2, max_tokens=200)
+        from app.ai.providers.router import routed_chat
+        raw, _provider = await routed_chat("lightweight", messages=messages, temperature=0.2, max_tokens=200)
         return raw.strip()
 
     @staticmethod

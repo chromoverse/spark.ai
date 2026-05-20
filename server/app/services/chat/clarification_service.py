@@ -20,7 +20,7 @@ import logging
 import uuid
 from typing import Any, Dict, Optional
 
-from app.ai.providers import llm_chat
+from app.ai.providers import llm_chat, routed_chat
 from app.models.pqh_response_model import PQHResponse
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ async def generate_clarification_question(
         )},
     ]
     try:
-        response, _ = await llm_chat(messages=messages, max_tokens=60, temperature=0.4)
+        response, _ = await routed_chat("lightweight", messages=messages, max_tokens=60, temperature=0.4)
         return (response or "").strip().strip('"')
     except Exception as exc:
         logger.error("Failed to generate clarification question: %s", exc)

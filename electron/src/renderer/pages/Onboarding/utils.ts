@@ -46,6 +46,9 @@ export function normalizeOnboardingDraft(
     geminiApiKeys: ensureMinimumTokenRows(draft?.geminiApiKeys),
     groqApiKeys: ensureMinimumTokenRows(draft?.groqApiKeys),
     openrouterApiKeys: ensureMinimumTokenRows(draft?.openrouterApiKeys),
+    cerebrasApiKeys: ensureMinimumTokenRows(draft?.cerebrasApiKeys),
+    sambanovaApiKeys: ensureMinimumTokenRows(draft?.sambanovaApiKeys),
+    mistralApiKeys: ensureMinimumTokenRows(draft?.mistralApiKeys),
   };
 }
 

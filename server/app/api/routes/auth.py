@@ -286,27 +286,42 @@ async def login(request: Request, user: auth.LoginData):
 
 # This route is for inserting api keys
 @router.post("/insert-api-keys")
-async def insert_keys(request:Request ,payload: auth.APIKeys, user = Depends(get_current_user)):
-    from app.cache import set_user_details
-    db= get_db()
-    print("user from middlware",user, "type of user",type(user))
-    updated_user = await db.users.find_one_and_update(
-        {"_id": ObjectId(user["_id"])},
-        {"$set": {
-            "openrouter_api_key": payload.openrouter_api_key,
-            "gemini_api_key": payload.gemini_api_key
-        }},
-        return_document=ReturnDocument.AFTER
-    )
+async def insert_keys(request: Request, payload: Dict[str, Any] = Body(...), user=Depends(get_current_user)):
+    """
+    Unified API key insertion — saves to BOTH Windows Registry + MongoDB.
+    
+    Accepts:
+        {"groq": ["key1", "key2"], "cerebras": "single_key", ...}
+      OR nested:
+        {"api_keys": {"groq": ["key1"], "cerebras": ["key2"]}}
+    """
+    from app.ai.providers.key_manager import register_api_key_unified, PROVIDER_ENV_MAP
 
-    updated_user = serialize_doc(updated_user)
-    print("updated_user",updated_user)
-    await set_user_details(updated_user["_id"],updated_user)
+    user_id = str(user["_id"])
+    username = user.get("username")
+    if not username:
+        return send_error("Username is required. Complete onboarding first.", 400)
+
+    results = {}
+    keys_source = payload.get("api_keys") if isinstance(payload.get("api_keys"), dict) else payload
+
+    for provider in PROVIDER_ENV_MAP:
+        keys = keys_source.get(provider)
+        if not keys:
+            continue
+        key_list = [keys] if isinstance(keys, str) else [k for k in keys if k.strip()]
+        if key_list:
+            await register_api_key_unified(username, provider, key_list, user_id=user_id)
+            results[provider] = len(key_list)
+
+    if not results:
+        return send_error("No valid API keys provided", 400)
+
     return send_response(
         request=request,
-        data=updated_user,
-        message="API keys updated successfully",
-        status_code=200
+        data={"saved": results},
+        message="API keys saved (registry + database)",
+        status_code=200,
     )
 
 
@@ -372,6 +387,18 @@ async def update_user_details_endpoint(
 
     if not updated_user:
         return send_error("User not found", 404)
+
+    # Sync any API keys to Windows Registry + in-memory cache
+    from app.ai.providers.key_manager import register_api_key_unified, _KeyCache, PROVIDER_ENV_MAP
+
+    username = update_data.get("username") or (updated_user or {}).get("username")
+    api_keys_obj = update_data.get("api_keys")
+    if api_keys_obj and isinstance(api_keys_obj, dict) and username:
+        for provider, keys in api_keys_obj.items():
+            if provider in PROVIDER_ENV_MAP and isinstance(keys, list):
+                clean = [k.strip() for k in keys if k.strip()]
+                if clean:
+                    await register_api_key_unified(username, provider, clean, user_id=user_id)
 
     updated_user = serialize_doc(updated_user)
     updated_user.pop("refresh_token", None)
@@ -476,9 +503,7 @@ async def test_load_user_from_redis(user_id: str):
             ai_voice_name=None,
             theme="light",
             notifications_enabled=True,
-            gemini_api_keys=[],
-            openrouter_api_keys=[],
-            groq_api_keys=[],
+            api_keys={},
             categories_of_interest=[],
             favorite_brands=[],
             liked_items=[],

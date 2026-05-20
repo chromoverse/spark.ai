@@ -1,6 +1,6 @@
 from ..base import BaseTool, ToolOutput
 from typing import Dict, Any
-from app.ai.providers.manager import llm_chat # type: ignore
+from app.ai.providers.router import routed_chat # type: ignore
 from datetime import datetime, timezone
 import json
 
@@ -61,7 +61,8 @@ CONTEXT:
 OUTPUT (strict JSON only, no extra text):
 {{"success":true,"data":{{"summary":"<natural spoken answer>","formatted_content":"{formatted_placeholder}","original_length":{len(str(context))},"summary_length":0,"summarized_at":"{timestamp}"}},"error":null}}"""
 
-        response_text, provider = await llm_chat(
+        response_text, provider = await routed_chat(
+            "summarize",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=1500 if is_research else 300

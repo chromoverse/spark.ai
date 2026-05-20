@@ -26,7 +26,7 @@ from app.agent.execution_gateway import (
 )
 from app.models.pqh_response_model import PQHResponse
 from app.prompts.sqh_prompt import build_messages
-from app.ai.providers import llm_chat
+from app.ai.providers import llm_chat, routed_chat
 from app.config import settings
 from app.kernel.execution.approval_coordinator import get_approval_coordinator
 from app.services.interrupt_manager import get_interrupt_manager
@@ -279,7 +279,7 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
             last_error: Optional[Exception] = None
 
             for attempt in range(1, retry_limit + 1):
-                raw, _ = await llm_chat(messages=messages)
+                raw, _ = await routed_chat("streaming", messages=messages)
 
                 try:
                     if not raw:

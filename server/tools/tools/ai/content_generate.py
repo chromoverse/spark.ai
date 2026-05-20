@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from ..base import BaseTool, ToolOutput
-from app.ai.providers.manager import llm_chat  # type: ignore
+from app.ai.providers.router import routed_chat  # type: ignore
 
 
 _SYSTEM_PROMPT = """You are a professional content writer. Generate well-structured, detailed content based on the user's request.
@@ -86,7 +86,8 @@ class ContentGenerateTool(BaseTool):
         max_tokens = 8192 if min_lines > 100 else 4096
 
         try:
-            response_text, provider = await llm_chat(
+            response_text, provider = await routed_chat(
+                "content_generate",
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": user_msg},

@@ -142,13 +142,28 @@ register("Agentic System (Orchestrator + Tools)", _init_agent_system)
 
 
 # ── 6. Ensure model assets are present on startup ──
-def _download_models_if_needed() -> None:
+async def _download_models_if_needed() -> None:
+    import asyncio
     from app.config import settings
     if settings.environment != "DESKTOP":
         logger.info("Skipping model asset download check (env=%s)", settings.environment)
         return
     from app.ml.model_loader import model_loader
-    model_loader.download_all_models()
+
+    # Only download embedding synchronously (needed for RAG).
+    # Everything else downloads in background on first use.
+    model_loader._ensure_device()
+    model_loader.download_model("embedding")
+
+    # Background: download remaining models without blocking startup
+    def _bg_download():
+        for key in ("whisper", "emotion"):
+            try:
+                model_loader.download_model(key)
+            except Exception as e:
+                logger.debug("Background download '%s' failed: %s", key, e)
+
+    asyncio.get_event_loop().run_in_executor(None, _bg_download)
 
 
 register("Model assets (download check)", _download_models_if_needed)

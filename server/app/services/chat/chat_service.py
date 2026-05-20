@@ -16,7 +16,7 @@ import re
 from app.utils import clean_pqh_response
 from app.models.pqh_response_model import CognitiveState, PQHResponse
 from app.cache import load_user, get_last_n_messages
-from app.ai.providers import llm_chat
+from app.ai.providers import llm_chat, routed_chat
 from app.prompts import pqh_prompt
 from .sqh_service import process_sqh
 from .clarification_service import request_clarification
@@ -153,7 +153,7 @@ async def chat(
         # Build proper multi-turn messages
         messages = _build_messages(query=query, recent_context=recent_context)
 
-        raw_response, _ = await llm_chat(messages=messages)
+        raw_response, _ = await routed_chat("streaming", messages=messages)
 
         if not raw_response:
             return clean_pqh_response._create_error_pqh_response("Empty AI response", "neutral")

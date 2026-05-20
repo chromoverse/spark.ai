@@ -23,7 +23,7 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.ai.providers import llm_chat, llm_stream
+from app.ai.providers import llm_chat, llm_stream, routed_chat, routed_stream
 from app.cache import add_message, load_user, get_last_n_messages, process_query_and_get_context
 from app.config import settings
 from app.prompts import stream_prompt
@@ -368,7 +368,13 @@ class StreamService:
         # ── Try streaming first ───────────────────────────────────────────────
         stream_exc: Optional[Exception] = None
         try:
-            async for token in llm_stream(**kwargs):
+            use_case = "lightweight" if query and _is_simple_query(query) else "streaming"
+            async for token in routed_stream(
+                use_case,
+                messages=kwargs["messages"],
+                temperature=kwargs.get("temperature"),
+                max_tokens=kwargs.get("max_tokens"),
+            ):
                 if not token:
                     continue
                 # Fast interrupt check — dict lookup + bool, zero-cost when not set
@@ -402,7 +408,12 @@ class StreamService:
             try:
                 # Drop provider-specific model so each provider uses its own default
                 fallback_kwargs = {k: v for k, v in kwargs.items() if k != "model"}
-                chat_response, _ = await llm_chat(**fallback_kwargs)
+                chat_response, _ = await routed_chat(
+                    "streaming",
+                    messages=fallback_kwargs["messages"],
+                    temperature=fallback_kwargs.get("temperature"),
+                    max_tokens=fallback_kwargs.get("max_tokens"),
+                )
                 full_response = (chat_response or "").strip()
                 if full_response:
                     await _enqueue(full_response)

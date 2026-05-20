@@ -351,9 +351,14 @@ function Onboarding() {
         ai_gender: draft.aiGender,
         ai_voice_name: draft.aiVoiceName,
         behavioral_tags: draft.interactionStyle ? [draft.interactionStyle] : [],
-        gemini_api_keys: trimTokens(draft.geminiApiKeys),
-        groq_api_keys: trimTokens(draft.groqApiKeys),
-        openrouter_api_keys: trimTokens(draft.openrouterApiKeys),
+        api_keys: {
+          groq: trimTokens(draft.groqApiKeys),
+          gemini: trimTokens(draft.geminiApiKeys),
+          openrouter: trimTokens(draft.openrouterApiKeys),
+          cerebras: trimTokens(draft.cerebrasApiKeys),
+          sambanova: trimTokens(draft.sambanovaApiKeys),
+          mistral: trimTokens(draft.mistralApiKeys),
+        },
         custom_attributes: {
           ...(user.customAttributes ?? {}),
           heard_about_spark: heardAboutValue,
@@ -391,6 +396,12 @@ function Onboarding() {
         return <Suspense fallback={fallback}><ApiKeysSection eyebrow={section.eyebrow} title={section.title} description={section.description} config={apiSectionConfigs.groq} values={draft.groqApiKeys} onChange={(v) => updateDraftField("groqApiKeys", v)} /></Suspense>;
       case "openrouterKeys":
         return <Suspense fallback={fallback}><ApiKeysSection eyebrow={section.eyebrow} title={section.title} description={section.description} config={apiSectionConfigs.openrouter} values={draft.openrouterApiKeys} onChange={(v) => updateDraftField("openrouterApiKeys", v)} /></Suspense>;
+      case "cerebrasKeys":
+        return <Suspense fallback={fallback}><ApiKeysSection eyebrow={section.eyebrow} title={section.title} description={section.description} config={apiSectionConfigs.cerebras} values={draft.cerebrasApiKeys} onChange={(v) => updateDraftField("cerebrasApiKeys", v)} /></Suspense>;
+      case "sambanovaKeys":
+        return <Suspense fallback={fallback}><ApiKeysSection eyebrow={section.eyebrow} title={section.title} description={section.description} config={apiSectionConfigs.sambanova} values={draft.sambanovaApiKeys} onChange={(v) => updateDraftField("sambanovaApiKeys", v)} /></Suspense>;
+      case "mistralKeys":
+        return <Suspense fallback={fallback}><ApiKeysSection eyebrow={section.eyebrow} title={section.title} description={section.description} config={apiSectionConfigs.mistral} values={draft.mistralApiKeys} onChange={(v) => updateDraftField("mistralApiKeys", v)} /></Suspense>;
       case "summary":
         return <Suspense fallback={fallback}><SummarySection eyebrow={section.eyebrow} title={section.title} description={section.description} draft={draft} voiceDisplayName={availableVoices.find((v) => v.id === draft.aiVoiceName)?.name} /></Suspense>;
       default: return null;

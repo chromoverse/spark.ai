@@ -193,6 +193,11 @@ def _build_semantic_tool_rules(tools: List[Dict]) -> str:
     if "mic_mute" in tool_names:
         rules.append("  • 'mute yourself' / 'mute your mic' / 'stop listening' → mic_mute.")
 
+    if "file_search" in tool_names and "shell_execute" in tool_names:
+        rules.append("  • file_search is ONLY for finding a specific file by name/pattern. For listing, browsing, or describing what files exist in a folder → shell_execute (dir/ls).")
+    if "shell_execute" in tool_names and "folder_organize" in tool_names:
+        rules.append("  • 'what files are on my desktop' / 'show me files in Downloads' → shell_execute. 'organize my desktop' → folder_organize.")
+
     return "\n".join(rules) if rules else "  • No special semantic overrides."
 
 

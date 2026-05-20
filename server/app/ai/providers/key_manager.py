@@ -1,28 +1,16 @@
 """
-API Key Manager — Utility for persisting LLM provider API keys.
+API Key Manager — Unified key storage for LLM providers.
 
-Saves keys to Windows system environment variables (User-level)
-so they survive reboots without needing a .env file.
-
-Features:
-    - Supports single key or array of keys per provider
-    - Auto key rotation: when one key is exhausted, automatically uses the next
-    - One-shot bulk load: reads ALL provider keys from the Windows registry
-      in a single handle open, then serves from memory forever.
-    - Auto-syncs into os.environ so BaseClient._load_keys() finds keys
-      via os.getenv() without any extra I/O.
+Storage:
+    - Windows Registry: {username}:{ENV_NAME} (local persistence)
+    - MongoDB: api_keys.{provider} (cloud/mobile accessible)
+    - In-memory _KeyCache (runtime, zero I/O)
 
 Usage:
-    from app.ai.providers.key_manager import register_api_key, list_registered_keys, get_next_key
+    from app.ai.providers.key_manager import register_api_key_unified, get_next_key
 
-    # Add a single key
-    register_api_key("groq", "gsk_abc123...")
-
-    # Add multiple keys (array) - they will be used sequentially
-    register_api_key("groq", ["gsk_key1...", "gsk_key2...", "gsk_key3..."])
-
-    # Add by env var name directly
-    register_api_key("GEMINI_API_KEY", "AIzaSy...")
+    # Store keys (saves to registry + mongo + memory)
+    await register_api_key_unified("siddthecoder", "groq", ["key1", "key2"], user_id="abc123")
 
     # Get the next available key (rotates through array)
     key = get_next_key("groq")
@@ -43,6 +31,9 @@ PROVIDER_ENV_MAP: Dict[str, str] = {
     "groq": "GROQ_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "sambanova": "SAMBANOVA_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
 }
 
 
@@ -235,13 +226,10 @@ class _KeyCache:
         """
         Read ALL provider keys from the Windows User registry in one pass.
 
-        Opens the HKCU\\Environment key once, reads every env var in
-        PROVIDER_ENV_MAP, then closes it.  Also syncs found values into
-        os.environ so that os.getenv() works everywhere else.
+        Looks for keys in format: {username}:{ENV_NAME}
+        e.g. "siddthecoder:GROQ_API_KEY"
         
-        Supports both:
-        - JSON arrays: ["key1", "key2", ...]
-        - Single key strings (backward compatibility)
+        Loads the first match found for each env_name.
         """
         env_names = list(PROVIDER_ENV_MAP.values())
 
@@ -253,29 +241,35 @@ class _KeyCache:
                     winreg.HKEY_CURRENT_USER,
                     r"Environment",
                     0,
-                    winreg.KEY_QUERY_VALUE,
+                    winreg.KEY_QUERY_VALUE | winreg.KEY_READ,
                 )
                 try:
-                    for env_name in env_names:
+                    # Enumerate all values, find ones matching *:{ENV_NAME}
+                    found: Dict[str, str] = {}
+                    i = 0
+                    while True:
                         try:
-                            value, _ = winreg.QueryValueEx(reg_key, env_name)
-                            raw = str(value).strip() if value else None
-                        except FileNotFoundError:
-                            raw = None
+                            name, value, _ = winreg.EnumValue(reg_key, i)
+                            i += 1
+                            # Check if this matches username:ENV_NAME pattern
+                            for env_name in env_names:
+                                if name == env_name or name.endswith(f":{env_name}"):
+                                    if env_name not in found and value:
+                                        found[env_name] = str(value).strip()
+                        except OSError:
+                            break
 
-                        # Parse the value - could be JSON array or single key
+                    for env_name in env_names:
+                        raw = found.get(env_name)
                         keys = cls._parse_keys(raw)
                         cls._cache[env_name] = keys
                         cls._rotation_index[env_name] = 0
-
-                        # Sync first key into os.environ for backward compatibility
                         if keys:
                             os.environ[env_name] = keys[0]
                 finally:
                     winreg.CloseKey(reg_key)
             except OSError as e:
                 logger.warning(f"⚠️  Could not open registry Environment key: {e}")
-                # Fallback: read from os.environ directly
                 for env_name in env_names:
                     raw = os.getenv(env_name)
                     keys = cls._parse_keys(raw)
@@ -405,62 +399,6 @@ def _delete_windows_env(name: str) -> None:
             winreg.CloseKey(key)
     except FileNotFoundError:
         pass  # already doesn't exist
-
-
-def register_api_key(provider_or_env: str, api_key: Union[str, List[str]]) -> str:
-    """
-    Save API key(s) to the system environment (persistent).
-
-    Args:
-        provider_or_env: Provider name ('groq', 'gemini', 'openrouter')
-                         or env var name ('GROQ_API_KEY')
-        api_key: The actual API key string OR a list of API keys.
-                 When a list is provided, keys will be used sequentially
-                 (rotated) when the previous key is exhausted.
-
-    Returns:
-        The env var name that was set
-
-    Example:
-        # Single key
-        register_api_key("groq", "gsk_abc123...")
-        
-        # Multiple keys (array) - will be used sequentially
-        register_api_key("groq", ["gsk_key1...", "gsk_key2...", "gsk_key3..."])
-        
-        # By env var name
-        register_api_key("GEMINI_API_KEY", "AIzaSy...")
-    """
-    env_name = _resolve_env_key(provider_or_env)
-    
-    # Normalize to list
-    if isinstance(api_key, str):
-        keys = [api_key.strip()] if api_key.strip() else []
-    else:
-        keys = [k.strip() for k in api_key if k.strip()]
-    
-    if not keys:
-        raise ValueError("API key cannot be empty")
-    
-    # Store as JSON array in registry
-    if len(keys) == 1:
-        # For single key, store as plain string for backward compatibility
-        stored_value = keys[0]
-    else:
-        # For multiple keys, store as JSON array
-        stored_value = json.dumps(keys)
-    
-    print(f"Saving {env_name} to system environment...")
-    _set_windows_env(env_name, stored_value)
-
-    # Update cache + os.environ immediately (no stale reads)
-    _KeyCache.set(env_name, keys)
-    
-    if len(keys) == 1:
-        logger.info(f"✅ Saved {env_name} to system environment ({keys[0][:8]}...)")
-    else:
-        logger.info(f"✅ Saved {env_name} to system environment with {len(keys)} keys")
-    return env_name
 
 
 def remove_api_key(provider_or_env: str) -> str:
@@ -643,35 +581,112 @@ def get_key_status(provider_or_env: str) -> Dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  User-scoped key management
-#  Priority: user keys > system (registry) keys as fallback
+#  User-scoped key management (NO legacy — api_keys dict only)
 # ═══════════════════════════════════════════════════════════════
 
 def activate_user_keys(user_id: str, user_data: Dict[str, Any]) -> None:
     """
-    Load a user's API keys into the priority layer and set them as active.
-    System registry keys remain as fallback if user has no keys for a provider.
-
-    Args:
-        user_id: The user's ID
-        user_data: Dict with gemini_api_keys, groq_api_keys, openrouter_api_keys
+    Load user's API keys into priority layer.
+    Reads ONLY from api_keys: {provider: [keys]}.
     """
-    gemini = user_data.get("gemini_api_keys") or []
-    groq = user_data.get("groq_api_keys") or []
-    openrouter = user_data.get("openrouter_api_keys") or []
-
-    if gemini:
-        _KeyCache.load_user_keys(user_id, "gemini", gemini)
-    if groq:
-        _KeyCache.load_user_keys(user_id, "groq", groq)
-    if openrouter:
-        _KeyCache.load_user_keys(user_id, "openrouter", openrouter)
-
+    api_keys_obj = user_data.get("api_keys") or {}
+    for provider in PROVIDER_ENV_MAP:
+        keys = api_keys_obj.get(provider) or []
+        if keys:
+            _KeyCache.load_user_keys(user_id, provider, keys)
     _KeyCache.set_active_user(user_id)
-    logger.info(f"🔑 Activated user keys for {user_id}: gemini={len(gemini)}, groq={len(groq)}, openrouter={len(openrouter)}")
+    loaded = {p: len(api_keys_obj.get(p, [])) for p in PROVIDER_ENV_MAP if api_keys_obj.get(p)}
+    logger.info(f"🔑 Activated user keys for {user_id}: {loaded}")
 
 
 def deactivate_user_keys(user_id: str) -> None:
     """Remove user keys and fall back to system keys."""
     _KeyCache.clear_user_keys(user_id)
-    logger.info(f"🔑 Deactivated user keys for {user_id}, using system fallback")
+    logger.info(f"🔑 Deactivated user keys for {user_id}")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Unified key registration — THE ONLY way to store keys.
+#  Registry format: {username}:{ENV_NAME}
+#  MongoDB format:  api_keys.{provider}
+# ═══════════════════════════════════════════════════════════════
+
+async def register_api_key_unified(
+    username: str,
+    provider: str,
+    keys: Union[str, List[str]],
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Unified key registration — saves to Windows Registry AND MongoDB.
+
+    Args:
+        username: REQUIRED. Used as registry prefix: "{username}:GROQ_API_KEY"
+        provider: Provider name ('groq', 'gemini', 'cerebras', etc.)
+        keys: Single key string or list of keys
+        user_id: MongoDB _id. If provided, persists to DB too.
+
+    Returns:
+        Dict with status info
+    """
+    if not username or not username.strip():
+        raise ValueError("username is required for key registration")
+
+    provider_lower = provider.strip().lower()
+    if provider_lower not in PROVIDER_ENV_MAP:
+        raise ValueError(f"Unknown provider: '{provider}'. Use one of: {list(PROVIDER_ENV_MAP.keys())}")
+
+    key_list = [keys.strip()] if isinstance(keys, str) else [k.strip() for k in keys if k.strip()]
+    if not key_list:
+        raise ValueError("At least one API key is required")
+
+    env_name = PROVIDER_ENV_MAP[provider_lower]
+    registry_name = f"{username.strip()}:{env_name}"
+
+    # 1. Windows Registry: username:ENV_NAME
+    stored_value = json.dumps(key_list) if len(key_list) > 1 else key_list[0]
+    _set_windows_env(registry_name, stored_value)
+    _KeyCache.set(env_name, key_list)
+
+    # 2. MongoDB: api_keys.{provider}
+    if user_id:
+        from app.db.mongo import get_db
+        from bson import ObjectId
+        db = get_db()
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {f"api_keys.{provider_lower}": key_list}},
+        )
+
+    # 3. In-memory priority layer
+    if user_id:
+        _KeyCache.load_user_keys(user_id, provider_lower, key_list)
+
+    logger.info(f"🔑 {registry_name} → {len(key_list)} key(s) [registry{'+ mongo' if user_id else ''}]")
+    return {"provider": provider_lower, "registry_name": registry_name, "key_count": len(key_list)}
+
+
+async def register_all_keys_unified(
+    username: str,
+    keys_map: Dict[str, Union[str, List[str]]],
+    user_id: Optional[str] = None,
+) -> Dict[str, int]:
+    """
+    Bulk register keys for multiple providers.
+
+    Args:
+        username: REQUIRED.
+        keys_map: {provider: keys}
+        user_id: Optional MongoDB _id.
+    """
+    results: Dict[str, int] = {}
+    for provider, keys in keys_map.items():
+        provider_lower = provider.strip().lower()
+        if provider_lower not in PROVIDER_ENV_MAP:
+            continue
+        key_list = [keys.strip()] if isinstance(keys, str) else [k.strip() for k in keys if k.strip()]
+        if not key_list:
+            continue
+        await register_api_key_unified(username, provider_lower, key_list, user_id=user_id)
+        results[provider_lower] = len(key_list)
+    return results

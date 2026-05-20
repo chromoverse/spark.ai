@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 from ..base import BaseTool, ToolOutput
-from app.ai.providers.manager import llm_chat
+from app.ai.providers.router import routed_chat
 
 
 def _build_restore_bat(
@@ -229,7 +229,8 @@ OUTPUT FORMAT:
 }}"""
 
         try:
-            response_text, _ = await llm_chat(
+            response_text, _ = await routed_chat(
+                "lightweight",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=4000,

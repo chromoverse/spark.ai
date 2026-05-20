@@ -138,10 +138,11 @@ async def _learn_from_recent(user_id: str) -> None:
 async def _extract_facts(conversation_text: str) -> Optional[Dict[str, Any]]:
     """Use LLM to extract facts from conversation."""
     try:
-        from app.ai.providers import llm_chat
+        from app.ai.providers.router import routed_chat
 
         prompt = _FACT_EXTRACTION_PROMPT.format(conversation=conversation_text)
-        response, _ = await llm_chat(
+        response, _ = await routed_chat(
+            "summarize",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=300,
@@ -164,7 +165,7 @@ async def _extract_facts(conversation_text: str) -> Optional[Dict[str, Any]]:
 async def _regenerate_summary(user_id: str, profile: Dict[str, Any]) -> None:
     """Regenerate the profile summary using all accumulated facts."""
     try:
-        from app.ai.providers import llm_chat
+        from app.ai.providers.router import routed_chat
         from app.memory.user_profile import get_user_profile_memory
 
         existing = profile.get("summary", "No existing summary.")
@@ -179,7 +180,8 @@ async def _regenerate_summary(user_id: str, profile: Dict[str, Any]) -> None:
             habits="; ".join(habits),
         )
 
-        response, _ = await llm_chat(
+        response, _ = await routed_chat(
+            "summarize",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=250,

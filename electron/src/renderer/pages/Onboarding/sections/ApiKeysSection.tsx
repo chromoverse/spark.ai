@@ -1,3 +1,4 @@
+import ExpandedProvidersNotice from "../components/ExpandedProvidersNotice";
 import HelpRail from "../components/HelpRail";
 import SectionHeader from "../components/SectionHeader";
 import TokenListEditor from "../components/TokenListEditor";
@@ -18,6 +19,7 @@ export default function ApiKeysSection({
   return (
     <div>
       <SectionHeader eyebrow={eyebrow} title={title} description={description} />
+      <ExpandedProvidersNotice />
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
         <TokenListEditor

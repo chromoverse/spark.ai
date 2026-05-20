@@ -2,7 +2,7 @@ export type OnboardingPhase = "intro" | "form";
 
 export type VoiceGender = "male" | "female";
 
-export type ApiProvider = "gemini" | "groq" | "openrouter";
+export type ApiProvider = "gemini" | "groq" | "openrouter" | "cerebras" | "sambanova" | "mistral";
 
 export type SectionId =
   | "preferredName"
@@ -13,6 +13,9 @@ export type SectionId =
   | "geminiKeys"
   | "groqKeys"
   | "openrouterKeys"
+  | "cerebrasKeys"
+  | "sambanovaKeys"
+  | "mistralKeys"
   | "summary";
 
 export interface ChoiceOption {
@@ -55,6 +58,9 @@ export interface OnboardingDraft {
   geminiApiKeys: string[];
   groqApiKeys: string[];
   openrouterApiKeys: string[];
+  cerebrasApiKeys: string[];
+  sambanovaApiKeys: string[];
+  mistralApiKeys: string[];
 }
 
 export interface OnboardingLocationState {

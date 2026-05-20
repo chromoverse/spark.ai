@@ -19,6 +19,9 @@ interface SummarySectionProps {
     geminiApiKeys: string[];
     groqApiKeys: string[];
     openrouterApiKeys: string[];
+    cerebrasApiKeys: string[];
+    sambanovaApiKeys: string[];
+    mistralApiKeys: string[];
   };
 }
 
@@ -62,6 +65,9 @@ export default function SummarySection({ eyebrow, title, description, voiceDispl
         <TokenSummary label="Gemini" values={draft.geminiApiKeys} />
         <TokenSummary label="Groq" values={draft.groqApiKeys} />
         <TokenSummary label="OpenRouter" values={draft.openrouterApiKeys} />
+        <TokenSummary label="Cerebras" values={draft.cerebrasApiKeys} />
+        <TokenSummary label="SambaNova" values={draft.sambanovaApiKeys} />
+        <TokenSummary label="Mistral" values={draft.mistralApiKeys} />
       </div>
     </div>
   );

@@ -24,9 +24,8 @@ export interface IUser {
   theme: Partial<ThemePreferences>;
   notificationsEnabled: boolean;
 
-  geminiApiKeys: string[];
-  openrouterApiKeys: string[];
-  groqApiKeys: string[];
+  // API keys (unified dict)
+  apiKeys: Record<string, string[]>;
 
   categoriesOfInterest: string[];
   favoriteBrands: string[];

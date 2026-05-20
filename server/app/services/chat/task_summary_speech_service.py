@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from app.agent.execution_gateway import get_orchestrator
-from app.ai.providers import llm_chat
+from app.ai.providers import llm_chat, routed_chat
 from app.config import settings
 from app.kernel.execution.failure_messages import normalize_failure
 
@@ -135,12 +135,12 @@ class TaskSummarySpeechService:
             {"role": "user",   "content": "\n\n".join(user_parts)},
         ]
 
-        raw, _ = await llm_chat(messages=messages, temperature=0.25, max_tokens=220)
+        raw, _ = await routed_chat("lightweight", messages=messages, temperature=0.25, max_tokens=400)
         text   = " ".join((raw or "").strip().split())
 
         # Hard cap — TTS shouldn't speak a paragraph
-        if len(text) > 220:
-            text = text[:220].rstrip(" ,.;:") + "."
+        if len(text) > 500:
+            text = text[:500].rstrip(" ,.;:") + "."
 
         return text
 

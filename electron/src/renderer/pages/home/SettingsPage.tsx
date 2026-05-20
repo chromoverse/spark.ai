@@ -42,10 +42,8 @@ export default function SettingsPage() {
 
   const handleAddKey = async () => {
     if (!newKey.trim() || !addKeyProvider || !user?._id) return;
-    const fieldMap: Record<string, string> = { gemini: "gemini_api_keys", groq: "groq_api_keys", openrouter: "openrouter_api_keys" };
-    const userFieldMap: Record<string, string> = { gemini: "geminiApiKeys", groq: "groqApiKeys", openrouter: "openrouterApiKeys" };
-    const existing = (user as any)[userFieldMap[addKeyProvider]] || [];
-    await save(fieldMap[addKeyProvider], [...existing, newKey.trim()]);
+    const existing = (user as any)?.apiKeys?.[addKeyProvider] || [];
+    await save("api_keys", { ...((user as any)?.apiKeys || {}), [addKeyProvider]: [...existing, newKey.trim()] });
     setNewKey("");
     setAddKeyProvider(null);
   };
@@ -82,11 +80,9 @@ export default function SettingsPage() {
       if (!res.success && !res.access_token) { toast.error("Invalid code"); setVerifying(false); return; }
 
       // Now delete selected keys
-      const fieldMap: Record<string, string> = { gemini: "gemini_api_keys", groq: "groq_api_keys", openrouter: "openrouter_api_keys" };
-      const userFieldMap: Record<string, string> = { gemini: "geminiApiKeys", groq: "groqApiKeys", openrouter: "openrouterApiKeys" };
-      const existing: string[] = (user as any)[userFieldMap[selectedKeys.provider]] || [];
+      const existing: string[] = (user as any)?.apiKeys?.[selectedKeys.provider] || [];
       const filtered = existing.filter((_, i) => !selectedKeys.indices.includes(i));
-      await axiosInstance.patch(`/auth/update-user-details?userId=${user._id}`, { [fieldMap[selectedKeys.provider]]: filtered });
+      await axiosInstance.patch(`/auth/update-user-details?userId=${user._id}`, { api_keys: { ...((user as any)?.apiKeys || {}), [selectedKeys.provider]: filtered } });
       await dispatch(getCurrentUser());
       toast.success("Keys removed");
       setVerifyStep("idle");
@@ -99,9 +95,12 @@ export default function SettingsPage() {
   const cancelFlow = () => { setVerifyStep("idle"); setOtp(""); setSelectedKeys({ provider: "", indices: [] }); };
 
   const keyProviders = [
-    { id: "gemini", label: "Gemini", keys: user?.geminiApiKeys || [] },
-    { id: "groq", label: "Groq", keys: user?.groqApiKeys || [] },
-    { id: "openrouter", label: "OpenRouter", keys: user?.openrouterApiKeys || [] },
+    { id: "gemini", label: "Gemini", keys: (user as any)?.apiKeys?.gemini || [] },
+    { id: "groq", label: "Groq", keys: (user as any)?.apiKeys?.groq || [] },
+    { id: "openrouter", label: "OpenRouter", keys: (user as any)?.apiKeys?.openrouter || [] },
+    { id: "cerebras", label: "Cerebras", keys: (user as any)?.apiKeys?.cerebras || [] },
+    { id: "sambanova", label: "SambaNova", keys: (user as any)?.apiKeys?.sambanova || [] },
+    { id: "mistral", label: "Mistral", keys: (user as any)?.apiKeys?.mistral || [] },
   ];
 
   return (
