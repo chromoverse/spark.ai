@@ -24,6 +24,23 @@ def _expand_path(path: str) -> str:
     return os.path.abspath(os.path.expanduser(path))
 
 
+def _notify_shell_change(path: str) -> None:
+    """Notify Windows Explorer to refresh so file/folder changes are visible immediately."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        SHCNE_UPDATEDIR = 0x00001000
+        SHCNF_PATH = 0x0005
+        ctypes.windll.shell32.SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATH, path.encode('utf-8'), None)
+        # Also refresh parent directory
+        parent = os.path.dirname(path)
+        if parent:
+            ctypes.windll.shell32.SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATH, parent.encode('utf-8'), None)
+    except Exception:
+        pass
+
+
 def _shell_open_path(path: str) -> None:
     if sys.platform == "win32":
         os.startfile(path)
@@ -297,6 +314,8 @@ class FileCreateTool(BaseTool):
                 resolved_path, file_stat.st_size, artifact.artifact_id,
             )
 
+            _notify_shell_change(resolved_path)
+
             return ToolOutput(
                 success=True,
                 data={
@@ -364,6 +383,9 @@ class FolderCreateTool(BaseTool):
                 os.makedirs(expanded_path, exist_ok=True)
             else:
                 os.mkdir(expanded_path)
+
+            # Notify Windows Explorer to refresh so changes are visible
+            _notify_shell_change(expanded_path)
 
             self.logger.info(f"Created folder: {path}")
 

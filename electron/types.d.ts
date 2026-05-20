@@ -105,6 +105,7 @@ export type IEventPayloadMapping = {
   onTrayDeviceSelect: { type: "MIC" | "CAMERA"; deviceId: string };
   onMicMuteToggle: Record<string, never>; // Global shortcut for mic mute/unmute
   onMicControl: IMicControlPayload;
+  sparkNavigate: { tab: string };
   updateMediaState: {
     micOn?: boolean;
     cameraOn?: boolean;
@@ -187,6 +188,9 @@ declare global {
       onMicMuteToggle: (callback: () => void) => () => void;
       onMicControl: (
         callback: (payload: IMicControlPayload) => void,
+      ) => () => void;
+      onSparkNavigate: (
+        callback: (payload: { tab: string }) => void,
       ) => () => void;
 
       // Authentication API

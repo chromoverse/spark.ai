@@ -120,11 +120,11 @@ Set "needs_clarification": true ONLY when ALL of these are true:
   3. You cannot reasonably guess the missing detail from context or conversation history.
 
 Examples requiring clarification:
-  "organize my desktop"     → needs folder names/rules → needs_clarification: true
   "send a message"          → needs recipient + content → needs_clarification: true
   "create a project"        → needs name, type, location → needs_clarification: true
 
 Examples that do NOT need clarification:
+  "organize my desktop"               → path is known (Desktop), tool auto-categorizes → false
   "list files on my desktop"          → all info present → false
   "open Chrome"                       → all info present → false
   "set a reminder for 5pm call mom"   → all info present → false
@@ -179,6 +179,19 @@ def _build_semantic_tool_rules(tools: List[Dict]) -> str:
         rules.append("  • artifact_open is a direct open action for saved artifacts when no separate client file opener is available.")
     if "spark_data_open" in tool_names:
         rules.append("  • Requests to open the SparkAI app-data/storage folder → spark_data_open.")
+    if "content_generate" in tool_names:
+        rules.append("  • Requests to write, create, or generate long text content (notes, articles, about-me, plans, essays, stories) → content_generate. Do NOT use file_create for content longer than a few sentences.")
+        rules.append("  • If the user wants the content saved to a file, use content_generate with output_path. Do NOT chain file_create after content_generate.")
+    if "spark_window_open" in tool_names:
+        rules.append("  • 'open your window' / 'show yourself' / 'show spark' → spark_window_open.")
+    if "spark_window_close" in tool_names:
+        rules.append("  • 'close your window' / 'hide yourself' → spark_window_close.")
+    if "spark_navigate" in tool_names:
+        rules.append("  • 'open logs' / 'show tools tab' / 'go to settings' → spark_navigate with the tab name.")
+    if "spark_storage_open" in tool_names:
+        rules.append("  • 'open your storage' / 'open your folder' / 'show your files' → spark_storage_open.")
+    if "mic_mute" in tool_names:
+        rules.append("  • 'mute yourself' / 'mute your mic' / 'stop listening' → mic_mute.")
 
     return "\n".join(rules) if rules else "  • No special semantic overrides."
 

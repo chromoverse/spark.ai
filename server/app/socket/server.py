@@ -92,6 +92,17 @@ async def connect(sid, environ, auth):
             connected_users[user_id] = set()
         connected_users[user_id].add(sid)
 
+        # Activate user-scoped API keys (priority over system keys)
+        if len(connected_users[user_id]) == 1:
+            try:
+                from app.cache import get_user_details
+                user_data = await get_user_details(user_id)
+                if user_data:
+                    from app.ai.providers.key_manager import activate_user_keys
+                    activate_user_keys(user_id, user_data)
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load user keys for {user_id}: {e}")
+
         logger.info(
             f"🟢 User {user_id} connected with sid {sid} "
             f"(total connections: {len(connected_users[user_id])})"
@@ -119,6 +130,12 @@ async def disconnect(sid):
             if not connected_users[user_id]:
                 del connected_users[user_id]
                 get_approval_coordinator().cancel_user_requests(user_id)
+                # Deactivate user-scoped API keys
+                try:
+                    from app.ai.providers.key_manager import deactivate_user_keys
+                    deactivate_user_keys(user_id)
+                except Exception:
+                    pass
                 # Cancel any pending clarification questions waiting on this user
                 try:
                     from app.services.chat.clarification_service import cancel_user_clarifications

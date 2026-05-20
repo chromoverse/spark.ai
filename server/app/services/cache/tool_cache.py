@@ -11,13 +11,15 @@ logger = logging.getLogger(__name__)
 
 # Tools safe to cache (read-only / idempotent)
 CACHEABLE_TOOLS = frozenset({
-    "weather", "system_info", "battery", "network",
+    "weather_current", "weather_forecast", "weather",
+    "system_info", "battery_status", "network_status",
     "web_search", "artifact_list", "system_query",
+    "current_location", "tool_catalog", "agent_status",
 })
 
 
 class ToolResultCache:
-    def __init__(self, default_ttl: int = 60):
+    def __init__(self, default_ttl: int = 30):
         self._cache: Dict[str, tuple[float, Any]] = {}
         self.default_ttl = default_ttl
 

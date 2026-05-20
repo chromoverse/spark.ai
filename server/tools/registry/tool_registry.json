@@ -2,7 +2,7 @@
   "version": "2.4.1",
   "last_updated": "2026-04-05",
   "phase": 1,
-  "total_tools": 73,
+  "total_tools": 78,
   "categories": {
     "system": {
       "description": "System-level operations and monitoring",
@@ -1146,6 +1146,54 @@
           ]
         },
         {
+          "tool_name": "spark_window_open",
+          "description": "Show/open the Spark main window",
+          "execution_target": "server",
+          "params_schema": {},
+          "output_schema": {"success": {"type": "boolean"}, "data": {"action": {"type": "string"}}, "error": {"type": "string"}},
+          "metadata": {"default_confidence": 0.99, "default_requires_approval": false, "default_timeout_ms": 1000, "summary_tts": false},
+          "module": "system.spark_control",
+          "class_name": "SparkWindowOpenTool",
+          "examples": [{"user_utterance": "open your window", "inputs": {}, "notes": "Show the Spark main window"}],
+          "semantic_tags": ["spark", "window", "open", "show"]
+        },
+        {
+          "tool_name": "spark_window_close",
+          "description": "Hide/close the Spark main window",
+          "execution_target": "server",
+          "params_schema": {},
+          "output_schema": {"success": {"type": "boolean"}, "data": {"action": {"type": "string"}}, "error": {"type": "string"}},
+          "metadata": {"default_confidence": 0.99, "default_requires_approval": false, "default_timeout_ms": 1000, "summary_tts": false},
+          "module": "system.spark_control",
+          "class_name": "SparkWindowCloseTool",
+          "examples": [{"user_utterance": "close your window", "inputs": {}, "notes": "Hide the Spark main window"}],
+          "semantic_tags": ["spark", "window", "close", "hide"]
+        },
+        {
+          "tool_name": "spark_navigate",
+          "description": "Navigate to a specific tab in the Spark main window (history, spark-logs, tools, plugins, skills, permissions, settings)",
+          "execution_target": "server",
+          "params_schema": {"tab": {"type": "string", "required": true, "description": "Tab name: history, spark-logs, tools, plugins, skills, permissions, settings"}},
+          "output_schema": {"success": {"type": "boolean"}, "data": {"action": {"type": "string"}, "tab": {"type": "string"}}, "error": {"type": "string"}},
+          "metadata": {"default_confidence": 0.95, "default_requires_approval": false, "default_timeout_ms": 1000, "summary_tts": false},
+          "module": "system.spark_control",
+          "class_name": "SparkNavigateTool",
+          "examples": [{"user_utterance": "open logs tab", "inputs": {"tab": "spark-logs"}, "notes": "Navigate to spark logs tab"}],
+          "semantic_tags": ["spark", "navigate", "tab", "logs", "tools", "settings"]
+        },
+        {
+          "tool_name": "spark_storage_open",
+          "description": "Open the Spark artifacts/storage folder in file explorer. Use when user says open your storage or your folder.",
+          "execution_target": "server",
+          "params_schema": {},
+          "output_schema": {"success": {"type": "boolean"}, "data": {"path": {"type": "string"}, "action": {"type": "string"}}, "error": {"type": "string"}},
+          "metadata": {"default_confidence": 0.95, "default_requires_approval": false, "default_timeout_ms": 2000, "summary_tts": false},
+          "module": "system.spark_control",
+          "class_name": "SparkStorageOpenTool",
+          "examples": [{"user_utterance": "open your storage folder", "inputs": {}, "notes": "Open the artifacts directory"}],
+          "semantic_tags": ["spark", "storage", "folder", "artifacts", "open"]
+        },
+        {
           "tool_name": "current_location",
           "description": "Get current location via IP geolocation",
           "execution_target": "client",
@@ -2003,7 +2051,7 @@
             "default_confidence": 0.98,
             "default_requires_approval": false,
             "default_timeout_ms": 2000,
-            "summary_tts": false
+            "summary_tts": true
           },
           "module": "file_system.operations",
           "class_name": "FolderCreateTool",
@@ -2109,7 +2157,7 @@
             "default_requires_approval": false,
             "default_approval_question": "This will reorganize files in the folder. Continue?",
             "default_timeout_ms": 30000,
-            "summary_tts": false
+            "summary_tts": true
           },
           "module": "file_system.folder_organize",
           "class_name": "FolderOrganizeTool",
@@ -2462,6 +2510,98 @@
             "ai",
             "ai",
             "summarize"
+          ]
+        },
+        {
+          "tool_name": "content_generate",
+          "description": "Generate long-form structured content (notes, articles, plans, about-me, etc.) with proper formatting. Use this when the user asks to write, create, or generate text content longer than a few sentences.",
+          "execution_target": "server",
+          "params_schema": {
+            "topic": {
+              "type": "string",
+              "required": true,
+              "description": "What to write about — the full user request or subject. Also accepts 'query' as alias."
+            },
+            "query": {
+              "type": "string",
+              "required": false,
+              "description": "Alias for topic — what to write about"
+            },
+            "instructions": {
+              "type": "string",
+              "required": false,
+              "description": "Additional style or formatting instructions"
+            },
+            "output_path": {
+              "type": "string",
+              "required": false,
+              "description": "File path to save the generated content"
+            },
+            "min_lines": {
+              "type": "integer",
+              "required": false,
+              "default": 0,
+              "description": "Minimum number of lines to generate"
+            },
+            "format": {
+              "type": "string",
+              "required": false,
+              "default": "markdown",
+              "enum": ["markdown", "plain"]
+            }
+          },
+          "output_schema": {
+            "success": {
+              "type": "boolean"
+            },
+            "data": {
+              "content": {
+                "type": "string",
+                "description": "The generated content text"
+              },
+              "file_path": {
+                "type": "string",
+                "description": "Path where content was saved"
+              },
+              "line_count": {
+                "type": "integer"
+              },
+              "char_count": {
+                "type": "integer"
+              }
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "default_confidence": 0.95,
+            "default_requires_approval": false,
+            "default_timeout_ms": 30000
+          },
+          "module": "ai.content_generate",
+          "class_name": "ContentGenerateTool",
+          "examples": [
+            {
+              "user_utterance": "write about me in 150 lines",
+              "inputs": {"topic": "about me", "min_lines": 150},
+              "notes": "Long-form content generation with line count requirement"
+            },
+            {
+              "user_utterance": "create a detailed note about machine learning",
+              "inputs": {"topic": "machine learning overview", "output_path": "machine_learning.md"},
+              "notes": "Generate and save structured content"
+            }
+          ],
+          "semantic_tags": [
+            "ai",
+            "content",
+            "generate",
+            "write",
+            "create",
+            "note",
+            "article",
+            "long-form"
           ]
         },
         {

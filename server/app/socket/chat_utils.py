@@ -203,6 +203,9 @@ def register_chat_events():
                 await sio.emit("query-result", {"success": True, "clarification_routed": True}, to=sid)
                 return
 
+            from app.socket.log_stream import emit_spark_log
+            await emit_spark_log(user_id, "query_received", payload={"query": query[:100], "message": f"Query: {query[:60]}"})
+
             result = await _parallel_execute(query=query, user_id=user_id, sid=sid)
 
             dict_data = await serialize_response(result.get("chat_result"))
@@ -304,6 +307,9 @@ def register_chat_events():
                     bool(cached_ctx.user_details),
                     len(cached_ctx.rag_context or []),
                 )
+
+            from app.socket.log_stream import emit_spark_log
+            await emit_spark_log(user_id, "query_received", payload={"query": text[:100], "message": f"Voice: {text[:60]}", "source": "voice"})
 
             result = await _parallel_execute(
                 query=text, user_id=user_id, sid=sid,

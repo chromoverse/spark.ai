@@ -207,6 +207,11 @@ async def stream_tts_to_client(
             return False
 
         # Stream TTS to each connected session (non-blocking)
+        # Also emit as spark:log so live activity shows what Spark said
+        if user_id:
+            from app.socket.log_stream import emit_spark_log
+            asyncio.create_task(emit_spark_log(user_id, "ai_response", payload={"message": text[:200]}))
+
         for sid in target_sids:
             # Skip if user was interrupted
             if user_id and _int.is_set(user_id):

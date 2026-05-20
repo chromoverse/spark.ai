@@ -211,6 +211,23 @@ export interface TaskProgressPayload {
 // SOCKET EVENT INTERFACE
 // ========================================
 
+export interface SparkControlPayload {
+  action: "window_open" | "window_close" | "navigate";
+  tab?: string;
+}
+
+export interface SparkLogPayload {
+  event_type: string;
+  user_id: string;
+  request_id?: string;
+  session_id?: string;
+  task_id?: string;
+  tool_name?: string;
+  status?: string;
+  payload?: Record<string, any>;
+  timestamp: string;
+}
+
 export interface SocketEvents {
   // ========= Client → Server Events =========
   register_user: (userId: string) => void;
@@ -260,6 +277,8 @@ export interface SocketEvents {
   
   // Server status
   "server-status": (data: ServerStatus) => void;
+  "spark:log": (data: SparkLogPayload) => void;
+  "spark:control": (data: SparkControlPayload) => void;
   processing: (data: any) => void;
   
   // Generic events

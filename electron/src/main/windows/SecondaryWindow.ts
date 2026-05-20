@@ -42,7 +42,9 @@ export class SecondaryWindow {
     });
 
     this.window.on("hide", () => {
-      this.window?.show();
+      // Use showInactive to avoid stealing focus from main window
+      this.window?.showInactive();
+      this.window?.setAlwaysOnTop(true, "screen-saver");
     });
 
     this.window.once("ready-to-show", () => {

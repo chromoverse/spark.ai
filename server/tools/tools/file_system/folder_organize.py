@@ -325,6 +325,10 @@ OUTPUT FORMAT:
         files_affected = len(category_map)
         self.logger.info(f"Organized {files_affected} file(s). Restore: {restore_path}")
 
+        # Notify Windows Explorer to refresh
+        from .operations import _notify_shell_change
+        _notify_shell_change(folder_path)
+
         return ToolOutput(
             success=True,
             data={

@@ -31,6 +31,8 @@ from app.ai.providers.key_manager import (
     rotate_key,
     get_all_keys,
     get_key_status,
+    activate_user_keys,
+    deactivate_user_keys,
 )
 
 __all__ = [
@@ -49,6 +51,8 @@ __all__ = [
     "rotate_key",
     "get_all_keys",
     "get_key_status",
+    "activate_user_keys",
+    "deactivate_user_keys",
     # Exceptions
     "QuotaError",
     "AllKeysExhaustedError",

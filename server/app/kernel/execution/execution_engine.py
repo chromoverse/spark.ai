@@ -22,8 +22,10 @@ from app.kernel.execution.orchestrator import get_orchestrator
 from app.kernel.execution.approval_coordinator import get_approval_coordinator
 from app.kernel.execution.execution_models import TaskRecord, TaskOutput
 from app.kernel.execution.binding_resolver import get_binding_resolver
+from app.kernel.execution.execution_watcher import watched_execute
 from app.kernel.contracts.models import KernelEvent
 from app.kernel.eventing.event_bus import emit_kernel_event
+from app.socket.log_stream import emit_spark_log
 from app.agent.runtime.tool_context_service import get_tool_context_service
 
 logger = logging.getLogger(__name__)
@@ -159,6 +161,8 @@ class ExecutionEngine:
         logger.info(f"\n{'='*70}")
         logger.info(f"EXECUTION LOOP STARTED: {user_id}")
         logger.info(f"{'='*70}\n")
+        
+        await emit_spark_log(user_id, "execution_started", payload={"message": "Execution started"})
         
         iteration = 0
         max_iterations = 100  # Safety limit
@@ -320,6 +324,7 @@ class ExecutionEngine:
             await self.orchestrator.mark_task_running(user_id, task.task_id)
             
             logger.info(f"  Executing: {task.task_id} ({task.tool})")
+            await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", payload={"message": f"Executing {task.tool}"})
             
             if task.lifecycle_messages and task.lifecycle_messages.on_start:
                 logger.info(f"     {task.lifecycle_messages.on_start}")
@@ -373,14 +378,31 @@ class ExecutionEngine:
             if task.control and task.control.timeout_ms:
                 timeout = task.control.timeout_ms / 1000
             
-            # Execute
-            if timeout:
-                output = await asyncio.wait_for(
-                    self.server_tool_executor.execute(task),
-                    timeout=timeout
-                )
-            else:
-                output = await self.server_tool_executor.execute(task)
+            # Execute via watcher (auto-retry on retryable failures)
+            async def _server_exec_fn(_task: TaskRecord, _inputs: dict) -> TaskOutput:
+                _task.resolved_inputs = _inputs
+                if timeout:
+                    return await asyncio.wait_for(
+                        self.server_tool_executor.execute(_task),
+                        timeout=timeout
+                    )
+                return await self.server_tool_executor.execute(_task)
+
+            async def _on_server_retry(_uid: str, attempt: int, msg: str) -> None:
+                await _emit_progress_event(_uid, {"retry": True, "task_id": task.task_id, "attempt": attempt, "message": msg})
+
+            watcher_result = await watched_execute(
+                user_id=user_id,
+                task=task,
+                resolved_inputs=resolved_inputs,
+                executor_fn=_server_exec_fn,
+                on_retry=_on_server_retry,
+                get_task_output_fn=lambda tid: self.orchestrator.get_task(user_id, tid).output if self.orchestrator.get_task(user_id, tid) else None,
+            )
+            output = watcher_result.output
+
+            if watcher_result.recovered:
+                logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
 
             if output.success:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
@@ -395,15 +417,11 @@ class ExecutionEngine:
                 return True
             else:
                 error = output.error or f"Tool '{task.tool}' returned unsuccessful output"
-                # Record failure + log retry suggestion
                 ctx = get_tool_context_service()
                 ctx.record_tool_output(
                     user_id=user_id, task_id=task.task_id, tool_name=task.tool,
                     output_data=output.data, success=False, error=error,
                 )
-                strategy = ctx.suggest_retry_strategy(user_id, task.task_id, task.tool, error)
-                if strategy.get("should_retry"):
-                    logger.info(f"     💡 Retry suggestion: {strategy.get('suggestion')}")
                 await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
                 if task.lifecycle_messages and task.lifecycle_messages.on_failure:
                     logger.info(f"     {task.lifecycle_messages.on_failure}")
@@ -442,8 +460,8 @@ class ExecutionEngine:
         """
         DESKTOP MODE: Execute client tasks DIRECTLY.
         
-        Same orchestrator marks completion → dependent tasks unblock immediately.
-        No emit, no separate loop, no split-brain state.
+        Dependency chains are executed sequentially so bindings resolve correctly.
+        Independent tasks still run in parallel.
         """
         if not self.client_tool_executor:
             logger.error("No client tool executor configured for desktop mode!")
@@ -454,21 +472,38 @@ class ExecutionEngine:
                 )
             return
         
-        # Execute all tasks in parallel
-        results = await asyncio.gather(
-            *[self._execute_single_client_task(user_id, task) for task in tasks],
-            return_exceptions=True
-        )
-        
-        success_count = sum(1 for r in results if r is True)
-        logger.info(f"Completed {success_count}/{len(tasks)} client tasks locally")
+        # If tasks form a dependency chain, execute sequentially
+        if self._is_dependency_chain(tasks):
+            success_count = 0
+            for task in tasks:
+                result = await self._execute_single_client_task(user_id, task)
+                if result:
+                    success_count += 1
+                else:
+                    # Cascade: fail remaining tasks in chain
+                    idx = tasks.index(task)
+                    for remaining in tasks[idx + 1:]:
+                        await self.orchestrator.mark_task_failed(
+                            user_id, remaining.task_id,
+                            f"Skipped: dependency {task.task_id} failed"
+                        )
+                    break
+            logger.info(f"Completed {success_count}/{len(tasks)} client tasks locally")
+        else:
+            results = await asyncio.gather(
+                *[self._execute_single_client_task(user_id, task) for task in tasks],
+                return_exceptions=True
+            )
+            success_count = sum(1 for r in results if r is True)
+            logger.info(f"Completed {success_count}/{len(tasks)} client tasks locally")
     
     async def _execute_single_client_task(self, user_id: str, task: TaskRecord) -> bool:
-        """Execute a single client task locally (desktop mode)"""
+        """Execute a single client task locally (desktop mode) with watcher recovery"""
         try:
             await self.orchestrator.mark_task_running(user_id, task.task_id)
             
             logger.info(f"   Executing locally: {task.task_id} ({task.tool})")
+            await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", payload={"message": f"Executing {task.tool} locally"})
             
             if task.lifecycle_messages and task.lifecycle_messages.on_start:
                 logger.info(f"     {task.lifecycle_messages.on_start}")
@@ -496,15 +531,33 @@ class ExecutionEngine:
             
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
             
-            # Execute via client tool executor
+            # Execute via watcher (auto-retry on retryable failures)
             client_executor = self.client_tool_executor
             if client_executor is None:
                 raise RuntimeError("Client tool executor not configured")
+
+            async def _exec_fn(_task: TaskRecord, _inputs: dict) -> TaskOutput:
+                return await client_executor.execute(_task, _inputs)
+
+            async def _on_retry(_uid: str, attempt: int, msg: str) -> None:
+                await _emit_progress_event(_uid, {"retry": True, "task_id": task.task_id, "attempt": attempt, "message": msg})
+
             local_t0 = datetime.now()
-            output = await client_executor.execute(task, resolved_inputs)
+            watcher_result = await watched_execute(
+                user_id=user_id,
+                task=task,
+                resolved_inputs=resolved_inputs,
+                executor_fn=_exec_fn,
+                on_retry=_on_retry,
+                get_task_output_fn=lambda tid: self.orchestrator.get_task(user_id, tid).output if self.orchestrator.get_task(user_id, tid) else None,
+            )
             latency_ms = int((datetime.now() - local_t0).total_seconds() * 1000)
+            output = watcher_result.output
+
+            if watcher_result.recovered:
+                logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
+
             if output.success:
-                # KEY: Mark on SAME orchestrator — dependent tasks unblock instantly
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
                 await emit_kernel_event(
                     KernelEvent(
@@ -513,7 +566,7 @@ class ExecutionEngine:
                         task_id=task.task_id,
                         tool_name=task.tool,
                         status="success",
-                        payload={"latency_ms": latency_ms, "error": None},
+                        payload={"latency_ms": latency_ms, "error": None, "recovered": watcher_result.recovered},
                     )
                 )
                 if task.lifecycle_messages and task.lifecycle_messages.on_success:
@@ -521,7 +574,7 @@ class ExecutionEngine:
                 logger.info(f"  Completed locally: {task.task_id}")
                 return True
             else:
-                error_msg = output.error or f"Client tool '{task.tool}' returned unsuccessful output"
+                error_msg = watcher_result.watcher_message or output.error or f"Client tool '{task.tool}' failed"
                 await self.orchestrator.mark_task_failed(user_id, task.task_id, error_msg)
                 await emit_kernel_event(
                     KernelEvent(
@@ -557,7 +610,6 @@ class ExecutionEngine:
             
             logger.error(f"  Failed locally: {task.task_id} - {error_msg}")
             return False
-
     async def _handle_approval_gate(self, user_id: str, task: TaskRecord) -> bool:
         """
         Handle task-level approval gate.

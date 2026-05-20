@@ -158,6 +158,11 @@ class SocketService {
         return;
       }
 
+      if (eventName === "spark:control") {
+        this.handleSparkControlEvent(data);
+        return;
+      }
+
       this.broadcastSocketEvent({ event: eventName, data });
     });
 
@@ -282,6 +287,35 @@ class SocketService {
       action: rawAction,
       source,
     };
+  }
+
+  private handleSparkControlEvent(data: unknown): void {
+    if (!data || typeof data !== "object") return;
+    const payload = data as { action?: string; tab?: string };
+    const action = payload.action;
+
+    if (action === "window_open") {
+      import("./WindowManager.js").then(({ windowManager }) => {
+        const win = windowManager.getMainWindow().getBrowserWindow();
+        win.show();
+        win.focus();
+      });
+    } else if (action === "window_close") {
+      import("./WindowManager.js").then(({ windowManager }) => {
+        windowManager.getMainWindow().getBrowserWindow().hide();
+      });
+    } else if (action === "navigate" && payload.tab) {
+      // Send navigate command to renderer
+      for (const target of this.rendererTargets) {
+        if (target.isDestroyed()) continue;
+        ipcWebContentSend("sparkNavigate", target, { tab: payload.tab });
+      }
+      // Also show the main window
+      import("./WindowManager.js").then(({ windowManager }) => {
+        const win = windowManager.getMainWindow().getBrowserWindow();
+        if (!win.isVisible()) win.show();
+      });
+    }
   }
 
   private isSingleTargetTtsEvent(eventName: string): boolean {

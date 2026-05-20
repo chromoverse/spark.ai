@@ -1,7 +1,7 @@
 {
   "version": "2.4.1",
   "source": "tool_registry.json",
-  "total_tools": 71,
+  "total_tools": 76,
   "tools": [
     {
       "name": "app_open",
@@ -152,6 +152,34 @@
       ]
     },
     {
+      "name": "spark_window_open",
+      "description": "Show/open the Spark main window",
+      "example_triggers": [
+        "open your window"
+      ]
+    },
+    {
+      "name": "spark_window_close",
+      "description": "Hide/close the Spark main window",
+      "example_triggers": [
+        "close your window"
+      ]
+    },
+    {
+      "name": "spark_navigate",
+      "description": "Navigate to a specific tab in the Spark main window (history, spark-logs, tools, plugins, skills, permissions, settings)",
+      "example_triggers": [
+        "open logs tab"
+      ]
+    },
+    {
+      "name": "spark_storage_open",
+      "description": "Open the Spark artifacts/storage folder in file explorer. Use when user says open your storage or your folder.",
+      "example_triggers": [
+        "open your storage folder"
+      ]
+    },
+    {
       "name": "current_location",
       "description": "Get current location via IP geolocation",
       "example_triggers": [
@@ -282,6 +310,14 @@
       "description": "Summarize AI-related content like logs, conversations, or documents",
       "example_triggers": [
         "ai summarize"
+      ]
+    },
+    {
+      "name": "content_generate",
+      "description": "Generate long-form structured content (notes, articles, plans, about-me, etc.) with proper formatting. Use this when the user asks to write, create, or generate text content longer than a few sentences.",
+      "example_triggers": [
+        "write about me in 150 lines",
+        "create a detailed note about machine learning"
       ]
     },
     {

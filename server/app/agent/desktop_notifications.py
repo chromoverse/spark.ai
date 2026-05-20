@@ -62,6 +62,11 @@ def _get_toaster() -> Optional[Any]:
     if not _ensure_toasts_loaded():
         return None
     if _toaster is None:
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
         _toaster = _InteractableWindowsToaster("SPARK AI Assistant")
     return _toaster
 

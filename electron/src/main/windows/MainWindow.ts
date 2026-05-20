@@ -76,6 +76,16 @@ export class MainWindow {
 
     this.window.on("show", () => {
       willClose = false;
+      // Re-assert secondary window's always-on-top after main window shows
+      // Windows OS can steal focus/z-order when a window is shown
+      setTimeout(async () => {
+        const { windowManager } = await import("../services/WindowManager.js");
+        const secondary = windowManager.getSecondaryWindow()?.getBrowserWindow();
+        if (secondary && !secondary.isDestroyed()) {
+          secondary.setAlwaysOnTop(true, "screen-saver");
+          secondary.showInactive();
+        }
+      }, 100);
     });
   }
 

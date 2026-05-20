@@ -425,6 +425,9 @@ class StreamService:
             bg.add_done_callback(
                 lambda t: t.exception() and logger.debug("[%s] persist assistant msg failed", request_id)
             )
+            # Emit to live activity
+            from app.socket.log_stream import emit_spark_log
+            asyncio.create_task(emit_spark_log(user_id, "ai_response", payload={"message": msg[:200]}))
             # Log to activity log for searchable history
             try:
                 from app.services.activity import get_activity_log

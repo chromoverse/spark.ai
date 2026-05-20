@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld("electronApi", {
   onMicMuteToggle: (callback: () => void) => ipcOn("onMicMuteToggle", callback),
   onMicControl: (callback: (payload: IMicControlPayload) => void) =>
     ipcOn("onMicControl", callback),
+  onSparkNavigate: (callback: (payload: { tab: string }) => void) =>
+    ipcOn("sparkNavigate", callback),
 
   //Authentication API
   onAuthSuccess: () => ipcInvoke("onAuthSuccess"),

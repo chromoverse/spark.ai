@@ -139,7 +139,15 @@ When task B depends on output from task A:
   "create a Python calculator" → use shell_agent with allow_network=true.
 - shell_agent can handle multi-step project scaffolding, file creation,
   dependency installation, and build processes.
-- Set allow_network=true for any task that might need npm, pip, npx, git, etc."""
+- Set allow_network=true for any task that might need npm, pip, npx, git, etc.
+
+━━━ CONTENT GENERATE RULES ━━━
+- For requests to write/create/generate text content (notes, articles, about-me, plans, essays, stories, lists) → use content_generate.
+- NEVER put long content directly in file_create inputs.content — the token limit will truncate it.
+- content_generate handles both generation AND file saving via output_path.
+- If user wants a file, set output_path (e.g. "about_me.md", "notes.txt").
+- If user specifies a line count, set min_lines accordingly.
+- After content_generate, you can chain file_open to open the saved file."""
 
 
 # ── Dynamic user message — changes per request ────────────────────────────────
@@ -222,6 +230,8 @@ PREFERENCE RULES:
 - If empty → safe default (youtube for media, chrome for browser, notepad for text).
 - Never invent a preference.
 - When the user says "my desktop", "downloads", "documents" etc., use the paths from SYSTEM PATHS above. Do NOT ask the user for the path.
+- "organize my desktop" → folder_organize with path = the desktop path from SYSTEM PATHS. NEVER ask which desktop.
+- "organize downloads" → folder_organize with path = the downloads path from SYSTEM PATHS.
 {app_open_rules}
 {artifact_open_rules}
 {artifact_block}

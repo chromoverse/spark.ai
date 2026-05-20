@@ -109,6 +109,26 @@
       "class_name": "MicUnmuteTool"
     },
     {
+      "tool_name": "spark_window_open",
+      "module": "system.spark_control",
+      "class_name": "SparkWindowOpenTool"
+    },
+    {
+      "tool_name": "spark_window_close",
+      "module": "system.spark_control",
+      "class_name": "SparkWindowCloseTool"
+    },
+    {
+      "tool_name": "spark_navigate",
+      "module": "system.spark_control",
+      "class_name": "SparkNavigateTool"
+    },
+    {
+      "tool_name": "spark_storage_open",
+      "module": "system.spark_control",
+      "class_name": "SparkStorageOpenTool"
+    },
+    {
       "tool_name": "current_location",
       "module": "system.location",
       "class_name": "CurrentLocationTool"
@@ -202,6 +222,11 @@
       "tool_name": "ai_summarize",
       "module": "ai.summarize",
       "class_name": "AiSummarizeTool"
+    },
+    {
+      "tool_name": "content_generate",
+      "module": "ai.content_generate",
+      "class_name": "ContentGenerateTool"
     },
     {
       "tool_name": "tool_catalog",
@@ -359,5 +384,5 @@
       "class_name": "ArtifactOpenTool"
     }
   ],
-  "total_tools": 71
+  "total_tools": 76
 }

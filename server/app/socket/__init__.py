@@ -34,4 +34,8 @@ def init_socket():
     from app.socket.chat_utils import register_chat_events
     register_chat_events()
 
+    # Register real-time log streaming
+    from app.socket.log_stream import register_log_stream
+    register_log_stream()
+
     logger.info("✅ Socket module fully initialized")

@@ -68,6 +68,36 @@ class _KeyCache:
     _cache: Dict[str, List[str]] = {}
     # Track current key index for rotation: {env_name: current_index}
     _rotation_index: Dict[str, int] = {}
+    # User-scoped keys: {user_id: {env_name: ["key1", ...]}}
+    _user_keys: Dict[str, Dict[str, List[str]]] = {}
+    _user_rotation_index: Dict[str, Dict[str, int]] = {}
+    _active_user_id: Optional[str] = None
+
+    # ── user-scoped key API ──
+
+    @classmethod
+    def set_active_user(cls, user_id: Optional[str]) -> None:
+        """Set the active user whose keys take priority."""
+        cls._active_user_id = user_id
+
+    @classmethod
+    def load_user_keys(cls, user_id: str, provider: str, keys: List[str]) -> None:
+        """Load keys for a specific user+provider. These take priority over system keys."""
+        env_name = PROVIDER_ENV_MAP.get(provider.lower(), provider.upper())
+        if user_id not in cls._user_keys:
+            cls._user_keys[user_id] = {}
+            cls._user_rotation_index[user_id] = {}
+        clean = [k.strip() for k in keys if k.strip()]
+        cls._user_keys[user_id][env_name] = clean
+        cls._user_rotation_index[user_id][env_name] = 0
+
+    @classmethod
+    def clear_user_keys(cls, user_id: str) -> None:
+        """Remove all cached keys for a user."""
+        cls._user_keys.pop(user_id, None)
+        cls._user_rotation_index.pop(user_id, None)
+        if cls._active_user_id == user_id:
+            cls._active_user_id = None
 
     # ── public API ──
 
@@ -80,9 +110,14 @@ class _KeyCache:
 
     @classmethod
     def get(cls, env_name: str) -> List[str]:
-        """Get the list of keys from cache for a given env_name."""
+        """Get keys: user-scoped first, then system fallback."""
         if not cls._loaded:
             cls._bulk_load()
+        # Priority: active user's keys
+        if cls._active_user_id:
+            user_keys = cls._user_keys.get(cls._active_user_id, {}).get(env_name, [])
+            if user_keys:
+                return user_keys
         return cls._cache.get(env_name, [])
 
     @classmethod
@@ -132,34 +167,28 @@ class _KeyCache:
     @classmethod
     def get_next_key(cls, env_name: str) -> Optional[str]:
         """
-        Get the next key in rotation.
-        
-        Returns the current key and advances the rotation index.
-        When the last key is exhausted, wraps around to the first key.
-        
-        Args:
-            env_name: The environment variable name
-            
-        Returns:
-            The next key in rotation, or None if no keys are available
+        Get the next key in rotation. User keys take priority over system keys.
         """
         if not cls._loaded:
             cls._bulk_load()
         
+        # Check user keys first
+        if cls._active_user_id:
+            user_keys = cls._user_keys.get(cls._active_user_id, {}).get(env_name, [])
+            if user_keys:
+                idx_map = cls._user_rotation_index.get(cls._active_user_id, {})
+                idx = idx_map.get(env_name, 0)
+                key = user_keys[idx]
+                idx_map[env_name] = (idx + 1) % len(user_keys)
+                return key
+        
+        # Fallback to system keys
         keys = cls._cache.get(env_name, [])
         if not keys:
             return None
-        
-        # Get current index, default to 0
         current_index = cls._rotation_index.get(env_name, 0)
-        
-        # Get the key at current index
         key = keys[current_index]
-        
-        # Advance index for next call (wrap around if at end)
-        next_index = (current_index + 1) % len(keys)
-        cls._rotation_index[env_name] = next_index
-        
+        cls._rotation_index[env_name] = (current_index + 1) % len(keys)
         return key
 
     @classmethod
@@ -611,3 +640,38 @@ def get_key_status(provider_or_env: str) -> Dict[str, Any]:
         'current_index': _KeyCache.get_current_index(env_name),
         'has_keys': len(keys) > 0
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  User-scoped key management
+#  Priority: user keys > system (registry) keys as fallback
+# ═══════════════════════════════════════════════════════════════
+
+def activate_user_keys(user_id: str, user_data: Dict[str, Any]) -> None:
+    """
+    Load a user's API keys into the priority layer and set them as active.
+    System registry keys remain as fallback if user has no keys for a provider.
+
+    Args:
+        user_id: The user's ID
+        user_data: Dict with gemini_api_keys, groq_api_keys, openrouter_api_keys
+    """
+    gemini = user_data.get("gemini_api_keys") or []
+    groq = user_data.get("groq_api_keys") or []
+    openrouter = user_data.get("openrouter_api_keys") or []
+
+    if gemini:
+        _KeyCache.load_user_keys(user_id, "gemini", gemini)
+    if groq:
+        _KeyCache.load_user_keys(user_id, "groq", groq)
+    if openrouter:
+        _KeyCache.load_user_keys(user_id, "openrouter", openrouter)
+
+    _KeyCache.set_active_user(user_id)
+    logger.info(f"🔑 Activated user keys for {user_id}: gemini={len(gemini)}, groq={len(groq)}, openrouter={len(openrouter)}")
+
+
+def deactivate_user_keys(user_id: str) -> None:
+    """Remove user keys and fall back to system keys."""
+    _KeyCache.clear_user_keys(user_id)
+    logger.info(f"🔑 Deactivated user keys for {user_id}, using system fallback")

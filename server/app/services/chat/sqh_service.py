@@ -333,6 +333,11 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
 
         await orchestrator.register_tasks(user_id, tasks)
 
+        # Emit plan to live logs
+        from app.socket.log_stream import emit_spark_log
+        tool_names = [t.tool for t in tasks]
+        await emit_spark_log(user_id, "plan_created", payload={"tools": tool_names, "task_count": len(tasks), "message": f"Plan: {', '.join(tool_names)}"})
+
         if not execution_engine.server_tool_executor:
             execution_engine.set_server_executor(get_server_executor())
 
@@ -395,6 +400,11 @@ async def _emit_summary(
 
         if not summary:
             return
+
+        # Save to conversation history so follow-up queries have context
+        from app.cache import add_message
+        await add_message(user_id=user_id, role="user", content=original_query)
+        await add_message(user_id=user_id, role="assistant", content=summary)
 
         # Final interrupt check before speaking
         if _interrupt.is_set(user_id):
