@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from app.plugins.tools.registry_loader import ToolMetadata, get_tool_registry
-from app.plugins.tools.tool_index_loader import get_tools_index
 
 
 class ToolCatalogService:
@@ -14,11 +13,6 @@ class ToolCatalogService:
         execution_target: Optional[str] = None,
     ) -> Dict[str, Any]:
         registry = get_tool_registry()
-        index_map = {
-            str(tool.get("name", "")).strip(): tool
-            for tool in get_tools_index()
-            if str(tool.get("name", "")).strip()
-        }
 
         filtered: List[Dict[str, Any]] = []
         for metadata in registry.get_all_tools().values():
@@ -27,17 +21,19 @@ class ToolCatalogService:
             if execution_target and metadata.execution_target != execution_target:
                 continue
 
-            index_entry = index_map.get(metadata.tool_name, {})
+            # Use metadata.examples for example_triggers (no more index file)
+            example_triggers = [
+                ex.get("user_utterance", metadata.tool_name.replace("_", " "))
+                for ex in (metadata.examples or [])
+            ] or [metadata.tool_name.replace("_", " ")]
+
             filtered.append(
                 {
                     "name": metadata.tool_name,
                     "description": metadata.description,
                     "category": metadata.category,
                     "execution_target": metadata.execution_target,
-                    "example_triggers": index_entry.get(
-                        "example_triggers",
-                        [metadata.tool_name.replace("_", " ")],
-                    ),
+                    "example_triggers": example_triggers,
                 }
             )
 

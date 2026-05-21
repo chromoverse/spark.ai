@@ -1,0 +1,26 @@
+{
+  "name": "spark",
+  "version": "1.0.0",
+  "display_name": "Spark Internal",
+  "description": "SparkAI self-management tools — window control, navigation, storage, and artifact management.",
+  "author": "spark-core",
+  "capabilities": [
+    "spark_window",
+    "spark_navigation",
+    "spark_storage",
+    "artifacts"
+  ],
+  "tools": [
+    "spark_window_open",
+    "spark_window_close",
+    "spark_navigate",
+    "spark_storage_open",
+    "artifact_list",
+    "artifact_resolve",
+    "artifact_open"
+  ],
+  "skills": [],
+  "dependencies": [],
+  "config_schema": {},
+  "enabled": true
+}

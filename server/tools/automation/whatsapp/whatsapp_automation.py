@@ -5,8 +5,8 @@ import time
 import os
 import builtins
 
-from tools.tools.system.app import AppOpenTool
-from tools.utils.process_manager.process_manager import ProcessManager
+from app.plugins.tools.tool_base import get_tool_instance
+from shared.process_manager.process_manager import ProcessManager
 
 pyautogui.PAUSE = 0.15
 
@@ -56,7 +56,7 @@ class WhatsAppAutomation:
         self.confidence      = confidence
         self.search_timeout  = search_timeout
         self.process_manager = ProcessManager()
-        self.app_open_tool   = AppOpenTool()
+        self.app_open_tool   = get_tool_instance("app_open")
         
 
     # ══════════════════════════════════════════════════════

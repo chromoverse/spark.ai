@@ -30,7 +30,7 @@ class CerebrasClient(BaseClient):
         )
 
     def _create_client(self, api_key: str) -> Any:
-        return OpenAI(api_key=api_key, base_url=CEREBRAS_BASE_URL, timeout=30.0, max_retries=1)
+        return OpenAI(api_key=api_key, base_url=CEREBRAS_BASE_URL, timeout=30.0, max_retries=0)
 
     async def _do_chat(self, client: Any, messages: List[Dict[str, str]], model: str, temperature: float, max_tokens: int) -> str:
         def _call() -> str:

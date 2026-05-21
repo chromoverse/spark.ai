@@ -19,7 +19,7 @@ from app.kernel.execution.execution_models import TaskRecord, TaskOutput
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 2
+MAX_RETRIES = 3
 
 
 class WatcherResult:
@@ -143,6 +143,55 @@ OUTPUT (strict JSON, no explanation):"""
     return None
 
 
+def _try_fix_type_mismatch(
+    task: TaskRecord,
+    current_inputs: Dict[str, Any],
+    error: str,
+) -> Optional[Dict[str, Any]]:
+    """Auto-fix 'must be string, got list/dict' errors by coercing to formatted text."""
+    import re as _re
+
+    m = _re.search(
+        r"Parameter '(\w+)' must be string, got (list|dict)",
+        error,
+    )
+    if not m:
+        return None
+
+    param_name = m.group(1)
+    value = current_inputs.get(param_name)
+    if value is None:
+        return None
+
+    # Convert structured data to readable text
+    import json as _json
+    if isinstance(value, list):
+        # Format list of dicts as readable lines
+        lines: List[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                parts = [f"{k}: {v}" for k, v in item.items()]
+                lines.append(" | ".join(parts))
+            else:
+                lines.append(str(item))
+        coerced = "\n".join(lines)
+    elif isinstance(value, dict):
+        try:
+            coerced = _json.dumps(value, indent=2, ensure_ascii=False, default=str)
+        except Exception:
+            coerced = str(value)
+    else:
+        coerced = str(value)
+
+    patched = dict(current_inputs)
+    patched[param_name] = coerced
+    logger.info(
+        "🔧 Watcher: coerced '%s' from %s to string for %s",
+        param_name, type(value).__name__, task.tool,
+    )
+    return patched
+
+
 async def watched_execute(
     user_id: str,
     task: TaskRecord,
@@ -191,6 +240,17 @@ async def watched_execute(
         if attempt >= max_retries:
             break
 
+        # Strategy 0: Auto-fix type mismatches (e.g. list passed where string expected)
+        patched = _try_fix_type_mismatch(task, current_inputs, error)
+        if patched:
+            current_inputs = patched
+            msg = f"⟳ Watcher: fixed type mismatch, retrying {task.tool}"
+            logger.info(msg)
+            if on_retry:
+                await on_retry(user_id, attempt + 1, msg)
+            await asyncio.sleep(0.1)
+            continue
+
         # Strategy 1: Try to resolve missing inputs from predecessor outputs
         patched = _try_resolve_missing_from_predecessors(
             task, current_inputs, error, get_task_output_fn,
@@ -232,13 +292,38 @@ async def watched_execute(
 
         await asyncio.sleep(0.3 * (attempt + 1))
 
-    # All retries exhausted
+    # All retries exhausted — log to tool_error.json for later debugging
+    _log_tool_error(task, current_inputs, last_output)
+
     return WatcherResult(
         output=last_output or TaskOutput(success=False, data={}, error="Execution failed"),
         retries_used=max_retries,
         recovered=False,
         watcher_message=_humanize_failure(task.tool, last_output.error if last_output else "Unknown error"),
     )
+
+
+def _log_tool_error(task: TaskRecord, inputs: Dict[str, Any], output: Optional[TaskOutput]) -> None:
+    """Append error details to tool_error.json for later debugging."""
+    import json, time
+    from pathlib import Path
+
+    error_file = Path(__file__).resolve().parents[3] / "tool_error.json"
+    entry = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "tool": task.tool,
+        "task_id": task.task_id,
+        "error": output.error if output else "Unknown",
+        "inputs": {k: str(v)[:200] for k, v in inputs.items() if not k.startswith("_")},
+    }
+    try:
+        existing = json.loads(error_file.read_text(encoding="utf-8")) if error_file.exists() else []
+    except Exception:
+        existing = []
+    existing.append(entry)
+    # Keep last 100 errors
+    error_file.write_text(json.dumps(existing[-100:], indent=2, default=str), encoding="utf-8")
+    logger.warning(f"📝 Tool error logged: {task.tool} → {error_file}")
 
 
 def _humanize_failure(tool_name: str, error: str) -> str:

@@ -105,9 +105,13 @@ def _reconstruct_pqh_response(raw_data: str, emotion: str) -> PQHResponse:
             answer_english=cog_state.get("answer_english", "Unable to process response.")
         )
         
-        # Extract category (new v2 field)
+        # Extract category (supports both string and list)
         category = data.get("category") or None
-        if category and not isinstance(category, str):
+        if isinstance(category, str):
+            category = [category]
+        elif isinstance(category, list):
+            category = [c for c in category if isinstance(c, str)] or None
+        else:
             category = None
         
         return PQHResponse(

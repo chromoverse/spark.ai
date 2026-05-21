@@ -30,20 +30,46 @@ def get_tools_schema(tool_names: List[str]) -> Dict[str, dict]:
 
 def _get_system_paths() -> str:
     """Return well-known OS paths so the LLM never needs to ask the user."""
-    import os
+    import os, sys
     from pathlib import Path
 
     home = Path.home()
-    paths = {
-        "home": str(home),
-        "desktop": str(home / "Desktop"),
-        "downloads": str(home / "Downloads"),
-        "documents": str(home / "Documents"),
-        "pictures": str(home / "Pictures"),
-        "music": str(home / "Music"),
-        "videos": str(home / "Videos"),
-    }
-    # Windows-specific
+
+    # On Windows, use shell folder API to get real paths (handles OneDrive redirection)
+    if sys.platform == "win32":
+        try:
+            import ctypes.wintypes
+            from ctypes import windll, create_unicode_buffer
+            buf = create_unicode_buffer(260)
+            # CSIDL constants: Desktop=0, Documents=5, Pictures=39, Music=13, Videos=14
+            _get = windll.shell32.SHGetFolderPathW
+            def _folder(csidl):
+                b = create_unicode_buffer(260)
+                _get(0, csidl, 0, 0, b)
+                return b.value or ""
+            paths = {
+                "home": str(home),
+                "desktop": _folder(0) or str(home / "Desktop"),
+                "downloads": str(Path(os.environ.get("USERPROFILE", str(home))) / "Downloads"),
+                "documents": _folder(5) or str(home / "Documents"),
+                "pictures": _folder(39) or str(home / "Pictures"),
+                "music": _folder(13) or str(home / "Music"),
+                "videos": _folder(14) or str(home / "Videos"),
+            }
+        except Exception:
+            paths = {k: str(home / k.capitalize()) for k in ("desktop", "downloads", "documents", "pictures", "music", "videos")}
+            paths["home"] = str(home)
+    else:
+        paths = {
+            "home": str(home),
+            "desktop": str(home / "Desktop"),
+            "downloads": str(home / "Downloads"),
+            "documents": str(home / "Documents"),
+            "pictures": str(home / "Pictures"),
+            "music": str(home / "Music"),
+            "videos": str(home / "Videos"),
+        }
+
     appdata = os.environ.get("APPDATA")
     if appdata:
         paths["appdata"] = appdata
@@ -140,6 +166,29 @@ When task B depends on output from task A:
 - shell_agent can handle multi-step project scaffolding, file creation,
   dependency installation, and build processes.
 - Set allow_network=true for any task that might need npm, pip, npx, git, etc.
+- NEVER use shell_agent for WhatsApp calls, messages, or any communication task.
+  Use call_audio, call_video, message_send, message_media, or message_file instead.
+
+━━━ COMMUNICATION TOOL SELECTION (CRITICAL) ━━━
+The communication category has many tools. Pick the RIGHT one:
+
+PHONE CALLS:
+  "call X" / "call X on WhatsApp" / "audio call X" → call_audio(contact=X)
+  "video call X" / "facetime X" → call_video(contact=X)
+
+MESSAGES (WhatsApp/SMS/chat):
+  "send hi to X" / "message X" / "text X" / "send X a message on WhatsApp" → message_send(contact=X, message=...)
+  "send a photo to X" → message_media(contact=X, ...)
+  "send a file to X" → message_file(contact=X, ...)
+
+EMAIL (Gmail):
+  "email X" / "send an email to X" / "mail X about Y" → email_send(to=X, subject=..., body=...)
+  "check my emails" / "read emails" → email_list or email_read
+  ONLY use email/gmail tools when the user explicitly says "email" or "mail".
+
+⚠️ NEVER use gmail_send/email_send for "call X" or "message X on WhatsApp".
+⚠️ "call" = call_audio. "message"/"send to"/"text" = message_send. "email"/"mail" = email_send.
+⚠️ If user says "WhatsApp" or doesn't specify platform → use message_send or call_audio (NOT email).
 
 ━━━ CONTENT GENERATE RULES ━━━
 - For requests to write/create/generate text content (notes, articles, about-me, plans, essays, stories, lists) → use content_generate.
@@ -147,7 +196,23 @@ When task B depends on output from task A:
 - content_generate handles both generation AND file saving via output_path.
 - If user wants a file, set output_path (e.g. "about_me.md", "notes.txt").
 - If user specifies a line count, set min_lines accordingly.
-- After content_generate, you can chain file_open to open the saved file."""
+- After content_generate, you can chain file_open to open the saved file.
+
+━━━ FILE_CREATE INPUT RULES (CRITICAL) ━━━
+- inputs.content MUST ALWAYS be a plain text string — NEVER a list, dict, or raw data structure.
+- If the source data is structured (e.g. weather forecast array, search results), format it into readable text BEFORE passing to file_create.
+  WRONG: "content": [{{"date": "2026-05-21", "condition": "Rain"}}]
+  RIGHT: "content": "Weather Forecast\\n\\n2026-05-21: Rain\\n2026-05-22: Sunny"
+- inputs.path MUST include a proper file extension (.txt, .md, .json, etc.) — never end with just a dot.
+- When chaining from a data tool (weather_forecast, web_search, etc.) to file_create, use input_bindings to pass data, OR format the content as a human-readable string in inputs.content.
+
+━━━ MULTI-STEP CHAINING RULES ━━━
+- "research X and make a file" → web_research → content_generate(topic=X, output_path="X.md") → file_open
+- "get weather and save to file" → weather_current + weather_forecast → content_generate(output_path="weather.md") → file_open
+- "make a file and open in notepad" → content_generate/file_create → file_open(app="notepad")
+- When user says "open it" or "open in notepad" after creating → chain file_open with input_bindings to the create step's file_path.
+- ALWAYS include file_open as the last step when user says "open", "show", or "open in notepad".
+- For weather: use weather_current + weather_forecast (no location needed — auto-detects from IP)."""
 
 
 # ── Dynamic user message — changes per request ────────────────────────────────
@@ -167,9 +232,16 @@ def build_user_message(
     c = pqh_response.cognitive_state
 
     # Determine which tools to show SQH
-    if pqh_response.category:
+    categories_list = pqh_response.category or []
+    if isinstance(categories_list, str):
+        categories_list = [categories_list]  # backward compat
+
+    if categories_list:
         from app.prompts.tool_categories import get_tools_in_category
-        tool_names = get_tools_in_category(pqh_response.category)
+        tool_names = []
+        for cat in categories_list:
+            tool_names.extend(get_tools_in_category(cat))
+        tool_names = list(dict.fromkeys(tool_names))  # dedupe preserving order
     else:
         tool_names = []
 
@@ -219,10 +291,11 @@ ARTIFACT OPEN RULES:
 - Use `artifact_open` only when `file_open` is unavailable or the intent is explicitly to open it directly on the same runtime machine."""
 
     category_instruction = ""
-    if pqh_response.category:
+    if categories_list:
+        cats_str = ", ".join(categories_list)
         category_instruction = f"""
-━━━ CATEGORY: {pqh_response.category} ━━━
-PQH classified this request into the "{pqh_response.category}" category.
+━━━ CATEGORIES: {cats_str} ━━━
+PQH classified this request into: {cats_str}.
 Pick the BEST tool(s) from the schemas below that match the user's exact intent.
 """
 

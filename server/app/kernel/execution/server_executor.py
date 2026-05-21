@@ -9,7 +9,7 @@ import logging
 import time
 from app.kernel.execution.execution_models import TaskRecord, TaskOutput
 from app.plugins.tools.registry_loader import get_tool_registry as get_schema_registry
-from app.plugins.tools.tool_instance_loader import get_tool_for_execution
+from app.plugins.tools.tool_base import get_tool_instance as get_tool_for_execution
 from app.kernel.contracts.models import KernelEvent
 from app.kernel.eventing.event_bus import emit_kernel_event
 from app.services.cache.tool_cache import get_tool_result_cache

@@ -83,7 +83,7 @@ async def request_clarification(
     lang_map = {"hi": "Hindi", "ne": "Nepali", "en": "English"}
     lang = lang_map.get(user_details.get("lang", "en"), "English")
 
-    tools = [pqh_response.category] if pqh_response.category else []
+    tools = list(pqh_response.category) if pqh_response.category else []
     thought = pqh_response.cognitive_state.thought_process
 
     question = await generate_clarification_question(
@@ -104,6 +104,14 @@ async def request_clarification(
     try:
         # Emit to client via socket
         from app.socket.utils import socket_emit_to_users, stream_tts_to_client
+
+        # Reset processing state so client unlocks audio input for the answer
+        await socket_emit_to_users("agent:state", {
+            "state": "awaiting_input",
+            "clarification": True,
+            "request_id": request_id,
+        }, [user_id])
+
         await socket_emit_to_users("agent:clarify", {
             "request_id": request_id,
             "question": question,

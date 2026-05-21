@@ -68,6 +68,18 @@ class AppStateRecord:
 
 _RETRY_RULES: List[Dict[str, Any]] = [
     {
+        "pattern": "must be string, got list",
+        "reason": "Wrong input type — list passed where string expected",
+        "suggestion": "Coerce list content to formatted text string.",
+        "should_retry": True,
+    },
+    {
+        "pattern": "must be string, got dict",
+        "reason": "Wrong input type — dict passed where string expected",
+        "suggestion": "Coerce dict content to formatted text string.",
+        "should_retry": True,
+    },
+    {
         "pattern": "ENOENT",
         "reason": "File or directory not found",
         "suggestion": "Check working directory or create parent folders first.",
@@ -291,7 +303,7 @@ class ToolContextService:
 
     def _get_process_manager(self):
         if self._process_manager is None:
-            from tools.utils.process_manager.process_manager import ProcessManager
+            from shared.process_manager.process_manager import ProcessManager
             self._process_manager = ProcessManager()
         return self._process_manager
 

@@ -1,4 +1,4 @@
-from tools.utils.searcher.system_searcher import SystemSearcher
+from shared.searcher.system_searcher import SystemSearcher
 
 searcher = SystemSearcher()
 

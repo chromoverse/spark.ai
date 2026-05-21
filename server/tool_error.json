@@ -1,0 +1,52 @@
+[
+  {
+    "timestamp": "2026-05-21T10:06:05",
+    "tool": "file_create",
+    "task_id": "step_2",
+    "error": "Input validation failed: Parameter 'content' must be string, got list",
+    "inputs": {
+      "path": "C:\\Users\\Aanand\\Documents\\upcoming_weather_report.txt",
+      "content": "[{'date': '2026-05-21', 'condition': 'Slight showers', 'temp_max': '26.0\u00b0C', 'temp_min': '19.4\u00b0C', 'feels_like_max': '30.2\u00b0C', 'feels_like_min': '22.4\u00b0C', 'precipitation_sum': '6.3 mm', 'precipitation",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "44bf3906727c4b91a500e7be6e7f48ca"
+    }
+  },
+  {
+    "timestamp": "2026-05-21T10:23:41",
+    "tool": "shell_agent",
+    "task_id": "step_1",
+    "error": "",
+    "inputs": {
+      "command": "start whatsapp://send?text=%s&phone=%s",
+      "args": "['DADDY', '+1234567890']",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "46f34edb70934e5ca7462e9db396bec8",
+      "goal": "start whatsapp://send?text=&phone=+1234567890"
+    }
+  },
+  {
+    "timestamp": "2026-05-21T10:29:09",
+    "tool": "file_open",
+    "task_id": "step_2",
+    "error": "Path not found: C:\\Users\\Aanand\\OneDrive\\Pictures\\dark",
+    "inputs": {
+      "app": "photos",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "9e2fb8015441449eb79f776a58bdc2f8",
+      "path": "C:\\Users\\Aanand\\OneDrive\\Pictures\\dark"
+    }
+  },
+  {
+    "timestamp": "2026-05-21T10:29:29",
+    "tool": "gmail_send",
+    "task_id": "step_1",
+    "error": "gmail access revoked by user 695e2bbaf8efc966aaf9f218. Please reconnect.",
+    "inputs": {
+      "to": "daddy",
+      "subject": "default subject",
+      "body": "default body",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "37e270b93f9447b6b312eb3b396f4c15"
+    }
+  }
+]

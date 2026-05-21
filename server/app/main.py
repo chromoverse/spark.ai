@@ -75,9 +75,6 @@ async def lifespan(app: FastAPI):
     try:
         from plugins import get_plugin_manager
         await get_plugin_manager().discover_and_load()
-        # Rebuild the tools index so PQH sees plugin-shipped tools
-        from app.plugins.tools.tool_index_loader import clear_tools_index_cache
-        clear_tools_index_cache()
     except Exception as exc:
         logger.error("Plugin discovery failed: %s", exc, exc_info=True)
 

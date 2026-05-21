@@ -207,10 +207,19 @@ class PluginManager:
     def _import_plugin_module(py_file: Path, plugin_name: str) -> ModuleType:
         """Import a plugin's tool file under a stable, isolated module name."""
         module_name = f"plugins._installed.{plugin_name}.tools.{py_file.stem}"
-        spec = importlib.util.spec_from_file_location(module_name, py_file)
+        # Register parent packages so relative imports work between tool files
+        package_name = f"plugins._installed.{plugin_name}.tools"
+        if package_name not in sys.modules:
+            import types
+            pkg = types.ModuleType(package_name)
+            pkg.__path__ = [str(py_file.parent)]
+            pkg.__package__ = package_name
+            sys.modules[package_name] = pkg
+        spec = importlib.util.spec_from_file_location(module_name, py_file, submodule_search_locations=[])
         if not spec or not spec.loader:
             raise ImportError(f"Could not build spec for {py_file}")
         module = importlib.util.module_from_spec(spec)
+        module.__package__ = package_name
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
         return module
@@ -267,10 +276,11 @@ class PluginManager:
                 "plugin": manifest.name,
                 "plugin_version": manifest.version,
                 "file": str(source.relative_to(source.parents[2])).replace("\\", "/"),
+                **(dict(getattr(cls, "METADATA", {}) or {})),
             },
             examples=examples,
             semantic_tags=semantic_tags,
-            category=manifest.name,
+            category=str(getattr(cls, "TOOL_CATEGORY", "") or "").strip() or manifest.name,
         )
         return metadata, instance
 
@@ -283,12 +293,7 @@ class PluginManager:
         """
         registry = get_tool_registry()
         if metadata.tool_name in registry.tools:
-            logger.warning(
-                "Tool %r already registered (existing source=%s); plugin-shipped version will not override.",
-                metadata.tool_name,
-                registry.tools[metadata.tool_name].metadata.get("source", "registry"),
-            )
-            return
+            logger.debug("Tool %r re-registered (overwriting previous).", metadata.tool_name)
 
         # Add to ToolRegistry data structures
         registry.tools[metadata.tool_name] = metadata

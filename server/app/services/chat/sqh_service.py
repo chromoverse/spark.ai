@@ -234,7 +234,7 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
         skill_template_hint: str = ""
         try:
             from plugins import get_skill_engine
-            requested = [pqh_response.category] if pqh_response.category else []
+            requested = list(pqh_response.category) if pqh_response.category else []
             skill = get_skill_engine().match_skill(original_query, requested)
             if skill:
                 # Check if the skill can run without LLM input extraction:

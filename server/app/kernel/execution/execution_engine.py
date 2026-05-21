@@ -779,6 +779,7 @@ class ExecutionEngine:
         
         logger.info("="*70)
         await _emit_summary_event(user_id, summary_payload)
+        await emit_spark_log(user_id, "execution_complete", payload={"message": f"Done: {summary['completed']}/{summary['total']} succeeded", **summary_payload})
     
     def is_running(self, user_id: str) -> bool:
         """Check if execution is running for user"""

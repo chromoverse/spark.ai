@@ -14,26 +14,15 @@ def is_meta_query(query: str) -> bool:
         "tasks did",
         "history",
         "success rate",
-        "how many tools",
-        "tools do we have",
-        "client tools",
-        "server tools",
-        "tool status",
-        "status of tools",
-        "their status",
+        "best tools",
         "tool params",
         "tool parameter",
         "tool arguments",
         "explain tool",
         "what is app_",
-        "best tools",
-        "what can you do",
-        "capabilities",
-        "limitation",
         "codebase",
         "source code",
         "server code",
-        "where is",
         "which file",
         "logs",
         "error trace",
@@ -57,31 +46,13 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
         return _response(query, answer)
 
     if (
-        "how many tools" in text
-        or "tool count" in text
-        or "tool status" in text
-        or "client tools" in text
-        or "server tools" in text
-        or "their status" in text
-        or "status of tools" in text
-        or "tools do we have" in text
+        "tool params" in text
+        or "tool parameter" in text
+        or "tool arguments" in text
     ):
-        from app.agent.runtime.meta_tools import kernel_tool_inventory_lookup
-
-        catalog_summary = catalog.summary()
-        runtime = await kernel_tool_inventory_lookup(user_id=user_id)
-        runtime_health = "healthy" if runtime.get("runtime_healthy") else "unhealthy"
-        answer = (
-            f"Tool catalog: {catalog_summary['total_tools']} total "
-            f"({catalog_summary['by_target']['server']} server, {catalog_summary['by_target']['client']} client). "
-            f"Categories: {', '.join(catalog_summary['categories'])}. "
-            f"Runtime status: {runtime_health}, mode={runtime.get('runtime_mode', 'unknown')}."
-        )
-        return _response(query, answer)
-
-    requested_tool = _extract_tool_name(query)
-    if requested_tool and any(token in text for token in ("param", "parameter", "argument", "args")):
-        payload = catalog.params(requested_tool, include_examples=True)
+        requested_tool = _extract_tool_name(query)
+        if requested_tool:
+            payload = catalog.params(requested_tool, include_examples=True)
         if payload:
             required = [
                 name for name, spec in payload.get("params_schema", {}).items()
@@ -93,16 +64,18 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
             )
             return _response(query, answer)
 
-    if requested_tool and any(token in text for token in ("explain", "what is", "describe")):
-        payload = catalog.detail(requested_tool, include_examples=True)
-        if payload:
-            semantic_tags = payload.get("semantic_tags", [])
-            answer = (
-                f"{requested_tool}: {payload.get('description', '')} "
-                f"Execution target: {payload.get('execution_target', 'unknown')}. "
-                f"Tags: {', '.join(semantic_tags) or 'none'}."
-            )
-            return _response(query, answer)
+    if any(token in text for token in ("explain", "what is", "describe")):
+        requested_tool = _extract_tool_name(query)
+        if requested_tool:
+            payload = catalog.detail(requested_tool, include_examples=True)
+            if payload:
+                semantic_tags = payload.get("semantic_tags", [])
+                answer = (
+                    f"{requested_tool}: {payload.get('description', '')} "
+                    f"Execution target: {payload.get('execution_target', 'unknown')}. "
+                    f"Tags: {', '.join(semantic_tags) or 'none'}."
+                )
+                return _response(query, answer)
 
     if "best tools" in text:
         from app.agent.runtime.meta_tools import kernel_best_tools_lookup
@@ -113,20 +86,6 @@ async def try_handle_meta_query(query: str, user_id: str) -> Optional[PQHRespons
             return _response(query, "No tool usage data available yet for this user.")
         labels = [f"{item['tool_name']} ({item['weighted_score']})" for item in items]
         return _response(query, "Top tools by weighted score: " + ", ".join(labels))
-
-    if "what can you do" in text or "capabilities" in text or "limitation" in text:
-        from app.agent.runtime.meta_tools import capability_snapshot_lookup
-
-        data = await capability_snapshot_lookup(user_id=user_id)
-        limitations = data.get("limitations", [])
-        runtime = data.get("runtime", {})
-        answer = (
-            f"I currently have {runtime.get('total_tools', 0)} runtime tools "
-            f"({runtime.get('server_tools', 0)} server / {runtime.get('client_tools', 0)} client), "
-            f"environment={data.get('environment', 'unknown')}. "
-            f"Limitations: {'; '.join(limitations[:3])}"
-        )
-        return _response(query, answer)
 
     if "log" in text or "error trace" in text:
         from app.agent.runtime.meta_tools import kernel_log_lookup

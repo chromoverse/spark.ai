@@ -95,13 +95,8 @@ async def _init_agent_system() -> None:
     environment = settings.environment
     logger.info("Agent system environment: %s", environment)
     
-    # ── Step 1: Load Tool Registry (from server/tools) ──
-    from app.plugins.tools.registry_loader import load_tool_registry
-    load_tool_registry()
-    
-    # ── Step 2: Load Tool Instances ──
-    from app.plugins.tools.tool_instance_loader import load_all_tools
-    load_all_tools()
+    # ── Step 1: Tools now loaded via PluginManager (auto-discovery) ──
+    # Legacy JSON-based loading removed — plugins are the single source of truth.
 
     # ── Step 3: Initialize Orchestrator ──
     from app.agent.execution_gateway import init_orchestrator

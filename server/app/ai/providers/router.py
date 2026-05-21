@@ -195,12 +195,17 @@ class IntelligentRouter:
                 continue
 
             try:
-                response = await provider.llm_chat(
-                    messages=messages, model=model,
-                    temperature=temperature, max_tokens=max_tokens,
+                response = await asyncio.wait_for(
+                    provider.llm_chat(
+                        messages=messages, model=model,
+                        temperature=temperature, max_tokens=max_tokens,
+                    ),
+                    timeout=45.0,
                 )
                 logger.info(f"✅ {provider_name}/{model} → {len(response)} chars")
                 return response, provider_name
+            except asyncio.TimeoutError:
+                logger.warning(f"⏰ {provider_name}/{model} timed out (45s), trying next")
             except AllKeysExhaustedError:
                 self._block(provider_name)
             except Exception as e:

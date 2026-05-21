@@ -34,22 +34,19 @@ CATEGORIES: Dict[str, str] = {}
 
 
 def _build_from_registry() -> None:
-    """Scan tool_registry.json and build category mappings."""
+    """Scan ToolRegistry (populated by PluginManager) and build category mappings."""
     global TOOL_TO_CATEGORY, CATEGORY_TO_TOOLS, CATEGORIES
 
     try:
         from app.plugins.tools.registry_loader import get_tool_registry
         registry = get_tool_registry()
-        if not registry or not registry.tools:
-            _build_from_json_file()
-            return
-
-        for tool_name, tool in registry.tools.items():
-            cat = tool.category or "system_control"
-            TOOL_TO_CATEGORY[tool_name] = cat
-            CATEGORY_TO_TOOLS.setdefault(cat, []).append(tool_name)
-    except Exception:
-        _build_from_json_file()
+        if registry and registry.tools:
+            for tool_name, tool in registry.tools.items():
+                cat = tool.category or "system_control"
+                TOOL_TO_CATEGORY[tool_name] = cat
+                CATEGORY_TO_TOOLS.setdefault(cat, []).append(tool_name)
+    except Exception as e:
+        logger.warning("Could not build categories from registry: %s", e)
 
     # Build CATEGORIES from descriptions + any new categories found in tools
     CATEGORIES.update(_CATEGORY_DESCRIPTIONS)
@@ -60,39 +57,26 @@ def _build_from_registry() -> None:
     logger.info(f"📂 Auto-built {len(CATEGORIES)} categories from {len(TOOL_TO_CATEGORY)} tools")
 
 
-def _build_from_json_file() -> None:
-    """Fallback: read directly from tool_registry.json."""
-    global TOOL_TO_CATEGORY, CATEGORY_TO_TOOLS
+_built = False
 
-    import json
-    from pathlib import Path
 
-    registry_path = Path(__file__).resolve().parents[2] / "tools" / "registry" / "tool_registry.json"
-    if not registry_path.exists():
-        logger.warning("tool_registry.json not found, using empty categories")
-        return
-
-    data = json.loads(registry_path.read_text(encoding="utf-8"))
-    for cat_data in data.get("categories", {}).values():
-        for tool in cat_data.get("tools", []):
-            name = tool.get("tool_name", "")
-            cat = tool.get("category", "system_control")
-            if name:
-                TOOL_TO_CATEGORY[name] = cat
-                CATEGORY_TO_TOOLS.setdefault(cat, []).append(name)
+def _ensure_built() -> None:
+    global _built
+    if not _built:
+        _build_from_registry()
+        _built = True
 
 
 def get_category_for_tool(tool_name: str) -> Optional[str]:
+    _ensure_built()
     return TOOL_TO_CATEGORY.get(tool_name)
 
 
 def get_tools_in_category(category: str) -> List[str]:
+    _ensure_built()
     return CATEGORY_TO_TOOLS.get(category, [])
 
 
 def get_all_categories() -> Dict[str, str]:
+    _ensure_built()
     return CATEGORIES
-
-
-# Auto-build on import
-_build_from_registry()

@@ -573,6 +573,8 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
     on("ai-end", resetProcessing);
     on("query-error", resetProcessing);
     on("error", resetProcessing);
+    on("agent:state", resetProcessing);
+    on("agent:clarify", resetProcessing);
     on("latency-metrics", logLatencyMetrics);
 
     return () => {
@@ -580,6 +582,8 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
       off("ai-end", resetProcessing);
       off("query-error", resetProcessing);
       off("error", resetProcessing);
+      off("agent:state", resetProcessing);
+      off("agent:clarify", resetProcessing);
       off("latency-metrics", logLatencyMetrics);
     };
   }, [clearProcessingState, isConnected, off, on, socket]);

@@ -1,27 +1,45 @@
-import { Home as HomeIcon, Radio } from "lucide-react";
+import { Home as HomeIcon, Radio, ChevronRight, Check, X, Loader2, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSocket } from "@/context/socketContextProvider";
 import type { SparkLogPayload } from "@shared/socket.types";
 
 // ─── Persistent storage ──────────────────────────────────────────────────────
 
-const STORAGE_KEY = "spark_live_logs";
-const MAX_STORED = 500;
+const STORAGE_KEY = "spark_live_threads";
+const MAX_THREADS = 50;
 
-function loadLogs(): SparkLogPayload[] {
+interface ToolStep {
+  tool_name: string;
+  task_id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  latency_ms?: number;
+  params_msg?: string;
+  steps: string[];  // live progress messages
+}
+
+interface Thread {
+  id: string;
+  timestamp: string;
+  query: string;
+  ai_response?: string;
+  plan?: string[];
+  tools: ToolStep[];
+  summary?: string;
+  status: "thinking" | "planning" | "executing" | "completed" | "failed";
+}
+
+function loadThreads(): Thread[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
 
-function saveLogs(logs: SparkLogPayload[]) {
+function saveThreads(threads: Thread[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs.slice(-MAX_STORED)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(threads.slice(-MAX_THREADS)));
   } catch { /* quota */ }
 }
-
-// ─── Time grouping ──────────────────────────────────────────────────────────
 
 function timeLabel(ts: string): string {
   const d = new Date(ts);
@@ -29,132 +47,254 @@ function timeLabel(ts: string): string {
   const diff = now.getTime() - d.getTime();
   if (diff < 60_000) return "Just now";
   if (diff < 300_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function dayKey(ts: string): string {
-  const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return "Today";
-  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
-}
+// ─── Reducer: merge spark:log events into threads ────────────────────────────
 
-// ─── Merge logic: update existing task entries in-place ──────────────────────
-
-interface DisplayEntry {
-  id: string;
-  event_type: string;
-  tool_name?: string;
-  status?: string;
-  timestamp: string;
-  message?: string;
-  query?: string;
-  latency_ms?: number;
-  task_id?: string;
-}
-
-function mergeLog(entries: DisplayEntry[], log: SparkLogPayload): DisplayEntry[] {
+function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
+  const updated = [...threads];
   const payload = log.payload || {};
-  const newEntry: DisplayEntry = {
-    id: log.task_id || `${log.event_type}_${log.timestamp}`,
-    event_type: log.event_type,
-    tool_name: log.tool_name,
-    status: log.status,
-    timestamp: log.timestamp,
-    message: payload.message,
-    query: payload.query,
-    latency_ms: payload.latency_ms ?? payload.duration_ms,
-    task_id: log.task_id,
-  };
+  const last = () => updated[updated.length - 1];
 
-  // For task lifecycle events, update existing entry in-place
-  if (log.task_id && (log.event_type === "tool_invoked" || log.event_type === "tool_failed" || log.event_type === "task_completed")) {
-    const idx = entries.findLastIndex((e) => e.task_id === log.task_id && e.event_type === "task_running");
-    if (idx !== -1) {
-      const updated = [...entries];
-      updated[idx] = { ...updated[idx], status: log.status || newEntry.status, latency_ms: payload.latency_ms ?? payload.duration_ms, message: payload.message || updated[idx].message };
-      return updated;
+  switch (log.event_type) {
+    case "query_received": {
+      updated.push({
+        id: `thread_${Date.now()}`,
+        timestamp: log.timestamp,
+        query: payload.query || payload.message || "",
+        tools: [],
+        status: "thinking",
+      });
+      break;
+    }
+    case "ai_response": {
+      if (last()) last().ai_response = payload.message || payload.text || "";
+      break;
+    }
+    case "plan_created": {
+      if (last()) {
+        last().plan = payload.tools || (payload.message || "").split(", ").filter(Boolean);
+        last().status = "executing";
+      }
+      break;
+    }
+    case "task_running": {
+      if (last()) {
+        const existing = last().tools.find(t => t.task_id === log.task_id);
+        if (!existing) {
+          last().tools.push({
+            tool_name: log.tool_name || "unknown",
+            task_id: log.task_id || "",
+            status: "running",
+            steps: [],
+          });
+        } else {
+          existing.status = "running";
+        }
+      }
+      break;
+    }
+    case "tool_params": {
+      if (last()) {
+        const tool = last().tools.find(t => t.task_id === log.task_id);
+        if (tool) tool.params_msg = payload.message || "";
+      }
+      break;
+    }
+    case "tool_step":
+    case "tool_progress": {
+      if (last()) {
+        const tool = last().tools.find(t => t.task_id === log.task_id) || last().tools[last().tools.length - 1];
+        if (tool && payload.message) {
+          tool.steps.push(payload.message);
+        }
+      }
+      break;
+    }
+    case "tool_invoked":
+    case "task_completed": {
+      if (last()) {
+        const tool = last().tools.find(t => t.task_id === log.task_id);
+        if (tool) {
+          tool.status = (log.status === "success" || log.status === "completed") ? "completed" : "failed";
+          tool.latency_ms = payload.latency_ms ?? payload.duration_ms;
+        }
+        // Derive thread status from tool states
+        const allDone = last().tools.length > 0 && last().tools.every(t => t.status === "completed" || t.status === "failed");
+        if (allDone) {
+          last().status = last().tools.some(t => t.status === "failed") ? "failed" : "completed";
+        }
+      }
+      break;
+    }
+    case "tool_output": {
+      if (last()) {
+        const tool = last().tools.find(t => t.task_id === log.task_id) || last().tools[last().tools.length - 1];
+        if (tool) {
+          tool.status = payload.success ? "completed" : "failed";
+          tool.latency_ms = payload.duration_ms || tool.latency_ms;
+          if (!payload.success && payload.error) {
+            tool.steps.push(`❌ ${payload.error}`);
+          } else if (payload.message && !tool.steps.includes(payload.message)) {
+            tool.steps.push(payload.message);
+          }
+        }
+        // Derive thread status from tool states
+        const allDone = last().tools.length > 0 && last().tools.every(t => t.status === "completed" || t.status === "failed");
+        if (allDone) {
+          last().status = last().tools.some(t => t.status === "failed") ? "failed" : "completed";
+        }
+      }
+      break;
+    }
+    case "tool_failed": {
+      if (last()) {
+        const tool = last().tools.find(t => t.task_id === log.task_id);
+        if (tool) {
+          tool.status = "failed";
+          const reason = payload.error || payload.message || "Unknown error";
+          tool.steps.push(`❌ ${reason}`);
+        }
+        // Derive thread status from tool states
+        const allDone = last().tools.length > 0 && last().tools.every(t => t.status === "completed" || t.status === "failed");
+        if (allDone) {
+          last().status = last().tools.some(t => t.status === "failed") ? "failed" : "completed";
+        }
+      }
+      break;
+    }
+    case "execution_complete":
+    case "summary": {
+      if (last()) {
+        last().status = last().tools.some(t => t.status === "failed") ? "failed" : "completed";
+        if (payload.message) last().summary = payload.message;
+      }
+      break;
+    }
+    default: {
+      // Generic step/log messages — attach to current tool or thread
+      if (last() && payload.message) {
+        const currentTool = last().tools[last().tools.length - 1];
+        if (currentTool && currentTool.status === "running") {
+          if (!currentTool.steps.includes(payload.message)) {
+            currentTool.steps.push(payload.message);
+          }
+        }
+      }
+      break;
     }
   }
 
-  // tool_output updates the task_running entry with final status
-  if (log.task_id && log.event_type === "tool_output") {
-    const idx = entries.findLastIndex((e) => e.task_id === log.task_id && e.event_type === "task_running");
-    if (idx !== -1) {
-      const updated = [...entries];
-      const success = payload.success;
-      updated[idx] = {
-        ...updated[idx],
-        status: success ? "completed" : "failed",
-        latency_ms: payload.duration_ms || updated[idx].latency_ms,
-        message: payload.message || updated[idx].message,
-      };
-      return updated;
-    }
-  }
-
-  return [...entries, newEntry].slice(-MAX_STORED);
+  return updated.slice(-MAX_THREADS);
 }
 
-// ─── Entry component ─────────────────────────────────────────────────────────
+// ─── Tool Step Component ─────────────────────────────────────────────────────
 
-function EntryRow({ entry }: { entry: DisplayEntry }) {
-  const isQuery = entry.event_type === "query_received";
-  const isPlan = entry.event_type === "plan_created";
-  const isTask = entry.event_type === "task_running" || entry.event_type === "tool_invoked" || entry.event_type === "tool_failed" || entry.event_type === "task_completed";
-  const isResponse = entry.event_type === "ai_response";
-  const isParams = entry.event_type === "tool_params";
-  const isRetry = entry.event_type === "tool_retry";
-  const isRecovered = entry.event_type === "tool_recovered";
-  const isToolOutput = entry.event_type === "tool_output";
+function ToolStepView({ tool }: { tool: ToolStep }) {
+  const icon = tool.status === "completed" ? <Check size={12} className="text-green-400" /> :
+               tool.status === "failed" ? <X size={12} className="text-red-400" /> :
+               tool.status === "running" ? <Loader2 size={12} className="text-blue-400 animate-spin" /> :
+               <ChevronRight size={12} className="text-slate-500" />;
 
-  const statusColor =
-    entry.status === "success" || entry.status === "completed" ? "text-green-400 border-green-500/20 bg-green-500/5" :
-    entry.status === "failed" || entry.status === "error" ? "text-red-400 border-red-500/20 bg-red-500/5" :
-    entry.status === "running" ? "text-blue-400 border-blue-500/20 bg-blue-500/5" :
-    isParams ? "text-slate-300 border-slate-700/30 bg-slate-800/20" :
-    isRetry ? "text-yellow-400 border-yellow-500/20 bg-yellow-500/5" :
-    isRecovered ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/5" :
-    "text-slate-400 border-slate-700/50 bg-slate-800/30";
-
-  const statusIcon =
-    entry.status === "success" || entry.status === "completed" ? "✓" :
-    entry.status === "failed" || entry.status === "error" ? "✗" :
-    entry.status === "running" ? "⟳" :
-    isParams ? "📋" :
-    isRetry ? "⟳" :
-    isRecovered ? "🔄" :
-    isToolOutput ? "📤" : "•";
+  const borderColor = tool.status === "completed" ? "border-green-500/20" :
+                      tool.status === "failed" ? "border-red-500/20" :
+                      tool.status === "running" ? "border-blue-500/30" : "border-slate-700/30";
 
   return (
-    <div className={`px-3 py-2 rounded-lg border text-xs ${statusColor} transition-all duration-300`}>
+    <div className={`ml-4 pl-3 border-l-2 ${borderColor} py-1`}>
       <div className="flex items-center gap-2">
-        <span className="text-[11px] w-4 text-center">{statusIcon}</span>
-        {isQuery && <span className="text-white font-medium">Query</span>}
-        {isPlan && <span className="text-purple-300 font-medium">Plan</span>}
-        {isTask && <span className="text-white font-medium">{entry.tool_name?.replace(/_/g, " ")}</span>}
-        {isResponse && <span className="text-cyan-300 font-medium">Spark</span>}
-        {isParams && <span className="text-slate-300 font-medium">{entry.tool_name?.replace(/_/g, " ")}</span>}
-        {isRetry && <span className="text-yellow-300 font-medium">retry {entry.tool_name?.replace(/_/g, " ")}</span>}
-        {isRecovered && <span className="text-emerald-300 font-medium">recovered</span>}
-        {!isQuery && !isPlan && !isTask && !isResponse && !isParams && !isRetry && !isRecovered && (
-          <span className="text-white font-medium">{entry.tool_name || entry.event_type.replace(/_/g, " ")}</span>
+        {icon}
+        <span className="text-xs font-mono text-slate-200">{tool.tool_name}</span>
+        {tool.latency_ms != null && (
+          <span className="text-[10px] text-slate-500 ml-auto">{tool.latency_ms}ms</span>
         )}
-        {entry.latency_ms != null && (
-          <span className="text-slate-500 ml-auto">{entry.latency_ms}ms</span>
-        )}
-        <span className="text-slate-600 text-[10px] ml-auto">{timeLabel(entry.timestamp)}</span>
       </div>
-      {entry.query && (
-        <p className="text-slate-300 mt-1 pl-6 truncate">"{entry.query}"</p>
+      {tool.params_msg && (
+        <p className="text-[11px] text-slate-500 ml-5 font-mono truncate">{tool.params_msg}</p>
       )}
-      {entry.message && !entry.query && (
-        <p className="text-slate-400 mt-0.5 pl-6 truncate">{entry.message}</p>
+      {tool.steps.length > 0 && (
+        <div className="ml-5 mt-0.5 space-y-0">
+          {tool.steps.map((step, i) => (
+            <p key={i} className="text-[11px] text-slate-400 leading-relaxed">
+              <span className="text-slate-600 mr-1">›</span>{step}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Thread Component ────────────────────────────────────────────────────────
+
+function ThreadView({ thread }: { thread: Thread }) {
+  const statusBadge = thread.status === "completed" ? "bg-green-500/10 text-green-400 border-green-500/20" :
+                      thread.status === "failed" ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                      thread.status === "executing" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                      "bg-slate-700/30 text-slate-400 border-slate-600/30";
+
+  return (
+    <div className="rounded-xl border border-slate-800/60 bg-slate-900/40 overflow-hidden">
+      {/* Query */}
+      <div className="px-4 py-3 border-b border-slate-800/40">
+        <div className="flex items-start gap-2">
+          <div className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center mt-0.5 shrink-0">
+            <span className="text-[10px]">👤</span>
+          </div>
+          <p className="text-sm text-white leading-relaxed">{thread.query}</p>
+          <span className="text-[10px] text-slate-600 ml-auto shrink-0">{timeLabel(thread.timestamp)}</span>
+        </div>
+      </div>
+
+      {/* AI Response (acknowledge) */}
+      {thread.ai_response && (
+        <div className="px-4 py-2 border-b border-slate-800/20">
+          <div className="flex items-start gap-2">
+            <div className="w-5 h-5 rounded-full bg-cyan-900/40 flex items-center justify-center mt-0.5 shrink-0">
+              <Zap size={10} className="text-cyan-400" />
+            </div>
+            <p className="text-xs text-cyan-300/80 leading-relaxed">{thread.ai_response}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Plan */}
+      {thread.plan && thread.plan.length > 0 && (
+        <div className="px-4 py-2 border-b border-slate-800/20">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-purple-400 font-medium uppercase tracking-wider">Plan</span>
+            <span className="text-[11px] text-slate-500">{thread.plan.join(" → ")}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Tool Execution Steps */}
+      {thread.tools.length > 0 && (
+        <div className="px-4 py-2 space-y-1">
+          {thread.tools.map((tool, i) => (
+            <ToolStepView key={`${tool.task_id}_${i}`} tool={tool} />
+          ))}
+        </div>
+      )}
+
+      {/* Summary / Final */}
+      {thread.summary && (
+        <div className="px-4 py-2 border-t border-slate-800/30">
+          <p className="text-xs text-slate-400 leading-relaxed truncate">{thread.summary}</p>
+        </div>
+      )}
+
+      {/* Status badge */}
+      {thread.status !== "thinking" && (
+        <div className="px-4 py-1.5 border-t border-slate-800/20 flex items-center">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${statusBadge}`}>
+            {thread.status === "executing" && "Running…"}
+            {thread.status === "completed" && "Done"}
+            {thread.status === "failed" && "Failed"}
+            {thread.status === "planning" && "Planning…"}
+          </span>
+        </div>
       )}
     </div>
   );
@@ -164,22 +304,15 @@ function EntryRow({ entry }: { entry: DisplayEntry }) {
 
 export default function HomeLive() {
   const { on, off } = useSocket();
-  const [entries, setEntries] = useState<DisplayEntry[]>(() => {
-    // Rebuild display entries from stored logs
-    const stored = loadLogs();
-    let display: DisplayEntry[] = [];
-    for (const log of stored) {
-      display = mergeLog(display, log);
-    }
-    return display;
-  });
-  const rawLogsRef = useRef<SparkLogPayload[]>(loadLogs());
+  const [threads, setThreads] = useState<Thread[]>(loadThreads);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const handleLog = useCallback((data: SparkLogPayload) => {
-    rawLogsRef.current = [...rawLogsRef.current.slice(-MAX_STORED + 1), data];
-    saveLogs(rawLogsRef.current);
-    setEntries((prev) => mergeLog(prev, data));
+    setThreads((prev) => {
+      const next = reduceLog(prev, data);
+      saveThreads(next);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -189,14 +322,12 @@ export default function HomeLive() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries.length]);
+  }, [threads]);
 
-  // Group by day
-  const grouped: Record<string, DisplayEntry[]> = {};
-  for (const e of entries) {
-    const key = dayKey(e.timestamp);
-    (grouped[key] ??= []).push(e);
-  }
+  const clearLogs = useCallback(() => {
+    setThreads([]);
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
 
   return (
     <div className="h-full flex flex-col">
@@ -204,27 +335,22 @@ export default function HomeLive() {
         <HomeIcon size={16} className="text-blue-400" />
         <h2 className="text-sm font-semibold text-white">Live Activity</h2>
         <Radio size={10} className="text-green-400 animate-pulse" />
-        <span className="text-xs text-slate-500 ml-auto">{entries.length} events</span>
+        <span className="text-xs text-slate-500 ml-auto cursor-pointer hover:text-slate-300" onClick={clearLogs}>
+          {threads.length} threads
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {entries.length === 0 ? (
+        {threads.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm">
             <Radio size={32} className="mb-3 opacity-30 animate-pulse" />
             <p className="font-medium">Listening…</p>
             <p className="text-xs mt-1 text-slate-600">Talk to Spark to see real-time activity</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {Object.entries(grouped).map(([day, items]) => (
-              <div key={day}>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2 px-1 font-medium">{day}</div>
-                <div className="space-y-1">
-                  {items.map((entry, i) => (
-                    <EntryRow key={`${entry.id}_${i}`} entry={entry} />
-                  ))}
-                </div>
-              </div>
+          <div className="space-y-3">
+            {threads.map((thread) => (
+              <ThreadView key={thread.id} thread={thread} />
             ))}
             <div ref={bottomRef} />
           </div>
