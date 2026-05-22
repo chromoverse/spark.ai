@@ -1,15 +1,12 @@
 """
-Inference Service
------------------
-LLM inference using llama.cpp server.
-Singleton service with persistent model loading for low latency.
+Inference Service — LLM inference via llama-server subprocess.
 
-Features:
-    - Auto-download llama.cpp binaries
-    - Persistent server process management
-    - GPU/CPU device detection
-    - OpenAI-compatible API client
-    - Thread-safe singleton
+Optimized for real-time voice assistant usage:
+    - Hardware-aware model/backend selection (VRAM, RAM, GPU)
+    - Optimized llama-server flags (flash-attn, cont-batching, mlock)
+    - Native chat templates via --jinja
+    - Generation cancellation for interruption support
+    - Parallel slots for concurrent requests
 """
 
 import os
@@ -20,6 +17,7 @@ import zipfile
 import time
 import signal
 import json
+import platform
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from threading import Lock
@@ -32,69 +30,241 @@ from app.services.model_manager import ModelManager, get_model_manager
 from app.core.config import settings
 
 
+def detect_hardware() -> Dict[str, Any]:
+    """Detect GPU, VRAM, RAM, and CPU capabilities for intelligent model selection."""
+    hw = {
+        "ram_total_gb": 8.0,
+        "ram_available_gb": 4.0,
+        "gpu_vendor": None,
+        "gpu_name": None,
+        "vram_mb": 0,
+        "cuda": False,
+        "cuda_version": None,
+        "vulkan": False,
+        "cpu_cores": os.cpu_count() or 4,
+        "device": "cpu",
+    }
+
+    # RAM detection
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        hw["ram_total_gb"] = round(vm.total / 1024**3, 1)
+        hw["ram_available_gb"] = round(vm.available / 1024**3, 1)
+    except ImportError:
+        if platform.system() == "Windows":
+            try:
+                r = subprocess.run(
+                    ["wmic", "ComputerSystem", "get", "TotalPhysicalMemory"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                for line in r.stdout.splitlines():
+                    line = line.strip()
+                    if line.isdigit():
+                        hw["ram_total_gb"] = round(int(line) / 1024**3, 1)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+
+    # NVIDIA GPU + VRAM
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total,memory.free",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
+            hw["gpu_vendor"] = "nvidia"
+            hw["gpu_name"] = parts[0]
+            hw["vram_mb"] = int(parts[1])
+            hw["cuda"] = True
+            hw["device"] = "gpu"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # CUDA version
+    if hw["cuda"]:
+        try:
+            r = subprocess.run(["nvcc", "--version"], capture_output=True, text=True, timeout=3)
+            m = re.search(r"release (\d+\.\d+)", r.stdout)
+            if m:
+                hw["cuda_version"] = m.group(1)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # Apple Silicon (macOS Metal) — llama.cpp uses Metal automatically on ARM Macs
+    if hw["device"] == "cpu" and platform.system() == "Darwin":
+        try:
+            r = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                capture_output=True, text=True, timeout=3,
+            )
+            is_apple_silicon = "apple" in r.stdout.lower() if r.returncode == 0 else False
+            if not is_apple_silicon:
+                r = subprocess.run(["uname", "-m"], capture_output=True, text=True, timeout=3)
+                is_apple_silicon = "arm64" in r.stdout.lower()
+
+            if is_apple_silicon:
+                hw["gpu_vendor"] = "apple"
+                hw["gpu_name"] = "Apple Silicon (Metal)"
+                hw["device"] = "metal"
+                # Unified memory — all RAM is available as VRAM
+                hw["vram_mb"] = int(hw["ram_total_gb"] * 1024)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # AMD/Intel Vulkan (only if no NVIDIA and not Apple Silicon)
+    if hw["device"] == "cpu":
+        try:
+            if platform.system() == "Windows":
+                r = subprocess.run(
+                    ["wmic", "path", "win32_VideoController", "get", "name"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    lines = [l.strip() for l in r.stdout.splitlines()
+                             if l.strip() and "Name" not in l]
+                    if lines:
+                        gpu_name = lines[0]
+                        if any(x in gpu_name.lower() for x in ["radeon", "amd", "intel"]):
+                            hw["gpu_vendor"] = "amd" if "amd" in gpu_name.lower() or "radeon" in gpu_name.lower() else "intel"
+                            hw["gpu_name"] = gpu_name
+                            hw["vulkan"] = True
+                            hw["device"] = "vulkan"
+            else:
+                r = subprocess.run(
+                    ["vulkaninfo", "--summary"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if r.returncode == 0 and "deviceName" in r.stdout:
+                    hw["vulkan"] = True
+                    hw["device"] = "vulkan"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    return hw
+
+
+def pick_optimal_config(hw: Dict[str, Any]) -> Dict[str, Any]:
+    """Pick context size, GPU layers, thread count, and memory flags based on hardware.
+
+    Key principle for low-RAM systems (<10GB):
+      - Keep model small (Q4_K_M chosen by model_manager)
+      - Keep context small (2048) so KV cache stays tiny
+      - Don't mlock (let OS page out cold model pages rather than starving other apps)
+      - Use parallel=1 (each slot allocates its own KV cache)
+      - Only offload a few layers to iGPU (512MB-1GB VRAM can't hold much)
+    """
+    device = hw["device"]
+    ram = hw["ram_total_gb"]
+    vram = hw["vram_mb"]
+    cores = hw["cpu_cores"]
+    low_ram = ram < 10
+
+    threads = max(2, cores // 2)
+
+    # Apple Silicon — unified memory, Metal backend, always fast
+    if device == "metal":
+        if ram >= 32:
+            return {"context": 16384, "n_gpu_layers": 99, "threads": threads,
+                    "parallel": 2, "mlock": True}
+        elif ram >= 16:
+            return {"context": 8192, "n_gpu_layers": 99, "threads": threads,
+                    "parallel": 2, "mlock": True}
+        else:
+            return {"context": 4096, "n_gpu_layers": 99, "threads": threads,
+                    "parallel": 1, "mlock": not low_ram}
+
+    if device == "gpu":
+        if vram >= 12000:
+            return {"context": 16384, "n_gpu_layers": 99, "threads": threads,
+                    "parallel": 2, "mlock": True}
+        elif vram >= 6000:
+            return {"context": 8192, "n_gpu_layers": 99, "threads": threads,
+                    "parallel": 2, "mlock": True}
+        elif vram >= 4000:
+            return {"context": 4096, "n_gpu_layers": 99, "threads": threads,
+                    "parallel": 1 if low_ram else 2, "mlock": not low_ram}
+        else:
+            return {"context": 4096, "n_gpu_layers": 24, "threads": threads,
+                    "parallel": 1, "mlock": not low_ram}
+
+    if device == "vulkan":
+        if vram >= 4000 and ram >= 16:
+            return {"context": 8192, "n_gpu_layers": 99, "threads": threads,
+                    "parallel": 2, "mlock": True}
+        elif vram >= 2000 and ram >= 12:
+            return {"context": 4096, "n_gpu_layers": 24, "threads": threads,
+                    "parallel": 2, "mlock": True}
+        else:
+            # iGPU / low VRAM (<2GB) / low RAM — mostly CPU-bound
+            ngl = 0 if vram < 1024 else 8
+            return {"context": 2048, "n_gpu_layers": ngl, "threads": threads,
+                    "parallel": 1, "mlock": False}
+
+    # CPU
+    if ram >= 16:
+        return {"context": 8192, "n_gpu_layers": 0, "threads": threads,
+                "parallel": 2, "mlock": True}
+    elif ram >= 10:
+        return {"context": 4096, "n_gpu_layers": 0, "threads": threads,
+                "parallel": 1, "mlock": True}
+    return {"context": 2048, "n_gpu_layers": 0, "threads": threads,
+            "parallel": 1, "mlock": False}
+
+
 class InferenceService:
     """
     LLM Inference Service using llama-server.
-    
-    Provides:
-        - Persistent background server for instant inference
-        - Model and binary setup with auto-download
-        - Chat-style inference with message history
-    
-    Usage:
-        service = InferenceService()
-        service.setup()
-        response = service.chat([{"role": "user", "content": "Hello"}])
-        service.shutdown()
+    Hardware-aware, optimized for real-time voice assistant usage.
     """
 
-    # llama.cpp release configuration
     LLAMA_CPP_VERSION = "b8665"
     LLAMA_CPP_RELEASES = {
         "Windows": {
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-cpu-x64.zip",
+                "url": f"https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-cpu-x64.zip",
                 "executable": "llama-server.exe",
                 "size_mb": 35
             },
             "gpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-cuda-12.4-x64.zip",
+                "url": f"https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-cuda-12.4-x64.zip",
                 "executable": "llama-server.exe",
                 "size_mb": 450
             },
             "vulkan": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-vulkan-x64.zip",
+                "url": f"https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-win-vulkan-x64.zip",
                 "executable": "llama-server.exe",
                 "size_mb": 40
             }
         },
-        "Darwin": {  # macOS
+        "Darwin": {
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-macos-arm64.tar.gz",
+                "url": f"https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-macos-arm64.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 15
             },
-            "gpu": None  # macOS uses Metal, same binary
+            "gpu": None,
         },
         "Linux": {
             "cpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-ubuntu-x64.tar.gz",
+                "url": f"https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-ubuntu-x64.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 35
             },
             "gpu": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b7664/llama-b7664-bin-ubuntu-x64-cuda.tar.gz",
+                "url": f"https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-ubuntu-x64-cuda.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 400
             },
             "vulkan": {
-                "url": "https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-ubuntu-vulkan-x64.tar.gz",
+                "url": f"https://github.com/ggml-org/llama.cpp/releases/download/b8665/llama-b8665-bin-ubuntu-vulkan-x64.tar.gz",
                 "executable": "llama-server",
                 "size_mb": 35
             }
         }
     }
-    
+
     SERVER_HOST = "127.0.0.1"
     SERVER_PORT = 8080
 
@@ -103,37 +273,45 @@ class InferenceService:
         path_manager: Optional[PathManager] = None,
         model_manager: Optional[ModelManager] = None
     ):
-        """
-        Initialize inference service.
-        
-        Args:
-            path_manager: PathManager instance (uses singleton if None)
-            model_manager: ModelManager instance (uses singleton if None)
-        """
         self.path_manager = path_manager or get_path_manager()
         self.model_manager = model_manager or get_model_manager()
-        
+
         self.model_path: Optional[Path] = None
         self.server_path: Optional[Path] = None
         self.server_process: Optional[subprocess.Popen] = None
-        
+
         self.system = self.path_manager.system
-        self.device_type = self.model_manager.device_type
+        self.hardware = detect_hardware()
+        self.device_type = self.hardware["device"]
+        self.optimal_config = pick_optimal_config(self.hardware)
         self._is_ready = False
         self._lock = Lock()
 
+        print(f"🖥️  Hardware: {self.hardware['gpu_name'] or 'CPU'} | "
+              f"RAM: {self.hardware['ram_total_gb']}GB | "
+              f"VRAM: {self.hardware['vram_mb']}MB | "
+              f"Device: {self.device_type.upper()}")
+
     def _get_release_info(self) -> Dict[str, Any]:
-        """Get llama.cpp release info for current OS and device."""
+        """Get llama.cpp release info for current OS and device.
+
+        Key: if n_gpu_layers=0, use the CPU binary even on Vulkan/Metal systems.
+        The CPU binary has AVX2/SSE optimizations that are faster than the
+        Vulkan binary doing CPU-only inference.
+        """
         os_releases = self.LLAMA_CPP_RELEASES.get(self.system, {})
-        release = os_releases.get(self.device_type)
+        device_key = self.device_type
+
+        # Metal uses macOS CPU binary (includes Metal)
+        if device_key == "metal":
+            device_key = "cpu"
+        # If we're not offloading any layers, use the CPU binary for better perf
+        elif self.optimal_config.get("n_gpu_layers", 0) == 0:
+            device_key = "cpu"
+
+        release = os_releases.get(device_key)
         if release is None:
-            # Fallbacks
-            if self.device_type == 'vulkan' and self.system == 'Linux':
-                 # Linux binaries typically include checking or we map to cpu if missing explicit vulkan build
-                 release = os_releases.get('cpu')
-            else:
-                 release = os_releases.get('cpu')
-        
+            release = os_releases.get("cpu")
         if release is None:
             raise NotImplementedError(
                 f"No llama.cpp release for {self.system}/{self.device_type}"
@@ -307,105 +485,112 @@ class InferenceService:
             self._is_ready = True
             print("\n🎉 Inference service ready!")
 
-    def _get_server_profiles(self) -> List[Dict[str, str]]:
-        """Return startup profiles ordered from preferred to safest."""
-        default_profile = {
-            "label": f"{self.device_type.upper()} default",
-            "context_size": "32768",
-            "n_gpu_layers": "99" if self.device_type in ["gpu", "vulkan"] else "0",
-        }
-
-        if self.device_type == "vulkan" and "gemma" in settings.model_name.lower():
-            return [
-                {
-                    "label": "VULKAN Gemma balanced",
-                    "context_size": "8192",
-                    "n_gpu_layers": "24",
-                },
-                {
-                    "label": "VULKAN Gemma low-VRAM",
-                    "context_size": "4096",
-                    "n_gpu_layers": "12",
-                },
-                {
-                    "label": "VULKAN Gemma CPU-offload fallback",
-                    "context_size": "4096",
-                    "n_gpu_layers": "0",
-                },
-            ]
-
-        return [default_profile]
-
-    def _wait_for_server_ready(self) -> None:
-        """Wait for the local llama-server health endpoint to become ready."""
-        print("⏳ Waiting for server to become healthy...", end="", flush=True)
-        max_retries = 600  # 10 minutes
-        for i in range(max_retries):
+    def _wait_for_server_ready(self, timeout_seconds: int = 120) -> None:
+        """Wait for llama-server health endpoint to become ready."""
+        print("⏳ Waiting for server...", end="", flush=True)
+        for i in range(timeout_seconds):
             if self.server_process is None:
                 raise RuntimeError("llama-server process was not started")
-
             if self.server_process.poll() is not None:
-                print(f"\n❌ Server process died with code {self.server_process.returncode}")
-                raise RuntimeError("llama-server process died unexpectedly")
-
+                stderr = ""
+                if self.server_process.stderr:
+                    try:
+                        stderr = self.server_process.stderr.read().decode("utf-8", errors="replace")[-500:]
+                    except Exception:
+                        pass
+                raise RuntimeError(
+                    f"llama-server died with code {self.server_process.returncode}. "
+                    f"Stderr: {stderr}"
+                )
             try:
-                response = requests.get(f"http://{self.SERVER_HOST}:{self.SERVER_PORT}/health", timeout=1)
-                if response.status_code == 200:
-                    print(" Done!")
+                r = requests.get(
+                    f"http://{self.SERVER_HOST}:{self.SERVER_PORT}/health", timeout=1
+                )
+                if r.status_code == 200:
+                    print(" ready!")
                     return
-
-                if i % 10 == 0:
-                    print(f"({response.status_code})", end="", flush=True)
-
-                time.sleep(1)
             except requests.RequestException:
-                time.sleep(1)
+                pass
+            time.sleep(1)
+            if i % 10 == 0:
                 print(".", end="", flush=True)
 
-        raise RuntimeError("Timed out waiting for llama-server to start")
+        raise RuntimeError(f"llama-server failed to start within {timeout_seconds}s")
+
+    def _build_server_cmd(self, cfg: Dict[str, Any]) -> List[str]:
+        """Build the llama-server command with hardware-appropriate flags."""
+        cmd = [
+            str(self.server_path),
+            "-m", str(self.model_path),
+            "--host", self.SERVER_HOST,
+            "--port", str(self.SERVER_PORT),
+            "-c", str(cfg["context"]),
+            "-ngl", str(cfg["n_gpu_layers"]),
+            "--threads", str(cfg["threads"]),
+            # Always-on optimizations
+            "--flash-attn", "auto",
+            "--cont-batching",
+            "--parallel", str(cfg.get("parallel", 1)),
+            # KV cache compression (saves RAM/VRAM significantly)
+            "--cache-type-k", "q8_0",
+            "--cache-type-v", "q4_0",
+            # Native chat template
+            "--jinja",
+        ]
+        if cfg.get("mlock"):
+            cmd.append("--mlock")
+        return cmd
 
     def _start_server(self):
-        """Start the llama-server background process."""
-        profiles = self._get_server_profiles()
-        last_error: Optional[RuntimeError] = None
+        """Start llama-server with hardware-optimized configuration."""
+        cfg = self.optimal_config
 
-        for index, profile in enumerate(profiles):
-            print("⏳ Starting llama-server process...")
-            print(
-                f"🔧 Device: {self.device_type.upper()} | Profile: {profile['label']} "
-                f"(GPU Layers: {profile['n_gpu_layers']}, Context: {profile['context_size']})"
-            )
+        opts = ["flash-attn", "cont-batching", f"parallel={cfg.get('parallel', 1)}", "KV q8/q4"]
+        if cfg.get("mlock"):
+            opts.append("mlock")
+        else:
+            opts.append("no-mlock (RAM saver)")
 
-            cmd = [
+        print(f"⏳ Starting llama-server...")
+        print(f"🔧 Config: ctx={cfg['context']} | ngl={cfg['n_gpu_layers']} | threads={cfg['threads']} | device={self.device_type.upper()}")
+        print(f"⚡ Optimizations: {', '.join(opts)}")
+
+        cmd = self._build_server_cmd(cfg)
+
+        self.server_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        )
+
+        try:
+            self._wait_for_server_ready(timeout_seconds=120)
+        except RuntimeError as primary_err:
+            self.shutdown()
+            print(f"⚠️  Primary config failed: {primary_err}")
+            print("⚠️  Trying safe fallback (no flash-attn, no mlock, ngl=0)...")
+            fallback_cmd = [
                 str(self.server_path),
                 "-m", str(self.model_path),
                 "--host", self.SERVER_HOST,
                 "--port", str(self.SERVER_PORT),
-                "-c", profile["context_size"],
-                "--n-gpu-layers", profile["n_gpu_layers"]
+                "-c", str(min(cfg["context"], 2048)),
+                "-ngl", "0",
+                "--threads", str(cfg["threads"]),
+                "--cont-batching",
+                "--cache-type-k", "q8_0",
+                "--cache-type-v", "q4_0",
+                "--jinja",
             ]
-
+            print(f"🔧 Fallback cmd: ctx={min(cfg['context'], 2048)} | ngl=0")
             self.server_process = subprocess.Popen(
-                cmd,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+                fallback_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             )
-
-            try:
-                self._wait_for_server_ready()
-                return
-            except RuntimeError as e:
-                last_error = e
-                self.shutdown()
-
-                if index < len(profiles) - 1:
-                    print("⚠️  Startup profile failed. Retrying with a safer Vulkan profile...")
-                    time.sleep(1)
-                    continue
-
-                raise
-
-        if last_error is not None:
-            raise last_error
+            self._wait_for_server_ready(timeout_seconds=120)
 
     def shutdown(self):
         """Stop the background server process."""
@@ -422,10 +607,24 @@ class InferenceService:
             self._is_ready = False
 
     def warmup(self) -> None:
-        """Warmup is automatic with server mode."""
-        pass
+        """Send a tiny request to warm up the model (CUDA kernel compilation, page faults)."""
+        if not self._is_ready:
+            return
+        try:
+            print("🔥 Warming up model...")
+            requests.post(
+                f"http://{self.SERVER_HOST}:{self.SERVER_PORT}/v1/chat/completions",
+                json={
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                    "temperature": 0,
+                },
+                timeout=30,
+            )
+            print("✅ Warmup complete")
+        except Exception as e:
+            print(f"⚠️  Warmup failed (non-fatal): {e}")
 
-    # JSON Grammar for llama.cpp - ensures valid JSON output
     JSON_GRAMMAR = r'''
 root   ::= object
 value  ::= object | array | string | number | ("true" | "false" | "null") ws
@@ -453,193 +652,17 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 ws ::= ([ \t\n] ws)?
 '''
 
-    def _format_prompt(self, messages: List[Dict[str, str]], model_name: str) -> str:
-        """Route to the correct chat template based on the active model."""
-        if "gemma" in model_name.lower():
-            return self._gemma_template(messages)
-        return self._legacy_template(messages)
-
-    def _gemma_template(self, messages: List[Dict[str, str]]) -> str:
-        """Gemma 4 native chat template using special turn tokens."""
-        prompt = ""
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if role == "system":
-                prompt += f"<start_of_turn>system\n{content}<end_of_turn>\n"
-            elif role == "user":
-                prompt += f"<start_of_turn>user\n{content}<end_of_turn>\n"
-            elif role == "assistant":
-                prompt += f"<start_of_turn>model\n{content}<end_of_turn>\n"
-        prompt += "<start_of_turn>model\n"
-        return prompt
-
-    def _legacy_template(self, messages: List[Dict[str, str]]) -> str:
-        """Existing User:/Assistant: format for Qwen, Mistral, Llama, etc."""
-        system_content = ""
-        conversation = []
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if role == "system":
-                system_content = content
-            elif role == "user":
-                conversation.append(f"User: {content}")
-            elif role == "assistant":
-                conversation.append(f"Assistant: {content}")
-        if system_content:
-            return f"{system_content}\n\n" + "\n".join(conversation) + "\nAssistant:"
-        return "\n".join(conversation) + "\nAssistant:"
-    
-    def generate(
-        self,
-        prompt: str,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        system_prompt: Optional[str] = None,
-        stream: bool = False,
-        json_mode: bool = False
-    ):
-        """
-        Generate response via HTTP API.
-        
-        Args:
-            prompt: The input prompt
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature (lower = more deterministic)
-            system_prompt: Optional system prompt to prepend
-            stream: Whether to stream the response
-            json_mode: If True, enforces JSON output using grammar
-        """
-        if not self._is_ready:
-            raise RuntimeError("Call setup() first!")
-            
-        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-        
-        # Balanced stop sequences - not too aggressive
-        stop_sequences = [
-            "</s>",              # EOS token
-            "<|im_end|>",        # Chat format end
-            "<|endoftext|>",     # GPT-style end
-            "<|eot_id|>",        # Llama-3 specific
-            "<end_of_turn>",     # Gemma 4 turn end token
-            "<start_of_turn>user",  # Gemma 4 user turn start
-            "\n\nUser:",         # Conversation restart
-            "\n\nAssistant:",    # Duplicate assistant
-            "\n\n\n",            # Triple newline (likely garbage)
-        ]
-        
-        # FIXED: Remove strict 150 token limit
-        # Use requested max_tokens or fallback to settings
-        token_limit = max_tokens or getattr(settings, 'max_tokens', 512)
-        
-        payload = {
-            "prompt": full_prompt,
-            "n_predict": token_limit,  # FIXED: No artificial cap
-            "temperature": temperature or getattr(settings, 'temperature', 0.7),
-            "stop": stop_sequences,
-            "stream": stream,
-            "repeat_penalty": 1.15,     # Moderate - prevent loops
-            "frequency_penalty": 0.3,   # Reduced - was too aggressive
-            "presence_penalty": 0.3,    # Reduced - was too aggressive
-            "top_p": 0.9,
-            "top_k": 40,
-        }
-        
-        if json_mode:
-            payload["grammar"] = self.JSON_GRAMMAR
-        
+    def cancel_generation(self) -> bool:
+        """Cancel any in-flight generation. Critical for voice interruption support."""
         try:
-            # FIXED: Increased timeout for large contexts
-            timeout = 120 if token_limit > 500 else 60
-            
-            response = requests.post(
-                f"http://{self.SERVER_HOST}:{self.SERVER_PORT}/completion",
-                json=payload,
-                stream=stream,
-                timeout=timeout
+            # llama-server supports slot-level cancellation
+            requests.post(
+                f"http://{self.SERVER_HOST}:{self.SERVER_PORT}/slots/0?action=erase",
+                timeout=2,
             )
-            response.raise_for_status()
-            
-            if stream:
-                return self._stream_response(response)
-            else:
-                content = response.json().get('content', '').strip()
-                
-                # Light cleanup - remove only obvious garbage
-                content = content.replace("</s>", "").replace("<s>", "").strip()
-                
-                # Don't aggressively cut at prompt markers
-                # Only remove if they appear at the very end
-                garbage_endings = ["# USER SAYS", "# QUERY", "User:", "Assistant:"]
-                for marker in garbage_endings:
-                    if content.endswith(marker):
-                        content = content[:-len(marker)].strip()
-                
-                if json_mode:
-                    content = self._extract_json(content)
-                
-                return content
-                
-        except requests.Timeout:
-            raise RuntimeError(f"Inference timed out after {timeout}s")
-        except requests.RequestException as e:
-            raise RuntimeError(f"Inference request failed: {e}")
-        except Exception as e:
-            print(f"❌ Inference error: {e}")
-            raise RuntimeError(f"Inference failed: {e}")
-
-    def _extract_json(self, text: str) -> str:
-        """Extract clean JSON from response, removing any garbage."""
-        import re
-        
-        # Try to find JSON object
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if json_match:
-            try:
-                # Validate it's proper JSON
-                json.loads(json_match.group())
-                return json_match.group()
-            except json.JSONDecodeError:
-                pass
-        
-        # Return original if no valid JSON found
-        return text
-
-    def _stream_response(self, response):
-        """Yield streaming chunks with light garbage filtering."""
-        accumulated = ""
-        
-        # Only critical stop tokens
-        critical_stops = ["</s>", "<|eot_id|>", "<|im_end|>"]
-        
-        for line in response.iter_lines():
-            if line:
-                decoded_line = line.decode('utf-8')
-                if decoded_line.startswith('data: '):
-                    json_str = decoded_line[6:]
-                    try:
-                        data = json.loads(json_str)
-                        content = data.get('content', '')
-                        
-                        if not content:
-                            continue
-                        
-                        accumulated += content
-                        
-                        # Stop only on critical tokens
-                        for token in critical_stops:
-                            if token in accumulated:
-                                clean = accumulated.split(token)[0].strip()
-                                if clean:  # FIXED: Removed arbitrary length check
-                                    yield clean
-                                return
-                        
-                        # Yield normally
-                        yield content
-                        
-                    except json.JSONDecodeError:
-                        pass
+            return True
+        except Exception:
+            return False
 
     def chat(
         self,
@@ -650,24 +673,99 @@ ws ::= ([ \t\n] ws)?
         json_mode: bool = False
     ):
         """
-        Chat inference optimized for Llama models.
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            stream: Whether to stream the response
-            json_mode: If True, enforces JSON output using grammar
+        Chat via llama-server's native OpenAI-compatible endpoint.
+        Uses --jinja for correct per-model chat templates (no manual formatting).
         """
-        prompt = self._format_prompt(messages, settings.model_name)
-        
-        return self.generate(
-            prompt, 
-            max_tokens, 
-            temperature, 
-            stream=stream, 
-            json_mode=json_mode
-        )
+        if not self._is_ready:
+            raise RuntimeError("Call setup() first!")
+
+        token_limit = max_tokens or getattr(settings, "max_tokens", 512)
+        temp = temperature if temperature is not None else getattr(settings, "temperature", 0.7)
+
+        payload: Dict[str, Any] = {
+            "messages": messages,
+            "max_tokens": token_limit,
+            "temperature": temp,
+            "stream": stream,
+            "top_p": 0.9,
+            "repeat_penalty": 1.1,
+        }
+
+        if json_mode:
+            payload["grammar"] = self.JSON_GRAMMAR
+
+        timeout = 120 if token_limit > 500 else 60
+
+        try:
+            response = requests.post(
+                f"http://{self.SERVER_HOST}:{self.SERVER_PORT}/v1/chat/completions",
+                json=payload,
+                stream=stream,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+
+            if stream:
+                return self._stream_response(response)
+
+            data = response.json()
+            content = data["choices"][0]["message"]["content"].strip()
+
+            if json_mode:
+                content = self._extract_json(content)
+
+            return content
+
+        except requests.Timeout:
+            raise RuntimeError(f"Inference timed out after {timeout}s")
+        except requests.RequestException as e:
+            raise RuntimeError(f"Inference request failed: {e}")
+
+    def generate(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        system_prompt: Optional[str] = None,
+        stream: bool = False,
+        json_mode: bool = False
+    ):
+        """Generate from a raw prompt by wrapping it as a chat message."""
+        messages: List[Dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        return self.chat(messages, max_tokens, temperature, stream, json_mode)
+
+    def _extract_json(self, text: str) -> str:
+        json_match = re.search(r'\{[\s\S]*\}', text)
+        if json_match:
+            try:
+                json.loads(json_match.group())
+                return json_match.group()
+            except json.JSONDecodeError:
+                pass
+        return text
+
+    def _stream_response(self, response):
+        """Yield streaming chunks from OpenAI-compatible SSE format."""
+        for line in response.iter_lines():
+            if not line:
+                continue
+            decoded = line.decode("utf-8")
+            if not decoded.startswith("data: "):
+                continue
+            data_str = decoded[6:]
+            if data_str.strip() == "[DONE]":
+                return
+            try:
+                data = json.loads(data_str)
+                delta = data.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content", "")
+                if content:
+                    yield content
+            except json.JSONDecodeError:
+                pass
 
     @property
     def is_ready(self) -> bool:
@@ -678,7 +776,9 @@ ws ::= ([ \t\n] ws)?
             "ready": self.is_ready,
             "model_path": str(self.model_path) if self.model_path else None,
             "server_pid": self.server_process.pid if self.server_process else None,
-            "device": self.device_type
+            "device": self.device_type,
+            "hardware": self.hardware,
+            "config": self.optimal_config,
         }
     
 # -----------------------

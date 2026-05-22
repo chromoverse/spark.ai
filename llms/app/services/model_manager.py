@@ -85,50 +85,17 @@ class ModelManager:
             return json.load(f)
 
     def _detect_device(self) -> str:
-        """
-        Auto-detect if NVIDIA GPU is available.
-        
-        Returns:
-            'gpu' if NVIDIA GPU found, 'cpu' otherwise
-        """
-        # Check if forced to CPU mode
+        """Auto-detect GPU: NVIDIA (CUDA) > AMD/Intel (Vulkan) > CPU."""
         if self.config.get('settings', {}).get('force_cpu', False):
             print("🔧 Force CPU mode enabled in config")
             return 'cpu'
-        
-        try:
-            # Check for NVIDIA GPU using nvidia-smi
-            result = subprocess.run(
-                ['nvidia-smi'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=3
-            )
-            if result.returncode == 0:
-                print("✅ NVIDIA GPU detected - using GPU-optimized model")
-                return 'gpu'
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-            
-        # Check for AMD/Intel GPUs using wmic (Windows)
-        try:
-            cmd = "wmic path win32_VideoController get name"
-            result = subprocess.run(
-                cmd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE, 
-                text=True,
-                shell=True
-            )
-            output = result.stdout.lower()
-            if "amd" in output or "radeon" in output or "intel" in output:
-                 print(f"✅ Vulkan-compatible GPU detected: {output.strip().splitlines()[-1]}")
-                 return 'vulkan'
-        except Exception as e:
-            print(f"⚠️ GPU detection failed: {e}")
-        
-        print("💻 CPU mode (no NVIDIA/AMD/Intel GPU detected)")
-        return 'cpu'
+
+        from app.services.inference_service import detect_hardware
+        hw = detect_hardware()
+        device = hw["device"]
+        gpu_name = hw.get("gpu_name", "")
+        print(f"✅ Detected device: {device.upper()}" + (f" ({gpu_name})" if gpu_name else ""))
+        return device
 
     def _download_file(self, url: str, destination: Path) -> None:
         """
@@ -180,11 +147,49 @@ class ModelManager:
         if model_name not in self.config.get('models', {}):
             raise ValueError(f"Model '{model_name}' not found in config")
         
-        if self.device_type == 'cpu' and model_name == "gemma-4-e4b":
-            print("⚠️  CPU detected: Switching to gemma-4-e2b for better performance")
-            model_name = "gemma-4-e2b"
+        # Detect hardware for smart model selection
+        ram_gb = 8.0
+        vram_mb = 0
+        try:
+            import psutil
+            ram_gb = psutil.virtual_memory().total / (1024**3)
+        except ImportError:
+            pass
 
-        model_config = self.config['models'][model_name][self.device_type]
+        from app.services.inference_service import detect_hardware
+        hw = detect_hardware()
+        vram_mb = hw.get("vram_mb", 0)
+        device = hw.get("device", self.device_type)
+
+        # Metal has its own quant tier in config (Q8_0 since unified memory is fast)
+        quant_key = "metal" if device == "metal" else self.device_type
+
+        # Step 1: Downgrade model size if hardware can't handle it
+        if model_name == "gemma-4-e4b":
+            candidate = self.config['models'][model_name].get(quant_key, {})
+            model_size_mb = candidate.get("size_gb", 99) * 1024
+
+            too_big_for_ram = ram_gb < 10
+            too_big_for_vram = vram_mb > 0 and model_size_mb > vram_mb * 0.85
+
+            if too_big_for_ram or too_big_for_vram:
+                reason = f"RAM {ram_gb:.0f}GB" if too_big_for_ram else f"VRAM {vram_mb}MB < model {model_size_mb:.0f}MB"
+                print(f"⚠️  {reason}: switching to gemma-4-e2b")
+                model_name = "gemma-4-e2b"
+
+        # Step 2: Pick quantization — downgrade to Q4_K_M if model still too big for VRAM
+        candidate = self.config['models'][model_name].get(quant_key, {})
+        model_size_mb = candidate.get("size_gb", 99) * 1024
+
+        if vram_mb > 0 and model_size_mb > vram_mb * 0.85 and quant_key != "cpu":
+            print(f"⚠️  Model {model_size_mb:.0f}MB > VRAM {vram_mb}MB: using Q4_K_M")
+            quant_key = "cpu"
+
+        # Step 3: On low-RAM systems with iGPU, always use smallest quantization
+        if ram_gb < 10 and device == "vulkan":
+            quant_key = "cpu"
+
+        model_config = self.config['models'][model_name][quant_key]
         model_path = self.models_dir / model_config['filename']
         
         # Check if model already exists

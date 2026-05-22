@@ -1,18 +1,19 @@
 """
-Simple streaming test client for the local LLM service.
+Interactive streaming test client for the local LLM service.
 
 Usage:
-    python test_stream.py "What is 2 + 2?"
-    python test_stream.py --system "You are helpful." "Explain recursion simply."
+    python test_stream.py                          # interactive REPL
+    python test_stream.py "What is 2 + 2?"         # single query then REPL
+    python test_stream.py --once "one-shot query"   # single query then exit
 """
 
 import argparse
 import json
 import sys
+import time
 from typing import Optional
 
 import requests
-
 
 API_URL = "http://localhost:9001/api/v1/llm/reasoning/chat"
 
@@ -24,7 +25,6 @@ def stream_query(
     temperature: float = 0.1,
     json_mode: bool = False,
 ) -> str:
-    """Send a prompt to the local LLM service and print streamed chunks."""
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -38,16 +38,16 @@ def stream_query(
         "json_mode": json_mode,
     }
 
-    print("=" * 60)
-    print(f"API: {API_URL}")
-    print(f"User: {prompt}")
-    print("Assistant: ", end="", flush=True)
-
     full_response = ""
+    token_count = 0
+    t_start = time.perf_counter()
+    t_first_token = None
 
     try:
         with requests.post(API_URL, json=payload, stream=True, timeout=300) as response:
             response.raise_for_status()
+
+            print("Assistant: ", end="", flush=True)
 
             for line in response.iter_lines():
                 if not line:
@@ -70,63 +70,103 @@ def stream_query(
                 if not chunk:
                     continue
 
+                if t_first_token is None:
+                    t_first_token = time.perf_counter()
+
                 full_response += chunk
+                token_count += 1
                 print(chunk, end="", flush=True)
 
     except requests.exceptions.ConnectionError:
-        print("\n\nCould not connect to the LLM service.")
-        print("Start it first with: python run.py")
+        print("\nCould not connect. Is the server running?")
         return ""
     except requests.HTTPError as exc:
-        print(f"\n\nHTTP error: {exc}")
-        if exc.response is not None:
-            try:
-                print(exc.response.json())
-            except ValueError:
-                print(exc.response.text)
+        print(f"\nHTTP error: {exc}")
         return ""
     except requests.RequestException as exc:
-        print(f"\n\nRequest failed: {exc}")
+        print(f"\nRequest failed: {exc}")
         return ""
 
-    print("\n" + "=" * 60)
+    t_end = time.perf_counter()
+    total_s = t_end - t_start
+    first_token_ms = (t_first_token - t_start) * 1000 if t_first_token else 0
+    gen_s = t_end - t_first_token if t_first_token else total_s
+    tok_per_s = token_count / gen_s if gen_s > 0 else 0
+
+    print(f"\n\n--- {token_count} chunks | "
+          f"first token: {first_token_ms:.0f}ms | "
+          f"gen: {gen_s:.1f}s | "
+          f"{tok_per_s:.1f} tok/s | "
+          f"total: {total_s:.1f}s ---")
+
     return full_response
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments for the streaming test."""
-    parser = argparse.ArgumentParser(description="Stream a response from the local LLM service.")
-    parser.add_argument("prompt", nargs="*", help="User prompt to send to the LLM")
-    parser.add_argument("--system", dest="system_prompt", help="Optional system prompt")
-    parser.add_argument("--max-tokens", type=int, default=256, help="Maximum tokens to generate")
-    parser.add_argument("--temperature", type=float, default=0.1, help="Sampling temperature")
-    parser.add_argument("--json", dest="json_mode", action="store_true", help="Enable JSON mode")
-    return parser.parse_args()
+def repl(
+    system_prompt: Optional[str] = None,
+    max_tokens: int = 256,
+    temperature: float = 0.1,
+    json_mode: bool = False,
+):
+    """Interactive loop — type prompts, get streamed answers, repeat."""
+    print("=" * 60)
+    print("  SparkAI Local LLM — Interactive Test")
+    print(f"  API: {API_URL}")
+    print("  Type 'quit' or Ctrl+C to exit")
+    print("=" * 60)
+
+    while True:
+        try:
+            prompt = input("\nYou: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye!")
+            break
+
+        if not prompt:
+            continue
+        if prompt.lower() in ("quit", "exit", "q"):
+            print("Bye!")
+            break
+
+        stream_query(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            json_mode=json_mode,
+        )
 
 
 def main() -> int:
-    """CLI entrypoint."""
-    args = parse_args()
-    prompt = " ".join(args.prompt).strip()
+    parser = argparse.ArgumentParser(description="Interactive streaming test for local LLM.")
+    parser.add_argument("prompt", nargs="*", help="Initial prompt (enters REPL after)")
+    parser.add_argument("--system", dest="system_prompt", help="System prompt")
+    parser.add_argument("--max-tokens", type=int, default=256)
+    parser.add_argument("--temperature", type=float, default=0.1)
+    parser.add_argument("--json", dest="json_mode", action="store_true")
+    parser.add_argument("--once", action="store_true", help="Single query, no REPL")
+    args = parser.parse_args()
 
-    if not prompt:
-        try:
-            prompt = input("Enter your prompt: ").strip()
-        except EOFError:
-            prompt = ""
+    initial_prompt = " ".join(args.prompt).strip()
 
-    if not prompt:
-        print("No prompt provided.")
-        return 1
+    if initial_prompt:
+        stream_query(
+            prompt=initial_prompt,
+            system_prompt=args.system_prompt,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            json_mode=args.json_mode,
+        )
+        if args.once:
+            return 0
 
-    result = stream_query(
-        prompt=prompt,
+    repl(
         system_prompt=args.system_prompt,
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         json_mode=args.json_mode,
     )
-    return 0 if result else 1
+    return 0
 
 
 if __name__ == "__main__":

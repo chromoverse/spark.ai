@@ -30,14 +30,14 @@ from tqdm import tqdm
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
 def _get_base_dir() -> Path:
-    """Use server's AppData path: AppData/Local/SparkAI/models/llms/"""
+    """Use server's AppData path: AppData/Local/SparkAI/models/reasoning_models/"""
     if platform.system() == "Windows":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     elif platform.system() == "Darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / "SparkAI" / "models" / "llms"
+    return base / "SparkAI" / "models" / "reasoning_models"
 
 
 def _get_binaries_dir() -> Path:

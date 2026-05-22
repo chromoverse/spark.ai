@@ -61,16 +61,6 @@ def get_service(request: Request) -> InferenceService:
     "/chat",
     response_model=ChatResponse,
     summary="Chat with the reasoning model",
-    description="""
-    Send a chat message to the reasoning model and receive a response.
-    
-    The messages list should contain the conversation history with roles:
-    - **system**: System instructions (optional, first message)
-    - **user**: User messages
-    - **assistant**: Previous assistant responses
-    
-    The model will generate a response based on the full conversation context.
-    """,
     responses={
         200: {"description": "Successful response from model"},
         503: {"description": "Service not ready"},
@@ -78,20 +68,13 @@ def get_service(request: Request) -> InferenceService:
     }
 )
 async def chat(request: Request, body: ChatRequest) -> Union[ChatResponse, StreamingResponse]:
-    """
-    Chat endpoint for LLM reasoning.
-    
-    Accepts a list of messages and returns the model's response.
-    Uses cached model from app.state for optimal performance.
-    """
+    """Chat endpoint — streams SSE or returns JSON."""
     service = get_service(request)
-    
+
     try:
-        # Convert Pydantic models to dicts for service
         messages = [msg.model_dump() for msg in body.messages]
-        
+
         if body.stream:
-            # Get the synchronous generator from the service
             sync_generator = cast(Iterator[str], service.chat(
                 messages=messages,
                 max_tokens=body.max_tokens,
@@ -99,28 +82,25 @@ async def chat(request: Request, body: ChatRequest) -> Union[ChatResponse, Strea
                 stream=True,
                 json_mode=body.json_mode
             ))
-            
+
             async def event_generator():
-                # Use run_in_executor to iterate over sync generator without blocking
                 loop = asyncio.get_event_loop()
-                
+
                 def get_next_chunk():
                     try:
                         return next(sync_generator)
                     except StopIteration:
                         return None
-                
+
                 while True:
                     chunk = await loop.run_in_executor(None, get_next_chunk)
                     if chunk is None:
                         break
-                    # Yield SSE format
                     yield f"data: {json.dumps({'response': chunk, 'model': settings.model_name})}\n\n"
                 yield "data: [DONE]\n\n"
 
             return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-        # Non-streaming - cast to str since stream=False returns str
         response_text = cast(str, service.chat(
             messages=messages,
             max_tokens=body.max_tokens,
@@ -128,20 +108,22 @@ async def chat(request: Request, body: ChatRequest) -> Union[ChatResponse, Strea
             stream=False,
             json_mode=body.json_mode
         ))
-        
+
         return ChatResponse(
             response=response_text,
             model=settings.model_name,
             usage=None
         )
-        
+
     except RuntimeError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Inference error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@router.post("/cancel", summary="Cancel in-flight generation")
+async def cancel_generation(request: Request):
+    """Cancel current generation — critical for voice interruption support."""
+    service = get_service(request)
+    cancelled = service.cancel_generation()
+    return {"cancelled": cancelled}

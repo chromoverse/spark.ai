@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # ---------------------
     auto_download_model: bool = True     # Auto-download model if missing
     auto_download_binary: bool = True    # Auto-download llama.cpp if missing
-    warmup_on_startup: bool = False      # Warmup model on server start (slow on CPU)
+    warmup_on_startup: bool = True       # Warmup model on server start (eliminates cold-start penalty)
     
     class Config:
         env_prefix = ""  # No prefix, use direct env var names

@@ -15,5 +15,5 @@ requests>=2.31.0
 # Progress bars for downloads
 tqdm>=4.66.0
 
-# PyInstaller for future executable builds (optional)
-# pyinstaller>=6.0.0
+# System info (RAM, CPU) for hardware-aware model selection
+psutil>=5.9.0
