@@ -82,11 +82,31 @@ class TriggerHandler:
             orchestrator = get_orchestrator()
             engine = get_execution_engine()
 
-            # If the user has an execution running, stop it cleanly first.
-            if engine.is_running(task.user_id):
-                await engine.stop_execution(task.user_id)
-            await orchestrator.cleanup_user_state(task.user_id)
-            await orchestrator.register_tasks(task.user_id, tasks)
+            from app.kernel.execution.job_coordinator import get_job_coordinator
+            coordinator = get_job_coordinator()
+            job_id, queued = coordinator.register_job(
+                task.user_id, goal=task.label or "Scheduled task",
+            )
+
+            if queued:
+                # Slot full — queue the recurring task; it auto-starts when a slot opens
+                _tasks = list(tasks)
+                _user = task.user_id
+
+                async def _start_scheduled():
+                    await orchestrator.register_tasks(_user, _tasks, job_id=job_id)
+                    if not engine.server_tool_executor:
+                        engine.set_server_executor(get_server_executor())
+                    engine.set_client_emitter(get_task_emitter())
+                    if settings.environment == "DESKTOP" and not engine.client_tool_executor:
+                        engine.set_client_executor(get_client_executor())
+                    await engine.start_execution(_user, job_id=job_id)
+
+                coordinator.set_start_callback(task.user_id, job_id, _start_scheduled)
+                logger.info("Recurring task %s queued for user=%s (slots full)", task.id, task.user_id)
+                return
+
+            await orchestrator.register_tasks(task.user_id, tasks, job_id=job_id)
 
             # Wire executors lazily — same pattern sqh_service uses
             if not engine.server_tool_executor:
@@ -95,7 +115,7 @@ class TriggerHandler:
             if settings.environment == "DESKTOP" and not engine.client_tool_executor:
                 engine.set_client_executor(get_client_executor())
 
-            await engine.start_execution(task.user_id)
+            await engine.start_execution(task.user_id, job_id=job_id)
             logger.info(
                 "Recurring task %s started %d step(s) for user=%s",
                 task.id, len(tasks), task.user_id,

@@ -58,6 +58,7 @@ class WebResearchTool(BaseTool):
     ]
     SEMANTIC_TAGS = ["web", "web", "research"]
     TOOL_CATEGORY = "web_knowledge"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "web_research"

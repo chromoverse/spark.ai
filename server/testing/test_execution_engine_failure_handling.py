@@ -28,8 +28,14 @@ class _FakeOrchestrator:
     async def mark_task_failed(self, user_id: str, task_id: str, error: str) -> None:
         self.failed.append((user_id, task_id, error))
 
-    def get_state(self, user_id: str):
-        return SimpleNamespace()
+    def get_state(self, user_id: str, job_id=None):
+        return SimpleNamespace(execution_id="test")
+
+    def _find_state_for_task(self, user_id: str, task_id: str):
+        return SimpleNamespace(execution_id="test")
+
+    def get_task(self, user_id: str, task_id: str):
+        return None
 
 
 class _FakeBindingResolver:

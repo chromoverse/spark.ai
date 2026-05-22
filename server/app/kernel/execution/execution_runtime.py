@@ -37,5 +37,27 @@ from app.kernel.execution.task_emitter import (  # noqa: F401
     get_task_emitter,
     init_task_emitter,
 )
+from app.kernel.execution.failure_classifier import (  # noqa: F401
+    FailureCategory,
+    ToolError,
+    classify_failure,
+)
+from app.kernel.execution.job_coordinator import (  # noqa: F401
+    JobCoordinator,
+    JobMetadata,
+    JobStatus,
+    QueuedJob,
+    get_job_coordinator,
+)
+from app.kernel.execution.resource_lock import (  # noqa: F401
+    ResourceLockRegistry,
+    get_resource_lock_registry,
+)
+from app.kernel.execution.cancellation import CancellationContext  # noqa: F401
+from app.kernel.execution.speech_scheduler import (  # noqa: F401
+    TTSScheduler,
+    SpeechPriority,
+    get_tts_scheduler,
+)
 
 

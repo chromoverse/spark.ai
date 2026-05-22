@@ -13,7 +13,7 @@ Event-based completion signaling for proper async waiting
 
 import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set
 from datetime import datetime
 import contextlib
 import uuid
@@ -23,6 +23,15 @@ from app.kernel.execution.approval_coordinator import get_approval_coordinator
 from app.kernel.execution.execution_models import TaskRecord, TaskOutput
 from app.kernel.execution.binding_resolver import get_binding_resolver
 from app.kernel.execution.execution_watcher import watched_execute
+from app.kernel.execution.failure_classifier import classify_failure, FailureCategory, ToolError
+from app.kernel.execution.job_coordinator import get_job_coordinator, JobStatus
+from app.kernel.execution.replanner import (
+    validate_diff, apply_diff, unblock_dependents,
+    build_replan_prompt, parse_replan_response,
+    DiffValidationError, MAX_REPLANS_PER_JOB, MAX_REPLANS_PER_TASK,
+)
+from app.kernel.execution.resource_lock import get_resource_lock_registry, MultiLockContext
+from app.kernel.execution.cancellation import CancellationContext
 from app.kernel.contracts.models import KernelEvent
 from app.kernel.eventing.event_bus import emit_kernel_event
 from app.socket.log_stream import emit_spark_log
@@ -72,12 +81,19 @@ class ExecutionEngine:
         self.orchestrator = get_orchestrator()
         self.binding_resolver = get_binding_resolver()
         
-        # Track running engines per user
+        # Track running engines per user/job: key = "user_id:job_id"
         self.running_engines: Dict[str, asyncio.Task] = {}
-        
-        # Completion events for awaiting execution
+
+        # Completion events for awaiting execution: key = "user_id:job_id"
         self.completion_events: Dict[str, asyncio.Event] = {}
-        
+
+        # Track which failed task_ids have already been sent to the replanner
+        # to avoid double-replanning. Key = "user_id:job_id", value = set of task_ids
+        self._replan_attempted: Dict[str, Set[str]] = {}
+
+        # Active CancellationContexts per job: key = "user_id:job_id"
+        self._cancellation_contexts: Dict[str, CancellationContext] = {}
+
         # Tool executors (injected at startup)
         self.server_tool_executor = None
         self.client_tool_executor = None    # NEW: For desktop direct execution
@@ -107,47 +123,55 @@ class ExecutionEngine:
     def client_task_emitter(self):
         return self.socket_handler
     
-    async def start_execution(self, user_id: str) -> asyncio.Task:
+    async def start_execution(self, user_id: str, job_id: str = "default") -> asyncio.Task:
         """
-        Start execution engine for a user (non-blocking)
-        Creates a background task that runs the execution loop
+        Start execution engine for a user/job (non-blocking).
+        Creates a background task that runs the execution loop.
         """
-        # Check if already running for this user
-        if user_id in self.running_engines:
-            existing = self.running_engines[user_id]
+        engine_key = f"{user_id}:{job_id}"
+
+        # Check if already running for this user/job
+        if engine_key in self.running_engines:
+            existing = self.running_engines[engine_key]
             if not existing.done():
-                logger.info(f" Execution already running for {user_id}")
+                logger.info(f" Execution already running for {engine_key}")
                 return existing
 
         # Create completion event for a fresh run.
-        self.completion_events[user_id] = asyncio.Event()
-        
+        self.completion_events[engine_key] = asyncio.Event()
+        self._replan_attempted[engine_key] = set()
+        self._cancellation_contexts[engine_key] = CancellationContext()
+
         # Start new background task
         task = asyncio.create_task(
-            self._execution_loop(user_id)
+            self._execution_loop(user_id, job_id)
         )
-        self.running_engines[user_id] = task
-        
-        logger.info(f"Started execution engine for user: {user_id}")
+        self.running_engines[engine_key] = task
+
+        # Update job coordinator status
+        get_job_coordinator().update_status(user_id, job_id, JobStatus.RUNNING)
+
+        logger.info(f"Started execution engine for: {engine_key}")
         return task
     
-    async def wait_for_completion(self, user_id: str, timeout: float = 30) -> bool:
+    async def wait_for_completion(self, user_id: str, timeout: float = 30, job_id: str = "default") -> bool:
         """Wait for execution to complete with timeout"""
-        if user_id not in self.completion_events:
-            logger.warning(f" No execution running for {user_id}")
+        engine_key = f"{user_id}:{job_id}"
+        if engine_key not in self.completion_events:
+            logger.warning(f" No execution running for {engine_key}")
             return False
-        
+
         try:
             logger.info(f"Waiting for execution to complete (timeout: {timeout}s)...")
             await asyncio.wait_for(
-                self.completion_events[user_id].wait(),
+                self.completion_events[engine_key].wait(),
                 timeout=timeout
             )
-            logger.info(f"Execution completed for {user_id}")
+            logger.info(f"Execution completed for {engine_key}")
             return True
-            
+
         except asyncio.TimeoutError:
-            logger.warning(f"⏰ Timeout waiting for {user_id} execution after {timeout}s")
+            logger.warning(f"⏰ Timeout waiting for {engine_key} execution after {timeout}s")
             return False
 
     async def get_execution_speech_snapshot(
@@ -161,58 +185,75 @@ class ExecutionEngine:
             max_tasks=max_tasks,
         )
     
-    async def _execution_loop(self, user_id: str) -> None:
+    async def _execution_loop(self, user_id: str, job_id: str = "default") -> None:
         """
-        Main execution loop for a user
-        Runs continuously until all tasks are done or timeout
+        Main execution loop for a user/job.
+        Runs continuously until all tasks are done or timeout.
+        Integrates failure classification and patch-based replanning.
         """
+        engine_key = f"{user_id}:{job_id}"
+
         logger.info(f"\n{'='*70}")
-        logger.info(f"EXECUTION LOOP STARTED: {user_id}")
+        logger.info(f"EXECUTION LOOP STARTED: {engine_key}")
         logger.info(f"{'='*70}\n")
-        
-        await emit_spark_log(user_id, "execution_started", payload={"message": "Execution started"})
-        
+
+        await emit_spark_log(user_id, "execution_started", payload={"message": f"Execution started (job={job_id})", "job_id": job_id})
+
         iteration = 0
         max_iterations = 100  # Safety limit
         no_work_count = 0
         max_idle = 3
-        
+
         try:
             while iteration < max_iterations:
                 iteration += 1
-                
-                # FAST EXIT: No tasks registered = nothing to do
-                state = self.orchestrator.get_state(user_id)
-                if not state or len(state.tasks) == 0:
-                    logger.info(f"No tasks registered for {user_id} — exiting immediately")
+
+                # Check cancellation
+                cancel_ctx = self._cancellation_contexts.get(engine_key)
+                if cancel_ctx and cancel_ctx.is_cancelled:
+                    logger.info(f"Job {engine_key} was cancelled — exiting loop")
                     break
-                
-                # Check if ALL tasks are terminal (completed/failed)
+
+                # FAST EXIT: No tasks registered = nothing to do
+                state = self.orchestrator.states.get(engine_key) or self.orchestrator.get_state(user_id)
+                if not state or len(state.tasks) == 0:
+                    logger.info(f"No tasks registered for {engine_key} — exiting immediately")
+                    break
+
+                # Check if ALL tasks are terminal (completed/failed/blocked-with-no-replan)
                 pending = state.get_tasks_by_status("pending")
                 running = state.get_tasks_by_status("running")
                 emitted = state.get_tasks_by_status("emitted")
                 waiting = state.get_tasks_by_status("waiting")
-                
-                if not pending and not running and not emitted and not waiting:
-                    logger.info(f"All tasks finished for {user_id} — exiting")
+                blocked = state.get_tasks_by_status("blocked")
+
+                if not pending and not running and not emitted and not waiting and not blocked:
+                    logger.info(f"All tasks finished for {engine_key} — exiting")
+                    break
+
+                # If only blocked tasks remain (no pending/running/emitted/waiting),
+                # replanning has been exhausted — nothing more can run.
+                if blocked and not pending and not running and not emitted and not waiting:
+                    logger.info(f"Only blocked tasks remain for {engine_key} — marking as failed")
+                    for bt in blocked:
+                        bt.status = "failed"
+                        bt.error = bt.error or "Blocked: replanning could not resolve upstream failure"
                     break
 
                 # Reap stuck emitted/waiting tasks that exceeded their timeout.
-                # Prevents infinite loops when a client disconnects or user
-                # ignores an approval prompt.
                 await self._reap_stuck_tasks(user_id, emitted, waiting)
-                
+
                 logger.info(f"\n{'─'*70}")
-                logger.info(f"Iteration {iteration} - User: {user_id}")
+                logger.info(f"Iteration {iteration} - {engine_key}")
                 logger.info(f"{'─'*70}")
-                
+
                 # 1. Get executable batch
-                batch = await self.orchestrator.get_executable_batch(user_id)
+                batch = await self.orchestrator.get_executable_batch(user_id, job_id=job_id)
 
                 logger.info(f"🔍 Found {len(batch.server_tasks)} server tasks, {len(batch.client_tasks)} client tasks")
-                
+
                 has_work = bool(batch.server_tasks or batch.client_tasks)
-                
+
                 if not has_work:
                     waiting_now = state.get_tasks_by_status("waiting")
                     if waiting_now:
@@ -222,66 +263,283 @@ class ExecutionEngine:
 
                     no_work_count += 1
                     logger.info(f" No runnable tasks (idle count: {no_work_count}/{max_idle})")
-                    
+
                     if no_work_count >= max_idle:
-                        # If tasks are stuck (pending but deps never satisfied), exit
                         logger.info("No more work — execution complete!")
                         break
-                    
+
                     await asyncio.sleep(0.2)
                     continue
-                
+
                 # Reset idle counter
                 no_work_count = 0
-                
+
                 logger.info(f"Batch: {len(batch.server_tasks)} server, {len(batch.client_tasks)} client")
-                
+
                 # 2. Execute server + client tasks in PARALLEL
                 parallel_work = []
-                
+
                 if batch.server_tasks:
                     logger.info(f"\nExecuting {len(batch.server_tasks)} server tasks...")
-                    parallel_work.append(self._execute_server_batch(user_id, batch.server_tasks))
-                
+                    parallel_work.append(self._execute_server_batch(user_id, batch.server_tasks, job_id=job_id))
+
                 if batch.client_tasks:
                     logger.info(f"\n Handling {len(batch.client_tasks)} client tasks...")
-                    parallel_work.append(self._handle_client_batch(user_id, batch.client_tasks))
-                
+                    parallel_work.append(self._handle_client_batch(user_id, batch.client_tasks, job_id=job_id))
+
                 if parallel_work:
                     results = await asyncio.gather(*parallel_work, return_exceptions=True)
                     for i, result in enumerate(results):
                         if isinstance(result, Exception):
                             logger.error(f"Parallel work item {i} failed: {result}")
 
+                # 3. After batch execution — check for RECOVERABLE failures and replan
+                await self._check_and_replan(user_id, job_id, state)
+
                 # Emit lightweight progress snapshot for UI/agent listeners
                 progress = await self.orchestrator.get_execution_summary(user_id)
+                progress["job_id"] = job_id
                 await _emit_progress_event(user_id, progress)
-                
+
                 # Small delay before next iteration
                 await asyncio.sleep(0.1)
-            
+
             if iteration >= max_iterations:
-                logger.warning(f" Max iterations reached for {user_id}")
-        
+                logger.warning(f" Max iterations reached for {engine_key}")
+
         except Exception as e:
-            logger.error(f"Execution loop error for {user_id}: {e}", exc_info=True)
-        
+            logger.error(f"Execution loop error for {engine_key}: {e}", exc_info=True)
+
         finally:
             # Cleanup
-            if user_id in self.running_engines:
-                del self.running_engines[user_id]
-            
+            if engine_key in self.running_engines:
+                del self.running_engines[engine_key]
+            self._replan_attempted.pop(engine_key, None)
+            self._cancellation_contexts.pop(engine_key, None)
+
             await self._print_final_summary(user_id)
-            
+
             # Signal completion event
-            if user_id in self.completion_events:
-                self.completion_events[user_id].set()
-                logger.info(f"Completion event signaled for {user_id}")
-            
+            if engine_key in self.completion_events:
+                self.completion_events[engine_key].set()
+                logger.info(f"Completion event signaled for {engine_key}")
+
+            # Update job coordinator
+            summary = await self.orchestrator.get_execution_summary(user_id)
+            if summary.get("failed", 0) > 0:
+                get_job_coordinator().update_status(user_id, job_id, JobStatus.FAILED)
+            else:
+                get_job_coordinator().update_status(user_id, job_id, JobStatus.COMPLETED)
+
             logger.info(f"\n{'='*70}")
-            logger.info(f"EXECUTION LOOP ENDED: {user_id}")
+            logger.info(f"EXECUTION LOOP ENDED: {engine_key}")
             logger.info(f"{'='*70}\n")
     
+    # ==================== REPLANNER INTEGRATION ====================
+
+    async def _check_and_replan(self, user_id: str, job_id: str, state) -> None:
+        """
+        After a batch executes, scan for newly failed tasks.
+        For RECOVERABLE failures, invoke the LLM replanner.
+        """
+        engine_key = f"{user_id}:{job_id}"
+        attempted = self._replan_attempted.get(engine_key, set())
+
+        failed_tasks = state.get_tasks_by_status("failed")
+        for failed_task in failed_tasks:
+            if failed_task.task_id in attempted:
+                continue  # Already attempted replan for this task
+
+            # Classify the failure
+            category = classify_failure(failed_task.tool, Exception(failed_task.error or "Unknown"))
+
+            if category == FailureCategory.TERMINAL:
+                logger.info(f"[Replan] Task {failed_task.task_id} is TERMINAL — no replan")
+                attempted.add(failed_task.task_id)
+                continue
+
+            if category == FailureCategory.TRANSIENT:
+                # Transient failures are already retried by watched_execute.
+                # If we're here, retries were exhausted — treat as recoverable.
+                logger.info(f"[Replan] Task {failed_task.task_id} was TRANSIENT but retries exhausted — attempting replan")
+
+            # RECOVERABLE (or exhausted TRANSIENT) — attempt replan
+            attempted.add(failed_task.task_id)
+            await self._attempt_replan(user_id, job_id, failed_task, state)
+
+    async def _attempt_replan(self, user_id: str, job_id: str, failed_task, state) -> None:
+        """Invoke the LLM replanner for a single recoverable failure."""
+        engine_key = f"{user_id}:{job_id}"
+        coordinator = get_job_coordinator()
+        meta = coordinator.get_job(user_id, job_id)
+
+        # Budget check — per-job
+        if meta and meta.replan_count >= MAX_REPLANS_PER_JOB:
+            logger.warning(f"[Replan] Job {job_id} exceeded MAX_REPLANS_PER_JOB ({MAX_REPLANS_PER_JOB})")
+            await emit_spark_log(user_id, "job:replan_exhausted", payload={
+                "job_id": job_id, "reason": "Job replan budget exhausted",
+            })
+            return
+
+        # Budget check — per-task (using task_id as lineage_id)
+        lineage_id = failed_task.task_id
+        if meta:
+            task_count = meta.task_replan_counts.get(lineage_id, 0)
+            if task_count >= MAX_REPLANS_PER_TASK:
+                logger.warning(f"[Replan] Task {lineage_id} exceeded MAX_REPLANS_PER_TASK ({MAX_REPLANS_PER_TASK})")
+                return
+
+        logger.info(f"[Replan] Invoking replanner for task {failed_task.task_id} in job {job_id}")
+
+        # Emit job:replanning event
+        coordinator.update_status(user_id, job_id, JobStatus.REPLANNING)
+        try:
+            from app.socket.utils import socket_emit
+            await socket_emit("job:replanning", {
+                "user_id": user_id, "job_id": job_id,
+                "task_id": failed_task.task_id,
+                "error": failed_task.error,
+            }, user_id=user_id)
+        except Exception:
+            pass
+
+        # Build replanner prompt
+        try:
+            available_tools = list(self.orchestrator.tool_registry.get_all_tools().keys())
+        except Exception:
+            available_tools = []
+
+        # Gather cross-job context
+        other_jobs = []
+        for j in coordinator.get_active_jobs(user_id):
+            if j.job_id != job_id:
+                other_jobs.append({"job_id": j.job_id, "goal": j.goal[:100], "status": j.status.value})
+
+        budget_remaining = {
+            "replans_left": MAX_REPLANS_PER_JOB - (meta.replan_count if meta else 0),
+            "task_replans_left": MAX_REPLANS_PER_TASK - (meta.task_replan_counts.get(lineage_id, 0) if meta else 0),
+        }
+
+        # Active resource locks for context
+        active_locks: List[str] = []
+        registry = get_resource_lock_registry()
+        user_locks = registry._locks.get(user_id, {})
+        for res_key, lock in user_locks.items():
+            if lock.locked():
+                active_locks.append(res_key)
+
+        compact_fn = self.orchestrator._compact_summary_value
+        original_query = meta.goal if meta else ""
+
+        messages = build_replan_prompt(
+            original_query=original_query,
+            failed_task=failed_task,
+            state=state,
+            available_tools=available_tools,
+            budget_remaining=budget_remaining,
+            compact_fn=compact_fn,
+            active_locks=active_locks,
+            other_jobs=other_jobs,
+        )
+
+        # Call LLM
+        try:
+            from app.ai.providers.router import routed_chat
+            raw_response, _meta = await routed_chat(
+                "lightweight", messages=messages, temperature=0.0, max_tokens=800,
+            )
+        except Exception as exc:
+            logger.error(f"[Replan] LLM call failed: {exc}")
+            coordinator.update_status(user_id, job_id, JobStatus.RUNNING)
+            return
+
+        # Track tokens used (approximate)
+        tokens_used = len(raw_response or "") // 4  # rough estimate
+        if meta:
+            coordinator.increment_replan(user_id, job_id, tokens_used)
+            coordinator.increment_task_replan(user_id, job_id, lineage_id)
+
+        # Parse response
+        diff_ops = parse_replan_response(raw_response or "")
+        if not diff_ops:
+            logger.info(f"[Replan] Replanner returned empty diff — no recovery possible")
+            coordinator.update_status(user_id, job_id, JobStatus.RUNNING)
+            return
+
+        # Validate diff
+        try:
+            validate_diff(state, diff_ops)
+        except DiffValidationError as exc:
+            logger.error(f"[Replan] Diff validation failed: {exc}")
+            coordinator.update_status(user_id, job_id, JobStatus.RUNNING)
+            return
+
+        # Check for non-idempotent tasks in the diff that need approval
+        needs_approval = self._diff_needs_approval(diff_ops)
+        if needs_approval:
+            logger.info(f"[Replan] Diff introduces non-idempotent tasks: {needs_approval}")
+            # For now, log and proceed. Full approval integration is a follow-up.
+            # TODO: wire through ApprovalCoordinator for non-idempotent replan tasks
+
+        # Apply diff transactionally
+        apply_diff(state, diff_ops)
+        logger.info(f"[Replan] Applied {len(diff_ops)} diff ops to job {job_id}")
+
+        # Unblock dependents that can now proceed
+        unblocked = unblock_dependents(state, failed_task.task_id)
+        if unblocked:
+            logger.info(f"[Replan] Unblocked tasks: {unblocked}")
+
+        # Resume job
+        coordinator.update_status(user_id, job_id, JobStatus.RUNNING)
+
+        try:
+            from app.socket.utils import socket_emit
+            await socket_emit("job:resumed", {
+                "user_id": user_id, "job_id": job_id,
+                "diff_ops": len(diff_ops), "unblocked": unblocked,
+            }, user_id=user_id)
+        except Exception:
+            pass
+
+    def _diff_needs_approval(self, diff_ops: List[Dict[str, Any]]) -> List[str]:
+        """Check if any tasks introduced by the diff are non-idempotent."""
+        NON_IDEMPOTENT_TOOLS = {
+            "email_send", "message_send", "file_delete", "folder_delete",
+            "send_notification", "calendar_create",
+        }
+        flagged = []
+        for op in diff_ops:
+            if op.get("op") == "insert_before":
+                for t in op.get("tasks", []):
+                    if t.get("tool") in NON_IDEMPOTENT_TOOLS:
+                        flagged.append(t.get("tool"))
+            elif op.get("op") == "replace":
+                w = op.get("with", {})
+                if w.get("tool") in NON_IDEMPOTENT_TOOLS:
+                    flagged.append(w.get("tool"))
+        return flagged
+
+    # ==================== RESOURCE LOCK HELPERS ====================
+
+    # Maps tool_name -> resource key(s) the tool requires.
+    # Tools not listed here don't acquire any resource lock.
+    _TOOL_RESOURCE_MAP: Dict[str, str] = {
+        "shell_execute": "shell",
+        "shell_agent": "shell",
+        "terminal_command": "shell",
+        "browser_open": "browser",
+        "browser_navigate": "browser",
+        "chrome_action": "browser",
+        "tts_speak": "tts",
+        "text_to_speech": "tts",
+    }
+
+    def _get_tool_resources(self, tool_name: str) -> List[str]:
+        """Get the resource keys a tool requires (empty list if none)."""
+        resource = self._TOOL_RESOURCE_MAP.get(tool_name)
+        return [resource] if resource else []
+
     # ==================== STUCK TASK REAPER ====================
 
     _EMITTED_TIMEOUT_S = 120.0   # 2 min — client should ack well before this
@@ -312,24 +570,24 @@ class ExecutionEngine:
 
     # ==================== SERVER TASK EXECUTION ====================
     
-    async def _execute_server_batch(self, user_id: str, tasks: list[TaskRecord]) -> None:
+    async def _execute_server_batch(self, user_id: str, tasks: list[TaskRecord], job_id: str = "default") -> None:
         """Execute multiple server tasks in parallel"""
         if not self.server_tool_executor:
             logger.error("No server tool executor configured!")
             return
         
         results = await asyncio.gather(
-            *[self._execute_single_server_task(user_id, task) for task in tasks],
+            *[self._execute_single_server_task(user_id, task, job_id=job_id) for task in tasks],
             return_exceptions=True
         )
         
         success_count = sum(1 for r in results if r is True)
         logger.info(f"Completed {success_count}/{len(tasks)} server tasks")
     
-    async def _execute_single_server_task(self, user_id: str, task: TaskRecord) -> bool:
+    async def _execute_single_server_task(self, user_id: str, task: TaskRecord, job_id: str = "default") -> bool:
         """Execute a single server task"""
         try:
-            await self.orchestrator.mark_task_running(user_id, task.task_id)
+            await self.orchestrator.mark_task_running(user_id, task.task_id, job_id=job_id)
             
             logger.info(f"  Executing: {task.task_id} ({task.tool})")
             await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", payload={"message": f"Executing {task.tool}"})
@@ -344,15 +602,15 @@ class ExecutionEngine:
             if not self.server_tool_executor: 
                 raise RuntimeError("Server tool executor not configured")    
             
-            # RESOLVE INPUT BINDINGS
-            state = self.orchestrator.get_state(user_id)
+            # RESOLVE INPUT BINDINGS — find the correct job state for this task
+            state = self.orchestrator._find_state_for_task(user_id, task.task_id, job_id=job_id)
             if not state:
-                raise RuntimeError(f"No execution state for user: {user_id}")
-            
+                raise RuntimeError(f"No execution state for task {task.task_id}")
+
             can_resolve, error = self.binding_resolver.validate_bindings(task, state)
             if not can_resolve:
                 raise ValueError(f"Cannot resolve bindings: {error}")
-            
+
             resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
             resolved_inputs["_user_id"] = user_id
             resolved_inputs["user_id"] = user_id
@@ -360,7 +618,7 @@ class ExecutionEngine:
             resolved_inputs["_execution_id"] = state.execution_id
             resolved_inputs["execution_id"] = state.execution_id
             task.resolved_inputs = resolved_inputs
-            
+
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
             await _emit_tool_detail(user_id, "tool_params", task.task_id, task.tool, inputs={k: str(v)[:150] for k, v in resolved_inputs.items() if not k.startswith("_") and k not in ("user_id", "execution_id")}, message=f"{task.tool}({', '.join(f'{k}={str(v)[:50]}' for k, v in resolved_inputs.items() if not k.startswith('_') and k not in ('user_id', 'execution_id'))})")
 
@@ -401,14 +659,26 @@ class ExecutionEngine:
                 await _emit_progress_event(_uid, {"retry": True, "task_id": task.task_id, "attempt": attempt, "message": msg})
                 await _emit_tool_detail(_uid, "tool_retry", task.task_id, task.tool, attempt=attempt, message=msg)
 
-            watcher_result = await watched_execute(
-                user_id=user_id,
-                task=task,
-                resolved_inputs=resolved_inputs,
-                executor_fn=_server_exec_fn,
-                on_retry=_on_server_retry,
-                get_task_output_fn=lambda tid: self.orchestrator.get_task(user_id, tid).output if self.orchestrator.get_task(user_id, tid) else None,
-            )
+            # Acquire resource lock if needed (prevents cross-job contention)
+            resources = self._get_tool_resources(task.tool)
+            lock_registry = get_resource_lock_registry()
+
+            async def _run_watched():
+                return await watched_execute(
+                    user_id=user_id,
+                    task=task,
+                    resolved_inputs=resolved_inputs,
+                    executor_fn=_server_exec_fn,
+                    on_retry=_on_server_retry,
+                    get_task_output_fn=lambda tid: self.orchestrator.get_task(user_id, tid).output if self.orchestrator.get_task(user_id, tid) else None,
+                )
+
+            if resources:
+                async with MultiLockContext(lock_registry, user_id, resources):
+                    watcher_result = await _run_watched()
+            else:
+                watcher_result = await _run_watched()
+
             output = watcher_result.output
 
             if watcher_result.recovered:
@@ -416,7 +686,7 @@ class ExecutionEngine:
                             await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
 
             if output.success:
-                await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
+                await self.orchestrator.mark_task_completed(user_id, task.task_id, output, job_id=job_id)
                 await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=task.duration_ms, message=f"✓ {task.tool} completed in {task.duration_ms}ms")
                 # Record in session memory for context-aware follow-ups
                 get_tool_context_service().record_tool_output(
@@ -435,7 +705,7 @@ class ExecutionEngine:
                     user_id=user_id, task_id=task.task_id, tool_name=task.tool,
                     output_data=output.data, success=False, error=error,
                 )
-                await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
+                await self.orchestrator.mark_task_failed(user_id, task.task_id, error, job_id=job_id)
                 if task.lifecycle_messages and task.lifecycle_messages.on_failure:
                     logger.info(f"     {task.lifecycle_messages.on_failure}")
                 logger.error(f"  Failed: {task.task_id} - {error}")
@@ -443,21 +713,21 @@ class ExecutionEngine:
         
         except asyncio.TimeoutError:
             error = f"Task timed out after {timeout}s" # type: ignore
-            await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
+            await self.orchestrator.mark_task_failed(user_id, task.task_id, error, job_id=job_id)
             if task.lifecycle_messages and task.lifecycle_messages.on_failure:
                 logger.info(f"     {task.lifecycle_messages.on_failure}")
             return False
         
         except Exception as e:
             error = str(e)
-            await self.orchestrator.mark_task_failed(user_id, task.task_id, error)
+            await self.orchestrator.mark_task_failed(user_id, task.task_id, error, job_id=job_id)
             if task.lifecycle_messages and task.lifecycle_messages.on_failure:
                 logger.info(f"     {task.lifecycle_messages.on_failure}")
             return False
     
     # ==================== CLIENT TASK HANDLING ====================
     
-    async def _handle_client_batch(self, user_id: str, tasks: list[TaskRecord]) -> None:
+    async def _handle_client_batch(self, user_id: str, tasks: list[TaskRecord], job_id: str = "default") -> None:
         """
         UNIFIED: Handle client tasks based on environment.
         
@@ -465,11 +735,11 @@ class ExecutionEngine:
         Production: Emit via WebSocket
         """
         if self.environment == "DESKTOP":
-            await self._execute_client_batch_locally(user_id, tasks)
+            await self._execute_client_batch_locally(user_id, tasks, job_id=job_id)
         else:
-            await self._emit_client_batch_remote(user_id, tasks)
+            await self._emit_client_batch_remote(user_id, tasks, job_id=job_id)
     
-    async def _execute_client_batch_locally(self, user_id: str, tasks: list[TaskRecord]) -> None:
+    async def _execute_client_batch_locally(self, user_id: str, tasks: list[TaskRecord], job_id: str = "default") -> None:
         """
         DESKTOP MODE: Execute client tasks DIRECTLY.
         
@@ -481,7 +751,8 @@ class ExecutionEngine:
             for task in tasks:
                 await self.orchestrator.mark_task_failed(
                     user_id, task.task_id,
-                    "Client tool executor not configured"
+                    "Client tool executor not configured",
+                    job_id=job_id
                 )
             return
         
@@ -489,7 +760,7 @@ class ExecutionEngine:
         if self._is_dependency_chain(tasks):
             success_count = 0
             for task in tasks:
-                result = await self._execute_single_client_task(user_id, task)
+                result = await self._execute_single_client_task(user_id, task, job_id=job_id)
                 if result:
                     success_count += 1
                 else:
@@ -498,22 +769,23 @@ class ExecutionEngine:
                     for remaining in tasks[idx + 1:]:
                         await self.orchestrator.mark_task_failed(
                             user_id, remaining.task_id,
-                            f"Skipped: dependency {task.task_id} failed"
+                            f"Skipped: dependency {task.task_id} failed",
+                            job_id=job_id
                         )
                     break
             logger.info(f"Completed {success_count}/{len(tasks)} client tasks locally")
         else:
             results = await asyncio.gather(
-                *[self._execute_single_client_task(user_id, task) for task in tasks],
+                *[self._execute_single_client_task(user_id, task, job_id=job_id) for task in tasks],
                 return_exceptions=True
             )
             success_count = sum(1 for r in results if r is True)
             logger.info(f"Completed {success_count}/{len(tasks)} client tasks locally")
     
-    async def _execute_single_client_task(self, user_id: str, task: TaskRecord) -> bool:
+    async def _execute_single_client_task(self, user_id: str, task: TaskRecord, job_id: str = "default") -> bool:
         """Execute a single client task locally (desktop mode) with watcher recovery"""
         try:
-            await self.orchestrator.mark_task_running(user_id, task.task_id)
+            await self.orchestrator.mark_task_running(user_id, task.task_id, job_id=job_id)
             
             logger.info(f"   Executing locally: {task.task_id} ({task.tool})")
             await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", payload={"message": f"Executing {task.tool} locally"})
@@ -525,15 +797,15 @@ class ExecutionEngine:
             if not await self._handle_approval_gate(user_id, task):
                 return False
             
-            # Resolve inputs
-            state = self.orchestrator.get_state(user_id)
+            # Resolve inputs — find the correct job state for this task
+            state = self.orchestrator._find_state_for_task(user_id, task.task_id, job_id=job_id)
             if not state:
-                raise RuntimeError(f"No execution state for user: {user_id}")
-            
+                raise RuntimeError(f"No execution state for task {task.task_id}")
+
             can_resolve, error = self.binding_resolver.validate_bindings(task, state)
             if not can_resolve:
                 raise ValueError(f"Cannot resolve bindings: {error}")
-            
+
             resolved_inputs = self.binding_resolver.resolve_inputs(task, state)
             resolved_inputs["_user_id"] = user_id
             resolved_inputs["user_id"] = user_id
@@ -556,15 +828,27 @@ class ExecutionEngine:
             async def _on_retry(_uid: str, attempt: int, msg: str) -> None:
                 await _emit_progress_event(_uid, {"retry": True, "task_id": task.task_id, "attempt": attempt, "message": msg})
 
+            # Acquire resource lock if needed (prevents cross-job contention)
+            resources = self._get_tool_resources(task.tool)
+            lock_registry = get_resource_lock_registry()
+
+            async def _run_client_watched():
+                return await watched_execute(
+                    user_id=user_id,
+                    task=task,
+                    resolved_inputs=resolved_inputs,
+                    executor_fn=_exec_fn,
+                    on_retry=_on_retry,
+                    get_task_output_fn=lambda tid: self.orchestrator.get_task(user_id, tid).output if self.orchestrator.get_task(user_id, tid) else None,
+                )
+
             local_t0 = datetime.now()
-            watcher_result = await watched_execute(
-                user_id=user_id,
-                task=task,
-                resolved_inputs=resolved_inputs,
-                executor_fn=_exec_fn,
-                on_retry=_on_retry,
-                get_task_output_fn=lambda tid: self.orchestrator.get_task(user_id, tid).output if self.orchestrator.get_task(user_id, tid) else None,
-            )
+            if resources:
+                async with MultiLockContext(lock_registry, user_id, resources):
+                    watcher_result = await _run_client_watched()
+            else:
+                watcher_result = await _run_client_watched()
+
             latency_ms = int((datetime.now() - local_t0).total_seconds() * 1000)
             output = watcher_result.output
 
@@ -573,7 +857,7 @@ class ExecutionEngine:
                             await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
 
             if output.success:
-                await self.orchestrator.mark_task_completed(user_id, task.task_id, output)
+                await self.orchestrator.mark_task_completed(user_id, task.task_id, output, job_id=job_id)
                 await emit_kernel_event(
                     KernelEvent(
                         event_type="tool_invoked",
@@ -590,7 +874,7 @@ class ExecutionEngine:
                 return True
             else:
                 error_msg = watcher_result.watcher_message or output.error or f"Client tool '{task.tool}' failed"
-                await self.orchestrator.mark_task_failed(user_id, task.task_id, error_msg)
+                await self.orchestrator.mark_task_failed(user_id, task.task_id, error_msg, job_id=job_id)
                 await emit_kernel_event(
                     KernelEvent(
                         event_type="tool_failed",
@@ -608,7 +892,7 @@ class ExecutionEngine:
         
         except Exception as e:
             error_msg = str(e)
-            await self.orchestrator.mark_task_failed(user_id, task.task_id, error_msg)
+            await self.orchestrator.mark_task_failed(user_id, task.task_id, error_msg, job_id=job_id)
             await emit_kernel_event(
                 KernelEvent(
                     event_type="tool_failed",
@@ -644,7 +928,7 @@ class ExecutionEngine:
             return False
 
         question = control.approval_question or f"Allow '{task.tool}' to run?"
-        state = self.orchestrator.get_state(user_id)
+        state = self.orchestrator._find_state_for_task(user_id, task.task_id)
         execution_id = state.execution_id if state else ""
         request_id = f"{task.task_id}::approval::{uuid.uuid4().hex[:8]}"
         await self.orchestrator.mark_task_waiting(user_id, task.task_id, request_id=request_id)
@@ -700,7 +984,7 @@ class ExecutionEngine:
 
         return False
     
-    async def _emit_client_batch_remote(self, user_id: str, tasks: list[TaskRecord]) -> None:
+    async def _emit_client_batch_remote(self, user_id: str, tasks: list[TaskRecord], job_id: str = "default") -> None:
         """
         PRODUCTION MODE: Emit client tasks via WebSocket.
         """
@@ -709,14 +993,14 @@ class ExecutionEngine:
             for task in tasks:
                 await self.orchestrator.mark_task_failed(
                     user_id, task.task_id,
-                    "Socket handler not configured"
+                    "Socket handler not configured",
+                    job_id=job_id
                 )
             return
         
-        state = self.orchestrator.get_state(user_id)
-        
         for task in tasks:
             try:
+                state = self.orchestrator._find_state_for_task(user_id, task.task_id, job_id=job_id)
                 if state:
                     can_resolve, error = self.binding_resolver.validate_bindings(task, state)
                     if can_resolve:
@@ -732,7 +1016,7 @@ class ExecutionEngine:
                 if task.lifecycle_messages and task.lifecycle_messages.on_start:
                     logger.info(f"     {task.lifecycle_messages.on_start}")
                 
-                await self.orchestrator.mark_task_emitted(user_id, task.task_id)
+                await self.orchestrator.mark_task_emitted(user_id, task.task_id, job_id=job_id)
                 
                 success = await self.socket_handler.emit_task_single(user_id, task)
                 
@@ -781,20 +1065,67 @@ class ExecutionEngine:
         await _emit_summary_event(user_id, summary_payload)
         await emit_spark_log(user_id, "execution_complete", payload={"message": f"Done: {summary['completed']}/{summary['total']} succeeded", **summary_payload})
     
-    def is_running(self, user_id: str) -> bool:
-        """Check if execution is running for user"""
-        task = self.running_engines.get(user_id)
-        return task is not None and not task.done()
-    
-    async def stop_execution(self, user_id: str) -> None:
-        """Stop execution for a user (graceful shutdown)"""
+    def is_running(self, user_id: str, job_id: Optional[str] = None) -> bool:
+        """Check if execution is running for user (optionally for a specific job)."""
+        if job_id:
+            engine_key = f"{user_id}:{job_id}"
+            task = self.running_engines.get(engine_key)
+            return task is not None and not task.done()
+        # Check if ANY job is running for this user
+        prefix = f"{user_id}:"
+        return any(
+            not t.done() for k, t in self.running_engines.items()
+            if k.startswith(prefix)
+        )
+
+    async def stop_execution(self, user_id: str, job_id: Optional[str] = None) -> None:
+        """Stop execution for a user (optionally for a specific job)."""
+        coordinator = get_job_coordinator()
         get_approval_coordinator().cancel_user_requests(user_id)
-        task = self.running_engines.get(user_id)
-        if task and not task.done():
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-            logger.info(f"🛑 Stopped execution for {user_id}")
+
+        if job_id:
+            # Check if this is a queued (not yet running) job
+            job_meta = coordinator.get_job(user_id, job_id)
+            if job_meta and job_meta.status == JobStatus.QUEUED:
+                coordinator.cancel_queued_job(user_id, job_id)
+                logger.info("🛑 Cancelled queued job %s for %s", job_id, user_id)
+                return
+
+            engine_key = f"{user_id}:{job_id}"
+            # Trigger cancellation context first
+            cancel_ctx = self._cancellation_contexts.get(engine_key)
+            if cancel_ctx:
+                cancel_ctx.cancel()
+            task = self.running_engines.get(engine_key)
+            if task and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                coordinator.update_status(user_id, job_id, JobStatus.CANCELLED)
+                logger.info(f"🛑 Stopped execution for {engine_key}")
+        else:
+            # Stop ALL running jobs for this user
+            prefix = f"{user_id}:"
+            keys = [k for k in self.running_engines if k.startswith(prefix)]
+            for key in keys:
+                cancel_ctx = self._cancellation_contexts.get(key)
+                if cancel_ctx:
+                    cancel_ctx.cancel()
+                task = self.running_engines.get(key)
+                if task and not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+                    jid = key.split(":", 1)[1] if ":" in key else key
+                    coordinator.update_status(user_id, jid, JobStatus.CANCELLED)
+
+            # Also cancel all queued jobs
+            for qj in coordinator.get_queued_jobs(user_id):
+                coordinator.cancel_queued_job(user_id, qj.job_id)
+
+            stopped = len(keys) + len(coordinator.get_queued_jobs(user_id))
+            if keys:
+                logger.info(f"🛑 Stopped all {len(keys)} running + queued jobs for {user_id}")
 
 
 # Global singleton

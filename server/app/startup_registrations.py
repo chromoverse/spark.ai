@@ -130,6 +130,23 @@ async def _init_agent_system() -> None:
     engine.set_server_executor(server_executor)
     engine.set_client_emitter(emitter)
     
+    # ── Step 8: Initialize Job Coordinator + GC background task ──
+    from app.kernel.execution.job_coordinator import get_job_coordinator
+    job_coordinator = get_job_coordinator()
+
+    async def _gc_loop():
+        """Periodically clean up terminated jobs."""
+        import asyncio as _asyncio
+        while True:
+            await _asyncio.sleep(300)  # Every 5 minutes
+            try:
+                await job_coordinator.gc()
+            except Exception as exc:
+                logger.error("Job GC error: %s", exc)
+
+    import asyncio as _asyncio
+    _asyncio.create_task(_gc_loop())
+
     logger.info("Agent system ready (env=%s, emitter=%s)", environment, emitter.environment)
 
 

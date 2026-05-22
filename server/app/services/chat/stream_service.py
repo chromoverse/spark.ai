@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -124,12 +125,51 @@ def _format_rag_chunks(query_context: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _build_job_state_context(user_id: str) -> str:
+    """
+    Build a compact job-state summary for injection into the stream prompt.
+
+    Returns an empty string when there's nothing relevant (no active or
+    recently-finished jobs), so the caller can skip the system message
+    entirely and avoid wasting tokens.
+    """
+    try:
+        from app.kernel.execution.job_coordinator import get_job_coordinator
+        coordinator = get_job_coordinator()
+
+        active = coordinator.get_active_jobs(user_id)
+        all_jobs = coordinator.get_all_jobs(user_id)
+        now = time.time()
+        # Include recently finished jobs (last 2 min) so the LLM can answer
+        # "what happened to that job?"
+        recent = [
+            j for j in all_jobs
+            if j.is_terminal and j.finished_at and (now - j.finished_at) < 120
+        ]
+
+        if not active and not recent:
+            return ""
+
+        lines: List[str] = []
+        for j in active:
+            elapsed = int(now - j.created_at)
+            lines.append(f"  [{j.status.value}] {j.goal[:60]} (running {elapsed}s)")
+        for j in recent:
+            ago = int(now - (j.finished_at or now))
+            lines.append(f"  [{j.status.value}] {j.goal[:60]} (finished {ago}s ago)")
+
+        return "━━━ YOUR CURRENT JOBS ━━━\n" + "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _build_messages(
     lang: str,
     query: str,
     recent_context: List[Dict[str, Any]],
     query_context: List[Dict[str, Any]],
     user_details: Dict[str, Any],
+    user_id: str = "",
 ) -> List[Dict[str, str]]:
     messages: List[Dict[str, str]] = []
 
@@ -145,6 +185,12 @@ def _build_messages(
             if len(content) > 600:
                 content = content[:600] + "…"
             messages.append({"role": role, "content": content})
+
+    # Job state context (dynamic — only present when jobs exist)
+    if user_id:
+        job_ctx = _build_job_state_context(user_id)
+        if job_ctx:
+            messages.append({"role": "system", "content": job_ctx})
 
     rag_text = _format_rag_chunks(query_context)
     if rag_text:
@@ -304,6 +350,7 @@ class StreamService:
             recent_context=recent_context,
             query_context=query_context,
             user_details=user_details,
+            user_id=user_id,
         )
         kwargs = _model_kwargs(messages, query=query)
 
@@ -438,7 +485,7 @@ class StreamService:
             )
             # Emit to live activity
             from app.socket.log_stream import emit_spark_log
-            asyncio.create_task(emit_spark_log(user_id, "ai_response", payload={"message": msg[:200]}))
+            asyncio.create_task(emit_spark_log(user_id, "ai_response", payload={"message": msg}))
             # Log to activity log for searchable history
             try:
                 from app.services.activity import get_activity_log

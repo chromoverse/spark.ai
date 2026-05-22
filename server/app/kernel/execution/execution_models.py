@@ -14,7 +14,7 @@ from app.models import CamelModel
 ExecutionTarget = Literal["client", "server"]
 FailurePolicy = Literal["abort", "continue", "retry"]
 TaskStatus = Literal[
-    "pending", "running", "completed", "failed", "waiting", "skipped", "emitted"
+    "pending", "running", "completed", "failed", "waiting", "skipped", "emitted", "blocked"
 ]
 ApprovalState = Literal["requested", "approved", "denied"]
 

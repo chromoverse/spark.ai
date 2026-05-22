@@ -29,6 +29,11 @@ from app.prompts.sqh_prompt import build_messages
 from app.ai.providers import llm_chat, routed_chat
 from app.config import settings
 from app.kernel.execution.approval_coordinator import get_approval_coordinator
+from app.kernel.execution.job_coordinator import (
+    get_job_coordinator,
+    JobQuotaExceeded,
+    MAX_ACTIVE_JOBS_PER_USER,
+)
 from app.services.interrupt_manager import get_interrupt_manager
 from .task_summary_speech_service import get_task_summary_speech_service
 
@@ -321,40 +326,92 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
         if last_error or not tasks:
             raise ValueError(str(last_error or "no tasks generated"))
 
-        # ── Register + start execution ────────────────────────────────────
-        orchestrator    = get_orchestrator()
-        execution_engine = get_execution_engine()
-        approval_coordinator = get_approval_coordinator()
+        # ── Register job + start execution ────────────────────────────────
+        job_coordinator = get_job_coordinator()
+        job_id, queued = job_coordinator.register_job(user_id, goal=original_query)
 
-        approval_coordinator.cancel_user_requests(user_id)
-        if execution_engine.is_running(user_id):
-            await execution_engine.stop_execution(user_id)
-        await orchestrator.cleanup_user_state(user_id)
+        if queued:
+            # Slot full — job is queued; it will auto-start when a slot opens.
+            _tasks, _ack, _query, _lang = list(tasks), ack, original_query, user_lang
 
-        await orchestrator.register_tasks(user_id, tasks)
+            async def _start_queued():
+                await _launch_job(user_id, _tasks, _ack, _query, _lang, job_id)
 
-        # Emit plan to live logs
-        from app.socket.log_stream import emit_spark_log
-        tool_names = [t.tool for t in tasks]
-        await emit_spark_log(user_id, "plan_created", payload={"tools": tool_names, "task_count": len(tasks), "message": f"Plan: {', '.join(tool_names)}"})
+            job_coordinator.set_start_callback(user_id, job_id, _start_queued)
 
-        if not execution_engine.server_tool_executor:
-            execution_engine.set_server_executor(get_server_executor())
+            from app.socket.utils import socket_emit
+            queue_pos = len(job_coordinator.get_queued_jobs(user_id))
+            await socket_emit("spark:message", {
+                "user_id": user_id,
+                "text": (
+                    f"All {MAX_ACTIVE_JOBS_PER_USER} slots are busy. "
+                    f"I've queued your request — it'll start automatically when a slot opens up."
+                ),
+            }, user_id=user_id)
+            await socket_emit("job:queued", {
+                "user_id": user_id, "job_id": job_id,
+                "goal": original_query[:200],
+                "position": queue_pos,
+            }, user_id=user_id)
+            return
 
-        execution_engine.set_client_emitter(get_task_emitter())
-
-        if settings.environment == "DESKTOP":
-            if not execution_engine.client_tool_executor:
-                execution_engine.set_client_executor(get_client_executor())
-
-        await execution_engine.start_execution(user_id)
-
-        # Emit TTS summary after execution finishes
-        asyncio.create_task(_emit_summary(user_id, ack or "", execution_engine, original_query, user_lang))
+        # Active slot available — launch immediately
+        await _launch_job(user_id, tasks, ack, original_query, user_lang, job_id)
 
     except Exception as exc:
         logger.error("[SQH] critical failure user=%s: %s", user_id, exc, exc_info=True)
         raise
+
+
+# ── Job launcher (shared by direct + queued-promotion paths) ──────────────────
+
+async def _launch_job(
+    user_id: str,
+    tasks: List[Task],
+    ack: Optional[str],
+    original_query: str,
+    user_lang: str,
+    job_id: str,
+) -> None:
+    """Register tasks with orchestrator and start execution engine for a job."""
+    orchestrator = get_orchestrator()
+    execution_engine = get_execution_engine()
+
+    await orchestrator.register_tasks(user_id, tasks, job_id=job_id)
+
+    # Emit plan to live logs
+    from app.socket.log_stream import emit_spark_log
+    tool_names = [t.tool for t in tasks]
+    await emit_spark_log(user_id, "plan_created", payload={
+        "tools": tool_names, "task_count": len(tasks),
+        "job_id": job_id,
+        "message": f"Plan: {', '.join(tool_names)}",
+    })
+
+    # Emit job:started event
+    try:
+        from app.socket.utils import socket_emit
+        await socket_emit("job:started", {
+            "user_id": user_id, "job_id": job_id,
+            "goal": original_query[:200],
+        }, user_id=user_id)
+    except Exception:
+        pass
+
+    if not execution_engine.server_tool_executor:
+        execution_engine.set_server_executor(get_server_executor())
+    execution_engine.set_client_emitter(get_task_emitter())
+
+    if settings.environment == "DESKTOP":
+        if not execution_engine.client_tool_executor:
+            execution_engine.set_client_executor(get_client_executor())
+
+    await execution_engine.start_execution(user_id, job_id=job_id)
+
+    # Emit TTS summary after execution finishes
+    asyncio.create_task(
+        _emit_summary(user_id, ack or "", execution_engine, original_query, user_lang, job_id=job_id)
+    )
 
 
 # ── Post-execution TTS summary ─────────────────────────────────────────────────
@@ -365,16 +422,35 @@ async def _emit_summary(
     execution_engine: Any,
     original_query: str = "",
     user_lang: str = "en",
+    job_id: str = "default",
 ) -> None:
     """Wait for execution to complete, then emit final TTS summary (only when meaningful)."""
+    engine_key = f"{user_id}:{job_id}"
     try:
-        event = execution_engine.completion_events.get(user_id)
+        event = execution_engine.completion_events.get(engine_key)
         if event:
             await asyncio.wait_for(event.wait(), timeout=60)
     except asyncio.TimeoutError:
-        logger.warning("[SQH] completion wait timed out for user=%s — emitting anyway", user_id)
+        logger.warning("[SQH] completion wait timed out for %s — emitting anyway", engine_key)
     except Exception as exc:
-        logger.error("[SQH] completion wait error user=%s: %s", user_id, exc)
+        logger.error("[SQH] completion wait error %s: %s", engine_key, exc)
+
+    # Emit job lifecycle event
+    try:
+        from app.socket.utils import socket_emit
+        orchestrator = get_orchestrator()
+        summary_data = await orchestrator.get_execution_summary(user_id)
+        if summary_data.get("failed", 0) > 0:
+            await socket_emit("job:failed", {
+                "user_id": user_id, "job_id": job_id,
+                "error": f"{summary_data['failed']} task(s) failed",
+            }, user_id=user_id)
+        else:
+            await socket_emit("job:completed", {
+                "user_id": user_id, "job_id": job_id,
+            }, user_id=user_id)
+    except Exception:
+        pass
 
     # Skip if user already interrupted (started speaking again)
     if _interrupt.is_set(user_id):

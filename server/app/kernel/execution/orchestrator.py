@@ -10,6 +10,7 @@ Production-Grade Task Orchestrator
 
 import asyncio
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime
 
@@ -54,24 +55,61 @@ class TaskOrchestrator:
         if user_id not in self._locks:
             self._locks[user_id] = asyncio.Lock()
         return self._locks[user_id]
-    
-    async def register_tasks(self, user_id: str, tasks: List[Task]) -> None:
+
+    def _find_state_for_task(self, user_id: str, task_id: str, job_id: Optional[str] = None) -> Optional[ExecutionState]:
+        """Find the ExecutionState containing a specific task.
+        
+        When job_id is provided, uses direct job-scoped lookup to avoid
+        cross-job task_id collisions (e.g. step_1 in job_A vs step_1 in job_B).
         """
-        Register a list of tasks for a user
+        # Direct job-scoped lookup (preferred — avoids cross-job collisions)
+        if job_id:
+            state = self.states.get(f"{user_id}:{job_id}")
+            if state and task_id in state.tasks:
+                return state
+        # Try exact user_id match (backward compat for tests/old paths)
+        state = self.states.get(user_id)
+        if state and task_id in state.tasks:
+            return state
+        # Search job-keyed states (fallback for callers without job_id)
+        prefix = f"{user_id}:"
+        for key, st in self.states.items():
+            if key.startswith(prefix) and task_id in st.tasks:
+                return st
+        return None
+
+    def _find_any_state(self, user_id: str) -> Optional[ExecutionState]:
+        """Find any (first) active ExecutionState for a user. Backward compat fallback."""
+        state = self.states.get(user_id)
+        if state:
+            return state
+        prefix = f"{user_id}:"
+        for key, st in self.states.items():
+            if key.startswith(prefix):
+                return st
+        return None
+    
+    async def register_tasks(self, user_id: str, tasks: List[Task], job_id: Optional[str] = None) -> str:
+        """
+        Register a list of tasks for a user under a specific job_id.
         
         Args:
             user_id: User identifier
             tasks: List of Task objects from LLM
+            job_id: Optional job identifier (generated if not provided)
+        Returns:
+            job_id: The job identifier for this task registration
         """
+        job_id = job_id or f"job_{uuid.uuid4().hex[:8]}"
+        state_key = f"{user_id}:{job_id}"
+        
         async with self._get_lock(user_id):
-            # Create or get user state
-            if user_id not in self.states:
-                self.states[user_id] = ExecutionState(user_id=user_id)
-                logger.info("Created new execution state for user: %s", user_id)
+            if state_key not in self.states:
+                self.states[state_key] = ExecutionState(user_id=user_id, execution_id=job_id)
+                logger.info("Created new execution state for user/job: %s", state_key)
             
-            state = self.states[user_id]
-            
-            logger.info(f"Registering {len(tasks)} tasks for user {user_id}")
+            state = self.states[state_key]
+            logger.info(f"Registering {len(tasks)} tasks under job {job_id} for user {user_id}")
             
             for task in tasks:
                 # Validate tool exists
@@ -102,24 +140,29 @@ class TaskOrchestrator:
                         payload={
                             "execution_target": task.execution_target,
                             "depends_on": task.depends_on,
+                            "job_id": job_id,
                         },
                     )
                 )
             
-            logger.info(f"Registered {len(tasks)} tasks for user {user_id}")
+            logger.info(f"Registered {len(tasks)} tasks for user {user_id} in {job_id}")
+            return job_id
     
-    async def get_executable_batch(self, user_id: str) -> TaskBatch:
+    async def get_executable_batch(self, user_id: str, job_id: Optional[str] = None) -> TaskBatch:
         """
         Get batch of tasks ready to execute RIGHT NOW
-        
+
         FIXED: Returns entire CLIENT CHAINS in one batch!
-        
+
         For client tasks, if A→B→C are all client and A is ready,
         returns ALL THREE so engine can batch them together.
         """
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
-            
+            if job_id:
+                state = self.states.get(f"{user_id}:{job_id}")
+            else:
+                state = self._find_any_state(user_id)
+
             if not state:
                 return TaskBatch()
             
@@ -254,10 +297,10 @@ class TaskOrchestrator:
         
         return True
     
-    async def mark_task_running(self, user_id: str, task_id: str) -> None:
+    async def mark_task_running(self, user_id: str, task_id: str, job_id: Optional[str] = None) -> None:
         """Mark task as running"""
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            state = self._find_state_for_task(user_id, task_id, job_id=job_id)
             if not state:
                 return
             
@@ -277,10 +320,10 @@ class TaskOrchestrator:
                     )
                 )
 
-    async def mark_task_waiting(self, user_id: str, task_id: str, request_id: Optional[str] = None) -> None:
+    async def mark_task_waiting(self, user_id: str, task_id: str, request_id: Optional[str] = None, job_id: Optional[str] = None) -> None:
         """Mark task as waiting (typically pending user approval)."""
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            state = self._find_state_for_task(user_id, task_id, job_id=job_id)
             if not state:
                 return
 
@@ -310,7 +353,7 @@ class TaskOrchestrator:
     ) -> bool:
         """Resume a waiting approval-gated task by moving it back to pending."""
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            state = self._find_state_for_task(user_id, task_id)
             if not state:
                 return False
 
@@ -350,7 +393,7 @@ class TaskOrchestrator:
     ) -> bool:
         """Fail a waiting approval-gated task after denial."""
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            state = self._find_state_for_task(user_id, task_id)
             if not state:
                 return False
 
@@ -374,14 +417,15 @@ class TaskOrchestrator:
         return True
     
     async def mark_task_completed(
-        self, 
-        user_id: str, 
-        task_id: str, 
-        output: TaskOutput
+        self,
+        user_id: str,
+        task_id: str,
+        output: TaskOutput,
+        job_id: Optional[str] = None
     ) -> None:
         """Mark task as completed with output"""
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            state = self._find_state_for_task(user_id, task_id, job_id=job_id)
             if not state:
                 return
             
@@ -412,18 +456,19 @@ class TaskOrchestrator:
                 )
     
     async def mark_task_failed(
-        self, 
-        user_id: str, 
-        task_id: str, 
-        error: str
+        self,
+        user_id: str,
+        task_id: str,
+        error: str,
+        job_id: Optional[str] = None
     ) -> None:
         """
-        Mark task as failed
-        
-        IMPORTANT: Also marks dependent tasks as failed to prevent infinite loops
+        Mark task as failed.
+
+        IMPORTANT: Also blocks dependent tasks (not fails them) to allow replanning.
         """
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            state = self._find_state_for_task(user_id, task_id, job_id=job_id)
             if not state:
                 return
             
@@ -458,34 +503,33 @@ class TaskOrchestrator:
     
     async def _cascade_failure(self, user_id: str, failed_task_id: str) -> None:
         """
-        Mark all tasks that depend on a failed task as failed
+        Block (not fail) downstream tasks that depend on a failed task.
         
-        This prevents infinite loops where pending tasks wait for failed dependencies
+        Blocked tasks can be unblocked after a successful replan.
         """
-        state = self.states.get(user_id)
-        if not state:
-            return
-        
-        # Find all pending tasks that depend on this one
-        pending_tasks = state.get_tasks_by_status("pending")
-        
-        for task in pending_tasks:
-            if failed_task_id in task.depends_on:
-                task.status = "failed"
-                task.error = f"Dependency '{failed_task_id}' failed"
-                task.completed_at = datetime.now()
-                logger.warning(
-                    f" [{user_id}] Task {task.task_id} marked as failed "
-                    f"due to failed dependency: {failed_task_id}"
-                )
-                
-                # Recursively cascade
-                await self._cascade_failure(user_id, task.task_id)
+        # Search all state keys for this user
+        for state_key, state in self.states.items():
+            if not state_key.startswith(f"{user_id}:") and state_key != user_id:
+                continue
+            
+            pending_tasks = state.get_tasks_by_status("pending")
+            
+            for task in pending_tasks:
+                if failed_task_id in task.depends_on:
+                    task.status = "blocked"
+                    task.error = f"Blocked: dependency '{failed_task_id}' failed"
+                    logger.warning(
+                        f" [{user_id}] Task {task.task_id} blocked "
+                        f"due to failed dependency: {failed_task_id}"
+                    )
+                    
+                    # Recursively block transitive dependents
+                    await self._cascade_failure(user_id, task.task_id)
     
-    async def mark_task_emitted(self, user_id: str, task_id: str) -> None:
+    async def mark_task_emitted(self, user_id: str, task_id: str, job_id: Optional[str] = None) -> None:
         """Mark client task as emitted to client"""
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            state = self._find_state_for_task(user_id, task_id, job_id=job_id)
             if not state:
                 return
             
@@ -517,7 +561,7 @@ class TaskOrchestrator:
         
         NOTE: Does NOT acquire lock - called from within locked context
         """
-        state = self.states.get(user_id)
+        state = self._find_state_for_task(user_id, task_id)
         if not state:
             return
         
@@ -554,13 +598,15 @@ class TaskOrchestrator:
                 )
                 await self.mark_task_failed(user_id, task_id, error)
     
-    def get_state(self, user_id: str) -> Optional[ExecutionState]:
-        """Get user execution state"""
-        return self.states.get(user_id)
-    
+    def get_state(self, user_id: str, job_id: Optional[str] = None) -> Optional[ExecutionState]:
+        """Get user execution state (optionally for a specific job)."""
+        if job_id:
+            return self.states.get(f"{user_id}:{job_id}")
+        return self._find_any_state(user_id)
+
     def get_task(self, user_id: str, task_id: str) -> Optional[TaskRecord]:
-        """Get specific task for user"""
-        state = self.states.get(user_id)
+        """Get specific task for user (searches all jobs)."""
+        state = self._find_state_for_task(user_id, task_id)
         return state.get_task(task_id) if state else None
     
     def _build_summary_payload(self, state: ExecutionState) -> Dict[str, Any]:
@@ -574,6 +620,7 @@ class TaskOrchestrator:
             "waiting": 0,
             "skipped": 0,
             "emitted": 0,
+            "blocked": 0,
             "failures": [],
         }
 
@@ -658,10 +705,13 @@ class TaskOrchestrator:
 
         return str(value)[:max_string_length]
 
-    async def get_execution_summary(self, user_id: str) -> Dict[str, Any]:
+    async def get_execution_summary(self, user_id: str, job_id: Optional[str] = None) -> Dict[str, Any]:
         """Get execution summary for user, including friendly failure details."""
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            if job_id:
+                state = self.states.get(f"{user_id}:{job_id}")
+            else:
+                state = self._find_any_state(user_id)
             
             if not state:
                 return {
@@ -673,6 +723,7 @@ class TaskOrchestrator:
                     "waiting": 0,
                     "skipped": 0,
                     "emitted": 0,
+                    "blocked": 0,
                     "failures": [],
                 }
             return self._build_summary_payload(state)
@@ -682,6 +733,7 @@ class TaskOrchestrator:
         user_id: str,
         max_tasks: int = 12,
         max_data_fields: int = 6,
+        job_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build a compact, speech-safe snapshot from execution state.
@@ -689,7 +741,10 @@ class TaskOrchestrator:
         This is used by final TTS summarization after all tasks complete.
         """
         async with self._get_lock(user_id):
-            state = self.states.get(user_id)
+            if job_id:
+                state = self.states.get(f"{user_id}:{job_id}")
+            else:
+                state = self._find_any_state(user_id)
             if not state:
                 return {
                     "user_id": user_id,
@@ -753,6 +808,24 @@ class TaskOrchestrator:
                 "tasks": tasks,
             }
     
+    def get_state_for_job(self, user_id: str, job_id: str) -> Optional[ExecutionState]:
+        """Get execution state for a specific user/job pair."""
+        state_key = f"{user_id}:{job_id}"
+        return self.states.get(state_key)
+
+    def get_all_states_for_user(self, user_id: str) -> Dict[str, ExecutionState]:
+        """Get all execution states for a user (across all jobs)."""
+        prefix = f"{user_id}:"
+        return {k: v for k, v in self.states.items() if k.startswith(prefix)}
+
+    async def cleanup_job_state(self, user_id: str, job_id: str) -> None:
+        """Cleanup state for a specific job."""
+        state_key = f"{user_id}:{job_id}"
+        async with self._get_lock(user_id):
+            if state_key in self.states:
+                del self.states[state_key]
+                logger.info(f"Cleaned up state for job: {state_key}")
+
     async def cleanup_user_state(self, user_id: str) -> None:
         """Cleanup user state (call on disconnect)"""
         async with self._get_lock(user_id):

@@ -83,6 +83,16 @@ Examples (style reference — never repeat verbatim):
   "what's happening with X politics" → "[calmly] Looking that up."
   "any news on Y" → "[calmly] Fetching the latest." """
 
+# ── Job awareness (injected dynamically, rules are static) ───────────────────
+_JOB_AWARENESS = """\
+━━━ JOB AWARENESS ━━━
+You may receive a "YOUR CURRENT JOBS" system block showing the user's active and recent tasks.
+- "what are you doing" / "what's running" → briefly describe active jobs from the block.
+- "what happened to X" / "did X finish" → check the block for the matching job's status.
+- "cancel X" / "stop that" → say you're on it (the system handles cancellation separately).
+- If no jobs block is present or it's empty → you're free, say so naturally if asked.
+- Don't volunteer job info unless the user asks. Only reference it when relevant."""
+
 # ── Core rules (shared, condensed) ────────────────────────────────────────────
 _CORE_RULES = """\
 ━━━ ACTION vs CONVERSATION (CRITICAL) ━━━
@@ -149,6 +159,8 @@ Address as "sir" (default) or "boss" (wins/teasing). Use {user_name} only in rea
 
 {_CORE_RULES.format(banned=_BANNED)}
 
+{_JOB_AWARENESS}
+
 {_ORPHEUS_DIRECTIONS}
 
 {_EX_GROQ}"""
@@ -174,6 +186,8 @@ Address as "sir" (default) or "boss" (wins/teasing). Use {user_name} only in rea
 {lang_rule}
 
 {_CORE_RULES.format(banned=_BANNED)}
+
+{_JOB_AWARENESS}
 
 {_KOKORO_PROSODY}"""
 

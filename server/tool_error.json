@@ -48,5 +48,61 @@
       "user_id": "695e2bbaf8efc966aaf9f218",
       "execution_id": "37e270b93f9447b6b312eb3b396f4c15"
     }
+  },
+  {
+    "timestamp": "2026-05-22T16:34:19",
+    "tool": "music_resume",
+    "task_id": "step_1",
+    "error": "No session 'paused'. Active: ['default']",
+    "inputs": {
+      "session_id": "paused",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_47727ddc"
+    }
+  },
+  {
+    "timestamp": "2026-05-22T16:35:26",
+    "tool": "file_read",
+    "task_id": "step_1",
+    "error": "File not found: C:\\Users\\Aanand\\OneDrive\\Desktop\\notepad.txt",
+    "inputs": {
+      "path": "C:\\Users\\Aanand\\OneDrive\\Desktop\\notepad.txt",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_27c96957"
+    }
+  },
+  {
+    "timestamp": "2026-05-22T16:36:36",
+    "tool": "app_close",
+    "task_id": "step_1",
+    "error": "Process 'Control Panel' not found or not running",
+    "inputs": {
+      "target": "Control Panel",
+      "force": "False",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_42662949"
+    }
+  },
+  {
+    "timestamp": "2026-05-22T16:37:25",
+    "tool": "app_focus",
+    "task_id": "step_1",
+    "error": "Failed to focus 'gene_browser' or not found",
+    "inputs": {
+      "target": "gene_browser",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_430c5de8"
+    }
+  },
+  {
+    "timestamp": "2026-05-22T16:54:16",
+    "tool": "app_minimize",
+    "task_id": "step_1",
+    "error": "Failed to minimize 'active_window' or not found",
+    "inputs": {
+      "target": "active_window",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_51a968f2"
+    }
   }
 ]

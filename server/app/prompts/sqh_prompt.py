@@ -21,11 +21,17 @@ from app.models.pqh_response_model import PQHResponse
 
 def get_tools_schema(tool_names: List[str]) -> Dict[str, dict]:
     registry = get_tool_registry()
-    return {
-        name: tool.__dict__
-        for name in tool_names
-        if (tool := registry.get_tool(name))
-    }
+    schemas = {}
+    for name in tool_names:
+        tool = registry.get_tool(name)
+        if tool:
+            # Only serialize essential fields needed for planning to prevent token limit issues
+            schemas[name] = {
+                "description": tool.description,
+                "execution_target": tool.execution_target,
+                "params_schema": tool.params_schema,
+            }
+    return schemas
 
 
 def _get_system_paths() -> str:

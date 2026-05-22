@@ -10,7 +10,17 @@
       "Bash(wmic ComputerSystem get TotalPhysicalMemory)",
       "Bash(wmic cpu *)",
       "Bash(tasklist)",
-      "Bash(wmic process *)"
+      "Bash(wmic process *)",
+      "Bash(graphify query *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/kernel/execution/execution_engine.py', encoding='utf-8'\\).read\\(\\)\\); print\\('execution_engine.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/kernel/execution/orchestrator.py', encoding='utf-8'\\).read\\(\\)\\); print\\('orchestrator.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/services/chat/sqh_service.py', encoding='utf-8'\\).read\\(\\)\\); print\\('sqh_service.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/services/scheduler/trigger_handler.py', encoding='utf-8'\\).read\\(\\)\\); print\\('trigger_handler.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/kernel/execution/replanner.py', encoding='utf-8'\\).read\\(\\)\\); print\\('replanner.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/kernel/execution/job_coordinator.py', encoding='utf-8'\\).read\\(\\)\\); print\\('job_coordinator.py: OK'\\)\")",
+      "Bash(python -m unittest testing.test_execution_engine_failure_handling -v)",
+      "Bash(del \"D:\\\\siddhant-files\\\\projects\\\\ai_assistant\\\\ai_local\\\\server\\\\app\\\\kernel\\\\execution\\\\_patch_orchestrator.py\" \"D:\\\\siddhant-files\\\\projects\\\\ai_assistant\\\\ai_local\\\\server\\\\app\\\\kernel\\\\execution\\\\_patch_engine.py\")",
+      "Bash(python -m pytest testing/test_execution_engine_failure_handling.py -v)"
     ]
   }
 }

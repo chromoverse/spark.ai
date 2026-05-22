@@ -144,6 +144,7 @@ class WeatherCurrentTool(BaseTool):
     EXAMPLES = [{"user_utterance": "what's the weather like"}]
     SEMANTIC_TAGS = ["weather", "weather", "current"]
     TOOL_CATEGORY = "web_knowledge"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "weather_current"
@@ -232,6 +233,7 @@ class WeatherForecastTool(BaseTool):
     EXAMPLES = [{"user_utterance": "what's the weather forecast for this week"}]
     SEMANTIC_TAGS = ["weather", "weather", "forecast"]
     TOOL_CATEGORY = "web_knowledge"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "weather_forecast"
