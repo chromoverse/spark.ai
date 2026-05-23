@@ -233,7 +233,7 @@ def build_user_message(
 For entity intents: set entity_schema (hotel|product|restaurant|local_business). No site: operators in queries.
 research intent→ALWAYS chain ai_summarize after (bind context to $.step.data.text).
 *_search/local_service/factual_lookup→web_research alone is enough.
-"near me"→plan current_location(client)→web_research(server) with input_bindings location=$.step_1.data.location_string. Keep "near me" in formatted_queries.""")
+"near me"→plan current_location(client)→web_research(server) with input_bindings location=$.step_1.data.location_string. In formatted_queries, replace "near me" with the actual city name from location (e.g., "hospital near me" → "hospital Kathmandu").""")
 
     category_rules_block = ""
     if category_rules_parts:

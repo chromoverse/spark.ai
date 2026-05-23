@@ -375,7 +375,7 @@ class WebResearchTool(BaseTool):
         from .entity_extractor import extract_entities
         try:
             entities = await asyncio.wait_for(
-                extract_entities(scraped_with_text, entity_schema, query),
+                extract_entities(scraped_with_text, entity_schema, query, location),
                 timeout=_EXTRACT_TIMEOUT_S,
             )
         except asyncio.TimeoutError:
@@ -673,11 +673,12 @@ _NEAR_ME_RE = re.compile(
 
 
 def _inject_location(text: str, location: str) -> str:
-    """Replace 'near me' / 'nearby' / 'near my location' with the actual location."""
-    city_part = location.split(",")[0].strip().lower()
-    if city_part and city_part in text.lower():
+    """Replace 'near me' / 'nearby' / 'near my location' with the actual city name."""
+    city_part = location.split(",")[0].strip()
+    if city_part.lower() in text.lower():
         return text  # already baked in, don't double-inject
-    return _NEAR_ME_RE.sub(f"near {location}", text)
+    # Replace "near me" patterns with just the city name (better for search engines)
+    return _NEAR_ME_RE.sub(city_part, text)
 
 
 # ── Response builder ────────────────────────────────────────────────────────

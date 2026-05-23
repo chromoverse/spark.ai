@@ -24,10 +24,13 @@ async def extract_entities(
     scraped_texts: List[Dict[str, Any]],
     entity_schema: str,
     query: str,
+    location: str = "",
 ) -> List[Dict[str, Any]]:
     """
     scraped_texts: list of {"url": ..., "title": ..., "text": ...}
     entity_schema: one of hotel | product | restaurant | local_business
+    query: user's original query
+    location: detected location (e.g., "Kathmandu, Bagmati Province")
     Returns: list of entity dicts (validated against the schema, extras dropped).
     """
     schema_cls = ENTITY_SCHEMA_MAP.get(entity_schema)
@@ -63,6 +66,11 @@ async def extract_entities(
         "no explanation — only a JSON array."
     )
 
+    location_filter = ""
+    if location:
+        city = location.split(",")[0].strip()
+        location_filter = f"\n- CRITICAL: Only extract entities located in or near {location}. Ignore entities from other cities/countries."
+
     user_msg = f"""Extract all distinct {entity_schema} entities from the text below.
 
 USER QUERY: {query}
@@ -75,7 +83,7 @@ EXTRACTION RULES:
 - If the same entity appears in multiple sources, merge into one entry (keep the richer data).
 - Deduplicate: never return two objects with the same or near-identical name.
 - Return an empty array [] if no entities are found.
-- source_url: set to the URL where this entity was found.
+- source_url: set to the URL where this entity was found.{location_filter}
 
 CONTEXT:
 {context}
