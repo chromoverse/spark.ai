@@ -611,9 +611,9 @@ class TaskOrchestrator:
             return self.states.get(f"{user_id}:{job_id}")
         return self._find_any_state(user_id)
 
-    def get_task(self, user_id: str, task_id: str) -> Optional[TaskRecord]:
-        """Get specific task for user (searches all jobs)."""
-        state = self._find_state_for_task(user_id, task_id)
+    def get_task(self, user_id: str, task_id: str, job_id: Optional[str] = None) -> Optional[TaskRecord]:
+        """Get specific task for user (searches all jobs, or job_id if provided)."""
+        state = self._find_state_for_task(user_id, task_id, job_id=job_id)
         return state.get_task(task_id) if state else None
     
     def _build_summary_payload(self, state: ExecutionState) -> Dict[str, Any]:

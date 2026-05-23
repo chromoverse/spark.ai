@@ -63,12 +63,13 @@ class ToolOutputDeliveryService:
         user_id: str,
         task_id: Optional[str] = None,
         tool_name: Optional[str] = None,
+        job_id: Optional[str] = None,
     ):
         orchestrator = get_orchestrator()
 
         if task_id:
             # Search ALL job states — orchestrator.get_task does cross-state lookup
-            return orchestrator.get_task(user_id, task_id)
+            return orchestrator.get_task(user_id, task_id, job_id=job_id)
 
         # No task_id: gather candidates across ALL states for this user
         all_states = orchestrator.get_all_states_for_user(user_id)
@@ -166,8 +167,9 @@ class ToolOutputDeliveryService:
         tool_name: Optional[str] = None,
         include_full: bool = False,
         fields: Optional[List[str]] = None,
+        job_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        task = self._pick_task(user_id=user_id, task_id=task_id, tool_name=tool_name)
+        task = self._pick_task(user_id=user_id, task_id=task_id, tool_name=tool_name, job_id=job_id)
         if not task:
             return None
 
@@ -181,13 +183,13 @@ class ToolOutputDeliveryService:
 
         # Get job_id for frontend correlation
         orchestrator = get_orchestrator()
-        state = orchestrator._find_state_for_task(user_id, task.task_id)
-        job_id = state.execution_id if state else None
+        state = orchestrator._find_state_for_task(user_id, task.task_id, job_id=job_id)
+        resolved_job_id = state.execution_id if state else job_id
 
         return {
             "user_id": user_id,
             "task_id": task.task_id,
-            "job_id": job_id,
+            "job_id": resolved_job_id,
             "tool": task.tool,
             "status": task.status,
             "duration_ms": task.duration_ms,

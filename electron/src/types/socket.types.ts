@@ -280,6 +280,8 @@ export interface SocketEvents {
   "server-status": (data: ServerStatus) => void;
   "spark:log": (data: SparkLogPayload) => void;
   "spark:control": (data: SparkControlPayload) => void;
+  "job:started": (data: { job_id: string; goal: string }) => void;
+  "tool:output": (data: { success?: boolean; output?: { data?: Record<string, unknown>; tool?: string; task_id?: string; job_id?: string } }) => void;
   processing: (data: any) => void;
   
   // Generic events

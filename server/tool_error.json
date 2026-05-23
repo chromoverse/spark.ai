@@ -127,5 +127,18 @@
       "user_id": "your_email_address",
       "execution_id": "job_1a08a445"
     }
+  },
+  {
+    "timestamp": "2026-05-23T16:52:52",
+    "tool": "app_open",
+    "task_id": "step_1",
+    "error": "[WinError 2] The system cannot find the file specified: 'shell:AppsFolder\\\\windows.immersivecontrolpanel_cw5n1h2txyewy!App'",
+    "inputs": {
+      "target": "controlpanel",
+      "destination": "auto",
+      "web_fallback_policy": "validate_then_ask",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_f1d918c3"
+    }
   }
 ]

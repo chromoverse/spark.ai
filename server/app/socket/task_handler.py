@@ -382,6 +382,7 @@ async def register_task_events(
 
             task_id = data.get("task_id")
             tool_name = data.get("tool_name")
+            job_id = data.get("job_id")
             include_full = bool(data.get("include_full", False))
             raw_fields = data.get("fields")
             fields: Optional[List[str]] = raw_fields if isinstance(raw_fields, list) else None
@@ -392,6 +393,7 @@ async def register_task_events(
                 tool_name=tool_name,
                 include_full=include_full,
                 fields=fields,
+                job_id=job_id,
             )
             if not payload:
                 await sio.emit("tool:output", {"success": False, "error": "No matching task output found"}, to=sid)

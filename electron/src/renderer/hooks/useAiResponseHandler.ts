@@ -258,27 +258,16 @@ export function useAiResponseHandler(
   // ============================================
   // SERVER-SIDE TOOL OUTPUT HANDLER
   // ============================================
+  // NOTE: tool:output events are handled DIRECTLY by HomeLive.tsx with
+  // proper job_id / task_id thread correlation. We intentionally do NOT
+  // re-emit them through the entityResult prop path here — doing so
+  // caused a race condition where two setThreads calls would fight,
+  // resulting in entity arrays being truncated to 1 item.
   const handleJobCompleted = useCallback(
     (data: { user_id?: string; job_id?: string }) => {
       console.log("📡 [JOB] job:completed", data);
-      // Server pushes all tool outputs directly via tool:output events —
-      // no need to request specific tools.
     },
     [],
-  );
-
-  const handleToolOutput = useCallback(
-    (data: { success: boolean; output?: { tool?: string; task_id?: string; data?: Record<string, any> }; error?: string }) => {
-      if (!data.success || !data.output?.data) return;
-      const { tool, data: toolData } = data.output;
-      console.log(`📡 [TOOL] Received ${tool} output:`, Object.keys(toolData));
-      const results: TaskOutput[] = [{
-        success: true,
-        data: toolData,
-      }];
-      onTaskBatchComplete?.(results);
-    },
-    [onTaskBatchComplete],
   );
 
   // ============================================
@@ -318,7 +307,6 @@ export function useAiResponseHandler(
     on("task:progress", handleTaskSummary);
     on("task:summary", handleTaskSummary);
     on("job:completed" as any, handleJobCompleted as any);
-    on("tool:output" as any, handleToolOutput as any);
 
     return () => {
       // console.log("👋 Cleaning up AI response listeners");
@@ -328,7 +316,6 @@ export function useAiResponseHandler(
       off("task:progress", handleTaskSummary);
       off("task:summary", handleTaskSummary);
       off("job:completed" as any, handleJobCompleted as any);
-      off("tool:output" as any, handleToolOutput as any);
     };
   }, [
     socket,
@@ -338,7 +325,7 @@ export function useAiResponseHandler(
     handleTaskBatch,
     getFirstFailureMessage,
     handleJobCompleted,
-    handleToolOutput,
+
     on,
     off,
     reportTaskFailure,

@@ -13,7 +13,7 @@ interface HomeLiveProps {
 
 const STORAGE_KEY = "spark_live_threads";
 const STORAGE_VERSION_KEY = "spark_live_threads_v";
-const STORAGE_VERSION = 4;  // Bump to clear stale thread data from old reducer logic
+const STORAGE_VERSION = 8;  // Bump to clear stale thread data from entity race condition fix
 const MAX_THREADS = 50;
 
 interface ToolStep {
@@ -85,15 +85,9 @@ function timeLabel(ts: string): string {
 function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
   const updated = [...threads];
   const payload = log.payload || {};
-
-  // Strict task_id lookup — no fallback
-  const findByTaskId = (taskId: string | undefined): Thread | undefined => {
-    if (!taskId) return undefined;
-    for (let i = updated.length - 1; i >= 0; i--) {
-      if (updated[i].tools.some(t => t.task_id === taskId)) return updated[i];
-    }
-    return undefined;
-  };
+  const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
+  const taskId = (log.task_id || log.payload?.task_id) as string | undefined;
+  const toolName = (log.tool_name || log.payload?.tool_name) as string | undefined;
 
   // Lookup by taskId and jobId
   const findByTaskIdAndJobId = (taskId: string | undefined, jobId: string | undefined): Thread | undefined => {
@@ -103,17 +97,25 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
         if (updated[i].job_id === jobId && updated[i].tools.some(t => t.task_id === taskId)) return updated[i];
       }
     }
-    // Fallback: match by taskId only
+    // Fallback: match by taskId only, but respect jobId isolation
     for (let i = updated.length - 1; i >= 0; i--) {
-      if (updated[i].tools.some(t => t.task_id === taskId)) return updated[i];
+      const t = updated[i];
+      if (jobId && t.job_id && t.job_id !== jobId) continue;
+      if (t.tools.some(tool => tool.task_id === taskId)) return t;
     }
     return undefined;
   };
 
-  // Most recent thread in "executing" state
-  const findExecuting = (): Thread | undefined => {
+  // Most recent thread in "executing" state, optionally compatible with jobId
+  const findExecuting = (jobId?: string): Thread | undefined => {
     for (let i = updated.length - 1; i >= 0; i--) {
-      if (updated[i].status === "executing") return updated[i];
+      const t = updated[i];
+      if (t.status === "executing") {
+        if (jobId && t.job_id && t.job_id !== jobId) {
+          continue;
+        }
+        return t;
+      }
     }
     return undefined;
   };
@@ -127,14 +129,19 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
     return undefined;
   };
 
-  // Executing thread whose plan includes this tool name
-  const findExecutingForTool = (toolName: string): Thread | undefined => {
-    if (!toolName) return findExecuting();
+  // Executing thread whose plan includes this tool name, optionally compatible with jobId
+  const findExecutingForTool = (toolName: string, jobId?: string): Thread | undefined => {
+    if (!toolName) return findExecuting(jobId);
     for (let i = updated.length - 1; i >= 0; i--) {
       const t = updated[i];
-      if (t.status === "executing" && t.plan?.includes(toolName)) return t;
+      if (t.status === "executing" && t.plan?.includes(toolName)) {
+        if (jobId && t.job_id && t.job_id !== jobId) {
+          continue;
+        }
+        return t;
+      }
     }
-    return findExecuting();
+    return findExecuting(jobId);
   };
 
   // Close conversation-only threads that are old enough to be stale.
@@ -163,6 +170,43 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
     if (thread.tools.length > 0 && thread.tools.every(t => t.status === "completed" || t.status === "failed")) {
       thread.status = thread.tools.some(t => t.status === "failed") ? "failed" : "completed";
     }
+  };
+
+  // Resolve thread by checking task_id & job_id, job_id, then transitioning the most recent "thinking" thread
+  const resolveThread = (taskId: string | undefined, jobId: string | undefined, toolName?: string): Thread | undefined => {
+    // 1. Match by task_id and job_id first
+    let thread = findByTaskIdAndJobId(taskId, jobId);
+    if (thread) return thread;
+
+    // 2. Match by job_id
+    if (jobId) {
+      thread = findByJobId(jobId);
+      if (thread) return thread;
+    }
+
+    // 3. Match the most recent "thinking" or recently completed conversation-only thread
+    // (binds the jobId to it and transitions status to executing)
+    for (let i = updated.length - 1; i >= 0; i--) {
+      const t = updated[i];
+      const isThinking = t.status === "thinking";
+      const isStaleThinkingClosed = t.status === "completed" && !t.plan?.length && t.tools.length === 0;
+      if (isThinking || isStaleThinkingClosed) {
+        if (jobId && t.job_id && t.job_id !== jobId) continue;
+        thread = t;
+        if (jobId) thread.job_id = jobId;
+        thread.status = "executing";
+        return thread;
+      }
+    }
+
+    // 4. Match executing thread containing the tool name in its plan
+    if (toolName) {
+      thread = findExecutingForTool(toolName, jobId);
+      if (thread) return thread;
+    }
+
+    // 5. Fallback to the most recent executing thread
+    return findExecuting(jobId);
   };
 
   switch (log.event_type) {
@@ -197,7 +241,9 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
         const pq = (payload.query as string).trim().toLowerCase();
         for (let i = updated.length - 1; i >= 0; i--) {
           const t = updated[i];
-          if (t.status === "thinking" && !t.plan?.length) {
+          if (payload.job_id && t.job_id && t.job_id !== payload.job_id) continue;
+          const isCandidate = t.status === "thinking" || (t.status === "completed" && !t.plan?.length && t.tools.length === 0);
+          if (isCandidate && !t.plan?.length) {
             const tq = t.query.trim().toLowerCase();
             if (tq === pq || pq.startsWith(tq) || tq.startsWith(pq)) {
               matched = t;
@@ -209,9 +255,12 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
       }
 
       if (!matched) {
-        for (let i = 0; i < updated.length; i++) {
-          if (updated[i].status === "thinking" && !updated[i].plan?.length) {
-            matched = updated[i];
+        for (let i = updated.length - 1; i >= 0; i--) {
+          const t = updated[i];
+          if (payload.job_id && t.job_id && t.job_id !== payload.job_id) continue;
+          const isCandidate = t.status === "thinking" || (t.status === "completed" && !t.plan?.length && t.tools.length === 0);
+          if (isCandidate && !t.plan?.length) {
+            matched = t;
             matchedIdx = i;
             break;
           }
@@ -232,19 +281,19 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
     }
 
     case "task_running": {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      let thread = findByTaskIdAndJobId(log.task_id, jobId);
-      if (!thread && jobId) thread = findByJobId(jobId);
-      if (!thread) thread = findExecutingForTool(log.tool_name || "");
+      const thread = resolveThread(taskId, jobId, toolName);
       if (thread) {
         if (jobId && !thread.job_id) {
           thread.job_id = jobId;
         }
-        const existing = thread.tools.find(t => t.task_id === log.task_id);
+        if (thread.status === "thinking") {
+          thread.status = "executing";
+        }
+        const existing = thread.tools.find(t => t.task_id === taskId);
         if (!existing) {
           thread.tools.push({
-            tool_name: log.tool_name || "unknown",
-            task_id: log.task_id || "",
+            tool_name: toolName || "unknown",
+            task_id: taskId || "",
             status: "running",
             steps: [],
           });
@@ -256,11 +305,10 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
     }
 
     case "tool_params": {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      const thread = findByTaskIdAndJobId(log.task_id, jobId) || (jobId && findByJobId(jobId)) || findExecuting();
+      const thread = resolveThread(taskId, jobId);
       if (thread) {
         if (jobId && !thread.job_id) thread.job_id = jobId;
-        const tool = thread.tools.find(t => t.task_id === log.task_id);
+        const tool = thread.tools.find(t => t.task_id === taskId);
         if (tool) tool.params_msg = payload.message || "";
       }
       break;
@@ -268,11 +316,10 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
 
     case "tool_step":
     case "tool_progress": {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      const thread = findByTaskIdAndJobId(log.task_id, jobId) || (jobId && findByJobId(jobId)) || findExecuting();
+      const thread = resolveThread(taskId, jobId);
       if (thread) {
         if (jobId && !thread.job_id) thread.job_id = jobId;
-        const tool = thread.tools.find(t => t.task_id === log.task_id)
+        const tool = thread.tools.find(t => t.task_id === taskId)
           || thread.tools.filter(t => t.status === "running").pop();
         if (tool) {
           if (payload.message && !tool.steps.includes(payload.message)) {
@@ -291,11 +338,10 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
 
     case "tool_invoked":
     case "task_completed": {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      const thread = findByTaskIdAndJobId(log.task_id, jobId) || (jobId && findByJobId(jobId)) || findExecuting();
+      const thread = resolveThread(taskId, jobId);
       if (thread) {
         if (jobId && !thread.job_id) thread.job_id = jobId;
-        const tool = thread.tools.find(t => t.task_id === log.task_id);
+        const tool = thread.tools.find(t => t.task_id === taskId);
         if (tool) {
           tool.status = (log.status === "success" || log.status === "completed") ? "completed" : "failed";
           tool.latency_ms = payload.latency_ms ?? payload.duration_ms;
@@ -307,11 +353,10 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
     }
 
     case "tool_output": {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      const thread = findByTaskIdAndJobId(log.task_id, jobId) || (jobId && findByJobId(jobId)) || findExecuting();
+      const thread = resolveThread(taskId, jobId);
       if (thread) {
         if (jobId && !thread.job_id) thread.job_id = jobId;
-        const tool = thread.tools.find(t => t.task_id === log.task_id)
+        const tool = thread.tools.find(t => t.task_id === taskId)
           || thread.tools.filter(t => t.status === "running").pop();
         if (tool) {
           tool.status = payload.success ? "completed" : "failed";
@@ -329,11 +374,10 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
     }
 
     case "tool_failed": {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      const thread = findByTaskIdAndJobId(log.task_id, jobId) || (jobId && findByJobId(jobId)) || findExecuting();
+      const thread = resolveThread(taskId, jobId);
       if (thread) {
         if (jobId && !thread.job_id) thread.job_id = jobId;
-        const tool = thread.tools.find(t => t.task_id === log.task_id);
+        const tool = thread.tools.find(t => t.task_id === taskId);
         if (tool) {
           tool.status = "failed";
           tool.steps.push(payload.error || payload.message || "Unknown error");
@@ -345,8 +389,7 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
 
     case "execution_complete":
     case "summary": {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      const thread = findByJobId(jobId) || findByTaskIdAndJobId(log.task_id, jobId) || findExecuting();
+      const thread = findByJobId(jobId) || findByTaskIdAndJobId(taskId, jobId) || findExecuting(jobId);
       if (thread) {
         if (jobId && !thread.job_id) thread.job_id = jobId;
         for (const tool of thread.tools) {
@@ -359,8 +402,7 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
     }
 
     default: {
-      const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
-      const thread = findByTaskIdAndJobId(log.task_id, jobId) || (jobId && findByJobId(jobId)) || findExecuting();
+      const thread = resolveThread(taskId, jobId);
       if (thread && payload.message) {
         if (jobId && !thread.job_id) thread.job_id = jobId;
         const runningTool = thread.tools.filter(t => t.status === "running").pop();
@@ -639,8 +681,9 @@ function ThreadView({ thread, onDismissEntities }: { thread: Thread; onDismissEn
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProps = {}) {
-  const { on, off } = useSocket();
+  const { on, off, emit } = useSocket();
   const [threads, setThreads] = useState<Thread[]>(loadThreads);
+  const [inputVal, setInputVal] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Handle spark:log events (primary event stream)
@@ -652,20 +695,50 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
     });
   }, []);
 
+  // Handle job:started events to bind job_id to the query thread early
+  const handleJobStarted = useCallback((data: { job_id: string; goal: string }) => {
+    setThreads((prev) => {
+      const next = [...prev];
+      const goal = data.goal.trim().toLowerCase();
+      // Look for a candidate thinking thread matching the goal
+      for (let i = next.length - 1; i >= 0; i--) {
+        const t = next[i];
+        if (t.job_id === data.job_id) return prev; // Already bound
+        const isCandidate = t.status === "thinking" || (t.status === "completed" && !t.plan?.length && t.tools.length === 0);
+        if (isCandidate && !t.job_id) {
+          const tq = t.query.trim().toLowerCase();
+          if (tq === goal || goal.startsWith(tq) || tq.startsWith(goal)) {
+            t.job_id = data.job_id;
+            saveThreads(next);
+            return next;
+          }
+        }
+      }
+      return prev;
+    });
+  }, []);
+
   useEffect(() => {
-    on("spark:log" as any, handleLog as any);
-    return () => { off("spark:log" as any, handleLog as any); };
-  }, [on, off, handleLog]);
+    on("spark:log", handleLog);
+    on("job:started", handleJobStarted);
+    return () => {
+      off("spark:log", handleLog);
+      off("job:started", handleJobStarted);
+    };
+  }, [on, off, handleLog, handleJobStarted]);
 
   // Handle tool:output for entity cards and rich data (separate socket event with full data)
   useEffect(() => {
-    const handler = (data: any) => {
+    const handler = (data: { success?: boolean; output?: { data?: Record<string, unknown>; tool?: string; task_id?: string; job_id?: string } }) => {
       if (!data?.success || !data?.output?.data) return;
       const output = data.output;
-      const toolData = output.data;
+      const toolData = output.data!;
       const toolName = output.tool || "";
 
       console.log(`📡 [HomeLive] tool:output received — tool=${toolName} task_id=${output.task_id} job_id=${output.job_id}`, Object.keys(toolData));
+      if (toolName === "web_research" && toolData.result_type === "entities") {
+        console.log(`📡 [HomeLive] 🏨 ENTITY COUNT IN PAYLOAD: ${Array.isArray(toolData.entities) ? (toolData.entities as unknown[]).length : 'NOT_ARRAY'}`, toolData.entities);
+      }
 
       setThreads(prev => {
         const next = [...prev];
@@ -676,7 +749,7 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
           toolName === "web_research" &&
           toolData.result_type === "entities" &&
           Array.isArray(toolData.entities) &&
-          toolData.entities.length > 0
+          (toolData.entities as unknown[]).length > 0
         ) {
           let target: Thread | undefined;
           // Match by task_id and job_id first
@@ -735,9 +808,11 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
             }
           }
           if (target) {
-            console.log(`📡 [HomeLive] Attaching ${toolData.entities.length} entities to thread: ${target.query.slice(0, 40)}`);
-            target.entities = toolData.entities;
-            target.entityIntent = toolData.intent || "results";
+            const entities = toolData.entities as EntityCardData[];
+            console.log(`📡 [HomeLive] 🏨 ATTACHING ${entities.length} entities to thread: "${target.query.slice(0, 40)}" (thread.id=${target.id}, had_entities=${!!target.entities?.length})`);
+            target.entities = entities;
+            target.entityIntent = (toolData.intent as string) || "results";
+            console.log(`📡 [HomeLive] 🏨 AFTER ATTACH: thread.entities.length=${target.entities.length}`);
           } else {
             console.warn("📡 [HomeLive] No matching thread found for entity data — threads:", next.map(t => ({ q: t.query.slice(0, 30), tools: t.tools.map(x => x.tool_name), entities: !!t.entities?.length })));
           }
@@ -748,7 +823,7 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
           toolName === "web_research" &&
           toolData.result_type === "snippets" &&
           Array.isArray(toolData.snippets) &&
-          toolData.snippets.length > 0
+          (toolData.snippets as unknown[]).length > 0
         ) {
           let target: Thread | undefined;
           if (output.task_id) {
@@ -789,10 +864,10 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
             const tool = target.tools.find((t: ToolStep) => t.task_id === output.task_id)
               || target.tools.find((t: ToolStep) => t.tool_name === "web_research");
             if (tool && !tool.result_summary) {
-              const firstSnippet = toolData.snippets[0];
+              const firstSnippet = (toolData.snippets as unknown[])[0];
               tool.result_summary = typeof firstSnippet === "string"
                 ? firstSnippet.slice(0, 200)
-                : (firstSnippet?.snippet || firstSnippet?.text || "").slice(0, 200);
+                : ((firstSnippet as { snippet?: string; text?: string })?.snippet || (firstSnippet as { snippet?: string; text?: string })?.text || "").slice(0, 200);
             }
           }
         }
@@ -832,8 +907,8 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
       });
     };
 
-    on("tool:output" as any, handler as any);
-    return () => { off("tool:output" as any, handler as any); };
+    on("tool:output", handler);
+    return () => { off("tool:output", handler); };
   }, [on, off]);
 
   // Fallback: attach entityResult prop to the correct thread
@@ -842,14 +917,19 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
     // Capture narrowed values — TS can't carry narrowing into closures
     const entities = entityResult.entities;
     const intent = entityResult.intent;
+    console.log(`📡 [HomeLive] 🏨 entityResult PROP received: ${entities.length} entities, intent=${intent}`);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing external prop with internal state
     setThreads(prev => {
       const next = [...prev];
       for (let i = next.length - 1; i >= 0; i--) {
         if (next[i].tools.some((t: ToolStep) => t.tool_name === "web_research") && !next[i].entities?.length) {
+          console.log(`📡 [HomeLive] 🏨 entityResult PROP: attaching ${entities.length} entities to thread "${next[i].query.slice(0,40)}"`);
           next[i].entities = entities;
           next[i].entityIntent = intent;
           saveThreads(next);
           break;
+        } else if (next[i].tools.some((t: ToolStep) => t.tool_name === "web_research")) {
+          console.log(`📡 [HomeLive] 🏨 entityResult PROP: skipping thread "${next[i].query.slice(0,40)}" — already has ${next[i].entities?.length} entities`);
         }
       }
       return next;
@@ -915,9 +995,9 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
   }, [onEntityDismiss]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col justify-between bg-slate-950/20">
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-800/50">
+      <div className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-800/50 bg-slate-950/30 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-2">
           <Radio size={10} className={`${activeCount > 0 ? "text-blue-400 animate-pulse" : "text-emerald-400"}`} />
           <h2 className="text-sm font-medium text-white">Activity</h2>
@@ -935,10 +1015,10 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-2">
+      <div className="flex-1 overflow-y-auto px-4 py-2 min-h-0">
         {threads.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-600">
-            <Radio size={20} className="mb-2 opacity-15" />
+            <Radio size={20} className="mb-2 opacity-15 animate-pulse" />
             <p className="text-xs">Listening for commands</p>
           </div>
         ) : (
@@ -955,6 +1035,34 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
             <div ref={bottomRef} />
           </div>
         )}
+      </div>
+
+      {/* Premium Input Box */}
+      <div className="p-4 border-t border-slate-800/40 bg-slate-950/60 backdrop-blur-md shrink-0">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!inputVal.trim()) return;
+            emit("send-user-text-query", inputVal.trim());
+            setInputVal("");
+          }}
+          className="relative flex items-center"
+        >
+          <input
+            type="text"
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            placeholder="Type a command or ask Spark..."
+            className="w-full bg-slate-900/60 border border-slate-800/80 hover:border-slate-700/80 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 text-slate-100 placeholder-slate-500 text-xs rounded-xl pl-4 pr-10 py-2.5 transition-all outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!inputVal.trim()}
+            className="absolute right-1.5 p-1.5 rounded-lg text-slate-500 hover:text-blue-400 disabled:opacity-20 disabled:hover:text-slate-500 transition-all cursor-pointer disabled:cursor-not-allowed"
+          >
+            <Sparkles size={14} className={inputVal.trim() ? "text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)] transition-all scale-110" : "transition-all"} />
+          </button>
+        </form>
       </div>
     </div>
   );

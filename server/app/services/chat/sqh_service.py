@@ -467,6 +467,7 @@ async def _emit_summary(
                     output = await delivery.get_output(
                         user_id=user_id, task_id=_t.task_id,
                         include_full=True,
+                        job_id=job_id,
                     )
                     if output and output.get("data"):
                         logger.info("[SQH] Pushing tool:output for %s (tool=%s) keys=%s", _t.task_id, _t.tool, list(output["data"].keys()))
