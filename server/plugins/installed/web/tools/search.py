@@ -34,13 +34,54 @@ Matches tool_registry.json:
 """
 
 import asyncio
+import json
 import re
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 from datetime import datetime
 from urllib.parse import urlparse
 
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
-from ddgs import DDGS
+
+
+# ── Dedicated thread pool ────────────────────────────────────────────────────
+# DDGS is run in a *subprocess* (own GIL) but subprocess.run() is still a
+# blocking call, so we keep a small thread pool to run it off the event loop.
+# Unlike the old approach where curl_cffi held the GIL inside these threads,
+# subprocess.run() releases the GIL while waiting — the event loop stays
+# responsive even if DDGS hangs in the child process.
+_SEARCH_EXECUTOR = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="web_search",
+)
+
+# Python script executed in a child process for each DDGS query.
+# Runs in its own interpreter with its own GIL — curl_cffi hangs can't
+# freeze the parent's event loop.  Results are written as JSON to stdout.
+_DDGS_SUBPROCESS_SCRIPT = r"""
+import json, sys
+params = json.load(sys.stdin)
+raw = []
+try:
+    from ddgs import DDGS
+    with DDGS(timeout=params["timeout"]) as ddgs:
+        for r in ddgs.text(
+            params["query"],
+            max_results=params["limit"],
+            region="us-en",
+            safesearch="moderate",
+        ):
+            raw.append({
+                "title":   r.get("title", ""),
+                "url":     r.get("href", ""),
+                "snippet": r.get("body", ""),
+            })
+except Exception:
+    pass
+json.dump(raw, sys.stdout)
+"""
 
 
 # ── Domain lists ──────────────────────────────────────────────────────────────
@@ -251,11 +292,18 @@ class WebSearchTool(BaseTool):
     def get_tool_name(self) -> str:
         return "web_search"
 
+    # Wall-clock cap for one full DDGS query (across all its fallback engines).
+    # If we exceed this, we abandon the query rather than block the executor
+    # thread. DDGS internally tries multiple engines (yandex, mojeek, yahoo,
+    # duckduckgo, etc.); without this cap a single hung engine can lock up
+    # the thread pool and starve other async work (including socket.io heartbeats).
+    _DDGS_WALL_CLOCK_S = 10.0
+    # Per-engine HTTP timeout passed to DDGS. Lower = faster fail-over.
+    _DDGS_PER_ENGINE_S = 4
+
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         query = inputs.get("query", "").strip()
         max_results = int(inputs.get("max_results", 10))
-
-        print("inputs: inside search.py", inputs)
 
         if not query:
             return ToolOutput(success=False, data={}, error="Query is required")
@@ -295,10 +343,30 @@ class WebSearchTool(BaseTool):
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     async def _fetch_and_rank(self, query: str, limit: int) -> List[Dict[str, Any]]:
-        """Fetch candidates from DDGS, filter, score, and return top `limit`."""
-        candidates = await asyncio.get_event_loop().run_in_executor(
-            None, self._ddgs_search, query, limit * 5   # over-fetch for filtering
-        )
+        """Fetch candidates from DDGS, filter, score, and return top `limit`.
+
+        Wall-clock-bounded: if DDGS takes longer than ``_DDGS_WALL_CLOCK_S`` we
+        abandon the query and return whatever we have (usually nothing). This
+        is the single most important guarantee — without it, a single hung
+        upstream engine can block the entire executor thread pool and stall
+        the rest of the server (socket.io, STT, other tools).
+        """
+        try:
+            candidates = await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(
+                    _SEARCH_EXECUTOR, self._ddgs_search, query, limit * 5
+                ),
+                timeout=self._DDGS_WALL_CLOCK_S,
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "DDGS wall-clock timeout (%.1fs) exceeded for query: %s",
+                self._DDGS_WALL_CLOCK_S, query,
+            )
+            return []
+        except Exception as exc:
+            self.logger.warning("DDGS fetch failed: %s", exc)
+            return []
 
         scored: List[tuple[float, Dict]] = []
         seen_domains: set[str] = set()
@@ -341,24 +409,40 @@ class WebSearchTool(BaseTool):
         return results
 
     def _ddgs_search(self, query: str, fetch_limit: int) -> List[Dict[str, Any]]:
-        """Synchronous DuckDuckGo fetch (runs in executor thread)."""
-        raw: List[Dict[str, Any]] = []
+        """Run DDGS in a child process so curl_cffi can never hold the parent GIL.
+
+        The child process has its own Python interpreter and GIL.  If curl_cffi
+        hangs on TLS/DNS, only the child is affected — ``subprocess.run``
+        (which releases the GIL) times out and kills it.  The parent event loop
+        stays fully responsive throughout.
+        """
+        params_json = json.dumps({
+            "query": query,
+            "limit": fetch_limit,
+            "timeout": self._DDGS_PER_ENGINE_S,
+        })
         try:
-            with DDGS() as ddgs:
-                for r in ddgs.text(
-                    query,
-                    max_results=fetch_limit,
-                    region="us-en",
-                    safesearch="moderate",  # was "low" — raised to cut spam
-                ):
-                    raw.append({
-                        "title":   r.get("title", ""),
-                        "url":     r.get("href", ""),
-                        "snippet": r.get("body", ""),
-                    })
+            result = subprocess.run(
+                [sys.executable, "-c", _DDGS_SUBPROCESS_SCRIPT],
+                input=params_json,
+                capture_output=True,
+                text=True,
+                timeout=int(self._DDGS_WALL_CLOCK_S),
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return json.loads(result.stdout)
+            if result.stderr:
+                self.logger.debug("DDGS stderr: %s", result.stderr[:300])
+        except subprocess.TimeoutExpired:
+            self.logger.warning(
+                "DDGS subprocess killed after %.0fs: %s",
+                self._DDGS_WALL_CLOCK_S, query,
+            )
+        except (json.JSONDecodeError, ValueError) as exc:
+            self.logger.warning("DDGS returned invalid JSON: %s", exc)
         except Exception as exc:
-            self.logger.warning(f"DDGS error: {exc}")
-        return raw
+            self.logger.warning("DDGS subprocess error: %s", exc)
+        return []
 
     @staticmethod
     def _broaden_query(query: str) -> str:

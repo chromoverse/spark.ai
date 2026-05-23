@@ -317,6 +317,7 @@ class TaskOrchestrator:
                         task_id=task_id,
                         tool_name=task.tool,
                         status="running",
+                        job_id=state.execution_id,
                     )
                 )
 
@@ -342,6 +343,7 @@ class TaskOrchestrator:
                         task_id=task_id,
                         tool_name=task.tool,
                         status="waiting",
+                        job_id=state.execution_id,
                     )
                 )
 
@@ -448,6 +450,7 @@ class TaskOrchestrator:
                         task_id=task_id,
                         tool_name=task.tool,
                         status="completed",
+                        job_id=state.execution_id,
                         payload={
                             "duration_ms": task.duration_ms,
                             "output_success": output.success,
@@ -491,6 +494,7 @@ class TaskOrchestrator:
                         task_id=task_id,
                         tool_name=task.tool,
                         status="failed",
+                        job_id=state.execution_id,
                         payload={
                             "duration_ms": task.duration_ms,
                             "error": error,
@@ -547,6 +551,7 @@ class TaskOrchestrator:
                         task_id=task_id,
                         tool_name=task.tool,
                         status="emitted",
+                        job_id=state.execution_id,
                     )
                 )
     
@@ -580,6 +585,7 @@ class TaskOrchestrator:
                         task_id=task_id,
                         tool_name=task.tool,
                         status="success",
+                        job_id=state.execution_id,
                         payload={"latency_ms": latency_ms},
                     )
                 )
@@ -593,6 +599,7 @@ class TaskOrchestrator:
                         task_id=task_id,
                         tool_name=task.tool,
                         status="failed",
+                        job_id=state.execution_id,
                         payload={"latency_ms": latency_ms, "error": error},
                     )
                 )

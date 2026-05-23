@@ -14,6 +14,7 @@ USE_CASE_REASONING = "reasoning"        # Deep thinking / complex tasks
 USE_CASE_LIGHTWEIGHT = "lightweight"    # folder_organize, task speech
 USE_CASE_CONTENT = "content_generate"   # Long-form content (4K-8K tokens)
 USE_CASE_SUMMARIZE = "summarize"        # ai_summarize (async, tolerant)
+USE_CASE_EXTRACT = "entity_extract"     # Structured entity extraction from web content
 
 # Provider chain per use-case: list of (provider_name, model)
 # Order = priority. First available provider wins.
@@ -38,6 +39,11 @@ ROUTING_TABLE: Dict[str, List[Tuple[str, str]]] = {
     USE_CASE_SUMMARIZE: [
         ("mistral", "mistral-small-latest"),
         ("groq", "llama-3.3-70b-versatile"),
+    ],
+    USE_CASE_EXTRACT: [
+        ("groq", "llama-3.3-70b-versatile"),
+        ("mistral", "mistral-small-latest"),
+        ("cerebras", "gpt-oss-120b"),
     ],
 }
 

@@ -1,5 +1,5 @@
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
-from typing import Dict, Any
+from typing import Any, Dict
 from app.ai.providers.router import routed_chat # type: ignore
 from datetime import datetime, timezone
 import json
@@ -8,6 +8,22 @@ import json
 def _normalize_mode(raw_mode: Any) -> str:
     mode = str(raw_mode or "tts").strip().lower()
     return mode if mode in {"tts", "research"} else "tts"
+
+
+async def _emit(user_id: str, task_id: str, stage: str, message: str) -> None:
+    if not user_id:
+        return
+    try:
+        from app.socket.log_stream import emit_spark_log
+        await emit_spark_log(
+            user_id,
+            "tool_progress",
+            task_id=task_id,
+            tool_name="ai_summarize",
+            payload={"stage": stage, "message": message},
+        )
+    except Exception:
+        pass
 
 class AiSummarizeTool(BaseTool):
     """
@@ -60,6 +76,7 @@ class AiSummarizeTool(BaseTool):
     ]
     SEMANTIC_TAGS = ["ai", "ai", "summarize"]
     TOOL_CATEGORY = "ai_content"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "ai_summarize"
@@ -68,11 +85,14 @@ class AiSummarizeTool(BaseTool):
         context = self.get_input(inputs, "context")
         query = self.get_input(inputs, "query", None)
         mode = _normalize_mode(self.get_input(inputs, "mode", "tts"))
+        user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "")
+        task_id = str(inputs.get("_task_id") or "")
 
         if not context:
             return ToolOutput(success=False, data={}, error="No context provided")
 
         is_research = mode == "research"
+        await _emit(user_id, task_id, "analyzing", "Analyzing content...")
         summary_word_cap = "60" if is_research else "40"
         formatted_rule = (
             "a detailed plain-text answer of 5-10 sentences covering who, what, why, when, where, and key consequences. No markdown, no bullet points."
@@ -98,6 +118,7 @@ CONTEXT:
 OUTPUT (strict JSON only, no extra text):
 {{"success":true,"data":{{"summary":"<natural spoken answer>","formatted_content":"{formatted_placeholder}","original_length":{len(str(context))},"summary_length":0,"summarized_at":"{timestamp}"}},"error":null}}"""
 
+        await _emit(user_id, task_id, "summarizing", "Generating summary...")
         response_text, provider = await routed_chat(
             "summarize",
             messages=[{"role": "user", "content": prompt}],
@@ -105,6 +126,7 @@ OUTPUT (strict JSON only, no extra text):
             max_tokens=1500 if is_research else 300
         )
 
+        await _emit(user_id, task_id, "formatting", "Formatting results...")
         try:
             clean = response_text.strip()
             if clean.startswith("```json"):

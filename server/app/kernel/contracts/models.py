@@ -14,6 +14,7 @@ class KernelEvent:
     task_id: Optional[str] = None
     tool_name: Optional[str] = None
     status: Optional[str] = None
+    job_id: Optional[str] = None
     payload: Dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -28,6 +29,7 @@ class KernelEvent:
             "task_id": self.task_id,
             "tool_name": self.tool_name,
             "status": self.status,
+            "job_id": self.job_id,
             "payload": self.payload,
             "timestamp": self.timestamp,
         }

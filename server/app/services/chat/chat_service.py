@@ -205,5 +205,5 @@ def _error(message: str, emotion: str, query: str = "") -> PQHResponse:
             answer=message,
             answer_english=message,
         ),
-        requested_tool=[],
+        category=None,
     )

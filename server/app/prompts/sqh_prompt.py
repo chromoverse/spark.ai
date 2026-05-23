@@ -111,15 +111,8 @@ CRITICAL:
   "depends_on"       : [],
   "inputs"           : {{"arg_name": "value"}},
   "input_bindings"   : {{"arg_name": "$.step_1.data.field"}},
-  "lifecycle_messages": {{
-    "on_start"  : "...",
-    "on_success": "...",
-    "on_failure": "..."
-  }},
-  "control": {{
-    "requires_approval": false,
-    "on_failure": "abort"
-  }}
+  "lifecycle_messages": {{"on_start":"...","on_success":"...","on_failure":"..."}},
+  "control": {{"requires_approval": false, "on_failure": "abort"}}
 }}
 
 ━━━ ACKNOWLEDGE ANSWER RULES ━━━
@@ -156,69 +149,11 @@ When task B depends on output from task A:
    - web_search → summarize: {{"text": "$.step_1.data.results"}}
    - screenshot_capture → file_open: {{"path": "$.step_1.data.file_path"}}
 
-━━━ ARTIFACT MEMORY RULES ━━━
-- When the user references a previously created file, screenshot, or document
-  (e.g. "open the file you created", "show me that screenshot", "open my notes"),
-  check the RECENT ARTIFACTS section in the user message.
-- Match by title/kind/content keywords to find the right artifact_id.
-- Plan: artifact_resolve (server) → file_open (client) with input_bindings.
-- Bind file_open.path to $.resolve_step.data.file_path
-- Bind file_open.app to $.resolve_step.data.preferred_app
-- Use query parameter in artifact_resolve for fuzzy matching.
-
-━━━ SHELL AGENT RULES ━━━
-- For complex tasks like "create a React app", "make a FastAPI server",
-  "create a Python calculator" → use shell_agent with allow_network=true.
-- shell_agent can handle multi-step project scaffolding, file creation,
-  dependency installation, and build processes.
-- Set allow_network=true for any task that might need npm, pip, npx, git, etc.
-- NEVER use shell_agent for WhatsApp calls, messages, or any communication task.
-  Use call_audio, call_video, message_send, message_media, or message_file instead.
-
-━━━ COMMUNICATION TOOL SELECTION (CRITICAL) ━━━
-The communication category has many tools. Pick the RIGHT one:
-
-PHONE CALLS:
-  "call X" / "call X on WhatsApp" / "audio call X" → call_audio(contact=X)
-  "video call X" / "facetime X" → call_video(contact=X)
-
-MESSAGES (WhatsApp/SMS/chat):
-  "send hi to X" / "message X" / "text X" / "send X a message on WhatsApp" → message_send(contact=X, message=...)
-  "send a photo to X" → message_media(contact=X, ...)
-  "send a file to X" → message_file(contact=X, ...)
-
-EMAIL (Gmail):
-  "email X" / "send an email to X" / "mail X about Y" → email_send(to=X, subject=..., body=...)
-  "check my emails" / "read emails" → email_list or email_read
-  ONLY use email/gmail tools when the user explicitly says "email" or "mail".
-
-⚠️ NEVER use gmail_send/email_send for "call X" or "message X on WhatsApp".
-⚠️ "call" = call_audio. "message"/"send to"/"text" = message_send. "email"/"mail" = email_send.
-⚠️ If user says "WhatsApp" or doesn't specify platform → use message_send or call_audio (NOT email).
-
-━━━ CONTENT GENERATE RULES ━━━
-- For requests to write/create/generate text content (notes, articles, about-me, plans, essays, stories, lists) → use content_generate.
-- NEVER put long content directly in file_create inputs.content — the token limit will truncate it.
-- content_generate handles both generation AND file saving via output_path.
-- If user wants a file, set output_path (e.g. "about_me.md", "notes.txt").
-- If user specifies a line count, set min_lines accordingly.
-- After content_generate, you can chain file_open to open the saved file.
-
-━━━ FILE_CREATE INPUT RULES (CRITICAL) ━━━
-- inputs.content MUST ALWAYS be a plain text string — NEVER a list, dict, or raw data structure.
-- If the source data is structured (e.g. weather forecast array, search results), format it into readable text BEFORE passing to file_create.
-  WRONG: "content": [{{"date": "2026-05-21", "condition": "Rain"}}]
-  RIGHT: "content": "Weather Forecast\\n\\n2026-05-21: Rain\\n2026-05-22: Sunny"
-- inputs.path MUST include a proper file extension (.txt, .md, .json, etc.) — never end with just a dot.
-- When chaining from a data tool (weather_forecast, web_search, etc.) to file_create, use input_bindings to pass data, OR format the content as a human-readable string in inputs.content.
-
 ━━━ MULTI-STEP CHAINING RULES ━━━
-- "research X and make a file" → web_research → content_generate(topic=X, output_path="X.md") → file_open
-- "get weather and save to file" → weather_current + weather_forecast → content_generate(output_path="weather.md") → file_open
-- "make a file and open in notepad" → content_generate/file_create → file_open(app="notepad")
-- When user says "open it" or "open in notepad" after creating → chain file_open with input_bindings to the create step's file_path.
-- ALWAYS include file_open as the last step when user says "open", "show", or "open in notepad".
-- For weather: use weather_current + weather_forecast (no location needed — auto-detects from IP)."""
+- "research X" → web_research(intent=research) → ai_summarize(context=$.step_1.data.text, mode="research")
+- "make a file and open" → content_generate/file_create → file_open
+- When user says "open it" after creating → chain file_open with input_bindings.
+- ALWAYS include file_open as the last step when user says "open", "show", or "open in notepad"."""
 
 
 # ── Dynamic user message — changes per request ────────────────────────────────
@@ -271,30 +206,38 @@ def build_user_message(
 ━━━ RECENT ARTIFACTS ━━━
 {artifact_context}"""
 
-    app_open_rules = ""
-    artifact_open_rules = ""
-    if "app_open" in tool_names:
-        app_open_rules = """
+    # Category-specific rules — only injected when relevant tools are active
+    tool_set = set(tool_names)
+    category_rules_parts: list[str] = []
 
-APP_OPEN INTENT RULES:
-- If the user explicitly says "in browser", "website", "web", or "online" → set inputs.destination = "browser".
-- Plain "open X" → set inputs.destination = "auto".
-- Local-only requests for installed apps/tools may set inputs.destination = "app" when needed.
-- For plain app opens, set inputs.web_fallback_policy = "validate_then_ask" unless the user clearly does not want web fallback.
-- Keep inputs.target focused on the thing to open, not the full sentence."""
-    if "artifact_resolve" in tool_names and "file_open" in tool_names:
-        artifact_open_rules = """
+    if "app_open" in tool_set:
+        category_rules_parts.append("""APP_OPEN: "in browser"→destination="browser", plain "open X"→destination="auto", set web_fallback_policy="validate_then_ask" for plain opens. inputs.target = the thing to open, not the full sentence.""")
 
-ARTIFACT OPEN RULES:
-- For requests like "open the latest screenshot" or "open that saved txt file", plan TWO tasks:
-  1. A server-side `artifact_resolve` task to locate the artifact and return `file_path` plus `preferred_app`.
-  2. A client-side `file_open` task that depends on the resolve task.
-- Bind `file_open.path` to `$.<resolve_task_id>.data.file_path`.
-- Bind `file_open.app` to `$.<resolve_task_id>.data.preferred_app`.
-- Prefer `kind="screenshot"` for screenshots/images.
-- Prefer `kind="document"` plus `tool_name="file_create"` for latest/recent created files, notes, plans, or text documents.
-- If the user names the content instead of the path, pass a short `query` to `artifact_resolve` (for example `"about me"` or `"weekly plan"`).
-- Use `artifact_open` only when `file_open` is unavailable or the intent is explicitly to open it directly on the same runtime machine."""
+    if "artifact_resolve" in tool_set and "file_open" in tool_set:
+        category_rules_parts.append("""ARTIFACT OPEN: "open the file you created"→plan artifact_resolve(server)→file_open(client). Bind file_open.path to $.<resolve>.data.file_path, file_open.app to $.<resolve>.data.preferred_app. Use kind="screenshot" for images, kind="document" for text files.""")
+
+    if "shell_agent" in tool_set:
+        category_rules_parts.append("""SHELL AGENT: For complex multi-step tasks (create React app, FastAPI server)→use shell_agent with allow_network=true. NEVER use for WhatsApp calls/messages—use call_audio/message_send instead.""")
+
+    if any(t in tool_set for t in ("call_audio", "call_video", "message_send", "email_send")):
+        category_rules_parts.append("""COMMUNICATION: "call X"→call_audio. "video call"→call_video. "message X"/"text X"/"send to X"→message_send. "email X"/"mail X"→email_send. "WhatsApp" or unspecified→message_send/call_audio, NOT email.""")
+
+    if "content_generate" in tool_set:
+        category_rules_parts.append("""CONTENT GENERATE: For writing/creating text content→use content_generate (NOT file_create for long text). Set output_path for file saving, min_lines if user specifies line count. Chain file_open after if user wants to open it.""")
+
+    if "file_create" in tool_set:
+        category_rules_parts.append("""FILE_CREATE: inputs.content MUST be a plain text string (never list/dict). inputs.path MUST include file extension. Format structured data as readable text before passing.""")
+
+    if "web_research" in tool_set:
+        category_rules_parts.append("""WEB RESEARCH: Pure data-gathering, no summarization. MUST set: formatted_queries (1-3 optimized search strings), intent (factual_lookup|research|hotel_search|product_search|restaurant_search|local_service).
+For entity intents: set entity_schema (hotel|product|restaurant|local_business). No site: operators in queries.
+research intent→ALWAYS chain ai_summarize after (bind context to $.step.data.text).
+*_search/local_service/factual_lookup→web_research alone is enough.
+"near me"→plan current_location(client)→web_research(server) with input_bindings location=$.step_1.data.location_string. Keep "near me" in formatted_queries.""")
+
+    category_rules_block = ""
+    if category_rules_parts:
+        category_rules_block = "\n\n━━━ CATEGORY-SPECIFIC RULES ━━━\n" + "\n".join(category_rules_parts)
 
     category_instruction = ""
     if categories_list:
@@ -328,8 +271,7 @@ PREFERENCE RULES:
 - When the user says "my desktop", "downloads", "documents" etc., use the paths from SYSTEM PATHS above. Do NOT ask the user for the path.
 - "organize my desktop" → folder_organize with path = the desktop path from SYSTEM PATHS. NEVER ask which desktop.
 - "organize downloads" → folder_organize with path = the downloads path from SYSTEM PATHS.
-{app_open_rules}
-{artifact_open_rules}
+{category_rules_block}
 {artifact_block}
 Generate the execution plan now."""
 

@@ -13,6 +13,7 @@ import trafilatura
 from trafilatura.settings import use_config
 
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
+from app.utils.async_utils import run_in_executor
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,14 @@ _trafilatura_cfg.set("DEFAULT", "EXTRACTION_TIMEOUT", "0")
 # Sites that need a real browser (JS-rendered)
 JS_DOMAINS = {
     "airbnb.com", "booking.com", "expedia.com", "hotels.com",
-    "marriott.com", "hilton.com", "tripadvisor.com", "fandango.com",
-    "imdb.com", "instagram.com", "twitter.com", "x.com", "linkedin.com",
-    "bbc.com", "bbc.co.uk", "weather-atlas.com", "theweathernetwork.com",
-    "meteum.ai",
+    "marriott.com", "hilton.com",
+    "tripadvisor.com", "tripadvisor.in", "tripadvisor.co.uk",
+    "tripadvisor.ie", "tripadvisor.ca", "tripadvisor.com.au",
+    "fandango.com", "imdb.com", "instagram.com", "twitter.com", "x.com",
+    "linkedin.com", "bbc.com", "bbc.co.uk",
+    "weather-atlas.com", "theweathernetwork.com", "meteum.ai",
+    "makemytrip.com", "makemytrip.global", "goibibo.com",
+    "traveloka.com", "agoda.com", "cleartrip.com",
 }
 
 API_DOMAINS = {"github.com"}
@@ -150,7 +155,7 @@ class WebScrapeTool(BaseTool):
             return {"url": url, "success": True, **data}
         except Exception as exc:
             logger.error(f"Error scraping {url}: {exc}")
-            return {"url": url, "success": False, "title": "", "text": str(exc), "links": []}
+            return {"url": url, "success": False, "title": "", "text": str(exc), "links": [], "images": []}
 
     # ------------------------------------------------------------------
     # Strategy 1: fast httpx + trafilatura (static / SSR sites)
@@ -161,16 +166,20 @@ class WebScrapeTool(BaseTool):
             headers=_HEADERS, timeout=self.timeout, follow_redirects=True
         ) as client:
             resp = await client.get(url)
+            if resp.status_code in (403, 429):
+                logger.info(f"httpx got {resp.status_code} for {url} — falling back to Playwright")
+                return await self._scrape_playwright(url)
             resp.raise_for_status()
             html = resp.text
 
-        text = trafilatura.extract(
+        text = await run_in_executor(
+            trafilatura.extract,
             html,
             config=_trafilatura_cfg,
             include_comments=False,
             include_tables=True,
             no_fallback=False,
-            favor_recall=True,   # grab more, not less
+            favor_recall=True,
         ) or ""
 
         # Too little? Fall back to Playwright
@@ -178,16 +187,38 @@ class WebScrapeTool(BaseTool):
             logger.info(f"httpx got too little text for {url} — falling back to Playwright")
             return await self._scrape_playwright(url)
 
-        meta = trafilatura.extract_metadata(html)
+        meta = await run_in_executor(trafilatura.extract_metadata, html)
         title = (meta.title if meta else "") or ""
-        links = _extract_links(html, url)
-        return {"title": title, "text": text[: self.max_chars], "links": links[:50]}
+        links = await run_in_executor(_extract_links, html, url)
+        images = await run_in_executor(_extract_images, html, url)
+        return {"title": title, "text": text[: self.max_chars], "links": links[:50], "images": images}
 
     # ------------------------------------------------------------------
     # Strategy 2: Playwright — async, single browser per call
     # ------------------------------------------------------------------
 
+    # Hard wall-clock cap for the whole Playwright path: launch + nav +
+    # extraction. Even though page.goto has its own internal timeout, the
+    # browser launch and context creation don't — and on Windows they can
+    # hang forever (NotImplementedError from asyncio.create_subprocess_exec
+    # under the SelectorEventLoop). Capping here means a hung Playwright
+    # call can never block the parent scrape semaphore for more than this.
+    _PLAYWRIGHT_TIMEOUT_S = 20.0
+
     async def _scrape_playwright(self, url: str) -> Dict[str, Any]:
+        try:
+            return await asyncio.wait_for(
+                self._scrape_playwright_inner(url),
+                timeout=self._PLAYWRIGHT_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Playwright timed out (>%.0fs) for %s",
+                self._PLAYWRIGHT_TIMEOUT_S, url,
+            )
+            return {"title": "", "text": "", "links": [], "images": []}
+
+    async def _scrape_playwright_inner(self, url: str) -> Dict[str, Any]:
         try:
             from playwright.async_api import async_playwright
             from playwright.async_api import TimeoutError as PwTimeout
@@ -232,8 +263,8 @@ class WebScrapeTool(BaseTool):
             title = await page.title()
             await browser.close()
 
-        # Trafilatura still does the extraction — works great on rendered HTML too
-        text = trafilatura.extract(
+        text = await run_in_executor(
+            trafilatura.extract,
             html,
             config=_trafilatura_cfg,
             include_tables=True,
@@ -241,10 +272,11 @@ class WebScrapeTool(BaseTool):
         ) or ""
 
         if len(text.strip()) < 100:
-            text = _bs4_fallback(html)
+            text = await run_in_executor(_bs4_fallback, html)
 
-        links = _extract_links(html, url)
-        return {"title": title, "text": text[: self.max_chars], "links": links[:50]}
+        links = await run_in_executor(_extract_links, html, url)
+        images = await run_in_executor(_extract_images, html, url)
+        return {"title": title, "text": text[: self.max_chars], "links": links[:50], "images": images}
 
     # ------------------------------------------------------------------
     # Strategy 3: GitHub REST API
@@ -281,6 +313,48 @@ def _extract_links(html: str, base_url: str) -> List[str]:
         if full.startswith("http") and full not in seen:
             seen.append(full)
     return seen
+
+
+def _extract_images(html: str, base_url: str, limit: int = 10) -> List[str]:
+    """Pull usable image URLs from HTML — OG images first, then <img> tags."""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    images: List[str] = []
+    seen: set = set()
+
+    def _add(src: str) -> None:
+        if not src or src in seen:
+            return
+        full = src if src.startswith("http") else urljoin(base_url, src)
+        if not full.startswith("http"):
+            return
+        low = full.lower()
+        if any(skip in low for skip in ("1x1", "pixel", "spacer", "blank", "logo", "icon", "sprite", "data:", "tiny.png", "placeholder")):
+            return
+        if low.endswith((".svg", ".ico", ".gif")) and "photo" not in low:
+            return
+        seen.add(full)
+        images.append(full)
+
+    for meta in soup.find_all("meta", property="og:image"):
+        _add(meta.get("content", ""))
+    for meta in soup.find_all("meta", attrs={"name": "twitter:image"}):
+        _add(meta.get("content", ""))
+
+    for img in soup.find_all("img", src=True):
+        if len(images) >= limit:
+            break
+        src = img.get("src", "")
+        if src.startswith("data:"):
+            src = img.get("data-src", "") or img.get("data-lazy-src", "")
+        w = img.get("width", "")
+        h = img.get("height", "")
+        if w and h and str(w).isdigit() and str(h).isdigit():
+            if int(w) < 50 or int(h) < 50:
+                continue
+        _add(src)
+
+    return images[:limit]
 
 
 def _bs4_fallback(html: str) -> str:

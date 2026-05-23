@@ -31,6 +31,7 @@ class BatteryStatusTool(BaseTool):
     EXAMPLES = [{"user_utterance": "battery status"}]
     SEMANTIC_TAGS = ["system", "battery", "status"]
     TOOL_CATEGORY = "system_control"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "battery_status"

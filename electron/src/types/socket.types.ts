@@ -224,6 +224,7 @@ export interface SparkLogPayload {
   task_id?: string;
   tool_name?: string;
   status?: string;
+  job_id?: string;
   payload?: Record<string, any>;
   timestamp: string;
 }

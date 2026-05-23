@@ -36,6 +36,7 @@ from app.kernel.execution.job_coordinator import (
 )
 from app.services.interrupt_manager import get_interrupt_manager
 from .task_summary_speech_service import get_task_summary_speech_service
+from .tool_output_delivery_service import get_tool_output_delivery_service
 
 logger = logging.getLogger(__name__)
 _interrupt = get_interrupt_manager()
@@ -385,6 +386,7 @@ async def _launch_job(
     await emit_spark_log(user_id, "plan_created", payload={
         "tools": tool_names, "task_count": len(tasks),
         "job_id": job_id,
+        "query": original_query[:200],
         "message": f"Plan: {', '.join(tool_names)}",
     })
 
@@ -435,11 +437,11 @@ async def _emit_summary(
     except Exception as exc:
         logger.error("[SQH] completion wait error %s: %s", engine_key, exc)
 
-    # Emit job lifecycle event
+    # Emit job lifecycle event + push entity results directly
     try:
         from app.socket.utils import socket_emit
         orchestrator = get_orchestrator()
-        summary_data = await orchestrator.get_execution_summary(user_id)
+        summary_data = await orchestrator.get_execution_summary(user_id, job_id=job_id)
         if summary_data.get("failed", 0) > 0:
             await socket_emit("job:failed", {
                 "user_id": user_id, "job_id": job_id,
@@ -449,6 +451,32 @@ async def _emit_summary(
             await socket_emit("job:completed", {
                 "user_id": user_id, "job_id": job_id,
             }, user_id=user_id)
+
+        # Push ALL completed tool outputs directly (no round-trip needed).
+        # Iterate the job's own state so we never deliver stale data from
+        # a different job.
+        job_state = orchestrator.get_state(user_id, job_id=job_id)
+        logger.info("[SQH] _emit_summary: job_state=%s for user=%s job=%s", "found" if job_state else "NONE", user_id, job_id)
+        if job_state:
+            delivery = get_tool_output_delivery_service()
+            for _t in job_state.tasks.values():
+                if _t.status != "completed" or not _t.output or not _t.output.data:
+                    logger.info("[SQH] Skipping task %s — status=%s has_output=%s", _t.task_id, _t.status, bool(_t.output and _t.output.data))
+                    continue
+                try:
+                    output = await delivery.get_output(
+                        user_id=user_id, task_id=_t.task_id,
+                        include_full=True,
+                    )
+                    if output and output.get("data"):
+                        logger.info("[SQH] Pushing tool:output for %s (tool=%s) keys=%s", _t.task_id, _t.tool, list(output["data"].keys()))
+                        await socket_emit("tool:output", {
+                            "success": True, "output": output,
+                        }, user_id=user_id)
+                    else:
+                        logger.warning("[SQH] No data in delivery output for %s", _t.task_id)
+                except Exception as _exc:
+                    logger.error("[SQH] Error pushing tool:output for %s: %s", _t.task_id, _exc)
     except Exception:
         pass
 
@@ -460,7 +488,7 @@ async def _emit_summary(
     try:
         # Smart gate: decide if summary is worth speaking
         orchestrator = get_orchestrator()
-        snapshot_raw = await orchestrator.build_execution_speech_snapshot(user_id=user_id)
+        snapshot_raw = await orchestrator.build_execution_speech_snapshot(user_id=user_id, job_id=job_id)
         if not _should_speak(snapshot_raw, original_query):
             logger.info("⏭️ Skipping summary TTS — no tool needs summary for user=%s", user_id)
             return
@@ -472,6 +500,7 @@ async def _emit_summary(
                 ack_hint=ack_hint,
                 original_query=original_query,
                 user_lang=user_lang,
+                job_id=job_id,
             )
 
         if not summary:
@@ -496,15 +525,33 @@ async def _emit_summary(
 
 # ── Smart gate: should we speak the summary? ────────────────────────────────────────
 
+# Intents that are pure search/lookup — user expects a spoken result
+_SEARCH_INTENTS = {
+    "hotel_search", "product_search", "restaurant_search",
+    "local_service", "factual_lookup", "research",
+}
 
-def _tool_wants_summary_tts(tool_name: str) -> bool:
-    """Check the tool registry's summary_tts flag for a given tool."""
+
+def _tool_wants_summary_tts(tool_name: str, output_preview: Dict[str, Any] = {}) -> bool:
+    """
+    Check the tool registry's summary_tts flag for a given tool.
+
+    Supports:
+      - True/False: static always/never
+      - "intent_search": speak only when output intent is a search/lookup intent
+    """
     from app.plugins.tools.registry_loader import get_tool_registry
     registry = get_tool_registry()
     meta = registry.get_tool(tool_name)
     if meta is None:
         return False
-    return bool(meta.metadata.get("summary_tts", False))
+    flag = meta.metadata.get("summary_tts", False)
+    if flag is True:
+        return True
+    if flag == "intent_search":
+        intent = str(output_preview.get("intent", "")).lower()
+        return intent in _SEARCH_INTENTS
+    return False
 
 
 def _should_speak(snapshot_raw: Dict[str, Any], original_query: str = "") -> bool:
@@ -532,10 +579,11 @@ def _should_speak(snapshot_raw: Dict[str, Any], original_query: str = "") -> boo
         if status != "completed":
             logger.info("[_should_speak] skip task %s status=%s", tool, status)
             continue
-        wants = _tool_wants_summary_tts(tool) if tool else False
-        logger.info("[_should_speak] tool=%s  summary_tts=%s", tool, wants)
+        output_preview = task.get("output_preview") or {}
+        wants = _tool_wants_summary_tts(tool, output_preview) if tool else False
+        logger.info("[_should_speak] tool=%s  summary_tts=%s  intent=%s", tool, wants, output_preview.get("intent"))
         if wants:
-            logger.info("[_should_speak] speaking — tool '%s' has summary_tts=true", tool)
+            logger.info("[_should_speak] speaking — tool '%s' wants summary", tool)
             return True
 
     # No tool needs summary TTS → skip

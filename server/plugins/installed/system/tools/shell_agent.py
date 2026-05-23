@@ -32,6 +32,22 @@ from app.plugins.tools.catalog_service import get_tool_catalog_service
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
 
 
+async def _emit(user_id: str, task_id: str, stage: str, message: str) -> None:
+    if not user_id:
+        return
+    try:
+        from app.socket.log_stream import emit_spark_log
+        await emit_spark_log(
+            user_id,
+            "tool_progress",
+            task_id=task_id,
+            tool_name="shell_agent",
+            payload={"stage": stage, "message": message},
+        )
+    except Exception:
+        pass
+
+
 _READ_ONLY_PREFIXES = (
     "dir",
     "ls",
@@ -418,6 +434,7 @@ class ShellAgentTool(BaseTool):
     EXAMPLES = [{"user_utterance": "inspect the tools folder and summarize what is there", "inputs": {"goal": "Inspect the tools folder and summarize what is there", "max_steps": 4}}]
     SEMANTIC_TAGS = ["shell", "powershell", "cmd", "automation", "inspection"]
     TOOL_CATEGORY = "automation"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def __init__(self):
         super().__init__()
@@ -442,7 +459,10 @@ class ShellAgentTool(BaseTool):
         consecutive_failures = 0
         max_consecutive_failures = 3
 
+        await _emit(user_id, task_id, "planning", f"Planning shell workflow: {goal[:80]}...")
+
         for step_index in range(1, max_steps + 1):
+            await _emit(user_id, task_id, "planning_step", f"Planning step {step_index}...")
             decision = await self._plan_next_step(
                 goal=goal,
                 working_dir=working_dir,
@@ -471,6 +491,9 @@ class ShellAgentTool(BaseTool):
                     data={"steps": history},
                     error="Shell agent returned no command.",
                 )
+
+            reason = str(decision.get("reason", "")).strip()
+            await _emit(user_id, task_id, "executing", f"Step {step_index}: {reason[:100] or command[:80]}")
 
             # Dynamic timeout from planner (clamped to 10s..300s)
             step_timeout = int(decision.get("timeout_seconds", 30) or 30)

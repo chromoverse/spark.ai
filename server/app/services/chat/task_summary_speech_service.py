@@ -80,8 +80,9 @@ class TaskSummarySpeechService:
         ack_hint: str = "",
         original_query: str = "",   # ← pass the user's original query for context
         user_lang: str = "en",
+        job_id: str = "",
     ) -> str:
-        snapshot_raw = await get_orchestrator().build_execution_speech_snapshot(user_id=user_id)
+        snapshot_raw = await get_orchestrator().build_execution_speech_snapshot(user_id=user_id, job_id=job_id or None)
         snapshot     = _to_snapshot(snapshot_raw)
         lang_label   = _LANG_MAP.get(user_lang, "English")
 

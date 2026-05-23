@@ -221,12 +221,22 @@ class BaseTool(ABC):
             return ToolOutput(success=False, data={}, error=str(exc))
 
     def _validate_output_contract(self, output: ToolOutput) -> None:
-        """Warn if declared output_schema fields are missing from output.data."""
+        """Warn if non-optional declared output_schema fields are missing.
+
+        Schema fields whose definition is a dict containing ``"optional": True``
+        are intent-conditional (e.g. ``snippets`` only present for factual_lookup
+        in web_research) and are skipped here so the contract validator does
+        not warn for fields that legitimately don't apply.
+        """
         if not output.success or not self._output_schema:
             return
-        declared = set(self._output_schema.get("data", {}).keys())
+        declared_data = self._output_schema.get("data", {}) or {}
+        required_declared = {
+            name for name, defn in declared_data.items()
+            if not (isinstance(defn, dict) and defn.get("optional") is True)
+        }
         actual = set(output.data.keys()) if output.data else set()
-        missing = declared - actual
+        missing = required_declared - actual
         if missing:
             self.logger.warning(
                 "Tool '%s' output missing declared fields: %s (has: %s)",
@@ -267,7 +277,11 @@ class BaseTool(ABC):
             return None
 
         expected_data = self._output_schema.get("data", {})
-        for field_name in expected_data.keys():
+        for field_name, field_def in expected_data.items():
+            # Skip fields explicitly marked optional — these are
+            # intent-conditional and may legitimately be absent.
+            if isinstance(field_def, dict) and field_def.get("optional") is True:
+                continue
             if field_name not in data:
                 return f"Missing output field: {field_name}"
         return None

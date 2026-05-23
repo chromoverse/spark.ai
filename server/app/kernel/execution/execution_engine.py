@@ -40,12 +40,183 @@ from app.agent.runtime.tool_context_service import get_tool_context_service
 logger = logging.getLogger(__name__)
 
 
-async def _emit_tool_detail(user_id: str, event_type: str, task_id: str, tool_name: str, **kwargs) -> None:
+async def _emit_tool_detail(user_id: str, event_type: str, task_id: str, tool_name: str, job_id: str = "", **kwargs) -> None:
     """Emit a detailed tool event for live logs."""
     try:
-        await emit_spark_log(user_id, event_type, task_id=task_id, tool_name=tool_name, payload=kwargs)
+        await emit_spark_log(user_id, event_type, task_id=task_id, tool_name=tool_name, job_id=job_id, payload=kwargs)
     except Exception:
         pass
+
+
+def _build_start_message(tool_name: str, resolved_inputs: Dict[str, Any]) -> str:
+    """Build a human-readable action description when a tool starts."""
+    t = tool_name.lower()
+    try:
+        if t == "current_location":
+            return "Getting current location"
+        if t == "weather_current":
+            city = resolved_inputs.get("city", "")
+            return f"Fetching weather for {city}" if city else "Fetching current weather"
+        if t == "weather_forecast":
+            city = resolved_inputs.get("city", "")
+            return f"Loading forecast for {city}" if city else "Loading weather forecast"
+        if t == "web_research":
+            query = str(resolved_inputs.get("query", ""))[:60]
+            intent = resolved_inputs.get("intent", "research")
+            if intent in ("hotel_search", "product_search", "restaurant_search", "local_service"):
+                return f"Searching: {query}" if query else "Searching the web"
+            return f"Researching: {query}" if query else "Researching"
+        if t == "web_search":
+            query = str(resolved_inputs.get("query", ""))[:60]
+            return f"Searching: {query}" if query else "Searching the web"
+        if t == "web_scrape":
+            url = str(resolved_inputs.get("url", resolved_inputs.get("base_links", "")))[:60]
+            return f"Scraping: {url}" if url else "Scraping web pages"
+        if t == "ai_summarize":
+            return "Summarizing content"
+        if t == "content_generate":
+            fmt = resolved_inputs.get("format", "")
+            return f"Generating {fmt} content" if fmt else "Generating content"
+        if t == "shell_execute":
+            cmd = str(resolved_inputs.get("command", ""))[:60]
+            return f"Running: {cmd}" if cmd else "Running shell command"
+        if t == "shell_agent":
+            goal = str(resolved_inputs.get("goal", resolved_inputs.get("task", "")))[:60]
+            return f"Working on: {goal}" if goal else "Running shell agent"
+        if t == "email_list":
+            return "Fetching inbox"
+        if t == "email_send":
+            to = resolved_inputs.get("to", "")
+            return f"Sending email to {to}" if to else "Sending email"
+        if t == "email_read":
+            return "Reading email"
+        if t == "battery_status":
+            return "Checking battery"
+        if t == "screenshot_capture":
+            return "Capturing screenshot"
+        if t == "folder_organize":
+            path = str(resolved_inputs.get("path", ""))[:40]
+            return f"Organizing: {path}" if path else "Organizing folder"
+        if t in ("app_open", "file_open"):
+            target = resolved_inputs.get("target", resolved_inputs.get("path", ""))
+            return f"Opening {target}" if target else "Opening"
+        if t == "sound_control":
+            return "Adjusting sound"
+    except Exception:
+        pass
+    return f"Running {tool_name.replace('_', ' ')}"
+
+
+def _build_result_summary(tool_name: str, data: Dict[str, Any]) -> str:
+    """Build a human-readable one-liner from tool output for live logs."""
+    if not data:
+        return ""
+    t = tool_name.lower()
+    try:
+        if t == "web_research":
+            rt = data.get("result_type", "")
+            if rt == "entities":
+                entities = data.get("entities", [])
+                count = len(entities)
+                if count and isinstance(entities[0], dict):
+                    names = [e.get("name", "") for e in entities[:3] if e.get("name")]
+                    preview = ", ".join(names)
+                    if count > 3:
+                        preview += f" +{count - 3} more"
+                    return f"Found {count} results: {preview}"
+                return f"Found {count} results"
+            if rt == "snippets":
+                snippets = data.get("snippets", [])
+                if snippets and isinstance(snippets[0], dict):
+                    return snippets[0].get("snippet", "")[:120]
+                return f"Found {len(snippets)} snippets"
+            if rt == "scraped_content":
+                pages = data.get("scraped_content", [])
+                return f"Gathered content from {len(pages)} pages"
+        if t == "ai_summarize":
+            summary = data.get("summary", "")
+            if summary:
+                return summary[:150]
+        if t == "content_generate":
+            fp = data.get("file_path", "")
+            lines = data.get("line_count", 0)
+            if fp:
+                from pathlib import PurePosixPath, PureWindowsPath
+                name = PureWindowsPath(fp).name if "\\" in fp else PurePosixPath(fp).name
+                return f"Created {name} ({lines} lines)" if lines else f"Created {name}"
+        if t == "file_create":
+            fp = data.get("file_path", "")
+            if fp:
+                from pathlib import PurePosixPath, PureWindowsPath
+                name = PureWindowsPath(fp).name if "\\" in fp else PurePosixPath(fp).name
+                size = data.get("size_bytes", 0)
+                if size and size > 1024:
+                    return f"Created {name} ({size // 1024}KB)"
+                return f"Created {name}"
+        if t == "shell_execute":
+            stdout = str(data.get("stdout", "")).strip()
+            exit_code = data.get("exit_code", 0)
+            if stdout:
+                return stdout[:120]
+            return f"Exit code {exit_code}"
+        if t == "shell_agent":
+            answer = str(data.get("final_answer", "")).strip()
+            if answer:
+                return answer[:150]
+            steps = data.get("step_count", 0)
+            return f"Completed in {steps} steps"
+        if t == "weather_current":
+            desc = data.get("description", "")
+            temp = data.get("temperature_c")
+            city = data.get("city", "")
+            if desc and temp is not None:
+                return f"{city}: {desc}, {temp}°C" if city else f"{desc}, {temp}°C"
+        if t == "weather_forecast":
+            forecast = data.get("forecast", [])
+            if forecast and isinstance(forecast[0], dict):
+                return f"{len(forecast)}-day forecast loaded"
+        if t == "email_list":
+            emails = data.get("emails", [])
+            total = data.get("total_returned", len(emails))
+            if emails and isinstance(emails[0], dict):
+                subjects = [e.get("subject", "") for e in emails[:2] if e.get("subject")]
+                preview = "; ".join(subjects)
+                return f"{total} emails — {preview}" if preview else f"{total} emails"
+            return f"{total} emails"
+        if t == "email_send":
+            to = data.get("to", "")
+            subj = data.get("subject", "")
+            return f"Sent to {to}: {subj}" if to else "Email sent"
+        if t == "email_read":
+            subj = data.get("subject", "")
+            frm = data.get("from", "")
+            return f"From {frm}: {subj}" if frm else subj or "Email loaded"
+        if t == "folder_organize":
+            moved = data.get("moved_count", data.get("files_moved", 0))
+            return f"Organized {moved} files" if moved else "Folder organized"
+        if t == "screenshot_capture":
+            fp = data.get("file_path", "")
+            return f"Screenshot saved" if fp else "Screenshot captured"
+        if t == "battery_status":
+            pct = data.get("percent")
+            charging = data.get("is_charging")
+            if pct is not None:
+                status = "charging" if charging else "on battery"
+                return f"{pct}% — {status}"
+        if t in ("app_open", "file_open"):
+            return data.get("message", "") or "Opened"
+        if t == "current_location":
+            city = data.get("city", "")
+            region = data.get("region", "")
+            lat = data.get("latitude")
+            lon = data.get("longitude")
+            if city:
+                return f"{city}, {region}" if region else city
+            if lat is not None and lon is not None:
+                return f"Location: {lat:.4f}, {lon:.4f}"
+    except Exception:
+        pass
+    return ""
 
 
 async def _emit_progress_event(user_id: str, summary: dict) -> None:
@@ -317,7 +488,7 @@ class ExecutionEngine:
             self._replan_attempted.pop(engine_key, None)
             self._cancellation_contexts.pop(engine_key, None)
 
-            await self._print_final_summary(user_id)
+            await self._print_final_summary(user_id, job_id=job_id)
 
             # Signal completion event
             if engine_key in self.completion_events:
@@ -588,10 +759,10 @@ class ExecutionEngine:
         """Execute a single server task"""
         try:
             await self.orchestrator.mark_task_running(user_id, task.task_id, job_id=job_id)
-            
+
             logger.info(f"  Executing: {task.task_id} ({task.tool})")
-            await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", payload={"message": f"Executing {task.tool}"})
-            
+            await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", job_id=job_id, payload={"message": f"Executing {task.tool}"})
+
             if task.lifecycle_messages and task.lifecycle_messages.on_start:
                 logger.info(f"     {task.lifecycle_messages.on_start}")
 
@@ -599,9 +770,9 @@ class ExecutionEngine:
             if not await self._handle_approval_gate(user_id, task):
                 return False
 
-            if not self.server_tool_executor: 
-                raise RuntimeError("Server tool executor not configured")    
-            
+            if not self.server_tool_executor:
+                raise RuntimeError("Server tool executor not configured")
+
             # RESOLVE INPUT BINDINGS — find the correct job state for this task
             state = self.orchestrator._find_state_for_task(user_id, task.task_id, job_id=job_id)
             if not state:
@@ -620,7 +791,8 @@ class ExecutionEngine:
             task.resolved_inputs = resolved_inputs
 
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
-            await _emit_tool_detail(user_id, "tool_params", task.task_id, task.tool, inputs={k: str(v)[:150] for k, v in resolved_inputs.items() if not k.startswith("_") and k not in ("user_id", "execution_id")}, message=f"{task.tool}({', '.join(f'{k}={str(v)[:50]}' for k, v in resolved_inputs.items() if not k.startswith('_') and k not in ('user_id', 'execution_id'))})")
+            start_msg = _build_start_message(task.tool, resolved_inputs)
+            await _emit_tool_detail(user_id, "tool_step", task.task_id, task.tool, job_id=job_id, message=start_msg)
 
             # Dynamic approval for shell_execute commands that aren't whitelisted
             if task.tool == "shell_execute" and not (task.control and task.control.requires_approval):
@@ -657,7 +829,7 @@ class ExecutionEngine:
 
             async def _on_server_retry(_uid: str, attempt: int, msg: str) -> None:
                 await _emit_progress_event(_uid, {"retry": True, "task_id": task.task_id, "attempt": attempt, "message": msg})
-                await _emit_tool_detail(_uid, "tool_retry", task.task_id, task.tool, attempt=attempt, message=msg)
+                await _emit_tool_detail(_uid, "tool_retry", task.task_id, task.tool, job_id=job_id, attempt=attempt, message=msg)
 
             # Acquire resource lock if needed (prevents cross-job contention)
             resources = self._get_tool_resources(task.tool)
@@ -683,12 +855,13 @@ class ExecutionEngine:
 
             if watcher_result.recovered:
                             logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
-                            await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
+                            await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, job_id=job_id, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
 
             if output.success:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output, job_id=job_id)
-                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=task.duration_ms, message=f"✓ {task.tool} completed in {task.duration_ms}ms")
-                # Record in session memory for context-aware follow-ups
+                result_summary = _build_result_summary(task.tool, output.data or {})
+                display_msg = result_summary or f"✓ {task.tool} completed"
+                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=task.duration_ms, message=display_msg, result_summary=result_summary)
                 get_tool_context_service().record_tool_output(
                     user_id=user_id, task_id=task.task_id, tool_name=task.tool,
                     output_data=output.data, success=True,
@@ -699,7 +872,7 @@ class ExecutionEngine:
                 return True
             else:
                 error = output.error or f"Tool '{task.tool}' returned unsuccessful output"
-                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, success=False, error=error[:200], message=f"✗ {task.tool} failed: {error[:100]}")
+                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=False, error=error[:200], message=f"✗ {task.tool} failed: {error[:100]}")
                 ctx = get_tool_context_service()
                 ctx.record_tool_output(
                     user_id=user_id, task_id=task.task_id, tool_name=task.tool,
@@ -786,17 +959,17 @@ class ExecutionEngine:
         """Execute a single client task locally (desktop mode) with watcher recovery"""
         try:
             await self.orchestrator.mark_task_running(user_id, task.task_id, job_id=job_id)
-            
+
             logger.info(f"   Executing locally: {task.task_id} ({task.tool})")
-            await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", payload={"message": f"Executing {task.tool} locally"})
-            
+            await emit_spark_log(user_id, "task_running", task_id=task.task_id, tool_name=task.tool, status="running", job_id=job_id, payload={"message": f"Executing {task.tool} locally"})
+
             if task.lifecycle_messages and task.lifecycle_messages.on_start:
                 logger.info(f"     {task.lifecycle_messages.on_start}")
 
             # Optional approval gate tasks are resolved via notification response.
             if not await self._handle_approval_gate(user_id, task):
                 return False
-            
+
             # Resolve inputs — find the correct job state for this task
             state = self.orchestrator._find_state_for_task(user_id, task.task_id, job_id=job_id)
             if not state:
@@ -813,9 +986,10 @@ class ExecutionEngine:
             resolved_inputs["_execution_id"] = state.execution_id
             resolved_inputs["execution_id"] = state.execution_id
             task.resolved_inputs = resolved_inputs
-            
+
             logger.info(f"     📋 Resolved inputs: {list(resolved_inputs.keys())}")
-            await _emit_tool_detail(user_id, "tool_params", task.task_id, task.tool, inputs={k: str(v)[:150] for k, v in resolved_inputs.items() if not k.startswith("_") and k not in ("user_id", "execution_id")}, message=f"{task.tool}({', '.join(f'{k}={str(v)[:50]}' for k, v in resolved_inputs.items() if not k.startswith('_') and k not in ('user_id', 'execution_id'))})")
+            start_msg = _build_start_message(task.tool, resolved_inputs)
+            await _emit_tool_detail(user_id, "tool_step", task.task_id, task.tool, job_id=job_id, message=start_msg)
             
             # Execute via watcher (auto-retry on retryable failures)
             client_executor = self.client_tool_executor
@@ -854,10 +1028,13 @@ class ExecutionEngine:
 
             if watcher_result.recovered:
                             logger.info(f"     🔄 Watcher recovered task {task.task_id} after {watcher_result.retries_used} retries")
-                            await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
+                            await _emit_tool_detail(user_id, "tool_recovered", task.task_id, task.tool, job_id=job_id, retries=watcher_result.retries_used, message=f"🔄 Recovered after {watcher_result.retries_used} retry(s)")
 
             if output.success:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output, job_id=job_id)
+                result_summary = _build_result_summary(task.tool, output.data or {})
+                display_msg = result_summary or f"✓ {task.tool} completed"
+                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=latency_ms, message=display_msg, result_summary=result_summary)
                 await emit_kernel_event(
                     KernelEvent(
                         event_type="tool_invoked",
@@ -865,8 +1042,13 @@ class ExecutionEngine:
                         task_id=task.task_id,
                         tool_name=task.tool,
                         status="success",
-                        payload={"latency_ms": latency_ms, "error": None, "recovered": watcher_result.recovered},
+                        job_id=job_id,
+                        payload={"latency_ms": latency_ms, "error": None, "recovered": watcher_result.recovered, "result_summary": result_summary},
                     )
+                )
+                get_tool_context_service().record_tool_output(
+                    user_id=user_id, task_id=task.task_id, tool_name=task.tool,
+                    output_data=output.data, success=True,
                 )
                 if task.lifecycle_messages and task.lifecycle_messages.on_success:
                     logger.info(f"     {task.lifecycle_messages.on_success}")
@@ -874,6 +1056,7 @@ class ExecutionEngine:
                 return True
             else:
                 error_msg = watcher_result.watcher_message or output.error or f"Client tool '{task.tool}' failed"
+                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=False, error=error_msg[:200], message=f"✗ {task.tool} failed: {error_msg[:100]}")
                 await self.orchestrator.mark_task_failed(user_id, task.task_id, error_msg, job_id=job_id)
                 await emit_kernel_event(
                     KernelEvent(
@@ -882,6 +1065,7 @@ class ExecutionEngine:
                         task_id=task.task_id,
                         tool_name=task.tool,
                         status="failed",
+                        job_id=job_id,
                         payload={"latency_ms": latency_ms, "error": error_msg},
                     )
                 )
@@ -900,6 +1084,7 @@ class ExecutionEngine:
                     task_id=task.task_id,
                     tool_name=task.tool,
                     status="failed",
+                    job_id=job_id,
                     payload={"error": error_msg},
                 )
             )
@@ -1041,11 +1226,11 @@ class ExecutionEngine:
         
         return True
     
-    async def _print_final_summary(self, user_id: str):
+    async def _print_final_summary(self, user_id: str, *, job_id: str = ""):
         """Print execution summary"""
         summary = await self.orchestrator.get_execution_summary(user_id)
         summary_payload: Dict[str, Any] = dict(summary)
-        
+
         logger.info("\n" + "="*70)
         logger.info("FINAL EXECUTION SUMMARY")
         logger.info("="*70)
@@ -1055,15 +1240,29 @@ class ExecutionEngine:
         logger.info(f"Failed:    {summary['failed']}")
         logger.info(f"Pending:   {summary['pending']}")
         logger.info(f"Running:   {summary['running']}")
-        
+
         if summary['total'] > 0:
             success_rate = (summary['completed'] / summary['total']) * 100
             logger.info(f"Success Rate: {success_rate:.1f}%")
             summary_payload["success_rate"] = round(success_rate, 2)
-        
+
+        if job_id:
+            summary_payload["job_id"] = job_id
+
         logger.info("="*70)
         await _emit_summary_event(user_id, summary_payload)
-        await emit_spark_log(user_id, "execution_complete", payload={"message": f"Done: {summary['completed']}/{summary['total']} succeeded", **summary_payload})
+
+        # Build a richer summary message from completed tool outputs
+        parts = []
+        state = self.orchestrator.get_state(user_id, job_id=job_id) if job_id else self.orchestrator.get_state(user_id)
+        if state:
+            for t in state.tasks.values():
+                if t.status == "completed" and t.output and t.output.data:
+                    rs = _build_result_summary(t.tool, t.output.data)
+                    if rs:
+                        parts.append(rs)
+        exec_msg = " · ".join(parts) if parts else f"Done: {summary['completed']}/{summary['total']} succeeded"
+        await emit_spark_log(user_id, "execution_complete", payload={"message": exec_msg, **summary_payload})
     
     def is_running(self, user_id: str, job_id: Optional[str] = None) -> bool:
         """Check if execution is running for user (optionally for a specific job)."""

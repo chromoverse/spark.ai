@@ -16,6 +16,22 @@ from app.plugins.tools.tool_base import BaseTool, ToolOutput
 from app.ai.providers.router import routed_chat  # type: ignore
 
 
+async def _emit(user_id: str, task_id: str, stage: str, message: str) -> None:
+    if not user_id:
+        return
+    try:
+        from app.socket.log_stream import emit_spark_log
+        await emit_spark_log(
+            user_id,
+            "tool_progress",
+            task_id=task_id,
+            tool_name="content_generate",
+            payload={"stage": stage, "message": message},
+        )
+    except Exception:
+        pass
+
+
 _SYSTEM_PROMPT = """You are a professional content writer. Generate well-structured, detailed content based on the user's request.
 
 FORMATTING RULES:
@@ -115,6 +131,7 @@ class ContentGenerateTool(BaseTool):
     ]
     SEMANTIC_TAGS = ["ai", "content", "generate", "write", "create", "note", "article", "long-form"]
     TOOL_CATEGORY = "ai_content"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "content_generate"
@@ -127,6 +144,8 @@ class ContentGenerateTool(BaseTool):
         fmt = str(self.get_input(inputs, "format", "markdown") or "markdown").lower()
         user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "guest")
 
+        task_id = str(inputs.get("_task_id") or "")
+
         # Derive topic from fallbacks
         if not topic and instructions:
             topic = instructions
@@ -134,6 +153,8 @@ class ContentGenerateTool(BaseTool):
             topic = Path(output_path).stem.replace("_", " ").replace("-", " ")
         if not topic:
             return ToolOutput(success=False, data={}, error="Topic is required")
+
+        await _emit(user_id, task_id, "planning", f"Planning content: {topic[:60]}...")
 
         # Build the user prompt
         length_hint = f"\n\nIMPORTANT: Generate at least {min_lines} lines of content. Be thorough and detailed." if min_lines > 0 else ""
@@ -143,6 +164,7 @@ class ContentGenerateTool(BaseTool):
 
         max_tokens = 8192 if min_lines > 100 else 4096
 
+        await _emit(user_id, task_id, "generating", "Writing content...")
         try:
             response_text, provider = await routed_chat(
                 "content_generate",
@@ -161,6 +183,8 @@ class ContentGenerateTool(BaseTool):
 
         content = response_text.strip()
         line_count = content.count("\n") + 1
+
+        await _emit(user_id, task_id, "saving", f"Saving content ({line_count} lines)...")
 
         # Always save to file — auto-generate path if not provided
         if not output_path:

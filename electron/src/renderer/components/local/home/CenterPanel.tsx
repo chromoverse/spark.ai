@@ -14,7 +14,7 @@ export default function CenterPanel() {
   const { socket, isConnected, on, emit, off } = useSocket()
   const { speak, stop, isSpeaking } = useSparkTTS();
    const [status, setStatus] = React.useState<string>("Not started");
-  
+
   const getAudio = async(text:string | undefined) => {
     console.log("htting api now")
    const res = await axios.post(
@@ -24,7 +24,7 @@ export default function CenterPanel() {
      },
      { responseType: "arraybuffer" }
    );
-    
+
     console.log("REs", res)
    const audioBlob = new Blob([res.data], { type: "audio/mpeg" });
    const audioUrl = URL.createObjectURL(audioBlob);
@@ -60,9 +60,9 @@ export default function CenterPanel() {
     },
     createdAt: new Date().toISOString()
   }
-  
 
-  
+
+
 
   const play = () => {
     speak(
@@ -73,7 +73,7 @@ export default function CenterPanel() {
   const openCamera = async () => {
     try {
        console.log("🟢 Calling window.electronApi.executeTasks with camera task...");
-      
+
        const res = await window.electronApi.executeTasks([cameraTask]);
 
        console.log("🟢 Response received:", res);
@@ -103,7 +103,7 @@ const handleRefreshToken = async (e: React.MouseEvent<HTMLButtonElement>) => {
     console.error("Token refresh failed:", error);
   }
   }
-  
+
 
   function testWebSocket() {
     emit("request-tts", {
@@ -112,28 +112,28 @@ const handleRefreshToken = async (e: React.MouseEvent<HTMLButtonElement>) => {
     });
   }
 
-  
+
   return (
     <div>
       <Button onClick={() => getAudio("हो गया सर, देख सकते हैं। कुछ और चाहिए?")}>get Audio Http</Button>
       <Button onClick={() => play()}>play ws sound</Button>
-      <Button 
+      <Button
         type="button"
-        className="webkit-drag-nodrag" 
+        className="webkit-drag-nodrag"
         onClick={handleRefreshToken}
         >
         Refresh Token
       </Button>
-      <Button 
+      <Button
         type="button"
-        className="webkit-drag-nodrag" 
+        className="webkit-drag-nodrag"
         onClick={testWebSocket}
         >
         Test WebSocket
       </Button>
-      <Button 
+      <Button
         type="button"
-        className="webkit-drag-nodrag bg-blue-600 hover:bg-blue-700 ml-2" 
+        className="webkit-drag-nodrag bg-blue-600 hover:bg-blue-700 ml-2"
         onClick={openCamera}
         >
         📷 Open Camera

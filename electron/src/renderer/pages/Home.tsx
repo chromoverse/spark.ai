@@ -1,8 +1,11 @@
 import Header from "@/components/local/Header";
 import BottomBar from "@/components/local/bottomBar/BottomBar";
 import Sidebar, { type SidebarItem } from "@/components/local/home/Sidebar";
+import JobsPanel from "@/components/local/home/JobsPanel";
 import { useAiResponseHandler } from "@/hooks/useAiResponseHandler";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import type { EntityCardData } from "@/components/local/home/EntityCards";
+import type { TaskOutput } from "@shared/socket.types";
 
 const SparkLogs = lazy(() => import("./home/SparkLogs"));
 const History = lazy(() => import("./home/History"));
@@ -20,8 +23,14 @@ function PageLoader() {
   return <div className="flex items-center justify-center h-full"><div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
 }
 
+interface EntityResult {
+  entities: EntityCardData[];
+  intent: string;
+}
+
 function Home() {
   const [activeTab, setActiveTab] = useState<SidebarItem>("home");
+  const [entityResult, setEntityResult] = useState<EntityResult | null>(null);
 
   useEffect(() => {
     const cleanup = window.electronApi?.onSparkNavigate?.((payload) => {
@@ -30,16 +39,39 @@ function Home() {
     return () => { cleanup?.(); };
   }, []);
 
+  const handleTaskBatchComplete = useCallback((results: TaskOutput[]) => {
+    console.log("Tasks completed:", results);
+    for (const result of results) {
+      if (
+        result.success &&
+        result.data?.result_type === "entities" &&
+        Array.isArray(result.data?.entities) &&
+        result.data.entities.length > 0
+      ) {
+        setEntityResult({
+          entities: result.data.entities as EntityCardData[],
+          intent: result.data.intent ?? "results",
+        });
+        break;
+      }
+    }
+  }, []);
+
   useAiResponseHandler({
     autoListen: true,
     onPQHSuccess: (payload) => console.log("PQH completed:", payload),
-    onTaskBatchComplete: (results) => console.log("Tasks completed:", results),
+    onTaskBatchComplete: handleTaskBatchComplete,
     onTaskBatchError: (error) => console.error("Tasks failed:", error),
   });
 
   const renderContent = () => {
     switch (activeTab) {
-      case "home": return <HomeLive />;
+      case "home": return (
+        <HomeLive
+          entityResult={entityResult}
+          onEntityDismiss={() => setEntityResult(null)}
+        />
+      );
       case "history": return <History />;
       case "spark-logs": return <SparkLogs />;
       case "tools": return <ToolsPage />;
@@ -63,6 +95,7 @@ function Home() {
             {renderContent()}
           </Suspense>
         </main>
+        {activeTab === "home" && <JobsPanel />}
       </div>
       <BottomBar />
     </div>

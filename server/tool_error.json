@@ -104,5 +104,28 @@
       "user_id": "695e2bbaf8efc966aaf9f218",
       "execution_id": "job_51a968f2"
     }
+  },
+  {
+    "timestamp": "2026-05-22T19:02:10",
+    "tool": "gmail_read",
+    "task_id": "step_1",
+    "error": "gmail access revoked by user 695e2bbaf8efc966aaf9f218. Please reconnect.",
+    "inputs": {
+      "query": "is:unread",
+      "user_id": "your_email_address",
+      "execution_id": "job_31ea3a67"
+    }
+  },
+  {
+    "timestamp": "2026-05-22T22:56:41",
+    "tool": "gmail_read",
+    "task_id": "step_1",
+    "error": "gmail access revoked by user 695e2bbaf8efc966aaf9f218. Please reconnect.",
+    "inputs": {
+      "query": "is:unread",
+      "max_results": "10",
+      "user_id": "your_email_address",
+      "execution_id": "job_1a08a445"
+    }
   }
 ]

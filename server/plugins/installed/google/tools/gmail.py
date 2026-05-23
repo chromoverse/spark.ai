@@ -22,6 +22,22 @@ from app.plugins.tools.tool_base import BaseTool, ToolOutput
 
 logger = logging.getLogger(__name__)
 
+
+async def _emit_progress(user_id: str, task_id: str, tool_name: str, stage: str, message: str) -> None:
+    if not user_id:
+        return
+    try:
+        from app.socket.log_stream import emit_spark_log
+        await emit_spark_log(
+            user_id,
+            "tool_progress",
+            task_id=task_id,
+            tool_name=tool_name,
+            payload={"stage": stage, "message": message},
+        )
+    except Exception:
+        pass
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -170,12 +186,16 @@ class EmailListTool(BaseTool):
     ]
     SEMANTIC_TAGS = ["gmail", "email", "list"]
     TOOL_CATEGORY = "communication"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "email_list"
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         try:
+            user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "")
+            task_id = str(inputs.get("_task_id") or "")
+            await _emit_progress(user_id, task_id, "email_list", "connecting", "Connecting to Gmail...")
             service = await _svc(inputs)
             label_ids: List[str] = inputs.get("label_ids", ["INBOX"])
             query: str = inputs.get("query", "")
@@ -189,9 +209,11 @@ class EmailListTool(BaseTool):
             if query:
                 kwargs["q"] = query
 
+            await _emit_progress(user_id, task_id, "email_list", "fetching", "Fetching emails...")
             resp = service.users().messages().list(**kwargs).execute()
             messages_meta = resp.get("messages", [])
 
+            await _emit_progress(user_id, task_id, "email_list", "reading", f"Reading {len(messages_meta)} emails...")
             emails = []
             for meta in messages_meta:
                 msg = (
@@ -305,6 +327,7 @@ class EmailReadTool(BaseTool):
     ]
     SEMANTIC_TAGS = ["gmail", "email", "read"]
     TOOL_CATEGORY = "communication"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "email_read"
@@ -444,12 +467,15 @@ class EmailSendTool(BaseTool):
     ]
     SEMANTIC_TAGS = ["gmail", "email", "send"]
     TOOL_CATEGORY = "communication"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "email_send"
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         try:
+            user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "")
+            task_id = str(inputs.get("_task_id") or "")
             service = await _svc(inputs)
             to: str = inputs["to"]
             subject: str = inputs["subject"]
@@ -457,8 +483,10 @@ class EmailSendTool(BaseTool):
             cc: str = inputs.get("cc", "")
             bcc: str = inputs.get("bcc", "")
 
+            await _emit_progress(user_id, task_id, "email_send", "composing", f"Composing email to {to}...")
             raw_msg = _build_message(to=to, subject=subject, body=body, cc=cc, bcc=bcc)
 
+            await _emit_progress(user_id, task_id, "email_send", "sending", "Sending email...")
             sent = service.users().messages().send(userId="me", body=raw_msg).execute()
 
             return ToolOutput(
@@ -1000,6 +1028,9 @@ class EmailSearchTool(BaseTool):
 
     async def _execute(self, inputs: Dict[str, Any]) -> ToolOutput:
         try:
+            user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "")
+            task_id = str(inputs.get("_task_id") or "")
+            await _emit_progress(user_id, task_id, "email_search", "searching", f"Searching emails...")
             service = await _svc(inputs)
             query: str = inputs["query"]
             max_results: int = int(inputs.get("max_results", 20))
@@ -1012,6 +1043,7 @@ class EmailSearchTool(BaseTool):
             )
             messages_meta = resp.get("messages", [])
 
+            await _emit_progress(user_id, task_id, "email_search", "reading", f"Reading {len(messages_meta)} results...")
             emails = []
             for meta in messages_meta:
                 msg = (

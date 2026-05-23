@@ -6,9 +6,11 @@ from typing import Callable, Any, TypeVar, Coroutine, ParamSpec
 
 logger = logging.getLogger(__name__)
 
-# Create a shared thread pool for blocking operations
+# Shared thread pool for blocking / CPU-bound operations (trafilatura,
+# BeautifulSoup, etc.).  Sized to handle concurrent web scrapes (up to 5
+# pages) plus headroom for other blocking calls.
 _executor = ThreadPoolExecutor(
-    max_workers=4,
+    max_workers=8,
     thread_name_prefix="async_wrapper"
 )
 

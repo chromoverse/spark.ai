@@ -15,7 +15,7 @@ class CurrentLocationTool(BaseTool):
     PARAMS_SCHEMA: Dict[str, Any] = {"detailed": {"type": "boolean", "required": False, "default": False, "description": "Return extra info like timezone, ISP, and accuracy note"}}
     OUTPUT_SCHEMA: Dict[str, Any] = {
         "success": {"type": "boolean"},
-        "data": {"latitude": {"type": "number"}, "longitude": {"type": "number"}, "city": {"type": "string"}, "region": {"type": "string"}, "country": {"type": "string"}, "country_code": {"type": "string"}, "postal": {"type": "string"}, "maps_link": {"type": "string"}},
+        "data": {"latitude": {"type": "number"}, "longitude": {"type": "number"}, "city": {"type": "string"}, "region": {"type": "string"}, "country": {"type": "string"}, "country_code": {"type": "string"}, "postal": {"type": "string"}, "location_string": {"type": "string", "description": "Human-friendly combined location, e.g. 'Mumbai, Maharashtra'. Preferred binding target for downstream search tools."}, "maps_link": {"type": "string"}},
         "error": {"type": "string"},
     }
     EXAMPLES = [{"user_utterance": "where am I right now"}]
@@ -32,11 +32,14 @@ class CurrentLocationTool(BaseTool):
             if not location:
                 return ToolOutput(success=False, data={}, error="Could not determine location from any provider.")
             lat, lon = location.get("lat"), location.get("lon")
+            city = location.get("city") or "N/A"
+            region = location.get("region") or "N/A"
             data = {
                 "latitude": lat, "longitude": lon,
-                "city": location.get("city", "N/A"), "region": location.get("region", "N/A"),
+                "city": city, "region": region,
                 "country": location.get("country", "N/A"), "country_code": location.get("country_code", "N/A"),
                 "postal": location.get("postal", "N/A"),
+                "location_string": _build_location_string(city, region, location.get("country")),
                 "maps_link": f"https://maps.google.com/?q={lat},{lon}" if lat and lon else "N/A",
                 "timestamp": datetime.now().isoformat(),
             }
@@ -79,6 +82,39 @@ class CurrentLocationTool(BaseTool):
         if not data.get("success"):
             raise ValueError("ipwho.is failed")
         return {"lat": data.get("latitude"), "lon": data.get("longitude"), "city": data.get("city"), "region": data.get("region"), "country": data.get("country"), "country_code": data.get("country_code"), "postal": data.get("postal"), "timezone": data.get("timezone", {}).get("id") if isinstance(data.get("timezone"), dict) else None, "isp": data.get("connection", {}).get("isp") if isinstance(data.get("connection"), dict) else None}
+
+
+def _build_location_string(city: str | None, region: str | None, country: str | None) -> str:
+    """Build a human-friendly location label, skipping missing/duplicate parts.
+
+    Examples:
+      ("Mumbai", "Maharashtra", "India") -> "Mumbai, Maharashtra"
+      ("Singapore", "Singapore", "Singapore") -> "Singapore"
+      ("Mumbai", "N/A", "India") -> "Mumbai, India"
+      (None, None, "India") -> "India"
+    """
+    def _clean(v: str | None) -> str:
+        if not v:
+            return ""
+        s = str(v).strip()
+        return "" if s.upper() in {"N/A", "NA", "NONE"} else s
+
+    c, r, co = _clean(city), _clean(region), _clean(country)
+
+    parts: list[str] = []
+    if c:
+        parts.append(c)
+    # Avoid repeating the same word (city == region for city-states like Singapore)
+    if r and r.lower() != c.lower():
+        parts.append(r)
+    if not parts and co:
+        parts.append(co)
+    elif co and len(parts) == 1 and parts[0].lower() != co.lower():
+        # Only add country when we have nothing else informative beyond city
+        if not r:
+            parts.append(co)
+
+    return ", ".join(parts) if parts else "Unknown"
 
 
 __all__ = ["CurrentLocationTool"]

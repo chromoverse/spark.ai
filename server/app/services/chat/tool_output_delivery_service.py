@@ -18,7 +18,21 @@ _TOOL_OUTPUT_POLICIES: Dict[str, Dict[str, List[str]]] = {
         ],
     },
     "web_research": {
-        "default_fields": ["summary", "detailed_content", "sources", "query"],
+        # Intent-aware fields. Delivery layer simply forwards whatever the
+        # tool returned for the active intent — no field is required here.
+        "default_fields": [
+            "intent",
+            "result_type",
+            "sources",
+            # entity intents
+            "entities",
+            "actions",
+            # research intent
+            "scraped_content",
+            "text",
+            # factual_lookup intent
+            "snippets",
+        ],
     },
 }
 
@@ -50,17 +64,25 @@ class ToolOutputDeliveryService:
         task_id: Optional[str] = None,
         tool_name: Optional[str] = None,
     ):
-        state = get_orchestrator().get_state(user_id)
-        if not state:
-            return None
+        orchestrator = get_orchestrator()
 
         if task_id:
-            task = state.get_task(task_id)
-            if not task:
-                return None
-            return task
+            # Search ALL job states — orchestrator.get_task does cross-state lookup
+            return orchestrator.get_task(user_id, task_id)
 
-        candidates = list(state.tasks.values())
+        # No task_id: gather candidates across ALL states for this user
+        all_states = orchestrator.get_all_states_for_user(user_id)
+        if not all_states:
+            state = orchestrator.get_state(user_id)
+            if state:
+                all_states = {"_": state}
+            else:
+                return None
+
+        candidates = []
+        for state in all_states.values():
+            candidates.extend(state.tasks.values())
+
         if tool_name:
             candidates = [t for t in candidates if t.tool == tool_name]
 
@@ -99,18 +121,26 @@ class ToolOutputDeliveryService:
         return {k: _json_safe(raw_data.get(k)) for k in selected_keys}
 
     async def list_outputs(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-        state = get_orchestrator().get_state(user_id)
-        if not state:
-            return []
+        orchestrator = get_orchestrator()
+        all_states = orchestrator.get_all_states_for_user(user_id)
+        if not all_states:
+            state = orchestrator.get_state(user_id)
+            if state:
+                all_states = {"_": state}
+            else:
+                return []
 
-        tasks = list(state.tasks.values())
-        tasks.sort(
+        all_tasks = []
+        for state in all_states.values():
+            all_tasks.extend(state.tasks.values())
+
+        all_tasks.sort(
             key=lambda t: (t.completed_at or t.created_at, t.task_id),
             reverse=True,
         )
 
         outputs: List[Dict[str, Any]] = []
-        for task in tasks:
+        for task in all_tasks:
             if task.status not in {"completed", "failed"}:
                 continue
             data = task.output.data if task.output and isinstance(task.output.data, dict) else {}
@@ -149,9 +179,15 @@ class ToolOutputDeliveryService:
             fields=fields,
         )
 
+        # Get job_id for frontend correlation
+        orchestrator = get_orchestrator()
+        state = orchestrator._find_state_for_task(user_id, task.task_id)
+        job_id = state.execution_id if state else None
+
         return {
             "user_id": user_id,
             "task_id": task.task_id,
+            "job_id": job_id,
             "tool": task.tool,
             "status": task.status,
             "duration_ms": task.duration_ms,

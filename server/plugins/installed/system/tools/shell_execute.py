@@ -26,6 +26,7 @@ class ShellExecuteTool(BaseTool):
     ]
     SEMANTIC_TAGS = ["shell", "command", "terminal", "execute", "run"]
     TOOL_CATEGORY = "file_management"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "shell_execute"

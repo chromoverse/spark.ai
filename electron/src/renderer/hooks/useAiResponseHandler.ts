@@ -256,6 +256,32 @@ export function useAiResponseHandler(
   }, [isSpeaking]);
 
   // ============================================
+  // SERVER-SIDE TOOL OUTPUT HANDLER
+  // ============================================
+  const handleJobCompleted = useCallback(
+    (data: { user_id?: string; job_id?: string }) => {
+      console.log("📡 [JOB] job:completed", data);
+      // Server pushes all tool outputs directly via tool:output events —
+      // no need to request specific tools.
+    },
+    [],
+  );
+
+  const handleToolOutput = useCallback(
+    (data: { success: boolean; output?: { tool?: string; task_id?: string; data?: Record<string, any> }; error?: string }) => {
+      if (!data.success || !data.output?.data) return;
+      const { tool, data: toolData } = data.output;
+      console.log(`📡 [TOOL] Received ${tool} output:`, Object.keys(toolData));
+      const results: TaskOutput[] = [{
+        success: true,
+        data: toolData,
+      }];
+      onTaskBatchComplete?.(results);
+    },
+    [onTaskBatchComplete],
+  );
+
+  // ============================================
   // SOCKET LISTENERS
   // ============================================
   useEffect(() => {
@@ -291,6 +317,8 @@ export function useAiResponseHandler(
     on("task:execute_batch", handleTaskExecuteBatchPayload);
     on("task:progress", handleTaskSummary);
     on("task:summary", handleTaskSummary);
+    on("job:completed" as any, handleJobCompleted as any);
+    on("tool:output" as any, handleToolOutput as any);
 
     return () => {
       // console.log("👋 Cleaning up AI response listeners");
@@ -299,6 +327,8 @@ export function useAiResponseHandler(
       off("task:execute_batch", handleTaskExecuteBatchPayload);
       off("task:progress", handleTaskSummary);
       off("task:summary", handleTaskSummary);
+      off("job:completed" as any, handleJobCompleted as any);
+      off("tool:output" as any, handleToolOutput as any);
     };
   }, [
     socket,
@@ -307,6 +337,8 @@ export function useAiResponseHandler(
     handlePQHResponse,
     handleTaskBatch,
     getFirstFailureMessage,
+    handleJobCompleted,
+    handleToolOutput,
     on,
     off,
     reportTaskFailure,

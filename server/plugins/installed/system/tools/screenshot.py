@@ -32,6 +32,7 @@ class ScreenshotCaptureTool(BaseTool):
     EXAMPLES = [{"user_utterance": "take a screenshot", "inputs": {"target": "full"}}]
     SEMANTIC_TAGS = ["system", "screenshot", "capture"]
     TOOL_CATEGORY = "media"
+    METADATA: Dict[str, Any] = {"summary_tts": True}
 
     def get_tool_name(self) -> str:
         return "screenshot_capture"
