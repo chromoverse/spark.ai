@@ -20,6 +20,7 @@ from app.ai.providers.base_client import BaseClient, AllKeysExhaustedError
 from app.ai.providers.groq_client import GroqClient
 from app.ai.providers.gemini_client import GeminiClient
 from app.ai.providers.openrouter_client import OpenRouterClient
+from app.ai.providers.cohere_client import CohereClient
 from app.utils.async_utils import with_retry
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ class LLMManager:
             GroqClient(),
             GeminiClient(),
             OpenRouterClient(),
+            CohereClient(),
         ]
 
         # ── In-memory quota block tracker ──
@@ -121,6 +123,8 @@ class LLMManager:
         if name == "groq" and ("llama" in model or "mixtral" in model or "gemma" in model or "gpt-oss" in model):
             return True
         if name == "gemini" and "gemini" in model:
+            return True
+        if name == "cohere" and "command" in model:
             return True
         if name == "openrouter":
             return True  # OpenRouter supports everything

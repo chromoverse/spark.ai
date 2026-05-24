@@ -34,6 +34,7 @@ PROVIDER_ENV_MAP: Dict[str, str] = {
     "cerebras": "CEREBRAS_API_KEY",
     "sambanova": "SAMBANOVA_API_KEY",
     "mistral": "MISTRAL_API_KEY",
+    "cohere": "COHERE_API_KEY",
 }
 
 
