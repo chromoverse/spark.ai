@@ -300,3 +300,70 @@ _ml_warmup_task = None  # type: ignore[var-annotated]
 register("Local ML runtime (desktop, background)", _init_local_ml_runtime)
 
 
+# ── 9. Connector system (MCP servers + tool registration) ──
+async def _init_connectors() -> None:
+    """Initialize connector system: pre-warm MCP servers and register their tools."""
+    from app.connectors.registry import CONNECTORS
+    logger.info("Loaded %d connector definitions", len(CONNECTORS))
+
+    from app.connectors.mcp.manager import get_mcp_manager
+    manager = get_mcp_manager()
+
+    # Only attempt to spawn MCP servers whose required env vars are configured
+    for server_name in manager.get_available_servers():
+        try:
+            tools = await manager.discover_tools(server_name)
+            logger.info("MCP '%s': %d tools ready", server_name, len(tools))
+        except Exception as e:
+            logger.debug("MCP '%s' skipped (not configured): %s", server_name, e)
+
+    # Register discovered MCP tools into the tool registry
+    try:
+        from app.connectors.mcp.manager import get_mcp_manager as _mgr
+        from app.connectors.mcp.adapter import create_mcp_tool_adapters
+        from app.plugins.tools.registry_loader import tool_registry, ToolMetadata
+
+        mgr = _mgr()
+        for server_name, instance in mgr._servers.items():
+            adapters = create_mcp_tool_adapters(server_name, instance.tools)
+            for adapter in adapters:
+                meta = ToolMetadata(
+                    tool_name=adapter.get_tool_name(),
+                    description=adapter.TOOL_DESCRIPTION,
+                    execution_target="server",
+                    module="app.connectors.mcp.adapter",
+                    class_name="MCPToolAdapter",
+                    params_schema=adapter.PARAMS_SCHEMA,
+                    output_schema=adapter.OUTPUT_SCHEMA,
+                    metadata=adapter.METADATA,
+                    examples=[],
+                    semantic_tags=adapter.SEMANTIC_TAGS,
+                    category="external",
+                )
+                tool_registry.tools[meta.tool_name] = meta
+                tool_registry.server_tools.append(meta.tool_name)
+
+        if mgr._servers:
+            total_tools = sum(len(s.tools) for s in mgr._servers.values())
+            logger.info("Registered %d MCP tools from %d servers", total_tools, len(mgr._servers))
+    except Exception as e:
+        logger.warning("MCP tool registration failed: %s", e)
+
+    # Start idle cleanup background task
+    import asyncio as _asyncio
+
+    async def _mcp_idle_cleanup_loop():
+        while True:
+            await _asyncio.sleep(120)
+            try:
+                await get_mcp_manager().cleanup_idle()
+            except Exception as exc:
+                logger.error("MCP idle cleanup error: %s", exc)
+
+    global _mcp_cleanup_task
+    _mcp_cleanup_task = _asyncio.create_task(_mcp_idle_cleanup_loop())
+
+
+_mcp_cleanup_task = None  # type: ignore[var-annotated]
+
+register("Connector system (MCP + registry)", _init_connectors)

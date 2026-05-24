@@ -1,20 +1,31 @@
-import { Radio, Check, X, Loader2, Search, Globe, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Loader2, Sparkles, ChevronRight, Send, Briefcase, Plus,
+  Mail, Globe, Search, FileText, FolderOpen, Monitor, Terminal, Camera,
+  MapPin, Wand2, Cloud, Battery, Clipboard, RefreshCw, Wrench, Check, X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAppSelector } from "@/store/hooks";
 import { useSocket } from "@/context/socketContextProvider";
 import type { SparkLogPayload } from "@shared/socket.types";
 import EntityCards, { type EntityCardData } from "@/components/local/home/EntityCards";
+import {
+  getActiveSessionId, threadStorageKey, startNewSession, updateSession, switchToSession,
+} from "@/hooks/useSessionManager";
 
 interface HomeLiveProps {
   entityResult?: { entities: EntityCardData[]; intent: string } | null;
   onEntityDismiss?: () => void;
+  showJobs?: boolean;
+  onToggleJobs?: () => void;
 }
 
 // ─── Storage ────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "spark_live_threads";
-const STORAGE_VERSION_KEY = "spark_live_threads_v";
-const STORAGE_VERSION = 8;  // Bump to clear stale thread data from entity race condition fix
-const MAX_THREADS = 50;
+let currentSessionId = getActiveSessionId();
+let STORAGE_KEY = threadStorageKey(currentSessionId);
+const COMPAT_KEY = "spark_live_threads";
+const MAX_THREADS = 200;
+const RENDER_WINDOW = 25;
 
 interface ToolStep {
   tool_name: string;
@@ -43,13 +54,6 @@ interface Thread {
 
 function loadThreads(): Thread[] {
   try {
-    // Clear stale data when schema version changes
-    const v = localStorage.getItem(STORAGE_VERSION_KEY);
-    if (v !== String(STORAGE_VERSION)) {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.setItem(STORAGE_VERSION_KEY, String(STORAGE_VERSION));
-      return [];
-    }
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
@@ -57,7 +61,10 @@ function loadThreads(): Thread[] {
 
 function saveThreads(threads: Thread[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(threads.slice(-MAX_THREADS)));
+    const data = JSON.stringify(threads.slice(-MAX_THREADS));
+    localStorage.setItem(STORAGE_KEY, data);
+    // Keep compat key updated so sidebar recent queries always work
+    localStorage.setItem(COMPAT_KEY, data);
   } catch { /* quota */ }
 }
 
@@ -445,246 +452,335 @@ function toolLabel(name: string): string {
   return TOOL_LABELS[name] || name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
-// ─── Stage icon ─────────────────────────────────────────────────────────────
+// ─── Tool icon map ───────────────────────────────────────────────────────────
 
-function StageIcon({ stage }: { stage: string }) {
-  if (stage.includes("search")) return <Search size={10} className="text-blue-400" />;
-  if (stage.includes("scrap")) return <Globe size={10} className="text-amber-400" />;
-  if (stage.includes("extract")) return <Sparkles size={10} className="text-purple-400" />;
-  return null;
-}
+const TOOL_ICON_MAP: Record<string, React.ComponentType<{ size?: number }>> = {
+  email_list:         Mail,
+  email_send:         Mail,
+  email_read:         Mail,
+  web_research:       Globe,
+  web_search:         Search,
+  web_scrape:         Globe,
+  file_create:        FileText,
+  file_open:          FolderOpen,
+  file_read:          FileText,
+  app_open:           Monitor,
+  shell_execute:      Terminal,
+  shell_agent:        Terminal,
+  screenshot_capture: Camera,
+  current_location:   MapPin,
+  ai_summarize:       Sparkles,
+  content_generate:   Wand2,
+  weather_current:    Cloud,
+  weather_forecast:   Cloud,
+  battery_status:     Battery,
+  clipboard_read:     Clipboard,
+  folder_organize:    FolderOpen,
+};
 
-// ─── Tool inline view ───────────────────────────────────────────────────────
+// ─── Tool card ───────────────────────────────────────────────────────────────
 
-function ToolInline({ tool }: { tool: ToolStep }) {
+function ToolCard({ tool }: { tool: ToolStep }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = tool.status === "running";
-  const isFailed = tool.status === "failed";
-  const isDone = tool.status === "completed";
+  const isFailed  = tool.status === "failed";
+  const isDone    = tool.status === "completed";
+
+  const ToolIcon = TOOL_ICON_MAP[tool.tool_name] || Wrench;
 
   const latencyStr = tool.latency_ms != null
     ? tool.latency_ms < 1000 ? `${tool.latency_ms}ms` : `${(tool.latency_ms / 1000).toFixed(1)}s`
     : null;
 
-  const statusDot = isRunning
-    ? "bg-blue-400 animate-pulse"
-    : isDone
-      ? "bg-emerald-400"
-      : isFailed
-        ? "bg-red-400"
-        : "bg-slate-600";
+  const statusColor = isRunning ? "var(--sp-info)"
+    : isDone    ? "var(--sp-ok)"
+    : isFailed  ? "var(--sp-err)"
+    : "var(--sp-ink-4)";
 
-  // Show steps live while running; collapsed after completion (toggle to expand)
-  const showSteps = isRunning || expanded;
+  const canExpand = !isRunning && (tool.steps.length > 0 || !!tool.result_summary);
+
+  const summaryText = isFailed && tool.steps.length > 0
+    ? tool.steps[tool.steps.length - 1]
+    : isDone && tool.result_summary ? tool.result_summary
+    : isRunning && tool.steps.length > 0 ? tool.steps[tool.steps.length - 1]
+    : tool.params_msg || "";
 
   return (
-    <div className="group">
-      {/* Main row */}
-      <div
-        className="flex items-center gap-2 py-0.5 cursor-pointer"
-        onClick={() => { if (!isRunning) setExpanded(e => !e); }}
+    <div style={{
+      border: `1px solid ${isFailed ? "rgba(201,112,100,0.25)" : "var(--sp-line)"}`,
+      borderRadius: 8,
+      background: isFailed
+        ? "linear-gradient(180deg, rgba(201,112,100,0.04), transparent 60%), var(--sp-bg-2)"
+        : "var(--sp-bg-2)",
+      overflow: "hidden",
+    }}>
+      {/* Header row */}
+      <button
+        onClick={() => { if (canExpand) setExpanded(o => !o); }}
+        style={{
+          width: "100%",
+          display: "flex", alignItems: "center", gap: 11,
+          padding: "11px 14px",
+          background: "transparent",
+          border: 0,
+          cursor: canExpand ? "pointer" : "default",
+          textAlign: "left",
+        }}
       >
-        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDot}`} />
-        <span className={`text-xs font-medium ${isFailed ? "text-red-400" : "text-slate-300"}`}>
+        <span style={{ color: "var(--sp-ink-3)", display: "flex", flexShrink: 0 }}>
+          <ToolIcon size={15} />
+        </span>
+        <span className="sp-mono" style={{ fontSize: 13, color: "var(--sp-ink)", fontWeight: 500, flexShrink: 0 }}>
           {toolLabel(tool.tool_name)}
         </span>
+        {/* Status dot */}
+        <span style={{
+          width: 7, height: 7, borderRadius: 99,
+          background: statusColor,
+          flexShrink: 0,
+          boxShadow: isRunning ? `0 0 0 3px ${statusColor}33` : "none",
+          transition: "background 200ms",
+        }} />
         {latencyStr && (
-          <span className="text-[10px] text-slate-600 tabular-nums">{latencyStr}</span>
-        )}
-
-        {/* Spinner when running with no steps yet */}
-        {isRunning && tool.steps.length === 0 && (
-          <Loader2 size={10} className="text-blue-400 animate-spin" />
-        )}
-
-        {/* Expand/collapse toggle for completed tools with steps */}
-        {!isRunning && tool.steps.length > 0 && (
-          <span className="ml-auto">
-            {expanded
-              ? <ChevronUp size={12} className="text-slate-500" />
-              : <ChevronDown size={12} className="text-slate-500" />
-            }
+          <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", flexShrink: 0 }}>
+            {latencyStr}
           </span>
         )}
-      </div>
+        {isRunning && !latencyStr && tool.steps.length === 0 && (
+          <Loader2 size={11} className="animate-spin" style={{ color: "var(--sp-info)", flexShrink: 0 }} />
+        )}
+        <span style={{
+          flex: 1, minWidth: 0,
+          fontSize: 13,
+          color: isFailed ? "var(--sp-err)" : "var(--sp-ink-2)",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>
+          {summaryText}
+        </span>
+        {canExpand && (
+          <span style={{
+            color: "var(--sp-ink-4)",
+            display: "flex", flexShrink: 0,
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 160ms ease",
+          }}>
+            <ChevronRight size={14} />
+          </span>
+        )}
+      </button>
 
-      {/* Streaming steps — always visible while running, toggled after completion */}
-      {showSteps && tool.steps.length > 0 && (
-        <div className="ml-4 pb-1.5 space-y-0 border-l border-slate-800/50 pl-2">
+      {/* Expanded body */}
+      {(expanded || isRunning) && (
+        <div style={{
+          borderTop: "1px solid var(--sp-line)",
+          padding: "10px 14px 12px 40px",
+          display: "flex", flexDirection: "column", gap: 4,
+        }}>
           {tool.steps.map((step, i) => {
             const isLast = i === tool.steps.length - 1;
             return (
-              <div key={i} className="flex items-start gap-1.5 py-0.5">
-                <StageIcon stage={step} />
-                <p className={`text-[10px] leading-relaxed ${
-                  isRunning && isLast ? "text-blue-400" : "text-slate-500"
-                }`}>
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+                <span className="sp-mono" style={{ color: "var(--sp-ink-4)", flexShrink: 0, fontSize: 12 }}>›</span>
+                <span className="sp-mono" style={{
+                  fontSize: 12, lineHeight: 1.55,
+                  color: isRunning && isLast ? "var(--sp-info)" : "var(--sp-ink-3)",
+                }}>
                   {step}
-                </p>
+                </span>
               </div>
             );
           })}
+
+          {tool.scraping_sites && tool.scraping_sites.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+              {tool.scraping_sites.map((site, i) => (
+                <span key={i} className="sp-mono" style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "2px 6px", borderRadius: 4,
+                  background: "rgba(0,0,0,0.2)",
+                  border: "1px solid var(--sp-line)",
+                  fontSize: 10, color: "var(--sp-ink-3)",
+                }}>
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${site.domain}&sz=16`}
+                    alt=""
+                    style={{ width: 12, height: 12, borderRadius: 2 }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                  {site.domain}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {isDone && tool.result_summary && (
+            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ok)", lineHeight: 1.5, marginTop: 2 }}>
+              {tool.result_summary}
+            </p>
+          )}
+
+          {isFailed && (
+            <button style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              marginTop: 6, padding: "4px 9px",
+              borderRadius: 5, border: "1px solid var(--sp-line-2)",
+              background: "var(--sp-bg-3)", color: "var(--sp-ink-2)",
+              fontSize: 11, cursor: "pointer", width: "fit-content",
+            }}>
+              <RefreshCw size={10} /> Retry
+            </button>
+          )}
         </div>
-      )}
-
-      {/* Scraping sites */}
-      {tool.scraping_sites && tool.scraping_sites.length > 0 && (
-        <div className="ml-4 pb-1.5 flex flex-wrap gap-1">
-          {tool.scraping_sites.map((site, i) => (
-            <span key={i} className="inline-flex items-center gap-1 rounded bg-slate-800/60 px-1.5 py-0.5 text-[10px] text-slate-400">
-              <img
-                src={`https://www.google.com/s2/favicons?domain=${site.domain}&sz=16`}
-                alt=""
-                className="w-3 h-3 rounded-sm"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
-              {site.domain}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Result summary — always visible after completion */}
-      {isDone && tool.result_summary && (
-        <p className="ml-4 text-[11px] text-emerald-400/80 leading-relaxed pb-1">
-          {tool.result_summary}
-        </p>
-      )}
-
-      {/* Failed error */}
-      {isFailed && tool.steps.length > 0 && (
-        <p className="ml-4 text-[10px] text-red-400/70 pb-1">
-          {tool.steps[tool.steps.length - 1]}
-        </p>
       )}
     </div>
   );
 }
 
-// ─── Thread Component ───────────────────────────────────────────────────────
+// ─── Thread view ─────────────────────────────────────────────────────────────
 
-function ThreadView({ thread, onDismissEntities }: { thread: Thread; onDismissEntities?: () => void }) {
-  const hasTools = thread.tools.length > 0 || (thread.plan && thread.plan.length > 0);
-  const isActive = hasTools && (thread.status === "executing" || thread.status === "planning");
-  const isDone = thread.status === "completed";
-  const isFailed = thread.status === "failed";
+function ThreadView({
+  thread, userInitial, onDismissEntities,
+}: {
+  thread: Thread;
+  userInitial: string;
+  onDismissEntities?: () => void;
+}) {
+  const hasAssistantContent = !!(
+    thread.ai_response ||
+    thread.tools.length > 0 ||
+    (thread.plan && thread.plan.length > 0) ||
+    thread.summary
+  );
+  const isThinking = thread.status === "thinking" && !thread.ai_response;
+  const timeStr = timeLabel(thread.timestamp);
 
-  // Conversation-only threads — compact view
-  if (!hasTools) {
-    return (
-      <div className="flex items-start gap-2.5 py-2 px-1">
-        <div className={`w-5 h-5 rounded-full flex items-center justify-center mt-0.5 shrink-0 ${
-          thread.status === "thinking" && !thread.ai_response
-            ? "bg-blue-500/10"
-            : "bg-slate-800/30"
-        }`}>
-          {thread.status === "thinking" && !thread.ai_response
-            ? <Loader2 size={10} className="text-blue-400 animate-spin" />
-            : <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-          }
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
-            <p className="text-[12px] text-slate-300 leading-snug">{thread.query}</p>
-            <span className="text-[10px] text-slate-700 shrink-0">{timeLabel(thread.timestamp)}</span>
-          </div>
-          {thread.ai_response && (
-            <p className="text-[11px] text-cyan-400/50 mt-0.5 leading-snug">{thread.ai_response}</p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Tool threads — full view
   return (
-    <div className="py-2.5 px-1">
-      <div className="flex items-start gap-2.5">
-        {/* Status indicator */}
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center mt-0.5 shrink-0 ${
-          isActive ? "bg-blue-500/15 ring-1 ring-blue-500/25" :
-          isDone ? "bg-emerald-500/10" :
-          isFailed ? "bg-red-500/10" :
-          "bg-slate-800/40"
-        }`}>
-          {isActive ? <Loader2 size={11} className="text-blue-400 animate-spin" /> :
-           isDone ? <Check size={11} className="text-emerald-400" /> :
-           isFailed ? <X size={11} className="text-red-400" /> :
-           <span className="w-2 h-2 rounded-full bg-slate-600" />}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          {/* Query */}
-          <div className="flex items-baseline gap-2">
-            <p className="text-[13px] text-white leading-snug font-medium">{thread.query}</p>
-            <span className="text-[10px] text-slate-600 shrink-0">{timeLabel(thread.timestamp)}</span>
+    <div style={{ padding: "6px 0" }}>
+      {/* ── User turn ─────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 14, padding: "10px 0" }}>
+        <div style={{ width: 30, flexShrink: 0, display: "flex", justifyContent: "center", paddingTop: 3 }}>
+          <div style={{
+            width: 26, height: 26, borderRadius: 7,
+            background: "linear-gradient(135deg,#3a342a,#2a2620)",
+            border: "1px solid var(--sp-line-2)",
+            color: "var(--sp-user-tint)",
+            fontSize: 12, fontWeight: 600,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "'Geist Mono', ui-monospace, monospace",
+          }}>
+            {userInitial}
           </div>
-
-          {/* AI response */}
-          {thread.ai_response && (
-            <p className="text-[11px] text-cyan-400/60 mt-0.5 leading-snug">{thread.ai_response}</p>
-          )}
-
-          {/* Plan pills */}
-          {thread.plan && thread.plan.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap mt-1.5">
-              {thread.plan.map((step, i) => {
-                const toolState = thread.tools.find(t => t.tool_name === step);
-                const pillColor = toolState?.status === "completed"
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : toolState?.status === "running"
-                    ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                    : toolState?.status === "failed"
-                      ? "bg-red-500/10 text-red-400 border-red-500/20"
-                      : "bg-slate-800/40 text-slate-500 border-slate-700/30";
-                return (
-                  <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded border ${pillColor}`}>
-                    {toolLabel(step)}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Tools — inline progressive view */}
-          {thread.tools.length > 0 && (
-            <div className="mt-2 space-y-0.5">
-              {thread.tools.map((tool, i) => (
-                <ToolInline key={`${tool.task_id}_${i}`} tool={tool} />
-              ))}
-            </div>
-          )}
-
-          {/* Entity cards — inline below the thread that produced them */}
-          {thread.entities && thread.entities.length > 0 && (
-            <div className="mt-3">
-              <EntityCards
-                entities={thread.entities}
-                intent={thread.entityIntent}
-                onDismiss={() => onDismissEntities?.()}
-              />
-            </div>
-          )}
-
-          {/* Final summary */}
-          {thread.summary && (
-            <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-              {thread.summary}
-            </p>
-          )}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              You
+            </span>
+            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>{timeStr}</span>
+          </div>
+          <p style={{ marginTop: 5, fontSize: 15, color: "var(--sp-ink)", lineHeight: 1.6 }}>
+            {thread.query}
+          </p>
         </div>
       </div>
+
+      {/* ── Assistant turn ────────────────────────────────── */}
+      {(hasAssistantContent || isThinking) && (
+        <div style={{ display: "flex", gap: 14, padding: "4px 0 10px" }}>
+          <div style={{ width: 30, flexShrink: 0, display: "flex", justifyContent: "center", paddingTop: 3 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: 7,
+              background: "linear-gradient(135deg,#d97757,#b54f2c)",
+              color: "#fff8f0",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.1), 0 2px 6px rgba(217,119,87,0.2)",
+            }}>
+              {isThinking
+                ? <Loader2 size={13} className="animate-spin" />
+                : <Sparkles size={14} strokeWidth={1.6} />
+              }
+            </div>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-accent)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                Spark
+              </span>
+              <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>{timeStr}</span>
+              {(() => {
+                const hasRunningTools = thread.tools.some(t => t.status === "running" || t.status === "pending");
+                const showWorking = (thread.status === "executing" || thread.status === "planning") && hasRunningTools;
+                return showWorking ? (
+                  <span className="sp-mono" style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    fontSize: 11, padding: "2px 7px", borderRadius: 4,
+                    color: "var(--sp-info)",
+                    background: "var(--sp-info-soft)",
+                    border: "1px solid rgba(135,167,196,0.20)",
+                  }}>
+                    <Loader2 size={10} className="animate-spin" /> working
+                  </span>
+                ) : null;
+              })()}
+            </div>
+
+            {thread.ai_response && (
+              <p style={{ marginTop: 6, fontSize: 14, color: "var(--sp-ink-2)", lineHeight: 1.65 }}>
+                {thread.ai_response}
+              </p>
+            )}
+
+
+            {/* Tool cards */}
+            {thread.tools.length > 0 && (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                {thread.tools.map((tool, i) => (
+                  <ToolCard key={`${tool.task_id}_${i}`} tool={tool} />
+                ))}
+              </div>
+            )}
+
+            {/* Entity cards */}
+            {thread.entities && thread.entities.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <EntityCards
+                  entities={thread.entities}
+                  intent={thread.entityIntent}
+                  onDismiss={() => onDismissEntities?.()}
+                />
+              </div>
+            )}
+
+            {/* Summary */}
+            {thread.summary && (
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)", marginTop: 8, lineHeight: 1.5 }}>
+                {thread.summary}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
-export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProps = {}) {
+export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onToggleJobs }: HomeLiveProps = {}) {
   const { on, off, emit } = useSocket();
+  const { user } = useAppSelector((s) => s.auth);
   const [threads, setThreads] = useState<Thread[]>(loadThreads);
   const [inputVal, setInputVal] = useState("");
+  const [extraVisible, setExtraVisible] = useState(0);
+  const [_sessionId, setSessionId] = useState(currentSessionId);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+
+  const userInitial = useMemo(() =>
+    (user?.full_name?.[0] || user?.username?.[0] || "U").toUpperCase()
+  , [user]);
+  const userName = user?.full_name || user?.username || "there";
 
   // Handle spark:log events (primary event stream)
   const handleLog = useCallback((data: SparkLogPayload) => {
@@ -945,12 +1041,34 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
         const now = Date.now();
         let changed = false;
         const next = prev.map(t => {
+          const age = now - new Date(t.timestamp).getTime();
+          // Close stale conversation-only "thinking" threads
           if (
             t.status === "thinking" &&
             t.ai_response &&
             !t.plan?.length &&
             t.tools.length === 0 &&
-            now - new Date(t.timestamp).getTime() > 8000
+            age > 8000
+          ) {
+            changed = true;
+            return { ...t, status: "completed" as const };
+          }
+          // Close stuck "executing" threads where all tools already finished
+          if (
+            (t.status === "executing" || t.status === "planning") &&
+            t.tools.length > 0 &&
+            t.tools.every(tool => tool.status === "completed" || tool.status === "failed") &&
+            age > 10000
+          ) {
+            changed = true;
+            return { ...t, status: (t.tools.some(tool => tool.status === "failed") ? "failed" : "completed") as Thread["status"] };
+          }
+          // Close "executing" threads with no tools (conversation-only, server never sends completion)
+          if (
+            (t.status === "executing" || t.status === "planning") &&
+            t.tools.length === 0 &&
+            t.ai_response &&
+            age > 5000
           ) {
             changed = true;
             return { ...t, status: "completed" as const };
@@ -960,7 +1078,7 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
         if (changed) saveThreads(next);
         return changed ? next : prev;
       });
-    }, 5000);
+    }, 4000);
     return () => clearInterval(interval);
   }, []);
 
@@ -968,11 +1086,6 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [threads]);
-
-  const clearLogs = useCallback(() => {
-    setThreads([]);
-    localStorage.removeItem(STORAGE_KEY);
-  }, []);
 
   // Only count threads with tools in active state
   const activeCount = threads.filter(t =>
@@ -994,76 +1107,294 @@ export default function HomeLive({ entityResult, onEntityDismiss }: HomeLiveProp
     onEntityDismiss?.();
   }, [onEntityDismiss]);
 
-  return (
-    <div className="h-full flex flex-col justify-between bg-slate-950/20">
-      {/* Header */}
-      <div className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-800/50 bg-slate-950/30 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-2">
-          <Radio size={10} className={`${activeCount > 0 ? "text-blue-400 animate-pulse" : "text-emerald-400"}`} />
-          <h2 className="text-sm font-medium text-white">Activity</h2>
-          {activeCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              {activeCount} active
-            </span>
-          )}
-        </div>
-        {threads.length > 0 && (
-          <button onClick={clearLogs} className="text-[10px] text-slate-600 ml-auto hover:text-slate-400 transition-colors">
-            Clear
-          </button>
-        )}
-      </div>
+  const saveCurrentMeta = useCallback(() => {
+    const t = threadsRef.current;
+    if (t.length > 0) {
+      updateSession(currentSessionId, {
+        threadCount: t.length,
+        title: t[0].query.slice(0, 60),
+        preview: t[0].query,
+      });
+    }
+  }, []);
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-2 min-h-0">
-        {threads.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-600">
-            <Radio size={20} className="mb-2 opacity-15 animate-pulse" />
-            <p className="text-xs">Listening for commands</p>
-          </div>
-        ) : (
-          <div>
-            {threads.map((thread, i) => (
-              <div key={thread.id}>
-                {i > 0 && <div className="border-t border-slate-800/30 mx-1" />}
-                <ThreadView
-                  thread={thread}
-                  onDismissEntities={() => dismissEntities(thread.id)}
-                />
-              </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
-        )}
-      </div>
+  const handleNewSession = useCallback(() => {
+    saveCurrentMeta();
+    const newId = startNewSession();
+    currentSessionId = newId;
+    STORAGE_KEY = threadStorageKey(newId);
+    setSessionId(newId);
+    setThreads([]);
+    setExtraVisible(0);
+  }, [saveCurrentMeta]);
 
-      {/* Premium Input Box */}
-      <div className="p-4 border-t border-slate-800/40 bg-slate-950/60 backdrop-blur-md shrink-0">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!inputVal.trim()) return;
-            emit("send-user-text-query", inputVal.trim());
-            setInputVal("");
+  // Listen for session switch / new-session events from sidebar
+  useEffect(() => {
+    const onSwitch = (e: Event) => {
+      const sid = (e as CustomEvent).detail.sessionId as string;
+      if (sid === currentSessionId) return;
+      saveCurrentMeta();
+      switchToSession(sid);
+      currentSessionId = sid;
+      STORAGE_KEY = threadStorageKey(sid);
+      setSessionId(sid);
+      setThreads(loadThreads());
+      setExtraVisible(0);
+    };
+    const onNew = () => handleNewSession();
+    window.addEventListener("spark:switch-session", onSwitch);
+    window.addEventListener("spark:new-session", onNew);
+    return () => {
+      window.removeEventListener("spark:switch-session", onSwitch);
+      window.removeEventListener("spark:new-session", onNew);
+    };
+  }, [saveCurrentMeta, handleNewSession]);
+
+  useEffect(() => {
+    if (threads.length === 0) return;
+    const timer = setTimeout(() => {
+      updateSession(currentSessionId, {
+        threadCount: threads.length,
+        title: threads[0].query.slice(0, 60),
+        preview: threads[0].query,
+      });
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [threads.length]);
+
+  const isEmpty = threads.length === 0;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputVal.trim()) return;
+    emit("send-user-text-query", inputVal.trim());
+    setInputVal("");
+  };
+
+  const inputBox = (
+    <div style={{
+      border: "1px solid var(--sp-line-2)",
+      background: "var(--sp-bg-2)",
+      borderRadius: 12,
+      padding: "12px 14px",
+      display: "flex", flexDirection: "column", gap: 10,
+      boxShadow: "0 -1px 0 rgba(255,255,255,0.02), 0 4px 24px rgba(0,0,0,0.28)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Plus size={16} style={{ color: "var(--sp-ink-3)", flexShrink: 0 }} />
+        <input
+          type="text"
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          placeholder="Ask Spark, or type / for a command…"
+          autoFocus={isEmpty}
+          style={{
+            flex: 1, background: "transparent", border: 0, outline: "none",
+            color: "var(--sp-ink)", fontSize: 16,
+            fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
           }}
-          className="relative flex items-center"
+        />
+        <button
+          type="submit"
+          style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            padding: "7px 12px", borderRadius: 7,
+            background: inputVal.trim() ? "var(--sp-accent)" : "var(--sp-bg-3)",
+            color: inputVal.trim() ? "#1a1208" : "var(--sp-ink-3)",
+            border: inputVal.trim() ? "none" : "1px solid var(--sp-line-2)",
+            cursor: inputVal.trim() ? "pointer" : "default",
+            transition: "all 140ms",
+            flexShrink: 0,
+          }}
         >
-          <input
-            type="text"
-            value={inputVal}
-            onChange={(e) => setInputVal(e.target.value)}
-            placeholder="Type a command or ask Spark..."
-            className="w-full bg-slate-900/60 border border-slate-800/80 hover:border-slate-700/80 focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 text-slate-100 placeholder-slate-500 text-xs rounded-xl pl-4 pr-10 py-2.5 transition-all outline-none"
-          />
+          <Send size={15} />
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        {["/inbox", "/research", "/location", "/screenshot", "/shell", "/file"].map(chip => (
           <button
-            type="submit"
-            disabled={!inputVal.trim()}
-            className="absolute right-1.5 p-1.5 rounded-lg text-slate-500 hover:text-blue-400 disabled:opacity-20 disabled:hover:text-slate-500 transition-all cursor-pointer disabled:cursor-not-allowed"
+            key={chip}
+            type="button"
+            onClick={() => setInputVal(chip + " ")}
+            className="sp-mono"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 2,
+              padding: "3px 9px", borderRadius: 5,
+              border: "1px solid var(--sp-line)", background: "var(--sp-bg)",
+              color: "var(--sp-ink-3)", fontSize: 12, cursor: "pointer",
+            }}
           >
-            <Sparkles size={14} className={inputVal.trim() ? "text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)] transition-all scale-110" : "transition-all"} />
+            <span style={{ color: "var(--sp-ink-4)" }}>/</span>
+            {chip.slice(1)}
           </button>
-        </form>
+        ))}
       </div>
     </div>
   );
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--sp-bg)" }}>
+
+      {isEmpty ? (
+        /* ── Empty state: centered greeting ──────────────── */
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          padding: "0 24px",
+          background: "radial-gradient(ellipse at 50% 45%, rgba(217,119,87,0.05) 0%, transparent 65%)",
+        }}>
+          <p className="sp-serif" style={{
+            fontSize: 30, color: "var(--sp-ink)", fontWeight: 400,
+            margin: "0 0 32px", textAlign: "center", letterSpacing: "-0.01em",
+          }}>
+            What's the vibe, <span style={{ color: "var(--sp-accent)" }}>{userName}</span>?
+          </p>
+          <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 600 }}>
+            {inputBox}
+          </form>
+        </div>
+      ) : (
+        <>
+          {/* ── Session header (compact) ──────────────────── */}
+          <div style={{
+            padding: "8px 28px 7px",
+            borderBottom: "1px solid var(--sp-line)",
+            display: "flex", alignItems: "center", gap: 10,
+            background: "var(--sp-bg)",
+            flexShrink: 0,
+          }}>
+            <h1 className="sp-serif" style={{ margin: 0, fontSize: 18, color: "var(--sp-ink)", fontWeight: 400 }}>
+              Activity
+            </h1>
+            <span style={{
+              width: 6, height: 6, borderRadius: 99, flexShrink: 0,
+              background: activeCount > 0 ? "var(--sp-warn)" : "var(--sp-ok)",
+              boxShadow: `0 0 0 3px ${activeCount > 0 ? "rgba(212,160,74,0.15)" : "var(--sp-ok-soft)"}`,
+            }} />
+            {activeCount > 0 && (
+              <span className="sp-mono" style={{
+                fontSize: 10, color: "var(--sp-accent)",
+                background: "var(--sp-accent-soft)",
+                border: "1px solid rgba(217,119,87,0.18)",
+                padding: "1px 7px", borderRadius: 99,
+              }}>
+                {activeCount} active
+              </span>
+            )}
+
+            <div style={{ flex: 1 }} />
+
+            <button
+              onClick={handleNewSession}
+              title="New session"
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 26, height: 26, borderRadius: 6,
+                background: "transparent",
+                border: "1px solid var(--sp-line)",
+                color: "var(--sp-ink-3)",
+                cursor: "pointer", flexShrink: 0, transition: "all 120ms",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--sp-line-2)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--sp-ink-2)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--sp-line)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--sp-ink-3)";
+              }}
+            >
+              <Plus size={13} />
+            </button>
+
+            {activeCount > 0 && (
+              <button
+                onClick={onToggleJobs}
+                className="sp-mono"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "4px 10px", borderRadius: 6,
+                  background: showJobs ? "var(--sp-accent-soft)" : "transparent",
+                  border: showJobs ? "1px solid rgba(217,119,87,0.25)" : "1px solid var(--sp-line)",
+                  color: showJobs ? "var(--sp-accent)" : "var(--sp-ink-3)",
+                  fontSize: 11, cursor: "pointer", transition: "all 120ms",
+                  flexShrink: 0,
+                }}
+              >
+                <Briefcase size={12} />
+                Jobs
+                <span style={{
+                  background: "var(--sp-accent)", color: "#1a1208",
+                  borderRadius: 99, padding: "0 5px", fontSize: 10, fontWeight: 600,
+                }}>
+                  {activeCount}
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* ── Timeline ─────────────────────────────────── */}
+          <div
+            className="sp-scroll"
+            style={{ flex: 1, overflowY: "auto", padding: "10px 28px 20px", minHeight: 0 }}
+          >
+            {(() => {
+              const windowSize = RENDER_WINDOW + extraVisible;
+              const displayed = threads.slice(Math.max(0, threads.length - windowSize));
+              const hidden = threads.length - displayed.length;
+              return (
+                <div style={{ maxWidth: 860, margin: "0 auto" }}>
+                  {hidden > 0 && (
+                    <div style={{ textAlign: "center", marginBottom: 16 }}>
+                      <button
+                        onClick={() => setExtraVisible(e => e + 15)}
+                        className="sp-mono"
+                        style={{
+                          fontSize: 11, color: "var(--sp-ink-4)",
+                          background: "var(--sp-bg-2)", border: "1px solid var(--sp-line)",
+                          borderRadius: 6, padding: "5px 14px", cursor: "pointer",
+                        }}
+                      >
+                        Show {Math.min(15, hidden)} earlier ({hidden} hidden)
+                      </button>
+                    </div>
+                  )}
+                  {displayed.map((thread, i) => (
+                    <div key={thread.id}>
+                      {i > 0 && (
+                        <div style={{
+                          height: 1,
+                          background: "linear-gradient(90deg, transparent, var(--sp-line) 20%, var(--sp-line) 80%, transparent)",
+                          margin: "2px 0",
+                          opacity: 0.7,
+                        }} />
+                      )}
+                      <ThreadView
+                        thread={thread}
+                        userInitial={userInitial}
+                        onDismissEntities={() => dismissEntities(thread.id)}
+                      />
+                    </div>
+                  ))}
+                  <div ref={bottomRef} />
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ── Bottom input ──────────────────────────────── */}
+          <div style={{
+            background: `linear-gradient(180deg, transparent, var(--sp-bg) 30%)`,
+            padding: "14px 24px 18px",
+            flexShrink: 0,
+          }}>
+            <form onSubmit={handleSubmit} style={{ maxWidth: 860, margin: "0 auto" }}>
+              {inputBox}
+            </form>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
+

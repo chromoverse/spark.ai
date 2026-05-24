@@ -1,14 +1,16 @@
 {
   "name": "google",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "display_name": "Google Services",
-  "description": "Google service connectors. Currently exposes Gmail; calendar/drive will be added later.",
+  "description": "Google service connectors — Gmail, Calendar, Drive.",
   "author": "spark-core",
   "capabilities": [
     "email_read",
     "email_send",
     "email_organize",
-    "email_search"
+    "email_search",
+    "calendar_read",
+    "calendar_write"
   ],
   "tools": [
     "email_list",
@@ -25,11 +27,13 @@
     "email_organize",
     "email_labels_list",
     "gmail_read",
-    "gmail_send"
+    "gmail_send",
+    "calendar_list_events",
+    "calendar_create_event"
   ],
   "skills": [],
   "dependencies": [],
-  "requires_oauth": ["gmail"],
+  "requires_oauth": ["gmail", "google_calendar"],
   "config_schema": {
     "default_inbox_page_size": {
       "type": "number",

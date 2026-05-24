@@ -63,7 +63,7 @@ export default function BottomBar() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="w-full h-9 bg-white/5 flex items-center justify-between text-xs text-neutral-400 webkit-drag-nodrag border-t border-white/10 z-999">
+      <div className="w-full h-9 flex items-center justify-between text-xs webkit-drag-nodrag z-999" style={{ background: "var(--sp-bg-2)", color: "var(--sp-ink-3)", borderTop: "1px solid var(--sp-line)" }}>
         {/* Left - Settings & Profile */}
         <div className="flex items-center gap-1 px-2">
           <Setting />

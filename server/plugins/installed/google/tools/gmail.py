@@ -17,7 +17,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional
 
-from shared.service_client import get_gmail_service
+from app.connectors.clients.gmail import get_gmail_service
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
 
 logger = logging.getLogger(__name__)

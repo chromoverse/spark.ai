@@ -1,0 +1,10 @@
+{
+  "name": "notion",
+  "display_name": "Notion",
+  "version": "1.0.0",
+  "description": "Notion workspace integration - search pages, read content, manage databases",
+  "capabilities": ["page_read", "page_search", "database_query", "page_create"],
+  "tools_dir": "tools",
+  "requires_oauth": true,
+  "oauth_service": "notion"
+}

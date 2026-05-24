@@ -117,6 +117,55 @@
   font-family: var(--font-science);
 }
 
+/* ── Spark Design System ─────────────────────────────────────────────────── */
+:root {
+  --sp-bg:           #161512;
+  --sp-bg-2:         #1c1b17;
+  --sp-bg-3:         #232118;
+  --sp-line:         #2a2822;
+  --sp-line-2:       #34312a;
+  --sp-ink:          #ece6da;
+  --sp-ink-2:        #b8b1a3;
+  --sp-ink-3:        #7a7468;
+  --sp-ink-4:        #524d44;
+  --sp-accent:       #d97757;
+  --sp-accent-2:     #c2643f;
+  --sp-accent-soft:  rgba(217,119,87,0.12);
+  --sp-ok:           #7fb685;
+  --sp-ok-soft:      rgba(127,182,133,0.12);
+  --sp-warn:         #d4a04a;
+  --sp-err:          #c97064;
+  --sp-err-soft:     rgba(201,112,100,0.10);
+  --sp-info:         #87a7c4;
+  --sp-info-soft:    rgba(135,167,196,0.10);
+  --sp-user-tint:    #e9d9c2;
+}
+
+.sp-serif  { font-family: 'Instrument Serif', Georgia, serif; }
+.sp-mono   { font-family: 'Geist Mono', ui-monospace, 'Cascadia Code', monospace; }
+.sp-sans   { font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+/* grain texture overlay */
+.sp-grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,0.012) 1px, transparent 1px);
+  background-size: 3px 3px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* custom scrollbar for warm theme containers */
+.sp-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.sp-scroll::-webkit-scrollbar-track { background: transparent; }
+.sp-scroll::-webkit-scrollbar-thumb {
+  background: var(--sp-line-2);
+  border-radius: 8px;
+  border: 2px solid var(--sp-bg);
+}
+.sp-scroll::-webkit-scrollbar-thumb:hover { background: var(--sp-ink-4); }
+
 @layer utilities {
   .press-pop {
     animation: press-pop 200ms cubic-bezier(.17,.67,.32,1.34);

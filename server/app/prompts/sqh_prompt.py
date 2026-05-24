@@ -19,18 +19,43 @@ from app.plugins.tools.registry_loader import get_tool_registry
 from app.models.pqh_response_model import PQHResponse
 
 
-def get_tools_schema(tool_names: List[str]) -> Dict[str, dict]:
+def get_tools_schema(
+    tool_names: List[str],
+    connected_services: Optional[List[str]] = None,
+) -> Dict[str, dict]:
     registry = get_tool_registry()
     schemas = {}
+    _connected = set(connected_services or [])
+
     for name in tool_names:
         tool = registry.get_tool(name)
-        if tool:
-            # Only serialize essential fields needed for planning to prevent token limit issues
-            schemas[name] = {
-                "description": tool.description,
-                "execution_target": tool.execution_target,
-                "params_schema": tool.params_schema,
-            }
+        if not tool:
+            continue
+
+        # Skip external (MCP) tools for services the user hasn't connected
+        if tool.category == "external" and _connected:
+            server = (tool.metadata or {}).get("server", "")
+            if server and server not in _connected:
+                continue
+
+        # Skip email tools when Gmail isn't connected
+        if _connected and "gmail" not in _connected and "email" in name:
+            continue
+
+        # Skip calendar tools when google_calendar isn't connected
+        if _connected and "google_calendar" not in _connected and "calendar" in name:
+            continue
+
+        # Skip slack tools when slack isn't connected
+        if _connected and "slack" not in _connected and name.startswith("slack_"):
+            continue
+
+        # Only serialize essential fields needed for planning to prevent token limit issues
+        schemas[name] = {
+            "description": tool.description,
+            "execution_target": tool.execution_target,
+            "params_schema": tool.params_schema,
+        }
     return schemas
 
 
@@ -162,6 +187,7 @@ def build_user_message(
     pqh_response: PQHResponse,
     user_preferences: Optional[Dict[str, Any]] = None,
     user_id: str = "guest",
+    connected_services: Optional[List[str]] = None,
 ) -> str:
     """
     Dynamic part — PQH context + tool schemas + preferences.
@@ -186,7 +212,7 @@ def build_user_message(
     else:
         tool_names = []
 
-    tool_schemas     = get_tools_schema(tool_names)
+    tool_schemas     = get_tools_schema(tool_names, connected_services=connected_services)
     tool_schemas_str = json.dumps(tool_schemas, indent=2)
     prefs_str        = json.dumps(user_preferences or {}, indent=2) if user_preferences else "None"
 
@@ -283,6 +309,7 @@ def build_messages(
     user_lang: str = "en",
     user_preferences: Optional[Dict[str, Any]] = None,
     user_id: str = "guest",
+    connected_services: Optional[List[str]] = None,
 ) -> List[Dict[str, str]]:
     _LANG = {"hi": "Hindi", "ne": "Nepali", "en": "English"}
     lang_label     = _LANG.get(user_lang, "English")
@@ -290,5 +317,5 @@ def build_messages(
 
     return [
         {"role": "system", "content": build_system_prompt(lang_label, secondary_lang)},
-        {"role": "user",   "content": build_user_message(pqh_response, user_preferences, user_id=user_id)},
+        {"role": "user",   "content": build_user_message(pqh_response, user_preferences, user_id=user_id, connected_services=connected_services)},
     ]

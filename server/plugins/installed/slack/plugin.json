@@ -1,0 +1,14 @@
+{
+  "name": "slack",
+  "version": "1.0.0",
+  "display_name": "Slack",
+  "description": "Send messages, read channels, and search Slack conversations.",
+  "author": "spark-core",
+  "capabilities": ["message_send", "channel_read", "message_search"],
+  "tools": ["slack_channels", "slack_messages", "slack_send", "slack_search"],
+  "skills": [],
+  "dependencies": [],
+  "requires_oauth": ["slack"],
+  "config_schema": {},
+  "enabled": true
+}

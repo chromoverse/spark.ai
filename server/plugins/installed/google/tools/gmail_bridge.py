@@ -42,7 +42,7 @@ class GmailReadTool(BaseTool):
         from app.features.bridge.action_bridge import get_action_bridge
 
         async def _handler(user_id=user_id, query=query, max_results=max_results):
-            from app.features.gmail._client import get_gmail_service
+            from app.connectors.clients.gmail import get_gmail_service
             service = await get_gmail_service(user_id)
             kwargs: Dict[str, Any] = {"userId": "me", "maxResults": max_results, "labelIds": ["INBOX"]}
             if query:
@@ -114,7 +114,7 @@ class GmailSendTool(BaseTool):
         async def _handler(user_id=user_id, to=to, subject=subject, body=body):
             import base64
             from email.mime.text import MIMEText
-            from app.features.gmail._client import get_gmail_service
+            from app.connectors.clients.gmail import get_gmail_service
 
             service = await get_gmail_service(user_id)
             msg = MIMEText(body)

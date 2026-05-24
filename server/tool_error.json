@@ -140,5 +140,113 @@
       "user_id": "695e2bbaf8efc966aaf9f218",
       "execution_id": "job_f1d918c3"
     }
+  },
+  {
+    "timestamp": "2026-05-24T16:51:32",
+    "tool": "email_list",
+    "task_id": "step_1",
+    "error": "No active gmail token for user your_email@gmail.com. Re-auth required.",
+    "inputs": {
+      "query": "is:unread",
+      "max_results": "5",
+      "user_id": "your_email@gmail.com",
+      "execution_id": "job_f070dbcc",
+      "email_token": "your_email@gmail.com@gmail.com"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T16:52:04",
+    "tool": "gmail_read",
+    "task_id": "step_1",
+    "error": "gmail access revoked by user 695e2bbaf8efc966aaf9f218. Please reconnect.",
+    "inputs": {
+      "query": "is:unread",
+      "user_id": "your_email_address",
+      "execution_id": "job_6c12a292"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T17:51:55",
+    "tool": "file_search",
+    "task_id": "step_1",
+    "error": "Path not found: C:/Users/Aanand/Google Drive",
+    "inputs": {
+      "query": "*",
+      "path": "C:/Users/Aanand/Google Drive",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_eac13a66"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T19:47:38",
+    "tool": "shell_execute",
+    "task_id": "step_1",
+    "error": "",
+    "inputs": {
+      "command": "start https://drive.google.com/drive/my-drive",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_16154f14"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T19:50:19",
+    "tool": "shell_execute",
+    "task_id": "step_1",
+    "error": "",
+    "inputs": {
+      "command": "dir \"C:\\Users\\Aanand\\Google Drive\"",
+      "working_dir": "C:\\Users\\Aanand\\Google Drive",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_c8b7c6b1"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T22:50:24",
+    "tool": "file_open",
+    "task_id": "step_4",
+    "error": "[WinError 2] The system cannot find the file specified",
+    "inputs": {
+      "app": "document_about-me-841a5e",
+      "path": "C:\\Users\\Aanand\\Documents\\best_parks.txt",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_245daa77"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T23:21:09",
+    "tool": "shell_execute",
+    "task_id": "step_1",
+    "error": "",
+    "inputs": {
+      "command": "dir \"C:\\\\Users\\\\Aanand\\\\Google Drive\"",
+      "working_dir": "C:\\Users\\Aanand\\Google Drive",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_45771903"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T23:32:05",
+    "tool": "calendar_list_events",
+    "task_id": "step_1",
+    "error": "<HttpError 403 when requesting https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=2026-05-24T17%3A47%3A05.529298Z&timeMax=2026-05-25T17%3A47%3A05.529298Z&maxResults=10&singleEvents=true&orderBy=startTime&alt=json returned \"Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\". Details: \"[{'message': 'Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.', 'domain': 'usageLimits', 'reason': 'accessNotConfigured', 'extendedHelp': 'https://console.developers.google.com'}]\">",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "days_ahead": "1",
+      "execution_id": "job_f100f7f4",
+      "calendar_id": "primary"
+    }
+  },
+  {
+    "timestamp": "2026-05-24T23:32:19",
+    "tool": "calendar_list_events",
+    "task_id": "step_1",
+    "error": "<HttpError 403 when requesting https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=2026-05-24T17%3A47%3A18.812723Z&timeMax=2026-05-25T17%3A47%3A18.812723Z&maxResults=10&singleEvents=true&orderBy=startTime&alt=json returned \"Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\". Details: \"[{'message': 'Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.', 'domain': 'usageLimits', 'reason': 'accessNotConfigured', 'extendedHelp': 'https://console.developers.google.com'}]\">",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "days_ahead": "1",
+      "execution_id": "job_f100f7f4",
+      "project_id": "587082774042",
+      "api_enabled": "True"
+    }
   }
 ]

@@ -31,56 +31,78 @@ export default function PermissionsPage() {
     fetchPermissions();
   };
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-full"><div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
-  }
-
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-800">
-        <Shield size={16} className="text-emerald-400" />
-        <h2 className="text-sm font-semibold text-white">Permissions</h2>
-        <span className="text-xs text-slate-500 ml-auto">{commands.length} granted</span>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--sp-bg)", fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+      <div style={{ padding: "14px 24px 12px", borderBottom: "1px solid var(--sp-line)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <Shield size={15} style={{ color: "var(--sp-ok)" }} />
+        <h2 className="sp-serif" style={{ margin: 0, fontSize: 20, color: "var(--sp-ink)", fontWeight: 400 }}>Permissions</h2>
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", marginLeft: "auto" }}>{commands.length} granted</span>
       </div>
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-        {/* Full access toggle */}
-        <div className="px-4 py-3 bg-slate-900/40 border border-slate-800 rounded-lg flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={16} className={fullAccess ? "text-green-400" : "text-slate-500"} />
-            <div>
-              <span className="text-sm text-white font-medium">Full Shell Access</span>
-              <p className="text-[11px] text-slate-500">Bypass all command approval prompts</p>
-            </div>
-          </div>
-          {fullAccess && (
-            <button onClick={() => revoke()} className="text-xs px-2 py-1 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors">
-              Revoke
-            </button>
-          )}
-          {!fullAccess && <span className="text-[11px] text-slate-600">Disabled</span>}
-        </div>
-
-        {/* Individual commands */}
-        {commands.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-500 text-sm">
-            <Shield size={28} className="mb-2 opacity-40" />
-            <p>No individual command permissions granted</p>
-            <p className="text-xs mt-1">Spark will ask before running new commands</p>
-          </div>
+      <div className="sp-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
+        {loading ? (
+          <SpinnerCenter />
         ) : (
-          <div className="space-y-1">
-            <p className="text-xs text-slate-500 px-1 mb-2">Allowed Commands</p>
-            {commands.map((cmd) => (
-              <div key={cmd} className="px-4 py-2.5 bg-slate-900/40 border border-slate-800 rounded-lg flex items-center justify-between">
-                <span className="text-sm text-white font-mono">{cmd}</span>
-                <button onClick={() => revoke(cmd)} className="p-1 rounded hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors">
-                  <X size={14} />
-                </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 640 }}>
+            {/* Full access toggle */}
+            <div style={{ padding: "12px 14px", background: "var(--sp-bg-2)", border: `1px solid ${fullAccess ? "rgba(127,182,133,0.25)" : "var(--sp-line)"}`, borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}>
+              <ShieldCheck size={16} style={{ color: fullAccess ? "var(--sp-ok)" : "var(--sp-ink-4)", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 14, color: "var(--sp-ink)", fontWeight: 500 }}>Full Shell Access</span>
+                <p className="sp-mono" style={{ margin: "2px 0 0", fontSize: 11, color: "var(--sp-ink-3)" }}>Bypass all command approval prompts</p>
               </div>
-            ))}
+              {fullAccess ? (
+                <button
+                  onClick={() => revoke()}
+                  className="sp-mono"
+                  style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, background: "var(--sp-err-soft)", color: "var(--sp-err)", border: "1px solid rgba(201,112,100,0.20)", cursor: "pointer" }}
+                >
+                  Revoke
+                </button>
+              ) : (
+                <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>Disabled</span>
+              )}
+            </div>
+
+            {/* Commands */}
+            {commands.length === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", color: "var(--sp-ink-4)", gap: 10 }}>
+                <Shield size={28} strokeWidth={1.2} style={{ opacity: 0.3 }} />
+                <p className="sp-mono" style={{ fontSize: 13 }}>No individual command permissions granted</p>
+                <p className="sp-mono" style={{ fontSize: 11 }}>Spark will ask before running new commands</p>
+              </div>
+            ) : (
+              <div>
+                <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8, padding: "0 2px" }}>
+                  Allowed Commands
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {commands.map((cmd) => (
+                    <div key={cmd} style={{ padding: "9px 12px", background: "var(--sp-bg-2)", border: "1px solid var(--sp-line)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span className="sp-mono" style={{ fontSize: 13, color: "var(--sp-ink)" }}>{cmd}</span>
+                      <button
+                        onClick={() => revoke(cmd)}
+                        style={{ padding: 4, borderRadius: 4, background: "none", border: 0, cursor: "pointer", color: "var(--sp-ink-4)", display: "flex" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--sp-err)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--sp-ink-4)"; }}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function SpinnerCenter() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+      <div style={{ width: 18, height: 18, border: "2px solid var(--sp-line-2)", borderTopColor: "var(--sp-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
     </div>
   );
 }

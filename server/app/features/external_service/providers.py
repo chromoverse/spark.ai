@@ -42,6 +42,18 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "redirect_uri_env": "GOOGLE_CALENDAR_REDIRECT_URI",
         "default_redirect_uri": "http://localhost:8000/auth/google_calendar/callback",
     },
+    "notion": {
+        "display_name": "Notion",
+        "scopes": [],  # Notion uses basic OAuth, no granular scopes
+        "auth_uri": "https://api.notion.com/v1/oauth/authorize",
+        "token_uri": "https://api.notion.com/v1/oauth/token",
+        "userinfo_uri": None,
+        "client_id_env": "NOTION_CLIENT_ID",
+        "client_secret_env": "NOTION_CLIENT_SECRET",
+        "redirect_uri_env": "NOTION_REDIRECT_URI",
+        "default_redirect_uri": "http://localhost:8000/auth/notion/callback",
+        "provider_type": "notion",  # non-Google provider
+    },
     # ── future ──────────────────────────────────────────────────────────────
     # "slack": {
     #     "display_name": "Slack",

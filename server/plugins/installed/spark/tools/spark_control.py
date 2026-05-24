@@ -68,10 +68,10 @@ class SparkWindowCloseTool(BaseTool):
 class SparkNavigateTool(BaseTool):
     """Navigate to a specific tab in the Spark main window."""
 
-    TOOL_DESCRIPTION = "Navigate to a specific tab in the Spark main window (history, spark-logs, tools, plugins, skills, permissions, settings)"
+    TOOL_DESCRIPTION = "Navigate to a specific tab in the Spark main window (history, spark-logs, tools, plugins, skills, permissions, settings, connectors)"
     EXECUTION_TARGET = "server"
     PARAMS_SCHEMA: Dict[str, Any] = {
-        "tab": {"type": "string", "required": True, "description": "Tab name: history, spark-logs, tools, plugins, skills, permissions, settings"},
+        "tab": {"type": "string", "required": True, "description": "Tab name: history, spark-logs, tools, plugins, skills, permissions, settings, connectors"},
     }
     OUTPUT_SCHEMA: Dict[str, Any] = {
         "success": {"type": "boolean"},

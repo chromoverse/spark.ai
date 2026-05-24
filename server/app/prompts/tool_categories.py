@@ -19,6 +19,7 @@ _CATEGORY_DESCRIPTIONS: Dict[str, str] = {
     "system_control": "Open/close/restart apps, brightness, volume, mic, lock screen, system info, battery, network",
     "file_management": "Find, open, create, delete, move, copy, read files. Organize folders. List directory contents. Run shell commands.",
     "communication": "Send messages, make calls (audio/video), email (read/send/search/organize)",
+    "productivity": "Calendar events, task management, daily briefings, organize day across connected services",
     "media": "Play/stop/pause music, take screenshots",
     "web_knowledge": "Web research, weather, current location, live info lookup",
     "ai_content": "Generate long text content (articles, notes, plans), summarize documents or conversations",

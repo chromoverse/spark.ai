@@ -24,53 +24,76 @@ export default function History() {
     (async () => {
       try {
         const res = await axiosInstance.get(`/kernel/user-history?user_id=${user._id}&limit=50`, { baseURL: BASE });
-        const items = (res as any)?.items || [];
-        setTasks(items);
+        setTasks((res as any)?.items || []);
       } catch { /* silent */ }
       finally { setLoading(false); }
     })();
   }, [user?._id]);
 
-  const statusColor = (s: string) => {
-    if (s === "completed") return "text-green-400";
-    if (s === "failed") return "text-red-400";
-    return "text-yellow-400";
+  const statusColor = (s: string): string => {
+    if (s === "completed" || s === "success") return "var(--sp-ok)";
+    if (s === "failed" || s === "error") return "var(--sp-err)";
+    return "var(--sp-warn)";
   };
 
+  // Group by date
+  const grouped: Record<string, TaskEntry[]> = {};
+  for (const t of tasks) {
+    const day = t.updated_at ? new Date(t.updated_at).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "Unknown";
+    (grouped[day] ??= []).push(t);
+  }
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-800">
-        <Clock size={16} className="text-blue-400" />
-        <h2 className="text-sm font-semibold text-white">Task History</h2>
-        <span className="text-xs text-slate-500 ml-auto">{tasks.length} entries</span>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--sp-bg)", fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+      <div style={{ padding: "14px 24px 12px", borderBottom: "1px solid var(--sp-line)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <Clock size={15} style={{ color: "var(--sp-info)" }} />
+        <h2 className="sp-serif" style={{ margin: 0, fontSize: 20, color: "var(--sp-ink)", fontWeight: 400 }}>History</h2>
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", marginLeft: "auto" }}>{tasks.length} entries</span>
       </div>
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="sp-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
         {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <SpinnerCenter />
         ) : tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm">
-            <Clock size={32} className="mb-2 opacity-40" />
-            <p>No task history yet</p>
-            <p className="text-xs mt-1">Talk to Spark to see executions here</p>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--sp-ink-4)", gap: 10 }}>
+            <Clock size={28} strokeWidth={1.2} style={{ opacity: 0.3 }} />
+            <p className="sp-mono" style={{ fontSize: 13 }}>No task history yet</p>
+            <p className="sp-mono" style={{ fontSize: 11 }}>Talk to Spark to see executions here</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {tasks.map((t) => (
-              <div key={t.id} className="px-4 py-3 bg-slate-900/40 border border-slate-800 rounded-lg flex items-center justify-between">
-                <div>
-                  <span className="text-sm text-white font-medium">{t.tool_name || "task"}</span>
-                  <span className={`ml-2 text-xs ${statusColor(t.status)}`}>{t.status}</span>
-                  {t.duration_ms != null && <span className="ml-2 text-[11px] text-slate-600">{t.duration_ms}ms</span>}
-                  {t.error && <p className="text-xs text-red-400/70 mt-0.5 truncate max-w-md">{t.error}</p>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720 }}>
+            {Object.entries(grouped).map(([day, items]) => (
+              <div key={day}>
+                <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8, padding: "0 2px" }}>
+                  {day}
+                </p>
+                <div style={{ borderLeft: "2px solid var(--sp-line)", paddingLeft: 14, marginLeft: 2, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {items.map((t) => (
+                    <div key={t.id} style={{ padding: "9px 12px", background: "var(--sp-bg-2)", border: "1px solid var(--sp-line)", borderRadius: 7 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, color: "var(--sp-ink)", fontWeight: 500 }}>{t.tool_name || "task"}</span>
+                        <span className="sp-mono" style={{ fontSize: 10, color: statusColor(t.status) }}>{t.status}</span>
+                        {t.duration_ms != null && <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>{t.duration_ms}ms</span>}
+                        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", marginLeft: "auto" }}>
+                          {t.updated_at ? new Date(t.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                        </span>
+                      </div>
+                      {t.error && <p style={{ marginTop: 3, fontSize: 11, color: "var(--sp-err)", lineHeight: 1.4 }}>{t.error}</p>}
+                    </div>
+                  ))}
                 </div>
-                <span className="text-[11px] text-slate-600">{t.updated_at ? new Date(t.updated_at).toLocaleString() : ""}</span>
               </div>
             ))}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function SpinnerCenter() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+      <div style={{ width: 18, height: 18, border: "2px solid var(--sp-line-2)", borderTopColor: "var(--sp-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
     </div>
   );
 }

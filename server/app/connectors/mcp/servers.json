@@ -1,0 +1,36 @@
+{
+  "notion": {
+    "display_name": "Notion",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-notion"],
+    "env": {
+      "NOTION_API_KEY": "${NOTION_API_KEY}"
+    },
+    "transport": "stdio",
+    "auto_start": false,
+    "lazy_spawn": true
+  },
+  "github": {
+    "display_name": "GitHub",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+    },
+    "transport": "stdio",
+    "auto_start": false,
+    "lazy_spawn": true
+  },
+  "spotify": {
+    "display_name": "Spotify",
+    "command": "npx",
+    "args": ["-y", "mcp-spotify"],
+    "env": {
+      "SPOTIFY_CLIENT_ID": "${SPOTIFY_CLIENT_ID}",
+      "SPOTIFY_CLIENT_SECRET": "${SPOTIFY_CLIENT_SECRET}"
+    },
+    "transport": "stdio",
+    "auto_start": false,
+    "lazy_spawn": true
+  }
+}

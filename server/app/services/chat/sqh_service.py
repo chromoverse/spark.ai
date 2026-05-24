@@ -271,11 +271,21 @@ async def process_sqh(pqh_response: PQHResponse, user_details: Dict[str, Any]) -
             messages = []  # type: ignore[var-annotated]
             last_error = None
         else:
+            # Pre-fetch connected services for tool filtering (best-effort — never blocks SQH)
+            connected_services: List[str] = []
+            try:
+                from app.connectors.registry import get_all_connector_statuses
+                statuses = await get_all_connector_statuses(user_id)
+                connected_services = [s["id"] for s in statuses if s["connected"]]
+            except Exception:
+                pass  # Silently degrade — tool filtering is an optimization, not a hard requirement
+
             messages     = build_messages(
                 pqh_response=pqh_response,
                 user_lang=user_details.get("lang", "en"),
                 user_preferences=user_details.get("preferences", {}),
                 user_id=user_id,
+                connected_services=connected_services,
             )
             # If a skill matched but needs LLM to fill inputs, append the
             # template as a strong hint so the LLM doesn't reinvent the DAG.

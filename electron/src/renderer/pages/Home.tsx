@@ -10,7 +10,7 @@ import type { TaskOutput } from "@shared/socket.types";
 const SparkLogs = lazy(() => import("./home/SparkLogs"));
 const History = lazy(() => import("./home/History"));
 const SettingsPage = lazy(() => import("./home/SettingsPage"));
-const ExternalServices = lazy(() => import("./home/ExternalServices"));
+const Connectors = lazy(() => import("./home/Connectors"));
 const Automation = lazy(() => import("./home/Automation"));
 const Bookings = lazy(() => import("./home/Bookings"));
 const ToolsPage = lazy(() => import("./home/ToolsPage"));
@@ -30,6 +30,8 @@ interface EntityResult {
 
 function Home() {
   const [activeTab, setActiveTab] = useState<SidebarItem>("home");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showJobs, setShowJobs] = useState(false);
   const [entityResult, setEntityResult] = useState<EntityResult | null>(null);
 
   useEffect(() => {
@@ -70,6 +72,8 @@ function Home() {
         <HomeLive
           entityResult={entityResult}
           onEntityDismiss={() => setEntityResult(null)}
+          showJobs={showJobs}
+          onToggleJobs={() => setShowJobs(c => !c)}
         />
       );
       case "history": return <History />;
@@ -79,25 +83,38 @@ function Home() {
       case "skills": return <SkillsPage />;
       case "permissions": return <PermissionsPage />;
       case "settings": return <SettingsPage />;
-      case "external-services": return <ExternalServices />;
+      case "connectors": return <Connectors />;
       case "automation": return <Automation />;
       case "bookings": return <Bookings />;
     }
   };
 
   return (
-    <div className="h-screen w-screen bg-[#0a0a0f] text-white overflow-hidden flex flex-col">
-      <Header />
-      <div className="flex-1 flex min-h-0">
-        <Sidebar active={activeTab} onChange={setActiveTab} />
-        <main className="flex-1 min-h-0 overflow-hidden">
-          <Suspense fallback={<PageLoader />}>
-            {renderContent()}
-          </Suspense>
-        </main>
-        {activeTab === "home" && <JobsPanel />}
+    <div
+      className="h-screen w-screen overflow-hidden flex"
+      style={{ background: "var(--sp-bg)", color: "var(--sp-ink)", fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif" }}
+    >
+      {/* Sidebar spans full height */}
+      <Sidebar
+        active={activeTab}
+        onChange={setActiveTab}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+      />
+
+      {/* Right column: header + content + status bar */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header />
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          <main className="flex-1 min-h-0 overflow-hidden">
+            <Suspense fallback={<PageLoader />}>
+              {renderContent()}
+            </Suspense>
+          </main>
+          {activeTab === "home" && showJobs && <JobsPanel />}
+        </div>
+        <BottomBar />
       </div>
-      <BottomBar />
     </div>
   );
 }

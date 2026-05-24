@@ -34,7 +34,7 @@ export default function PrivacyPolicy() {
 
             <section>
               <h2 className="text-white font-medium mb-2">Third-Party Services</h2>
-              <p>When you connect external services (Google, Spotify, etc.) via OAuth, Spark only requests the minimum permissions needed. You can revoke access at any time from the External Services settings.</p>
+              <p>When you connect external services (Google, Spotify, etc.) via OAuth, Spark only requests the minimum permissions needed. You can revoke access at any time from the Connectors settings.</p>
             </section>
 
             <section>

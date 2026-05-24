@@ -66,8 +66,26 @@ async def oauth_connect(service: str, request: Request, user_id: str):
     Frontend calls this with the logged-in user_id.
     """
     cfg = get_provider(service)  # validates service name
-
-    # Currently all providers are Google-based; future: branch on provider type
+    
+    provider_type = cfg.get("provider_type", "google")
+    
+    if provider_type == "notion":
+        # Notion OAuth flow
+        redirect_uri = get_redirect_uri(service)
+        client_id = os.getenv(cfg["client_id_env"])
+        state = f"{service}:{user_id}"
+        
+        auth_url = (
+            f"{cfg['auth_uri']}?"
+            f"client_id={client_id}&"
+            f"response_type=code&"
+            f"owner=user&"
+            f"redirect_uri={redirect_uri}&"
+            f"state={state}"
+        )
+        return RedirectResponse(auth_url)
+    
+    # Google OAuth flow (default)
     flow = _build_google_flow(service)
     auth_url, state = flow.authorization_url(
         access_type="offline",
@@ -104,6 +122,54 @@ async def oauth_callback(service: str, request: Request, code: str, state: str):
 
     try:
         cfg = get_provider(service)
+        provider_type = cfg.get("provider_type", "google")
+        
+        if provider_type == "notion":
+            # Notion OAuth token exchange
+            redirect_uri = get_redirect_uri(service)
+            client_id = os.getenv(cfg["client_id_env"])
+            client_secret = os.getenv(cfg["client_secret_env"])
+            
+            import base64
+            auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+            
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    cfg["token_uri"],
+                    headers={
+                        "Authorization": f"Basic {auth_header}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "grant_type": "authorization_code",
+                        "code": code,
+                        "redirect_uri": redirect_uri,
+                    },
+                )
+            
+            if resp.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Notion token exchange failed: {resp.text}")
+            
+            token_data = resp.json()
+            access_token = token_data.get("access_token")
+            
+            if not access_token:
+                raise HTTPException(status_code=400, detail="No access token returned from Notion")
+            
+            # Notion doesn't use refresh tokens - access tokens don't expire
+            # Store access_token as refresh_token for consistency
+            await save_token(
+                user_id=user_id,
+                service=service,
+                refresh_token=access_token,
+                account_email=None,
+                scope="",
+            )
+            
+            logger.info("%s connected for user=%s", cfg["display_name"], user_id)
+            return {"status": "connected", "service": service}
+        
+        # Google OAuth flow (default)
         flow = _build_google_flow(service)
 
         # Restore code_verifier from cache

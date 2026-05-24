@@ -99,6 +99,14 @@ async def lifespan(app: FastAPI):
     get_activity_log().close()
     logger.info(" Activity log closed")
 
+    # Shutdown MCP servers
+    try:
+        from app.connectors.mcp.manager import get_mcp_manager
+        await get_mcp_manager().shutdown_all()
+        logger.info(" MCP servers shut down")
+    except Exception:
+        pass
+
     # Cleanup database
     await close_mongo_connection()
     logger.info(" Database disconnected")
@@ -142,8 +150,10 @@ app.add_middleware(
 
 # Include all HTTP API routes through unified wrapper
 include_api_routes(app)
-from app.features.external_service.router import router as oauth_router
+from app.connectors.oauth.flow import router as oauth_router
+from app.connectors.router import router as connectors_router
 app.include_router(oauth_router)
+app.include_router(connectors_router)
 
 # Mount WebSocket
 app.mount("/socket.io", socket_app)
