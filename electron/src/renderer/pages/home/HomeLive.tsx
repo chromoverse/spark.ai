@@ -863,8 +863,10 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
 
   // Fetch quota info once on mount
   useEffect(() => {
-    const base = (import.meta as unknown as { env: { VITE_API_BASE_URL?: string } }).env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
-    fetch(`${base}/quota`)
+    const apiBase = (import.meta as unknown as { env: { VITE_API_BASE_URL?: string } }).env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+    // System routes live at the server root (no /api/v1 prefix)
+    const serverRoot = apiBase.replace(/\/api\/v\d+$/, "");
+    fetch(`${serverRoot}/quota`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setQuotaInfo(d); })
       .catch(() => {/* server offline */});
