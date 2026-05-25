@@ -34,6 +34,27 @@ _TOOL_OUTPUT_POLICIES: Dict[str, Dict[str, List[str]]] = {
             "snippets",
         ],
     },
+    "web_search": {
+        "default_fields": ["query", "results", "total_results", "search_time_ms"],
+    },
+    "drive_list": {
+        "default_fields": ["files", "total"],
+    },
+    "drive_search": {
+        "default_fields": ["files", "total"],
+    },
+    "drive_read": {
+        "default_fields": ["content", "name", "mime_type", "size_bytes"],
+    },
+    "drive_upload": {
+        "default_fields": ["file_id", "name", "folder", "link"],
+    },
+    "drive_move": {
+        "default_fields": ["file_id", "name", "destination"],
+    },
+    "drive_delete": {
+        "default_fields": ["file_id", "name", "trashed"],
+    },
 }
 
 

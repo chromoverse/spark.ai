@@ -1,4 +1,4 @@
-import { shell } from "electron";
+import { shell, dialog } from "electron";
 import { ipcMainHandle, ipcMainOn } from "../utils/ipcUtils.js";
 import { MainWindow } from "../windows/MainWindow.js";
 import { windowManager } from "../services/WindowManager.js";
@@ -68,6 +68,16 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
     socketService.disconnect("unauthenticated");
     mainWindow.getBrowserWindow().show();
     return { success: true };
+  });
+
+  // Native file open dialog — used by drive_upload approval modal
+  ipcMainHandle("showOpenFileDialog", async (_event) => {
+    const win = mainWindow.getBrowserWindow();
+    const result = await dialog.showOpenDialog(win, {
+      properties: ["openFile"],
+      title: "Select file to upload to Drive",
+    });
+    return { filePaths: result.filePaths, canceled: result.canceled };
   });
 
   // Media state sync from Renderer to Tray

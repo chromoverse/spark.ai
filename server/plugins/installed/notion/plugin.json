@@ -1,10 +1,17 @@
 {
   "name": "notion",
   "display_name": "Notion",
-  "version": "1.0.0",
-  "description": "Notion workspace integration - search pages, read content, manage databases",
+  "version": "1.1.0",
+  "description": "Notion workspace integration — search pages, read content, create pages",
+  "author": "spark-core",
   "capabilities": ["page_read", "page_search", "database_query", "page_create"],
-  "tools_dir": "tools",
-  "requires_oauth": true,
-  "oauth_service": "notion"
+  "tools": [
+    "notion_search",
+    "notion_read_page",
+    "notion_create_page"
+  ],
+  "skills": [],
+  "dependencies": [],
+  "requires_oauth": ["notion"],
+  "enabled": true
 }

@@ -76,6 +76,9 @@ contextBridge.exposeInMainWorld("electronApi", {
   onAuthSuccess: () => ipcInvoke("onAuthSuccess"),
   onAuthFailure: () => ipcInvoke("onAuthFailure"),
 
+  // File dialog
+  showOpenFileDialog: () => ipcInvoke("showOpenFileDialog"),
+
   // Socket IPC Bridge
   socketEmit: (event: string, ...args: unknown[]) =>
     ipcInvoke("socketEmit", { event, args }),

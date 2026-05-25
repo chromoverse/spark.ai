@@ -45,7 +45,7 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
     "google_drive": {
         "display_name": "Google Drive",
         "scopes": [
-            "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/drive",
             "https://www.googleapis.com/auth/userinfo.email",
         ],
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",

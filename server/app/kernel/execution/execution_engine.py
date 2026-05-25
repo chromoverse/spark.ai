@@ -676,8 +676,12 @@ class ExecutionEngine:
     def _diff_needs_approval(self, diff_ops: List[Dict[str, Any]]) -> List[str]:
         """Check if any tasks introduced by the diff are non-idempotent."""
         NON_IDEMPOTENT_TOOLS = {
-            "email_send", "message_send", "file_delete", "folder_delete",
-            "send_notification", "calendar_create",
+            "email_send", "gmail_send", "email_reply",
+            "message_send", "message_media", "whatsapp_send",
+            "file_delete", "folder_delete",
+            "send_notification",
+            "calendar_create", "calendar_create_event",
+            "drive_upload", "drive_move", "drive_delete",
         }
         flagged = []
         for op in diff_ops:
@@ -794,22 +798,25 @@ class ExecutionEngine:
             start_msg = _build_start_message(task.tool, resolved_inputs)
             await _emit_tool_detail(user_id, "tool_step", task.task_id, task.tool, job_id=job_id, message=start_msg)
 
-            # Apply any edited inputs from a frontend approval modal response
-            if self.socket_handler and hasattr(self.socket_handler, "_pending_edited_inputs"):
-                pending = self.socket_handler._pending_edited_inputs
-                for req_id in list(pending.keys()):
-                    if req_id.startswith(f"{task.task_id}::approval::"):
-                        edited = pending.pop(req_id)
-                        safe_edited = {k: v for k, v in edited.items() if not k.startswith("_")}
-                        resolved_inputs.update(safe_edited)
-                        logger.info("Applied edited inputs for %s: keys=%s", task.task_id, list(safe_edited.keys()))
-                        break
-
             # Approval gate for confidential actions (email, messaging) before execution
-            _CONFIDENTIAL_TOOLS = {"email_send", "message_send", "whatsapp_send"}
+            _CONFIDENTIAL_TOOLS = {
+                "email_send", "gmail_send", "email_reply",
+                "message_send", "message_media", "whatsapp_send",
+                "calendar_create_event", "calendar_update_event", "calendar_delete_event",
+                "drive_upload", "drive_move", "drive_delete",
+            }
             if task.tool in _CONFIDENTIAL_TOOLS and not (task.control and task.control.requires_approval):
                 from app.kernel.execution.execution_models import TaskControl
+                import re as _re
+
+                # Detect placeholder text like [Recipient's Name], [Your Name], etc.
+                _PLACEHOLDER_RE = _re.compile(r"\[(?:Recipient|Your|Insert|Enter|Add)\s[^\]]{2,40}\]", _re.IGNORECASE)
+                _text_fields = [str(resolved_inputs.get(k, "")) for k in ("body", "subject", "message", "content", "description") if resolved_inputs.get(k)]
+                _has_placeholders = any(_PLACEHOLDER_RE.search(t) for t in _text_fields)
+
                 parts = []
+                if _has_placeholders:
+                    parts.append("⚠ Content contains placeholder text that needs to be filled in.")
                 if resolved_inputs.get("to"):
                     parts.append(f"To: {resolved_inputs['to']}")
                 if resolved_inputs.get("subject"):
@@ -817,7 +824,20 @@ class ExecutionEngine:
                 if resolved_inputs.get("body"):
                     body = str(resolved_inputs["body"])
                     parts.append(f"Body: {body[:300]}{'...' if len(body) > 300 else ''}")
-                question = "\n".join(parts) if parts else f"Send via {task.tool}?"
+                # Drive-specific fields
+                if resolved_inputs.get("file_name"):
+                    parts.append(f"File: {resolved_inputs['file_name']}")
+                if resolved_inputs.get("folder_name"):
+                    parts.append(f"Folder: {resolved_inputs['folder_name']}")
+                if resolved_inputs.get("destination"):
+                    parts.append(f"Destination: {resolved_inputs['destination']}")
+                # Calendar-specific fields
+                if resolved_inputs.get("summary"):
+                    parts.append(f"Event: {resolved_inputs['summary']}")
+                if resolved_inputs.get("start_time"):
+                    parts.append(f"Start: {resolved_inputs['start_time']}")
+
+                question = "\n".join(parts) if parts else f"Confirm action: {task.tool}?"
                 if not task.task.control:
                     task.task.control = TaskControl(requires_approval=True, approval_question=question)
                 else:
@@ -826,6 +846,25 @@ class ExecutionEngine:
                 safe_inputs = {k: v for k, v in resolved_inputs.items() if not k.startswith("_")}
                 if not await self._handle_approval_gate(user_id, task, inputs=safe_inputs):
                     return False
+
+                # Apply any edits the user made in the approval modal.
+                # We walk the handler chain because socket_handler may be a TaskEmitter
+                # that wraps the actual SocketTaskHandler where _pending_edited_inputs lives.
+                _pending: dict | None = None
+                _h = self.socket_handler
+                while _h is not None:
+                    if hasattr(_h, "_pending_edited_inputs"):
+                        _pending = _h._pending_edited_inputs
+                        break
+                    _h = getattr(_h, "socket_handler", None)
+                if _pending is not None:
+                    for req_id in list(_pending.keys()):
+                        if req_id.startswith(f"{task.task_id}::approval::"):
+                            edited = _pending.pop(req_id)
+                            safe_edited = {k: v for k, v in edited.items() if not k.startswith("_")}
+                            resolved_inputs.update(safe_edited)
+                            logger.info("Applied edited inputs for %s: keys=%s", task.task_id, list(safe_edited.keys()))
+                            break
 
             # Dynamic approval for shell_execute commands that aren't whitelisted
             if task.tool == "shell_execute" and not (task.control and task.control.requires_approval):
@@ -1137,25 +1176,17 @@ class ExecutionEngine:
         """
         Handle task-level approval gate.
 
+        Shows the in-app approval modal and BLOCKS until the user responds
+        (approve or deny).  Uses a Future so the event loop stays responsive
+        while we wait.
+
         Returns:
-            True  -> continue normal tool execution
-            False -> stop execution for this task (approval flow owns final status)
+            True  -> user approved — continue tool execution
+            False -> user denied / timed out / error — abort this task
         """
         control = task.control
         if not control or not control.requires_approval:
             return True
-
-        current = self.orchestrator.get_task(user_id, task.task_id)
-        if current and current.approval_state == "approved":
-            return True
-        if current and current.approval_state == "requested":
-            return False
-
-        question = control.approval_question or f"Allow '{task.tool}' to run?"
-        state = self.orchestrator._find_state_for_task(user_id, task.task_id)
-        execution_id = state.execution_id if state else ""
-        request_id = f"{task.task_id}::approval::{uuid.uuid4().hex[:8]}"
-        await self.orchestrator.mark_task_waiting(user_id, task.task_id, request_id=request_id)
 
         if not self.socket_handler or not hasattr(self.socket_handler, "submit_approval_request"):
             await self.orchestrator.mark_task_failed(
@@ -1165,20 +1196,20 @@ class ExecutionEngine:
             )
             return False
 
+        question = control.approval_question or f"Allow '{task.tool}' to run?"
+        state = self.orchestrator._find_state_for_task(user_id, task.task_id)
+        execution_id = state.execution_id if state else ""
+        request_id = f"{task.task_id}::approval::{uuid.uuid4().hex[:8]}"
+
+        await self.orchestrator.mark_task_waiting(user_id, task.task_id, request_id=request_id)
+
+        # Future that will be resolved by the user's modal response
+        loop = asyncio.get_running_loop()
+        decision: asyncio.Future[bool] = loop.create_future()
+
         async def _handle_response(_user_id: str, _request_id: str, approved: bool) -> None:
-            if approved:
-                await self.orchestrator.mark_task_approval_approved(
-                    user_id,
-                    task.task_id,
-                    request_id=_request_id,
-                )
-            else:
-                await self.orchestrator.mark_task_approval_denied(
-                    user_id,
-                    task.task_id,
-                    request_id=_request_id,
-                    reason="User denied approval",
-                )
+            if not decision.done():
+                loop.call_soon_threadsafe(decision.set_result, bool(approved))
 
         try:
             submitted = await self.socket_handler.submit_approval_request(
@@ -1199,16 +1230,40 @@ class ExecutionEngine:
             return False
 
         if not submitted:
-            current = self.orchestrator.get_task(user_id, task.task_id)
-            if current and current.status == "waiting":
-                await self.orchestrator.mark_task_failed(
-                    user_id,
-                    task.task_id,
-                    "Approval request could not be delivered",
-                )
+            await self.orchestrator.mark_task_failed(
+                user_id,
+                task.task_id,
+                "Approval request could not be delivered",
+            )
             return False
 
-        return False
+        # Wait for the user to respond (120 s timeout)
+        try:
+            approved = await asyncio.wait_for(decision, timeout=120.0)
+        except asyncio.TimeoutError:
+            logger.warning("Approval timeout for task %s/%s", user_id, task.task_id)
+            await self.orchestrator.mark_task_failed(
+                user_id,
+                task.task_id,
+                "Approval timed out — no response within 120 seconds",
+            )
+            return False
+
+        if approved:
+            await self.orchestrator.mark_task_approval_approved(
+                user_id,
+                task.task_id,
+                request_id=request_id,
+            )
+            return True
+        else:
+            await self.orchestrator.mark_task_approval_denied(
+                user_id,
+                task.task_id,
+                request_id=request_id,
+                reason="User denied approval",
+            )
+            return False
     
     async def _emit_client_batch_remote(self, user_id: str, tasks: list[TaskRecord], job_id: str = "default") -> None:
         """

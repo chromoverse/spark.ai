@@ -9,6 +9,8 @@ import { useAppSelector } from "@/store/hooks";
 import { useSocket } from "@/context/socketContextProvider";
 import type { SparkLogPayload } from "@shared/socket.types";
 import EntityCards, { type EntityCardData } from "@/components/local/home/EntityCards";
+import DriveFileCards, { type DriveFile } from "@/components/local/home/DriveFileCards";
+import WebSearchCards, { type WebSearchData } from "@/components/local/home/WebSearchCards";
 import {
   getActiveSessionId, threadStorageKey, startNewSession, updateSession, switchToSession,
 } from "@/hooks/useSessionManager";
@@ -51,6 +53,8 @@ interface Thread {
   status: "thinking" | "planning" | "executing" | "completed" | "failed";
   entities?: EntityCardData[];
   entityIntent?: string;
+  driveFiles?: DriveFile[];
+  webSearchData?: WebSearchData;
 }
 
 interface QuotaProvider {
@@ -472,6 +476,12 @@ const TOOL_LABELS: Record<string, string> = {
   screenshot_capture: "Screenshot",
   battery_status: "Battery",
   folder_organize: "Organize",
+  drive_list: "Drive List",
+  drive_search: "File Search",
+  drive_read: "Drive Read",
+  drive_upload: "Drive Upload",
+  drive_move: "Drive Move",
+  drive_delete: "Drive Delete",
 };
 
 function toolLabel(name: string): string {
@@ -495,6 +505,12 @@ const TOOL_ICON_MAP: Record<string, React.ComponentType<{ size?: number }>> = {
   shell_agent:        Terminal,
   screenshot_capture: Camera,
   current_location:   MapPin,
+  drive_list:         FolderOpen,
+  drive_search:       Search,
+  drive_read:         FileText,
+  drive_upload:       FolderOpen,
+  drive_move:         FolderOpen,
+  drive_delete:       FolderOpen,
   ai_summarize:       Sparkles,
   content_generate:   Wand2,
   weather_current:    Cloud,
@@ -665,11 +681,13 @@ function ToolCard({ tool }: { tool: ToolStep }) {
 // ─── Thread view ─────────────────────────────────────────────────────────────
 
 function ThreadView({
-  thread, userInitial, onDismissEntities,
+  thread, userInitial, onDismissEntities, onDismissDriveFiles, onDismissWebSearch,
 }: {
   thread: Thread;
   userInitial: string;
   onDismissEntities?: () => void;
+  onDismissDriveFiles?: () => void;
+  onDismissWebSearch?: () => void;
 }) {
   const hasAssistantContent = !!(
     thread.ai_response ||
@@ -773,6 +791,26 @@ function ThreadView({
                   entities={thread.entities}
                   intent={thread.entityIntent}
                   onDismiss={() => onDismissEntities?.()}
+                />
+              </div>
+            )}
+
+            {/* Drive file cards */}
+            {thread.driveFiles && thread.driveFiles.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <DriveFileCards
+                  files={thread.driveFiles}
+                  onDismiss={() => onDismissDriveFiles?.()}
+                />
+              </div>
+            )}
+
+            {/* Web search result cards */}
+            {thread.webSearchData && thread.webSearchData.results.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <WebSearchCards
+                  data={thread.webSearchData}
+                  onDismiss={() => onDismissWebSearch?.()}
                 />
               </div>
             )}
@@ -940,6 +978,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
   const [quotaOpen, setQuotaOpen] = useState(false);
   const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
   const [approvalEdits, setApprovalEdits] = useState<Record<string, string>>({});
+  const [filePickLoading, setFilePickLoading] = useState(false);
   const [weatherCache, setWeatherCache] = useState<WeatherCache | null>(loadWeatherCache);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -1195,6 +1234,128 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
           }
         }
 
+        // ── Scraped content from web_research (research intent) ──
+        if (
+          toolName === "web_research" &&
+          toolData.result_type === "scraped_content" &&
+          (typeof toolData.text === "string" || Array.isArray(toolData.scraped_content))
+        ) {
+          let target: Thread | undefined;
+          if (output.task_id) {
+            if (jobId) {
+              for (let i = next.length - 1; i >= 0; i--) {
+                if (next[i].job_id === jobId && next[i].tools.some((t: ToolStep) => t.task_id === output.task_id)) {
+                  target = next[i];
+                  break;
+                }
+              }
+            }
+            if (!target) {
+              for (let i = next.length - 1; i >= 0; i--) {
+                if (next[i].tools.some((t: ToolStep) => t.task_id === output.task_id)) {
+                  target = next[i];
+                  break;
+                }
+              }
+            }
+          }
+          if (!target && jobId) {
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].job_id === jobId) { target = next[i]; break; }
+            }
+          }
+          if (target) {
+            const tool = target.tools.find((t: ToolStep) => t.task_id === output.task_id)
+              || target.tools.find((t: ToolStep) => t.tool_name === "web_research");
+            if (tool && !tool.result_summary) {
+              const summary = typeof toolData.text === "string" && toolData.text
+                ? toolData.text.slice(0, 300)
+                : Array.isArray(toolData.scraped_content) && (toolData.scraped_content as { text?: string }[]).length > 0
+                  ? ((toolData.scraped_content as { text?: string }[])[0]?.text || "").slice(0, 300)
+                  : "";
+              if (summary) tool.result_summary = summary;
+            }
+          }
+        }
+
+        // ── Web search results ──
+        if (
+          toolName === "web_search" &&
+          Array.isArray(toolData.results) &&
+          (toolData.results as unknown[]).length > 0
+        ) {
+          let target: Thread | undefined;
+          if (jobId) {
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].job_id === jobId) { target = next[i]; break; }
+            }
+          }
+          if (!target && output.task_id) {
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].tools.some((t: ToolStep) => t.task_id === output.task_id)) { target = next[i]; break; }
+            }
+          }
+          if (target) {
+            target.webSearchData = {
+              query: (toolData.query as string) || "",
+              results: toolData.results as WebSearchData["results"],
+              total_results: (toolData.total_results as number) || (toolData.results as unknown[]).length,
+              search_time_ms: toolData.search_time_ms as number | undefined,
+            };
+            const tool = target.tools.find((t: ToolStep) => t.task_id === output.task_id)
+              || target.tools.find((t: ToolStep) => t.tool_name === "web_search");
+            if (tool && !tool.result_summary) {
+              tool.result_summary = `${(toolData.results as unknown[]).length} results for "${toolData.query}"`;
+            }
+          }
+        }
+
+        // ── Drive tool results (drive_list, drive_search, drive_upload, etc.) ──
+        if (toolName.startsWith("drive_") && output.task_id) {
+          const findThread = () => {
+            if (jobId) {
+              for (let i = next.length - 1; i >= 0; i--) {
+                if (next[i].job_id === jobId) return next[i];
+              }
+            }
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].tools.some((t: ToolStep) => t.task_id === output.task_id)) return next[i];
+            }
+            return undefined;
+          };
+          const target = findThread();
+          if (target) {
+            // Store rich file list for DriveFileCards rendering
+            if (
+              (toolName === "drive_list" || toolName === "drive_search") &&
+              Array.isArray(toolData.files) &&
+              (toolData.files as unknown[]).length > 0
+            ) {
+              target.driveFiles = toolData.files as DriveFile[];
+            }
+
+            const tool = target.tools.find((t: ToolStep) => t.task_id === output.task_id)
+              || target.tools.find((t: ToolStep) => t.tool_name === toolName);
+            if (tool && !tool.result_summary) {
+              if (toolName === "drive_list" || toolName === "drive_search") {
+                const files = toolData.files as { name?: string }[] | undefined;
+                const total = toolData.total as number | undefined;
+                tool.result_summary = files?.length
+                  ? `${total ?? files.length} file(s): ${files.slice(0, 5).map((f: { name?: string }) => f.name).join(", ")}${(total ?? 0) > 5 ? "..." : ""}`
+                  : "No files found";
+              } else if (toolName === "drive_upload") {
+                tool.result_summary = `Uploaded "${toolData.name}" to ${toolData.folder || "Drive"}`;
+              } else if (toolName === "drive_read") {
+                tool.result_summary = `Read ${toolData.name || "file"} (${toolData.size_bytes ? Math.round((toolData.size_bytes as number) / 1024) + "KB" : "unknown size"})`;
+              } else if (toolName === "drive_delete") {
+                tool.result_summary = `Trashed "${toolData.name}"`;
+              } else if (toolName === "drive_move") {
+                tool.result_summary = `Moved "${toolData.name}" to ${toolData.destination || "folder"}`;
+              }
+            }
+          }
+        }
+
         // ── Update tool status for any tool output with task_id ──
         if (output.task_id) {
           let matched = false;
@@ -1334,6 +1495,30 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
     onEntityDismiss?.();
   }, [onEntityDismiss]);
 
+  const dismissDriveFiles = useCallback((threadId: string) => {
+    setThreads(prev => {
+      const next = [...prev];
+      const t = next.find(x => x.id === threadId);
+      if (t) {
+        t.driveFiles = undefined;
+        saveThreads(next);
+      }
+      return next;
+    });
+  }, []);
+
+  const dismissWebSearch = useCallback((threadId: string) => {
+    setThreads(prev => {
+      const next = [...prev];
+      const t = next.find(x => x.id === threadId);
+      if (t) {
+        t.webSearchData = undefined;
+        saveThreads(next);
+      }
+      return next;
+    });
+  }, []);
+
   const saveCurrentMeta = useCallback(() => {
     const t = threadsRef.current;
     if (t.length > 0) {
@@ -1420,6 +1605,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
     emit("task:approval:response", payload);
     setApprovalRequest(null);
     setApprovalEdits({});
+    setFilePickLoading(false);
   };
 
   const inputBox = (
@@ -1592,7 +1778,89 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
     </div>
   ) : null;
 
-  const isEmailTool = approvalRequest?.tool_name === "email_send";
+  const isEmailTool = approvalRequest?.tool_name === "email_send" || approvalRequest?.tool_name === "gmail_send" || approvalRequest?.tool_name === "email_reply";
+  const isDriveTool = approvalRequest?.tool_name?.startsWith("drive_");
+  const isUploadTool = approvalRequest?.tool_name === "drive_upload";
+  const isCalendarTool = approvalRequest?.tool_name?.startsWith("calendar_");
+
+  const pickLocalFile = async () => {
+    if (!window.electronApi?.showOpenFileDialog) return;
+    setFilePickLoading(true);
+    try {
+      const result = await window.electronApi.showOpenFileDialog();
+      if (!result.canceled && result.filePaths.length > 0) {
+        const fullPath = result.filePaths[0];
+        const fileName = fullPath.split(/[\\/]/).pop() || fullPath;
+        setApprovalEdits(prev => ({
+          ...prev,
+          local_path: fullPath,
+          // Only auto-fill file_name if not already set by the user
+          ...(!prev.file_name && !approvalRequest?.inputs?.file_name ? { file_name: fileName } : {}),
+        }));
+      }
+    } finally {
+      setFilePickLoading(false);
+    }
+  };
+
+  const approvalFields: { key: string; label: string; multiline?: boolean }[] = (() => {
+    if (isEmailTool) return [
+      { key: "to", label: "To" },
+      { key: "subject", label: "Subject" },
+      { key: "body", label: "Body", multiline: true },
+    ];
+    if (isDriveTool) return [
+      { key: "file_name", label: "File name" },
+      { key: "folder_name", label: "Folder" },
+      { key: "destination", label: "Destination" },
+      { key: "content", label: "Content", multiline: true },
+    ].filter(f =>
+      // For drive_upload always show file_name; for others only show present fields
+      approvalRequest?.inputs?.[f.key] !== undefined ||
+      (approvalRequest?.tool_name === "drive_upload" && f.key === "file_name")
+    );
+    if (approvalRequest?.tool_name === "calendar_update_event") return [
+      { key: "new_summary", label: "New title" },
+      { key: "new_start_time", label: "New start" },
+      { key: "new_end_time", label: "New end" },
+      { key: "new_description", label: "New description", multiline: true },
+      { key: "new_location", label: "New location" },
+    ].filter(f => approvalRequest?.inputs?.[f.key] !== undefined);
+    if (approvalRequest?.tool_name === "calendar_delete_event") return [];
+    if (isCalendarTool) return [
+      { key: "summary", label: "Event" },
+      { key: "start_time", label: "Start" },
+      { key: "end_time", label: "End" },
+      { key: "description", label: "Description", multiline: true },
+    ].filter(f => approvalRequest?.inputs?.[f.key] !== undefined);
+    return [];
+  })();
+
+  const hasEditableFields = approvalFields.length > 0;
+  const hasPlaceholders = (() => {
+    if (!approvalRequest?.inputs) return false;
+    const re = /\[(Recipient|Your|Insert|Enter|Add)\s[^\]]{2,40}\]/i;
+    return Object.values(approvalRequest.inputs).some(v => typeof v === "string" && re.test(v));
+  })();
+
+  const modalTitle = (() => {
+    if (isEmailTool) return "Review email before sending";
+    if (isDriveTool) return "Confirm Drive action";
+    if (approvalRequest?.tool_name === "calendar_update_event") return "Confirm event update";
+    if (approvalRequest?.tool_name === "calendar_delete_event") return "Confirm event deletion";
+    if (isCalendarTool) return "Confirm calendar event";
+    return `Confirm: ${approvalRequest?.tool_name?.replace(/_/g, " ") || "action"}`;
+  })();
+
+  const approveLabel = (() => {
+    if (isEmailTool) return "Send email";
+    if (isDriveTool && approvalRequest?.tool_name === "drive_upload") return "Upload";
+    if (isDriveTool && approvalRequest?.tool_name === "drive_delete") return "Delete";
+    if (approvalRequest?.tool_name === "calendar_update_event") return "Update event";
+    if (approvalRequest?.tool_name === "calendar_delete_event") return "Delete event";
+    if (isCalendarTool) return "Create event";
+    return "Approve";
+  })();
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--sp-bg)" }}>
@@ -1621,7 +1889,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
             }}>
               <AlertTriangle size={16} style={{ color: "var(--sp-warn)", flexShrink: 0 }} />
               <span style={{ fontSize: 14, fontWeight: 600, color: "var(--sp-ink)" }}>
-                {isEmailTool ? "Review email before sending" : `Confirm: ${approvalRequest.tool_name.replace(/_/g, " ")}`}
+                {modalTitle}
               </span>
               <div style={{ flex: 1 }} />
               <button onClick={() => sendApproval(false)} style={{
@@ -1632,20 +1900,76 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
               </button>
             </div>
 
+            {/* Placeholder warning banner */}
+            {hasPlaceholders && (
+              <div style={{
+                padding: "8px 20px",
+                background: "rgba(217,119,87,0.12)",
+                borderBottom: "1px solid var(--sp-line)",
+                fontSize: 12, color: "var(--sp-warn)",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                <AlertTriangle size={12} />
+                Content has placeholder text — please review and fill in before sending.
+              </div>
+            )}
+
             {/* Modal body */}
-            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-              {isEmailTool ? (
+            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12, maxHeight: 400, overflowY: "auto" }}>
+              {/* ── Drive upload: file picker ── */}
+              {isUploadTool && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Local file
+                  </label>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{
+                      flex: 1, padding: "7px 10px",
+                      background: "var(--sp-bg)",
+                      border: "1px solid var(--sp-line-2)",
+                      borderRadius: 7,
+                      fontSize: 12, color: approvalEdits.local_path ? "var(--sp-ink)" : "var(--sp-ink-4)",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {approvalEdits.local_path
+                        ? approvalEdits.local_path.split(/[\\/]/).pop()
+                        : "No file selected"}
+                    </div>
+                    <button
+                      onClick={pickLocalFile}
+                      disabled={filePickLoading}
+                      style={{
+                        padding: "7px 14px",
+                        background: "var(--sp-bg-3)",
+                        border: "1px solid var(--sp-line-2)",
+                        borderRadius: 7, cursor: filePickLoading ? "default" : "pointer",
+                        fontSize: 12, color: "var(--sp-ink-2)",
+                        display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                        opacity: filePickLoading ? 0.6 : 1,
+                      }}
+                    >
+                      <FolderOpen size={13} />
+                      {filePickLoading ? "…" : "Browse"}
+                    </button>
+                  </div>
+                  {approvalEdits.local_path && (
+                    <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", wordBreak: "break-all" }}>
+                      {approvalEdits.local_path}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {hasEditableFields ? (
                 <>
-                  {["to", "subject", "body"].map(field => {
-                    const label = field.charAt(0).toUpperCase() + field.slice(1);
+                  {approvalFields.map(({ key: field, label, multiline }) => {
                     const val = approvalEdits[field] ?? (approvalRequest.inputs?.[field] as string ?? "");
-                    const isBody = field === "body";
                     return (
                       <div key={field} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                         <label className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                           {label}
                         </label>
-                        {isBody ? (
+                        {multiline ? (
                           <textarea
                             value={val}
                             onChange={e => setApprovalEdits(prev => ({ ...prev, [field]: e.target.value }))}
@@ -1710,7 +2034,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
                 }}
               >
                 <Check size={13} />
-                {isEmailTool ? "Send email" : "Approve"}
+                {approveLabel}
               </button>
             </div>
           </div>
@@ -1962,6 +2286,8 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
                         thread={thread}
                         userInitial={userInitial}
                         onDismissEntities={() => dismissEntities(thread.id)}
+                        onDismissDriveFiles={() => dismissDriveFiles(thread.id)}
+                        onDismissWebSearch={() => dismissWebSearch(thread.id)}
                       />
                     </div>
                   ))}

@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { X, Star, MapPin, ExternalLink, DollarSign, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  X, Star, MapPin, ExternalLink, DollarSign,
+  Navigation, Phone, ChevronLeft, ChevronRight,
+} from "lucide-react";
 
 export interface EntityCardData {
   type?: string;
@@ -23,6 +26,12 @@ export interface EntityCardData {
   cuisine?: string;
   brand?: string;
   _score?: number;
+  // Place/business fields
+  distance?: string;
+  hours?: string;
+  open_now?: boolean;
+  phone?: string;
+  type_label?: string;
 }
 
 interface EntityCardsProps {
@@ -31,104 +40,46 @@ interface EntityCardsProps {
   onDismiss: () => void;
 }
 
-/* ─── Shared sub-components ────────────────────────────────────────────── */
+// ─── Radial decorative background ─────────────────────────────────────────────
 
-function StarRating({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }) {
-  const full = Math.floor(rating);
-  const half = rating - full >= 0.5;
-  const iconSize = size === "md" ? 14 : 12;
+function RadialBg() {
   return (
-    <span className="flex items-center gap-0.5">
-      {Array.from({ length: 5 }, (_, i) => (
-        <Star
+    <svg
+      viewBox="0 0 260 260"
+      style={{
+        position: "absolute",
+        right: -50, bottom: -50,
+        width: 260, height: 260,
+        pointerEvents: "none",
+        opacity: 0.7,
+      }}
+    >
+      {[18, 38, 65, 95, 132, 172, 215].map((r, i) => (
+        <circle
           key={i}
-          size={iconSize}
-          className={
-            i < full
-              ? "fill-amber-400 text-amber-400"
-              : i === full && half
-                ? "fill-amber-400/50 text-amber-400"
-                : "fill-neutral-700 text-neutral-700"
-          }
+          cx={260} cy={260}
+          r={r}
+          fill="none"
+          stroke="rgba(217,119,87,0.25)"
+          strokeWidth={i === 0 ? 2 : 0.75}
         />
       ))}
-      <span className={`ml-1 text-neutral-400 ${size === "md" ? "text-sm" : "text-xs"}`}>
-        {rating.toFixed(1)}
-      </span>
-    </span>
+      <circle cx={260} cy={260} r={5} fill="rgba(217,119,87,0.55)" />
+      <circle cx={260} cy={260} r={14} fill="none" stroke="rgba(217,119,87,0.4)" strokeWidth={1.5} />
+    </svg>
   );
 }
 
-function PriceTag({ entity, size = "sm" }: { entity: EntityCardData; size?: "sm" | "md" }) {
-  const price = entity.price_per_night || entity.price || entity.price_range;
-  if (!price) return null;
-  return (
-    <span className={`flex items-center gap-1 rounded-full bg-emerald-900/40 font-semibold text-emerald-400 ${
-      size === "md" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-xs"
-    }`}>
-      <DollarSign size={size === "md" ? 12 : 10} />
-      {price}
-    </span>
-  );
-}
-
-function ActionLink({ url, label, primary = false }: { url: string; label: string; primary?: boolean }) {
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-        primary
-          ? "bg-indigo-600 text-white hover:bg-indigo-500"
-          : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-      }`}
-    >
-      {label} <ExternalLink size={10} />
-    </a>
-  );
-}
-
-function MapLink({ entity, compact = false }: { entity: EntityCardData; compact?: boolean }) {
-  const url =
-    entity.maps_url
-    || (entity.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${entity.name}, ${entity.address}`)}` : "")
-    || (entity.location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${entity.name}, ${entity.location}`)}` : "");
-  if (!url) return null;
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      title="Open in Google Maps"
-      className={
-        compact
-          ? "flex items-center gap-1 rounded-full bg-rose-900/40 px-2 py-0.5 text-xs font-medium text-rose-300 hover:bg-rose-900/70 transition-colors"
-          : "flex items-center gap-1 rounded-full bg-rose-900/40 px-2.5 py-1 text-xs font-medium text-rose-300 hover:bg-rose-900/70 transition-colors"
-      }
-    >
-      <MapPin size={compact ? 10 : 11} />
-      {compact ? "Map" : "View on Map"}
-    </a>
-  );
-}
-
-/* ─── Detail Modal ─────────────────────────────────────────────────────── */
+// ─── Image gallery (for detail modal) ─────────────────────────────────────────
 
 function ImageGallery({ images, name }: { images: string[]; name: string }) {
   const [idx, setIdx] = useState(0);
   const [errors, setErrors] = useState<Set<number>>(new Set());
 
-  const validImages = images.filter((_, i) => !errors.has(i));
-  const currentSrc = images[idx];
-  const hasMultiple = validImages.length > 1;
-
   const prev = useCallback(() => {
-    let next = idx - 1;
-    while (next >= 0 && errors.has(next)) next--;
-    if (next >= 0) setIdx(next);
+    let n = idx - 1;
+    while (n >= 0 && errors.has(n)) n--;
+    if (n >= 0) setIdx(n);
   }, [idx, errors]);
 
   const next = useCallback(() => {
@@ -138,53 +89,64 @@ function ImageGallery({ images, name }: { images: string[]; name: string }) {
   }, [idx, images.length, errors]);
 
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
+    const h = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft") prev();
       if (e.key === "ArrowRight") next();
     };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   }, [prev, next]);
 
-  if (!currentSrc || errors.has(idx)) return null;
+  if (!images[idx] || errors.has(idx)) return null;
+  const valid = images.filter((_, i) => !errors.has(i));
 
   return (
-    <div className="relative h-56 w-full overflow-hidden rounded-xl bg-neutral-900">
+    <div style={{ position: "relative", height: 220, overflow: "hidden", background: "#0a0a0a" }}>
       <img
-        src={currentSrc}
+        src={images[idx]}
         alt={name}
         referrerPolicy="no-referrer"
-        className="h-full w-full object-cover"
-        onError={() => setErrors(prev => new Set(prev).add(idx))}
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        onError={() => setErrors(p => new Set(p).add(idx))}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/80 via-transparent to-transparent" />
-
-      {hasMultiple && (
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 50%)" }} />
+      {valid.length > 1 && (
         <>
           <button
-            onClick={(e) => { e.stopPropagation(); prev(); }}
-            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+            onClick={e => { e.stopPropagation(); prev(); }}
+            style={{
+              position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
+              background: "rgba(0,0,0,0.5)", border: 0, borderRadius: 99,
+              padding: 6, cursor: "pointer", color: "#fff", display: "flex",
+            }}
           >
             <ChevronLeft size={16} />
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); next(); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+            onClick={e => { e.stopPropagation(); next(); }}
+            style={{
+              position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+              background: "rgba(0,0,0,0.5)", border: 0, borderRadius: 99,
+              padding: 6, cursor: "pointer", color: "#fff", display: "flex",
+            }}
           >
             <ChevronRight size={16} />
           </button>
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-            {images.map((_, i) =>
-              !errors.has(i) && (
-                <button
-                  key={i}
-                  onClick={(e) => { e.stopPropagation(); setIdx(i); }}
-                  className={`w-2 h-2 rounded-full transition-colors ${
-                    i === idx ? "bg-white" : "bg-white/30 hover:bg-white/60"
-                  }`}
-                />
-              )
-            )}
+          <div style={{
+            position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)",
+            display: "flex", gap: 5,
+          }}>
+            {images.map((_, i) => !errors.has(i) && (
+              <button
+                key={i}
+                onClick={e => { e.stopPropagation(); setIdx(i); }}
+                style={{
+                  width: 7, height: 7, borderRadius: 99, border: 0, cursor: "pointer",
+                  background: i === idx ? "#fff" : "rgba(255,255,255,0.3)",
+                  padding: 0,
+                }}
+              />
+            ))}
           </div>
         </>
       )}
@@ -192,100 +154,192 @@ function ImageGallery({ images, name }: { images: string[]; name: string }) {
   );
 }
 
+// ─── Detail modal ──────────────────────────────────────────────────────────────
+
 function EntityDetailModal({ entity, onClose }: { entity: EntityCardData; onClose: () => void }) {
-  // Close on Escape
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  const bookingUrl = entity.booking_url || entity.buy_url || entity.menu_url || entity.website;
-  const amenities = entity.amenities || entity.features || [];
+  const externalUrl = entity.booking_url || entity.buy_url || entity.menu_url || entity.website;
+  const mapsUrl = entity.maps_url ||
+    ((entity.address || entity.location)
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${entity.name} ${entity.address || entity.location}`)}`
+      : "");
+  const tags = entity.amenities || entity.features || [];
+  const price = entity.price_per_night || entity.price || entity.price_range;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      style={{
+        position: "fixed", inset: 0, zIndex: 9500,
+        background: "rgba(0,0,0,0.65)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        backdropFilter: "blur(6px)",
+      }}
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border border-neutral-700/50 bg-neutral-950 shadow-2xl shadow-black/50"
-        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 480,
+          maxHeight: "88vh", overflowY: "auto",
+          background: "var(--sp-bg-2)",
+          border: "1px solid var(--sp-line-2)",
+          borderRadius: 16,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.55)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+        onClick={e => e.stopPropagation()}
       >
-        {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute right-3 top-3 z-10 rounded-full bg-black/50 p-1.5 text-neutral-400 hover:text-white hover:bg-black/80 transition-colors"
+          style={{
+            position: "absolute", top: 12, right: 12, zIndex: 10,
+            background: "rgba(0,0,0,0.45)", border: 0, borderRadius: 99,
+            padding: 6, cursor: "pointer", color: "var(--sp-ink-3)", display: "flex",
+          }}
         >
-          <X size={16} />
+          <X size={15} />
         </button>
 
-        {/* Images */}
         {entity.images && entity.images.length > 0 && (
           <ImageGallery images={entity.images} name={entity.name} />
         )}
 
-        {/* Content */}
-        <div className="p-5 space-y-4">
-          {/* Title + price */}
-          <div className="flex items-start justify-between gap-3">
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
             <div>
-              <h2 className="text-lg font-semibold text-white leading-tight">{entity.name}</h2>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "var(--sp-ink)", lineHeight: 1.2 }}>
+                {entity.name}
+              </h2>
               {entity.brand && (
-                <p className="text-xs font-medium uppercase tracking-wide text-indigo-400 mt-0.5">{entity.brand}</p>
+                <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-accent)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                  {entity.brand}
+                </span>
+              )}
+              {entity.type_label && (
+                <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--sp-ink-4)" }}>{entity.type_label}</p>
               )}
             </div>
-            <PriceTag entity={entity} size="md" />
+            {price && (
+              <span style={{
+                fontSize: 13, fontWeight: 600, color: "#4caf7d",
+                background: "rgba(76,175,125,0.12)",
+                padding: "4px 10px", borderRadius: 6, flexShrink: 0,
+              }}>
+                {price}
+              </span>
+            )}
           </div>
 
-          {/* Rating */}
           {entity.rating != null && (
-            <div className="flex items-center gap-2">
-              <StarRating rating={entity.rating} size="md" />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <Star size={14} style={{ fill: "#f59e0b", color: "#f59e0b" }} />
+                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--sp-ink)" }}>
+                  {entity.rating.toFixed(1)}
+                </span>
+              </span>
               {entity.review_count != null && (
-                <span className="text-sm text-neutral-500">
+                <span style={{ fontSize: 13, color: "var(--sp-ink-4)" }}>
                   ({entity.review_count.toLocaleString()} reviews)
                 </span>
               )}
             </div>
           )}
 
-          {/* Location */}
-          {(entity.location || entity.address) && (
-            <p className="flex items-center gap-1.5 text-sm text-neutral-400">
-              <MapPin size={14} className="text-rose-400 shrink-0" />
+          {(entity.open_now != null || entity.hours || entity.distance) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {entity.open_now != null && (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 99, background: entity.open_now ? "var(--sp-ok)" : "var(--sp-err)" }} />
+                  <span style={{ color: entity.open_now ? "var(--sp-ok)" : "var(--sp-err)" }}>
+                    {entity.open_now ? "Open" : "Closed"}
+                  </span>
+                </span>
+              )}
+              {entity.hours && (
+                <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)" }}>{entity.hours}</span>
+              )}
+              {entity.distance && (
+                <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)" }}>{entity.distance}</span>
+              )}
+            </div>
+          )}
+
+          {(entity.address || entity.location) && (
+            <p style={{ margin: 0, display: "flex", alignItems: "flex-start", gap: 6, fontSize: 13, color: "var(--sp-ink-3)" }}>
+              <MapPin size={14} style={{ color: "var(--sp-accent)", marginTop: 1, flexShrink: 0 }} />
               {entity.address || entity.location}
             </p>
           )}
 
-          {/* Description */}
           {entity.description && (
-            <p className="text-sm text-neutral-400 leading-relaxed">{entity.description}</p>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--sp-ink-3)", lineHeight: 1.6 }}>
+              {entity.description}
+            </p>
           )}
 
-          {/* Cuisine */}
           {entity.cuisine && (
-            <p className="text-sm text-neutral-500">Cuisine: {entity.cuisine}</p>
+            <p className="sp-mono" style={{ margin: 0, fontSize: 11, color: "var(--sp-ink-4)" }}>
+              Cuisine: {entity.cuisine}
+            </p>
           )}
 
-          {/* Amenities */}
-          {amenities.length > 0 && (
+          {tags.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-2">Amenities</p>
-              <div className="flex flex-wrap gap-1.5">
-                {amenities.map((a, i) => (
-                  <span key={i} className="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300">
-                    {a}
+              <p className="sp-mono" style={{ margin: "0 0 8px", fontSize: 10, color: "var(--sp-ink-4)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                Features
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {tags.map((t, i) => (
+                  <span key={i} style={{
+                    fontSize: 11, color: "var(--sp-ink-3)",
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid var(--sp-line)",
+                    padding: "3px 8px", borderRadius: 4,
+                  }}>
+                    {t}
                   </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex items-center gap-2 pt-2 border-t border-neutral-800">
-            {bookingUrl && <ActionLink url={bookingUrl} label="View Details" primary />}
-            <MapLink entity={entity} />
+          <div style={{ display: "flex", gap: 8, paddingTop: 6, borderTop: "1px solid var(--sp-line)" }}>
+            {mapsUrl && (
+              <a href={mapsUrl} target="_blank" rel="noreferrer" style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "7px 13px", borderRadius: 7,
+                background: "var(--sp-accent)", color: "#1a1208",
+                fontSize: 12, fontWeight: 600, textDecoration: "none",
+              }}>
+                <Navigation size={12} /> Get directions
+              </a>
+            )}
+            {entity.phone && (
+              <a href={`tel:${entity.phone}`} style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "7px 12px", borderRadius: 7,
+                background: "var(--sp-bg-3)", border: "1px solid var(--sp-line-2)",
+                color: "var(--sp-ink-2)", fontSize: 12, textDecoration: "none",
+              }}>
+                <Phone size={12} /> Call
+              </a>
+            )}
+            {externalUrl && (
+              <a href={externalUrl} target="_blank" rel="noreferrer" style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "7px 12px", borderRadius: 7,
+                background: "var(--sp-bg-3)", border: "1px solid var(--sp-line)",
+                color: "var(--sp-ink-3)", fontSize: 12, textDecoration: "none",
+              }}>
+                <ExternalLink size={12} /> View
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -293,200 +347,427 @@ function EntityDetailModal({ entity, onClose }: { entity: EntityCardData; onClos
   );
 }
 
-/* ─── Cards ────────────────────────────────────────────────────────────── */
+// ─── Featured left panel ───────────────────────────────────────────────────────
 
-function FeaturedCard({ entity, onClick }: { entity: EntityCardData; onClick: () => void }) {
+function FeaturedPanel({
+  entity, rank, onOpenDetail,
+}: {
+  entity: EntityCardData;
+  rank: number;
+  onOpenDetail: () => void;
+}) {
   const [imgError, setImgError] = useState(false);
-  const img = entity.images?.[0];
-  const hasImg = img && !imgError;
+  const hasImg = !!(entity.images?.[0] && !imgError);
+  const price = entity.price_per_night || entity.price || entity.price_range;
+  const tags = entity.amenities || entity.features || [];
+  const externalUrl = entity.booking_url || entity.website || entity.buy_url || entity.menu_url;
+  const mapsUrl = entity.maps_url ||
+    ((entity.address || entity.location)
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${entity.name} ${entity.address || entity.location}`)}`
+      : "");
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-indigo-500/30 bg-neutral-900 shadow-lg shadow-indigo-950/30 cursor-pointer hover:border-indigo-500/50 transition-colors"
-      onClick={onClick}
+      onClick={onOpenDetail}
+      style={{
+        flex: "0 0 55%",
+        position: "relative", overflow: "hidden",
+        padding: "18px 16px 16px",
+        borderRight: "1px solid var(--sp-line)",
+        display: "flex", flexDirection: "column", gap: 10,
+        minHeight: 280,
+        cursor: "pointer",
+        background: "var(--sp-bg)",
+      }}
     >
+      {/* Background */}
       {hasImg ? (
-        <div className="relative h-44 w-full overflow-hidden">
+        <>
           <img
-            src={img}
+            src={entity.images![0]}
             alt={entity.name}
             onError={() => setImgError(true)}
             referrerPolicy="no-referrer"
-            loading="lazy"
-            className="h-full w-full object-cover"
+            style={{
+              position: "absolute", inset: 0,
+              width: "100%", height: "100%",
+              objectFit: "cover", opacity: 0.35,
+            }}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-neutral-900 via-neutral-900/20 to-transparent" />
-          <div className="absolute bottom-0 left-0 p-3">
-            <PriceTag entity={entity} />
-          </div>
-          <div className="absolute right-2 top-2 rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-bold text-white">#1</div>
-        </div>
+          <div style={{
+            position: "absolute", inset: 0,
+            background: "linear-gradient(130deg, var(--sp-bg) 15%, rgba(0,0,0,0.35) 100%)",
+          }} />
+        </>
       ) : (
-        <div className="flex h-20 items-center justify-between bg-indigo-950/30 px-4">
-          <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-xs font-bold text-white">#1 Top Pick</span>
-          <PriceTag entity={entity} />
-        </div>
+        <RadialBg />
       )}
 
-      <div className="p-4">
-        <div className="mb-1 flex items-start justify-between gap-2">
-          <h3 className="text-sm font-semibold leading-tight text-neutral-100">{entity.name}</h3>
-          <div className="flex items-center gap-1.5">
-            <MapLink entity={entity} compact />
-          </div>
+      {/* Content */}
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 9, flex: 1 }}>
+
+        {/* Rank + type badges */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700,
+            color: "#1a1208", background: "var(--sp-accent)",
+            padding: "2px 7px", borderRadius: 4,
+          }}>
+            #{rank}
+          </span>
+          {(entity.type_label || entity.type) && (
+            <span className="sp-mono" style={{
+              fontSize: 10, color: "var(--sp-ink-4)",
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid var(--sp-line)",
+              padding: "2px 7px", borderRadius: 4,
+            }}>
+              {entity.type_label || entity.type}
+            </span>
+          )}
+          {entity.brand && (
+            <span className="sp-mono" style={{
+              fontSize: 10, color: "var(--sp-accent)",
+              textTransform: "uppercase", letterSpacing: "0.06em",
+            }}>
+              {entity.brand}
+            </span>
+          )}
         </div>
-        {entity.brand && <p className="mb-1 text-xs font-medium uppercase tracking-wide text-indigo-400">{entity.brand}</p>}
-        {entity.rating != null && (
-          <div className="mb-2">
-            <StarRating rating={entity.rating} />
-            {entity.review_count != null && <span className="ml-1 text-xs text-neutral-500">({entity.review_count.toLocaleString()})</span>}
+
+        {/* Name */}
+        <h3 style={{
+          margin: 0, fontSize: 19, fontWeight: 700,
+          color: "var(--sp-ink)", lineHeight: 1.2, letterSpacing: "-0.02em",
+        }}>
+          {entity.name}
+        </h3>
+
+        {/* Rating · open status · hours · distance */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {entity.rating != null && (
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <Star size={12} style={{ fill: "#f59e0b", color: "#f59e0b" }} />
+              <span className="sp-mono" style={{ fontSize: 12, color: "var(--sp-ink)", fontWeight: 500 }}>
+                {entity.rating.toFixed(1)}
+              </span>
+              {entity.review_count != null && (
+                <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>
+                  ({entity.review_count.toLocaleString()})
+                </span>
+              )}
+            </span>
+          )}
+          {entity.open_now != null && (
+            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{
+                width: 5, height: 5, borderRadius: 99,
+                background: entity.open_now ? "var(--sp-ok)" : "var(--sp-err)",
+              }} />
+              <span className="sp-mono" style={{
+                fontSize: 11,
+                color: entity.open_now ? "var(--sp-ok)" : "var(--sp-err)",
+              }}>
+                {entity.open_now ? "Open" : "Closed"}
+              </span>
+            </span>
+          )}
+          {entity.hours && (
+            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)" }}>
+              {entity.hours}
+            </span>
+          )}
+          {entity.distance && (
+            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)", marginLeft: "auto" }}>
+              {entity.distance}
+            </span>
+          )}
+          {price && !entity.distance && (
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: "#4caf7d",
+              background: "rgba(76,175,125,0.12)",
+              padding: "1px 7px", borderRadius: 4,
+            }}>
+              {price}
+            </span>
+          )}
+        </div>
+
+        {/* Address */}
+        {(entity.address || entity.location) && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
+            <MapPin size={11} style={{ color: "var(--sp-accent)", marginTop: 1, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: "var(--sp-ink-3)", lineHeight: 1.35 }}>
+              {entity.address || entity.location}
+            </span>
           </div>
         )}
-        {(entity.location || entity.address) && (
-          <p className="mb-2 flex items-center gap-1 text-xs text-neutral-400">
-            <MapPin size={11} />
-            {entity.location || entity.address}
+
+        {/* Description (if no address) */}
+        {entity.description && !(entity.address || entity.location) && (
+          <p style={{ margin: 0, fontSize: 12, color: "var(--sp-ink-3)", lineHeight: 1.5 }}>
+            {entity.description.slice(0, 110)}{entity.description.length > 110 ? "…" : ""}
           </p>
         )}
-        {(entity.amenities?.length || entity.features?.length) ? (
-          <div className="flex flex-wrap gap-1">
-            {(entity.amenities || entity.features || []).slice(0, 4).map((a, i) => (
-              <span key={i} className="rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400">{a}</span>
+
+        {/* Cuisine */}
+        {entity.cuisine && (
+          <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>
+            {entity.cuisine}
+          </span>
+        )}
+
+        {/* Tag chips */}
+        {tags.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {tags.slice(0, 4).map((tag, i) => (
+              <span key={i} style={{
+                fontSize: 10, color: "var(--sp-ink-3)",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid var(--sp-line)",
+                padding: "2px 7px", borderRadius: 4,
+              }}>
+                {tag}
+              </span>
             ))}
           </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function SmallCard({ entity, rank, onClick }: { entity: EntityCardData; rank: number; onClick: () => void }) {
-  const [hovered, setHovered] = useState(false);
-  const [imgError, setImgError] = useState(false);
-  const img = entity.images?.[0];
-  const hasImg = img && !imgError;
-
-  return (
-    <div
-      className="relative overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/80 transition-all duration-200 hover:border-indigo-500/40 hover:bg-neutral-900 cursor-pointer"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={onClick}
-    >
-      {hasImg && hovered && (
-        <div className="absolute inset-0 z-10">
-          <img
-            src={img}
-            alt={entity.name}
-            onError={() => setImgError(true)}
-            referrerPolicy="no-referrer"
-            loading="lazy"
-            className="h-full w-full object-cover opacity-20"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-neutral-900 via-neutral-900/60 to-neutral-900/40" />
-        </div>
-      )}
-
-      <div className="relative z-20 p-3">
-        <div className="mb-1 flex items-start justify-between gap-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold text-neutral-600">#{rank}</span>
-            <h4 className="line-clamp-1 text-xs font-medium text-neutral-200">{entity.name}</h4>
-          </div>
-          <MapLink entity={entity} compact />
-        </div>
-        {entity.brand && <p className="mb-1 line-clamp-1 text-xs uppercase tracking-wide text-indigo-400">{entity.brand}</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          {entity.rating != null && <StarRating rating={entity.rating} />}
-          <PriceTag entity={entity} />
-        </div>
-        {(entity.location || entity.address) && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-neutral-500">
-            <MapPin size={10} />
-            <span className="line-clamp-1">{entity.location || entity.address}</span>
-          </p>
         )}
-        {entity.cuisine && <p className="mt-1 text-xs text-neutral-500">{entity.cuisine}</p>}
+
+        {/* Action buttons — stop propagation so they don't open modal */}
+        <div
+          style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 6 }}
+          onClick={e => e.stopPropagation()}
+        >
+          {mapsUrl && (
+            <a
+              href={mapsUrl} target="_blank" rel="noreferrer"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "6px 11px", borderRadius: 7,
+                background: "var(--sp-accent)", color: "#1a1208",
+                fontSize: 11, fontWeight: 600, textDecoration: "none",
+              }}
+            >
+              <Navigation size={11} /> Get directions
+            </a>
+          )}
+          {entity.phone && (
+            <a
+              href={`tel:${entity.phone}`}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "6px 10px", borderRadius: 7,
+                background: "var(--sp-bg-3)", border: "1px solid var(--sp-line-2)",
+                color: "var(--sp-ink-2)", fontSize: 11, textDecoration: "none",
+              }}
+            >
+              <Phone size={11} /> Call
+            </a>
+          )}
+          {externalUrl && (
+            <a
+              href={externalUrl} target="_blank" rel="noreferrer"
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 30, height: 30, borderRadius: 7,
+                background: "var(--sp-bg-3)", border: "1px solid var(--sp-line)",
+                color: "var(--sp-ink-4)", textDecoration: "none",
+              }}
+            >
+              <ExternalLink size={11} />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-/* ─── Main Component ───────────────────────────────────────────────────── */
+// ─── Entity list (right panel) ────────────────────────────────────────────────
 
-const INITIAL_VISIBLE = 8;
+function EntityList({
+  entities, activeIdx, onSelect,
+}: {
+  entities: EntityCardData[];
+  activeIdx: number;
+  onSelect: (i: number) => void;
+}) {
+  return (
+    <div style={{ flex: 1, overflowY: "auto", maxHeight: 340, background: "var(--sp-bg-2)" }}>
+      {entities.map((entity, i) => {
+        const isActive = i === activeIdx;
+        return (
+          <div
+            key={i}
+            onClick={() => onSelect(i)}
+            style={{
+              display: "flex", alignItems: "flex-start", gap: 10,
+              padding: "11px 14px",
+              borderBottom: i < entities.length - 1 ? "1px solid var(--sp-line)" : "none",
+              background: isActive ? "rgba(217,119,87,0.07)" : "transparent",
+              cursor: "pointer",
+              transition: "background 120ms",
+            }}
+            onMouseEnter={e => {
+              if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.02)";
+            }}
+            onMouseLeave={e => {
+              if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "transparent";
+            }}
+          >
+            {/* Rank */}
+            <span style={{
+              fontSize: 14, fontWeight: 700,
+              color: isActive ? "var(--sp-accent)" : "var(--sp-ink-4)",
+              minWidth: 18, flexShrink: 0, paddingTop: 1,
+            }}>
+              {i + 1}
+            </span>
+
+            {/* Info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{
+                margin: 0, fontSize: 12, fontWeight: 500, lineHeight: 1.3,
+                color: isActive ? "var(--sp-ink)" : "var(--sp-ink-2)",
+              }}>
+                {entity.name}
+              </p>
+              {(entity.address || entity.location) && (
+                <p className="sp-mono" style={{
+                  margin: "2px 0 0", fontSize: 10, color: "var(--sp-ink-4)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {entity.address || entity.location}
+                </p>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                {entity.rating != null && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                    <Star size={9} style={{ fill: "#f59e0b", color: "#f59e0b" }} />
+                    <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-3)" }}>
+                      {entity.rating.toFixed(1)}
+                    </span>
+                  </span>
+                )}
+                {entity.open_now != null && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <span style={{
+                      width: 4, height: 4, borderRadius: 99,
+                      background: entity.open_now ? "var(--sp-ok)" : "var(--sp-err)",
+                    }} />
+                    <span className="sp-mono" style={{
+                      fontSize: 10,
+                      color: entity.open_now ? "var(--sp-ok)" : "var(--sp-err)",
+                    }}>
+                      {entity.open_now ? "Open" : "Closed"} {entity.hours}
+                    </span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Distance */}
+            {entity.distance && (
+              <span className="sp-mono" style={{
+                fontSize: 10, color: "var(--sp-ink-4)",
+                flexShrink: 0, paddingTop: 1,
+              }}>
+                {entity.distance}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 
 export default function EntityCards({ entities, intent, onDismiss }: EntityCardsProps) {
-  const [showAll, setShowAll] = useState(false);
-  const [selectedEntity, setSelectedEntity] = useState<EntityCardData | null>(null);
+  const [featuredIdx, setFeaturedIdx] = useState(0);
+  const [showModal, setShowModal] = useState(false);
 
-  if (!entities || entities.length === 0) return null;
+  if (!entities?.length) return null;
 
-  const [featured, ...rest] = entities;
-  const visible = showAll ? rest : rest.slice(0, INITIAL_VISIBLE);
-  const hasMore = rest.length > INITIAL_VISIBLE;
-
+  const featured = entities[featuredIdx];
   const label = intent
-    ? intent.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    ? intent.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
     : "Results";
+
+  // Derive "near City" hint from first entity's location
+  const nearCity = entities[0]?.location?.split(",")[0]?.trim()
+    || entities[0]?.address?.split(",").slice(-2, -1)[0]?.trim();
+
+  const mapsSearchUrl = nearCity || featured?.name
+    ? `https://www.google.com/maps/search/${encodeURIComponent(`${label} ${nearCity || ""}`.trim())}`
+    : null;
 
   return (
     <>
-      <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
+      <div style={{
+        borderRadius: 12,
+        border: "1px solid var(--sp-line)",
+        overflow: "hidden",
+        background: "var(--sp-bg-2)",
+      }}>
         {/* Header */}
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <span className="text-sm font-semibold text-neutral-200">{label}</span>
-            <span className="ml-2 text-xs text-neutral-500">{entities.length} found</span>
-          </div>
+        <div style={{
+          padding: "11px 14px",
+          display: "flex", alignItems: "center", gap: 8,
+          borderBottom: "1px solid var(--sp-line)",
+        }}>
+          <MapPin size={13} style={{ color: "var(--sp-accent)", flexShrink: 0 }} />
+          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--sp-ink)" }}>{label}</span>
+          <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>
+            · {entities.length} found{nearCity ? ` near ${nearCity}` : ""}
+          </span>
+          <div style={{ flex: 1 }} />
+          {mapsSearchUrl && (
+            <a
+              href={mapsSearchUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                fontSize: 11, color: "var(--sp-ink-3)",
+                background: "var(--sp-bg-3)",
+                border: "1px solid var(--sp-line)",
+                padding: "3px 9px", borderRadius: 5,
+                textDecoration: "none",
+              }}
+            >
+              Map
+            </a>
+          )}
           <button
             onClick={onDismiss}
-            className="rounded-md p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+            style={{
+              background: "transparent", border: 0, cursor: "pointer",
+              color: "var(--sp-ink-4)", display: "flex", padding: 2,
+            }}
           >
-            <X size={14} />
+            <X size={13} />
           </button>
         </div>
 
-        {/* Featured top card */}
-        <div className="mb-3">
-          <FeaturedCard entity={featured} onClick={() => setSelectedEntity(featured)} />
+        {/* Split body */}
+        <div style={{ display: "flex" }}>
+          <FeaturedPanel
+            entity={featured}
+            rank={featuredIdx + 1}
+            onOpenDetail={() => setShowModal(true)}
+          />
+          <EntityList
+            entities={entities}
+            activeIdx={featuredIdx}
+            onSelect={setFeaturedIdx}
+          />
         </div>
-
-        {/* Grid of cards */}
-        {visible.length > 0 && (
-          <div className="grid grid-cols-2 gap-2">
-            {visible.map((entity, i) => (
-              <SmallCard
-                key={i}
-                entity={entity}
-                rank={i + 2}
-                onClick={() => setSelectedEntity(entity)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Show more / less */}
-        {hasMore && (
-          <button
-            onClick={() => setShowAll((v) => !v)}
-            className="mt-2 w-full flex items-center justify-center gap-1 rounded-lg bg-neutral-900 py-1.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
-          >
-            {showAll ? (
-              <><ChevronUp size={12} /> Show less</>
-            ) : (
-              <><ChevronDown size={12} /> Show all {entities.length} results</>
-            )}
-          </button>
-        )}
       </div>
 
-      {/* Detail modal */}
-      {selectedEntity && (
-        <EntityDetailModal
-          entity={selectedEntity}
-          onClose={() => setSelectedEntity(null)}
-        />
+      {showModal && (
+        <EntityDetailModal entity={featured} onClose={() => setShowModal(false)} />
       )}
     </>
   );

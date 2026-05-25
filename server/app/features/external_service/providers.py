@@ -53,6 +53,9 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "redirect_uri_env": "NOTION_REDIRECT_URI",
         "default_redirect_uri": "http://localhost:8000/auth/notion/callback",
         "provider_type": "notion",  # non-Google provider
+        # Notion issues permanent non-expiring access tokens — no refresh flow needed.
+        # The stored "refresh_token" IS the access token; return it directly on cache miss.
+        "permanent_token": True,
     },
     # ── future ──────────────────────────────────────────────────────────────
     # "slack": {

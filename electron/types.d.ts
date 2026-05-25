@@ -124,6 +124,9 @@ export type IEventPayloadMapping = {
   getSocketConnectionState: ISocketConnectionState;
   socketConnectionState: ISocketConnectionState;
   socketEventForward: ISocketEventForwardPayload;
+
+  // File dialog
+  showOpenFileDialog: { filePaths: string[]; canceled: boolean };
 };
 
 declare global {
@@ -209,6 +212,9 @@ declare global {
       onSocketEventForward: (
         callback: (payload: ISocketEventForwardPayload) => void,
       ) => () => void;
+
+      // File dialog
+      showOpenFileDialog: () => Promise<{ filePaths: string[]; canceled: boolean }>;
     };
   }
 }

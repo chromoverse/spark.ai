@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import auth, chat, kernel, ml_test, openrouter_debug, stt, system, tts
+from . import auth, chat, drive, kernel, ml_test, openrouter_debug, stt, system, tts
 
 ROUTE_MODULES = (
     system,
@@ -13,6 +13,7 @@ ROUTE_MODULES = (
     ml_test,
     openrouter_debug,
     kernel,
+    drive,
 )
 
 

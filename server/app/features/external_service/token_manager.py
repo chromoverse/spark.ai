@@ -71,15 +71,23 @@ async def get_valid_access_token(
         )
 
     # ── 3. Exchange for new access token ──────────────────────────────────
-    access_token = await _refresh_access_token(
-        user_id=user_id,
-        service=service,
-        refresh_token=refresh_token,
-        account_email=account_email,
-    )
+    # For services with permanent non-expiring tokens (e.g. Notion), the stored
+    # "refresh_token" IS the access token — skip the token endpoint entirely.
+    provider_cfg = get_provider(service)
+    if provider_cfg.get("permanent_token"):
+        access_token = refresh_token
+    else:
+        access_token = await _refresh_access_token(
+            user_id=user_id,
+            service=service,
+            refresh_token=refresh_token,
+            account_email=account_email,
+        )
 
     # ── 4. Cache locally with TTL ─────────────────────────────────────────
-    await kv.set(key, access_token, ex=_ACCESS_TOKEN_TTL)
+    # Permanent tokens (e.g. Notion) never expire — cache for 30 days.
+    ttl = 30 * 24 * 3600 if provider_cfg.get("permanent_token") else _ACCESS_TOKEN_TTL
+    await kv.set(key, access_token, ex=ttl)
 
     return access_token
 

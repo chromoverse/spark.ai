@@ -107,16 +107,17 @@ async def _init_agent_system() -> None:
     emitter = init_task_emitter()
     emitter.set_environment(environment)
     
-    # Wire Socket Handler for production/non-desktop modes
-    if environment != "DESKTOP":
-        try:
-            from app.socket import sio, connected_users
-            from app.socket.task_handler import register_task_events
-            task_handler = await register_task_events(sio, connected_users)
-            emitter.set_socket_handler(task_handler)
-            logger.info("Socket task handler wired (%s mode)", environment)
-        except Exception as e:
-            logger.error("Failed to wire socket handler: %s", e)
+    # Wire Socket Handler — always, including DESKTOP mode, so confidential tools
+    # (email_send, drive_upload, etc.) can show the in-app approval modal via
+    # socket.io instead of falling back to OS toast notifications.
+    try:
+        from app.socket import sio, connected_users
+        from app.socket.task_handler import register_task_events
+        task_handler = await register_task_events(sio, connected_users)
+        emitter.set_socket_handler(task_handler)
+        logger.info("Socket task handler wired (%s mode)", environment)
+    except Exception as e:
+        logger.error("Failed to wire socket handler: %s", e)
     
     # ── Step 5: Initialize Execution Engine ──
     from app.agent.execution_gateway import init_execution_engine

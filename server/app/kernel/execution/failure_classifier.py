@@ -27,7 +27,15 @@ def classify_failure(tool_name: str, exc: Exception) -> FailureCategory:
         return FailureCategory.TRANSIENT
 
     # Terminal Checks (No change of plans can fix this)
-    if any(x in err for x in ["permission denied", "unauthorized", "auth failed", "unsupported target os", "invalid credentials", "hardware missing"]):
+    if any(x in err for x in [
+        "permission denied", "unauthorized", "auth failed",
+        "unsupported target os", "invalid credentials", "hardware missing",
+        "403", "access denied", "forbidden",
+        "has not been used in project", "api has not been enabled",
+        "is disabled", "accessnotconfigured",
+        "access revoked", "re-auth required", "please reconnect",
+        "no active gmail token", "no drive token",
+    ]):
         return FailureCategory.TERMINAL
 
     # Default is Recoverable (LLM can replan or swap tools/parameters)

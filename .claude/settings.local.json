@@ -68,7 +68,23 @@
       "Bash(.venv/Scripts/python.exe -c ' *)",
       "Bash(npm run *)",
       "Bash(xargs grep -l \"result_summary\\\\|tool.*summar\")",
-      "Bash(xargs grep -l \"free.*tier\\\\|rate.*limit\\\\|quota\")"
+      "Bash(xargs grep -l \"free.*tier\\\\|rate.*limit\\\\|quota\")",
+      "Bash(xargs grep -l \"def execute\\\\|_execute\\\\|tool.*execution\")",
+      "Bash(xargs grep -l \"def.*email_send\\\\|class.*EmailSend\")",
+      "Bash(xargs grep -l \"approval\\\\|confirmation\\\\|preview\\\\|modal\")",
+      "Bash(xargs grep -l \"submit_approval_request\")",
+      "Bash(xargs grep -l \"tool:output\\\\|spark:log\")",
+      "Bash(xargs grep -l \"approval\\\\|modal\\\\|preview\\\\|confirm\")",
+      "Bash(xargs grep -l \"submit_approval\\\\|approval_request\\\\|ApprovalModal\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server/plugins/installed/google/tools/drive.py'\\).read\\(\\)\\); print\\('drive.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server/app/kernel/execution/failure_classifier.py'\\).read\\(\\)\\); print\\('failure_classifier.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server/app/kernel/execution/task_emitter.py'\\).read\\(\\)\\); print\\('task_emitter.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server/app/kernel/execution/task_emitter.py', encoding='utf-8'\\).read\\(\\)\\); print\\('task_emitter.py: OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('server/app/kernel/execution/execution_engine.py', encoding='utf-8'\\).read\\(\\)\\); print\\('execution_engine.py: OK'\\)\")",
+      "Bash(python -c \"from app.api.routes.drive import router; print\\('OK'\\)\")",
+      "Bash(python -c \"import ast, pathlib; ast.parse\\(pathlib.Path\\('app/kernel/execution/execution_engine.py'\\).read_text\\(encoding='utf-8'\\)\\); print\\('OK'\\)\")",
+      "Bash(find /mnt/d/siddhant-files/projects/ai_assistant/ai_local/server -name \"base_tool.py\" 2>/dev/null)",
+      "Bash(xargs grep -l \"class BaseTool\")"
     ]
   }
 }

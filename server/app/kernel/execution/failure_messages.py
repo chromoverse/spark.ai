@@ -65,6 +65,15 @@ _TOOL_ACTIONS = {
     "summarize": "summarize that content",
     "mic_mute": "mute the microphone",
     "mic_unmute": "unmute the microphone",
+    "notion_search": "search Notion",
+    "notion_read_page": "read that Notion page",
+    "notion_create_page": "create that Notion page",
+    "notion_query_database": "query that Notion database",
+    "calendar_list_events": "check your calendar",
+    "calendar_search_events": "search your calendar",
+    "calendar_create_event": "create that calendar event",
+    "calendar_update_event": "update that calendar event",
+    "calendar_delete_event": "delete that calendar event",
 }
 
 _TOOL_SERVICES = {
@@ -72,6 +81,15 @@ _TOOL_SERVICES = {
     "weather_current": "weather service",
     "web_search": "web service",
     "web_research": "research service",
+    "notion_search": "Notion",
+    "notion_read_page": "Notion",
+    "notion_create_page": "Notion",
+    "notion_query_database": "Notion",
+    "calendar_list_events": "Google Calendar",
+    "calendar_search_events": "Google Calendar",
+    "calendar_create_event": "Google Calendar",
+    "calendar_update_event": "Google Calendar",
+    "calendar_delete_event": "Google Calendar",
 }
 
 
@@ -147,6 +165,21 @@ def _friendly_message(tool_name: str, raw_error: str, locale: str = "en") -> str
             hi="मैं वह काम समय पर पूरा नहीं कर सका।",
             ne="म त्यो काम समयमै पूरा गर्न सकिनँ।",
         )
+
+    # 401 / invalid token / authentication errors
+    if any(x in raw_lower for x in [
+        "api token is invalid", "invalid token", "token is invalid",
+        "token is revoked", "unauthorized", "error 401",
+        "invalid credentials", "authentication failed", "auth failed",
+        "please reconnect",
+    ]):
+        service = _service_label(tool_name) or "service"
+        action = _action_phrase(tool_name)
+        if locale == "hi":
+            return f"मैं {action} नहीं कर सका क्योंकि {service} की अनुमति अमान्य है। कृपया उसे दोबारा कनेक्ट करें।"
+        if locale == "ne":
+            return f"म {action} गर्न सकिनँ किनकि {service} को पहुँच अमान्य छ। कृपया पुनः जडान गर्नुहोस्।"
+        return f"I couldn't {action} because the {service} connection is no longer authorized. Please reconnect it."
 
     if "rejected the request" in raw_lower or "http error 400" in raw_lower or "bad request" in raw_lower:
         return _service_rejection_message(tool_name, raw_error, locale=locale)

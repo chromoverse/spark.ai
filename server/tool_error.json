@@ -285,5 +285,105 @@
       "credentials": "your_service_account_key",
       "calendar_id": "primary"
     }
+  },
+  {
+    "timestamp": "2026-05-25T10:00:18",
+    "tool": "drive_list",
+    "task_id": "step_1",
+    "error": "<HttpError 403 when requesting https://www.googleapis.com/drive/v3/files?q=trashed%3Dfalse&spaces=drive&fields=files%28id%2C+name%2C+mimeType%2C+size%2C+modifiedTime%2C+parents%2C+webViewLink%29&pageSize=20&orderBy=modifiedTime+desc&alt=json returned \"Google Drive API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\". Details: \"[{'message': 'Google Drive API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.', 'domain': 'usageLimits', 'reason': 'accessNotConfigured', 'extendedHelp': 'https://console.developers.google.com'}]\">",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_673c54ee",
+      "credentials": "your_service_account_key.json",
+      "project_id": "587082774042",
+      "api_key": "your_api_key"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T15:27:03",
+    "tool": "drive_read",
+    "task_id": "step_2",
+    "error": "<HttpError 404 when requesting https://www.googleapis.com/drive/v3/files/job_55e96ecb?fields=id%2C+name%2C+mimeType%2C+size&alt=json returned \"File not found: job_55e96ecb.\". Details: \"[{'message': 'File not found: job_55e96ecb.', 'domain': 'global', 'reason': 'notFound', 'location': 'fileId', 'locationType': 'parameter'}]\">",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_55e96ecb",
+      "file_id": "job_55e96ecb"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T16:59:36",
+    "tool": "shell_agent",
+    "task_id": "step_9",
+    "error": "",
+    "inputs": {
+      "goal": "Install nginx server",
+      "working_dir": "/home/user/Documents",
+      "max_steps": "5",
+      "allow_network": "False",
+      "user_id": "user123",
+      "execution_id": "job_123"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T16:59:41",
+    "tool": "shell_agent",
+    "task_id": "step_10",
+    "error": "",
+    "inputs": {
+      "goal": "download and launch vscode",
+      "working_dir": "C:/Users/Aanand/OneDrive/Desktop",
+      "max_steps": "6",
+      "allow_network": "True",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_82e9128a"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T17:09:18",
+    "tool": "calendar_list_events",
+    "task_id": "step_1",
+    "error": "<HttpError 403 when requesting https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=2026-05-25T11%3A24%3A18.553084Z&timeMax=2026-05-26T11%3A24%3A18.553084Z&maxResults=10&singleEvents=true&orderBy=startTime&alt=json returned \"Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\". Details: \"[{'message': 'Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.', 'domain': 'usageLimits', 'reason': 'accessNotConfigured', 'extendedHelp': 'https://console.developers.google.com'}]\">",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_1e9f30c6",
+      "credentials": "your_service_account_key",
+      "calendar_id": "primary"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T17:39:30",
+    "tool": "notion_search",
+    "task_id": "step_1",
+    "error": "No active notion token for user 695e2bbaf8efc966aaf9f218. Re-auth required.",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "query": "task",
+      "execution_id": "job_f65cef4c",
+      "api_token": "your_api_token_from_predecessor_output"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T17:40:43",
+    "tool": "notion_search",
+    "task_id": "step_1",
+    "error": "Notion API error 401: {\"object\":\"error\",\"status\":401,\"code\":\"unauthorized\",\"message\":\"API token is invalid.\",\"request_id\":\"ba296081-0f6c-4dbf-a23a-10534d54a7bf\"}",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "query": "task",
+      "execution_id": "job_5b0337bf",
+      "api_token": "your_api_token_from_predecessor_output"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T18:05:09",
+    "tool": "notion_search",
+    "task_id": "step_1",
+    "error": "Notion API error 401: {\"object\":\"error\",\"status\":401,\"code\":\"unauthorized\",\"message\":\"API token is invalid.\",\"request_id\":\"053610d8-eccd-49db-a8b3-8ae9f12d706f\"}",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "query": "tasks",
+      "execution_id": "job_8cab1fbc",
+      "api_token": "your_api_token_from_predecessor_output"
+    }
   }
 ]

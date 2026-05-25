@@ -26,6 +26,7 @@ _CATEGORY_DESCRIPTIONS: Dict[str, str] = {
     "spark_internal": "Open/close Spark window, navigate Spark tabs, open Spark storage, check agent status, inspect tools, manage artifacts",
     "automation": "Multi-step shell tasks with LLM guidance, set reminders, schedule recurring tasks",
     "clipboard_notify": "Read/write clipboard, push OS notifications",
+    "storage": "Google Drive: list, search, read, upload, move, delete files. Cloud file management.",
 }
 
 # Auto-built at import time from registry

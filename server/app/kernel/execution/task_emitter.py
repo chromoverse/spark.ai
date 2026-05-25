@@ -184,7 +184,21 @@ class TaskEmitter:
             except Exception as exc:
                 logger.error("Failed to hand off desktop approval response %s/%s: %s", uid, request_id, exc)
 
+        _SOCKET_PREFERRED_TOOLS = {
+            "email_send", "gmail_send", "email_reply",
+            "message_send", "message_media", "whatsapp_send",
+            "calendar_create_event", "calendar_update_event", "calendar_delete_event",
+            "drive_upload", "drive_move", "drive_delete",
+        }
+
         try:
+            # Confidential tools always use the in-app socket modal (editable fields,
+            # preview, schedule/deny) — never fall through to OS toast.
+            if tool_name in _SOCKET_PREFERRED_TOOLS and self.socket_handler and hasattr(self.socket_handler, "emit_approval_request"):
+                return await self.socket_handler.emit_approval_request(
+                    user_id, task_id, question, tool_name=tool_name, inputs=inputs
+                )
+
             if self.environment == "DESKTOP":
                 logger.info("Desktop mode approval request for task %s", task_id)
                 from app.agent.desktop_notifications import show_approval_notification
