@@ -2,7 +2,7 @@ import {
   Loader2, Sparkles, ChevronRight, Send, Briefcase, Plus,
   Mail, Globe, Search, FileText, FolderOpen, Monitor, Terminal, Camera,
   MapPin, Wand2, Cloud, Battery, Clipboard, RefreshCw, Wrench, Check, X,
-  Zap, AlertTriangle,
+  AlertTriangle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppSelector } from "@/store/hooks";
@@ -53,8 +53,21 @@ interface Thread {
   entityIntent?: string;
 }
 
+interface QuotaProvider {
+  provider: string;
+  key_count: number;
+  tokens_per_key: number;
+  total_tokens: number;
+  has_keys: boolean;
+  blocked: boolean;
+  blocked_since_secs: number;
+}
 interface QuotaInfo {
-  total_daily_requests: number;
+  providers: QuotaProvider[];
+  total_tokens: number;
+  available_tokens: number;
+  used_tokens: number;
+  pct_used: number;
   configured_providers: number;
 }
 
@@ -795,6 +808,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
   const [extraVisible, setExtraVisible] = useState(0);
   const [_sessionId, setSessionId] = useState(currentSessionId);
   const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
+  const [quotaOpen, setQuotaOpen] = useState(false);
   const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
   const [approvalEdits, setApprovalEdits] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -1289,16 +1303,90 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
         ))}
       </div>
       {quotaInfo !== null && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 6,
-          paddingTop: 4, borderTop: "1px solid var(--sp-line)",
-        }}>
-          <Zap size={11} style={{ color: "var(--sp-accent)", flexShrink: 0 }} />
-          <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>
-            {quotaInfo.total_daily_requests > 0
-              ? `~${quotaInfo.total_daily_requests.toLocaleString()} req/day · ${quotaInfo.configured_providers} provider${quotaInfo.configured_providers !== 1 ? "s" : ""}`
-              : "No API keys configured"}
-          </span>
+        <div style={{ paddingTop: 4, borderTop: "1px solid var(--sp-line)" }}>
+          {/* Clickable circular quota indicator */}
+          <button
+            type="button"
+            onClick={() => setQuotaOpen(o => !o)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              background: "transparent", border: 0, cursor: "pointer", padding: 0,
+            }}
+          >
+            {/* SVG circle arc */}
+            {(() => {
+              const R = 10, STROKE = 2.5, SIZE = (R + STROKE) * 2;
+              const circ = 2 * Math.PI * R;
+              const pct = Math.min(quotaInfo.pct_used, 100);
+              const dash = circ - (pct / 100) * circ;
+              const color = pct >= 80 ? "#c97164" : pct >= 50 ? "#d4a04a" : "var(--sp-accent)";
+              return (
+                <svg width={SIZE} height={SIZE} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
+                  <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={STROKE} />
+                  <circle
+                    cx={SIZE/2} cy={SIZE/2} r={R} fill="none"
+                    stroke={color} strokeWidth={STROKE}
+                    strokeDasharray={circ}
+                    strokeDashoffset={dash}
+                    strokeLinecap="round"
+                    style={{ transition: "stroke-dashoffset 600ms ease" }}
+                  />
+                </svg>
+              );
+            })()}
+            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)" }}>
+              {quotaInfo.total_tokens > 0
+                ? `${(quotaInfo.available_tokens / 1_000).toFixed(0)}k tokens · ${quotaInfo.configured_providers} provider${quotaInfo.configured_providers !== 1 ? "s" : ""}`
+                : "No API keys"}
+            </span>
+            <ChevronRight size={11} style={{
+              color: "var(--sp-ink-4)",
+              transform: quotaOpen ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 160ms",
+            }} />
+          </button>
+
+          {/* Expanded provider breakdown */}
+          {quotaOpen && (
+            <div style={{
+              marginTop: 8,
+              display: "flex", flexDirection: "column", gap: 6,
+              padding: "10px 12px",
+              background: "var(--sp-bg)",
+              borderRadius: 8,
+              border: "1px solid var(--sp-line)",
+            }}>
+              <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+                Daily token quota by provider
+              </span>
+              {quotaInfo.providers.filter(p => p.has_keys).map(p => {
+                const providerPct = p.blocked ? 100 : 0;
+                const barW = `${100 - providerPct}%`;
+                const color = p.blocked ? "#c97164" : "var(--sp-accent)";
+                return (
+                  <div key={p.provider} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span className="sp-mono" style={{ fontSize: 11, color: p.blocked ? "var(--sp-err)" : "var(--sp-ink-2)", fontWeight: 500 }}>
+                        {p.provider}
+                        {p.blocked && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--sp-err)" }}>rate-limited</span>}
+                      </span>
+                      <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>
+                        {p.key_count} key{p.key_count !== 1 ? "s" : ""} · {(p.total_tokens / 1_000).toFixed(0)}k tok/day
+                      </span>
+                    </div>
+                    <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: barW, background: color, borderRadius: 99, transition: "width 400ms ease" }} />
+                    </div>
+                  </div>
+                );
+              })}
+              {quotaInfo.providers.filter(p => !p.has_keys).length > 0 && (
+                <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", marginTop: 2 }}>
+                  {quotaInfo.providers.filter(p => !p.has_keys).map(p => p.provider).join(", ")} — no keys
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
