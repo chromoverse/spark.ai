@@ -33,6 +33,8 @@ class SocketTaskHandler:
         self.sio = sio
         self.connected_users = connected_users
         self.orchestrator = get_orchestrator()
+        # task request_id → edited inputs from frontend approval modal
+        self._pending_edited_inputs: Dict[str, Dict[str, Any]] = {}
     
     async def emit_task_single(self, user_id: str, task: TaskRecord) -> bool:
         """
@@ -223,22 +225,34 @@ class SocketTaskHandler:
             except Exception as e:
                 logger.error(f"Failed to notify status: {e}")
 
-    async def emit_approval_request(self, user_id: str, task_id: str, question: str) -> bool:
+    async def emit_approval_request(
+        self,
+        user_id: str,
+        task_id: str,
+        question: str,
+        tool_name: str = "",
+        inputs: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """Emit approval request to the connected client without waiting for a reply."""
         if user_id not in self.connected_users or not self.connected_users[user_id]:
             logger.warning("⚠️ User %s not connected - cannot request approval for %s", user_id, task_id)
             return False
 
-        payload = {
+        payload: Dict[str, Any] = {
             "user_id": user_id,
             "task_id": task_id,
             "question": question,
         }
+        if tool_name:
+            payload["tool_name"] = tool_name
+        if inputs:
+            # Strip internal keys (prefixed with _) before sending to frontend
+            payload["inputs"] = {k: v for k, v in inputs.items() if not k.startswith("_")}
 
         try:
             for sid in self.connected_users[user_id]:
                 await self.sio.emit("task:approval:request", payload, room=sid)
-            logger.info("📨 Approval requested for %s/%s", user_id, task_id)
+            logger.info("📨 Approval requested for %s/%s (tool=%s)", user_id, task_id, tool_name)
             return True
         except Exception as exc:
             logger.error("❌ Failed to emit approval request %s/%s: %s", user_id, task_id, exc)
@@ -350,6 +364,12 @@ async def register_task_events(
                 approved = approved_raw
             else:
                 approved = str(approved_raw).strip().lower() in {"1", "true", "yes", "approve", "approved"}
+
+            # Store any edited inputs from the frontend modal (e.g. edited email fields)
+            edited_inputs = data.get("edited_inputs")
+            if edited_inputs and isinstance(edited_inputs, dict):
+                handler._pending_edited_inputs[task_id] = edited_inputs
+                logger.info("📝 Stored edited inputs for %s/%s: keys=%s", user_id, task_id, list(edited_inputs.keys()))
 
             resolved = await handler.resolve_approval(user_id, task_id, approved)
             await sio.emit(

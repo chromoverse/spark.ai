@@ -2,6 +2,7 @@ import {
   Loader2, Sparkles, ChevronRight, Send, Briefcase, Plus,
   Mail, Globe, Search, FileText, FolderOpen, Monitor, Terminal, Camera,
   MapPin, Wand2, Cloud, Battery, Clipboard, RefreshCw, Wrench, Check, X,
+  Zap, AlertTriangle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppSelector } from "@/store/hooks";
@@ -50,6 +51,18 @@ interface Thread {
   status: "thinking" | "planning" | "executing" | "completed" | "failed";
   entities?: EntityCardData[];
   entityIntent?: string;
+}
+
+interface QuotaInfo {
+  total_daily_requests: number;
+  configured_providers: number;
+}
+
+interface ApprovalRequest {
+  task_id: string;
+  question: string;
+  tool_name: string;
+  inputs?: Record<string, unknown>;
 }
 
 function loadThreads(): Thread[] {
@@ -751,11 +764,19 @@ function ThreadView({
               </div>
             )}
 
-            {/* Summary */}
+            {/* Summary — AI verbal response shown after tool execution */}
             {thread.summary && (
-              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)", marginTop: 8, lineHeight: 1.5 }}>
-                {thread.summary}
-              </p>
+              <div style={{
+                marginTop: 10,
+                padding: "10px 14px",
+                borderRadius: 8,
+                background: "rgba(217,119,87,0.06)",
+                border: "1px solid rgba(217,119,87,0.18)",
+              }}>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--sp-ink-2)", lineHeight: 1.65 }}>
+                  {thread.summary}
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -773,6 +794,9 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
   const [inputVal, setInputVal] = useState("");
   const [extraVisible, setExtraVisible] = useState(0);
   const [_sessionId, setSessionId] = useState(currentSessionId);
+  const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
+  const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
+  const [approvalEdits, setApprovalEdits] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
@@ -822,6 +846,27 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
       off("job:started", handleJobStarted);
     };
   }, [on, off, handleLog, handleJobStarted]);
+
+  // Fetch quota info once on mount
+  useEffect(() => {
+    const base = (import.meta as unknown as { env: { VITE_API_BASE_URL?: string } }).env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+    fetch(`${base}/quota`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setQuotaInfo(d); })
+      .catch(() => {/* server offline */});
+  }, []);
+
+  // Handle approval requests from server (confidential tool confirmation modal)
+  useEffect(() => {
+    const handleApproval = (data: ApprovalRequest) => {
+      if (!data?.task_id) return;
+      const inputsCopy = data.inputs ? { ...data.inputs as Record<string, string> } : {};
+      setApprovalEdits(inputsCopy);
+      setApprovalRequest(data);
+    };
+    on("task:approval:request", handleApproval);
+    return () => { off("task:approval:request", handleApproval); };
+  }, [on, off]);
 
   // Handle tool:output for entity cards and rich data (separate socket event with full data)
   useEffect(() => {
@@ -1171,6 +1216,20 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
     setInputVal("");
   };
 
+  const sendApproval = (approved: boolean) => {
+    if (!approvalRequest) return;
+    const payload: Record<string, unknown> = {
+      task_id: approvalRequest.task_id,
+      approved,
+    };
+    if (approved && Object.keys(approvalEdits).length > 0) {
+      payload.edited_inputs = approvalEdits;
+    }
+    emit("task:approval:response", payload);
+    setApprovalRequest(null);
+    setApprovalEdits({});
+  };
+
   const inputBox = (
     <div style={{
       border: "1px solid var(--sp-line-2)",
@@ -1229,11 +1288,146 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
           </button>
         ))}
       </div>
+      {quotaInfo !== null && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6,
+          paddingTop: 4, borderTop: "1px solid var(--sp-line)",
+        }}>
+          <Zap size={11} style={{ color: "var(--sp-accent)", flexShrink: 0 }} />
+          <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>
+            {quotaInfo.total_daily_requests > 0
+              ? `~${quotaInfo.total_daily_requests.toLocaleString()} req/day · ${quotaInfo.configured_providers} provider${quotaInfo.configured_providers !== 1 ? "s" : ""}`
+              : "No API keys configured"}
+          </span>
+        </div>
+      )}
     </div>
   );
 
+  const isEmailTool = approvalRequest?.tool_name === "email_send";
+
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--sp-bg)" }}>
+
+      {/* ── Confidential action approval modal ────────────── */}
+      {approvalRequest && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(0,0,0,0.55)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(4px)",
+        }}>
+          <div style={{
+            width: "100%", maxWidth: 480,
+            background: "var(--sp-bg-2)",
+            border: "1px solid var(--sp-line-2)",
+            borderRadius: 14,
+            boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
+            overflow: "hidden",
+          }}>
+            {/* Modal header */}
+            <div style={{
+              padding: "16px 20px 14px",
+              borderBottom: "1px solid var(--sp-line)",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <AlertTriangle size={16} style={{ color: "var(--sp-warn)", flexShrink: 0 }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--sp-ink)" }}>
+                {isEmailTool ? "Review email before sending" : `Confirm: ${approvalRequest.tool_name.replace(/_/g, " ")}`}
+              </span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => sendApproval(false)} style={{
+                background: "transparent", border: 0, cursor: "pointer",
+                color: "var(--sp-ink-4)", display: "flex", padding: 4,
+              }}>
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+              {isEmailTool ? (
+                <>
+                  {["to", "subject", "body"].map(field => {
+                    const label = field.charAt(0).toUpperCase() + field.slice(1);
+                    const val = approvalEdits[field] ?? (approvalRequest.inputs?.[field] as string ?? "");
+                    const isBody = field === "body";
+                    return (
+                      <div key={field} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        <label className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          {label}
+                        </label>
+                        {isBody ? (
+                          <textarea
+                            value={val}
+                            onChange={e => setApprovalEdits(prev => ({ ...prev, [field]: e.target.value }))}
+                            rows={6}
+                            style={{
+                              background: "var(--sp-bg)",
+                              border: "1px solid var(--sp-line-2)",
+                              borderRadius: 7, padding: "8px 10px",
+                              color: "var(--sp-ink)", fontSize: 13, resize: "vertical",
+                              fontFamily: "'Geist', -apple-system, sans-serif",
+                            }}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={val}
+                            onChange={e => setApprovalEdits(prev => ({ ...prev, [field]: e.target.value }))}
+                            style={{
+                              background: "var(--sp-bg)",
+                              border: "1px solid var(--sp-line-2)",
+                              borderRadius: 7, padding: "7px 10px",
+                              color: "var(--sp-ink)", fontSize: 13, outline: "none",
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <p className="sp-mono" style={{ fontSize: 13, color: "var(--sp-ink-2)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                  {approvalRequest.question}
+                </p>
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div style={{
+              padding: "12px 20px 16px",
+              borderTop: "1px solid var(--sp-line)",
+              display: "flex", justifyContent: "flex-end", gap: 8,
+            }}>
+              <button
+                onClick={() => sendApproval(false)}
+                style={{
+                  padding: "7px 16px", borderRadius: 7,
+                  background: "var(--sp-bg-3)",
+                  border: "1px solid var(--sp-line-2)",
+                  color: "var(--sp-ink-2)", fontSize: 13, cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => sendApproval(true)}
+                style={{
+                  padding: "7px 16px", borderRadius: 7,
+                  background: "var(--sp-accent)",
+                  border: "none",
+                  color: "#1a1208", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                }}
+              >
+                <Check size={13} />
+                {isEmailTool ? "Send email" : "Approve"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isEmpty ? (
         /* ── Empty state: centered greeting ──────────────── */

@@ -527,6 +527,10 @@ async def _emit_summary(
             logger.info("⏭️ Skipping summary TTS (post-build) — user %s interrupted", user_id)
             return
 
+        # Emit the summary text to the UI so users can read what Spark says
+        from app.socket.log_stream import emit_spark_log
+        await emit_spark_log(user_id, "summary", job_id=job_id, payload={"message": summary})
+
         from app.socket.utils import stream_tts_to_client
         await stream_tts_to_client(summary, user_id=user_id)
 

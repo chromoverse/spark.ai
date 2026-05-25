@@ -794,6 +794,39 @@ class ExecutionEngine:
             start_msg = _build_start_message(task.tool, resolved_inputs)
             await _emit_tool_detail(user_id, "tool_step", task.task_id, task.tool, job_id=job_id, message=start_msg)
 
+            # Apply any edited inputs from a frontend approval modal response
+            if self.socket_handler and hasattr(self.socket_handler, "_pending_edited_inputs"):
+                pending = self.socket_handler._pending_edited_inputs
+                for req_id in list(pending.keys()):
+                    if req_id.startswith(f"{task.task_id}::approval::"):
+                        edited = pending.pop(req_id)
+                        safe_edited = {k: v for k, v in edited.items() if not k.startswith("_")}
+                        resolved_inputs.update(safe_edited)
+                        logger.info("Applied edited inputs for %s: keys=%s", task.task_id, list(safe_edited.keys()))
+                        break
+
+            # Approval gate for confidential actions (email, messaging) before execution
+            _CONFIDENTIAL_TOOLS = {"email_send", "message_send", "whatsapp_send"}
+            if task.tool in _CONFIDENTIAL_TOOLS and not (task.control and task.control.requires_approval):
+                from app.kernel.execution.execution_models import TaskControl
+                parts = []
+                if resolved_inputs.get("to"):
+                    parts.append(f"To: {resolved_inputs['to']}")
+                if resolved_inputs.get("subject"):
+                    parts.append(f"Subject: {resolved_inputs['subject']}")
+                if resolved_inputs.get("body"):
+                    body = str(resolved_inputs["body"])
+                    parts.append(f"Body: {body[:300]}{'...' if len(body) > 300 else ''}")
+                question = "\n".join(parts) if parts else f"Send via {task.tool}?"
+                if not task.task.control:
+                    task.task.control = TaskControl(requires_approval=True, approval_question=question)
+                else:
+                    task.task.control.requires_approval = True
+                    task.task.control.approval_question = question
+                safe_inputs = {k: v for k, v in resolved_inputs.items() if not k.startswith("_")}
+                if not await self._handle_approval_gate(user_id, task, inputs=safe_inputs):
+                    return False
+
             # Dynamic approval for shell_execute commands that aren't whitelisted
             if task.tool == "shell_execute" and not (task.control and task.control.requires_approval):
                 from app.services.shell.sandbox import SecuritySandbox
@@ -1094,7 +1127,13 @@ class ExecutionEngine:
             
             logger.error(f"  Failed locally: {task.task_id} - {error_msg}")
             return False
-    async def _handle_approval_gate(self, user_id: str, task: TaskRecord) -> bool:
+    async def _handle_approval_gate(
+        self,
+        user_id: str,
+        task: TaskRecord,
+        tool_name: str = "",
+        inputs: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """
         Handle task-level approval gate.
 
@@ -1148,6 +1187,8 @@ class ExecutionEngine:
                 question=question,
                 execution_id=execution_id,
                 on_response_callback=_handle_response,
+                tool_name=tool_name or task.tool,
+                inputs=inputs,
             )
         except Exception as exc:
             await self.orchestrator.mark_task_failed(

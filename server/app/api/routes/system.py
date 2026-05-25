@@ -1,10 +1,22 @@
 from fastapi import APIRouter
+from typing import Dict
 
 from app.agent.execution_gateway import get_orchestrator
 from app.bootstrap.runtime_dependency_bootstrap import get_last_runtime_dependency_report
 from app.plugins.tools.registry_loader import get_tool_registry
 
 router = APIRouter(tags=["System"])
+
+# Estimated free-tier daily request limits per provider (per API key)
+_FREE_TIER_DAILY: Dict[str, int] = {
+    "groq":       14_400,   # ~500 req/min free tier
+    "gemini":      1_500,   # 60 req/min free tier
+    "openrouter":    200,   # free credits vary
+    "cerebras":    7_200,   # similar to groq
+    "sambanova":   2_400,   # 100 req/min
+    "mistral":       500,   # free tier
+    "cohere":      1_000,   # trial keys
+}
 
 
 def _load_ml_runtime():
@@ -98,6 +110,36 @@ def orchestration_status():
             "active_users": len(orchestrator.states),
             "total_tasks": sum(len(state.tasks) for state in orchestrator.states.values()),
         },
+    }
+
+
+@router.get("/quota")
+def get_quota():
+    """Estimated daily quota based on registered API keys × free-tier limits per key."""
+    from app.ai.providers.key_manager import list_registered_keys, PROVIDER_ENV_MAP
+    registered = list_registered_keys()
+    env_to_provider = {v: k for k, v in PROVIDER_ENV_MAP.items()}
+
+    providers = []
+    total_daily = 0
+    for env_name, key_info in registered.items():
+        provider = env_to_provider.get(env_name, env_name)
+        key_count = key_info["count"] if key_info else 0
+        daily_per_key = _FREE_TIER_DAILY.get(provider, 1_000)
+        provider_daily = key_count * daily_per_key
+        total_daily += provider_daily
+        providers.append({
+            "provider": provider,
+            "key_count": key_count,
+            "daily_per_key": daily_per_key,
+            "total_daily": provider_daily,
+            "has_keys": key_count > 0,
+        })
+
+    return {
+        "providers": providers,
+        "total_daily_requests": total_daily,
+        "configured_providers": sum(1 for p in providers if p["has_keys"]),
     }
 
 

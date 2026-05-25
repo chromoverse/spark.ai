@@ -159,6 +159,8 @@ class TaskEmitter:
         question: str,
         execution_id: str,
         on_response_callback: ApprovalCallback,
+        tool_name: str = "",
+        inputs: dict | None = None,
     ) -> bool:
         """Register and emit an approval request without waiting inline."""
         coordinator = get_approval_coordinator()
@@ -202,7 +204,9 @@ class TaskEmitter:
                 return True
 
             if self.socket_handler and hasattr(self.socket_handler, "emit_approval_request"):
-                return await self.socket_handler.emit_approval_request(user_id, task_id, question)
+                return await self.socket_handler.emit_approval_request(
+                    user_id, task_id, question, tool_name=tool_name, inputs=inputs
+                )
 
             coordinator.cancel_request(user_id, task_id)
             return False
