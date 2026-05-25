@@ -1,4 +1,4 @@
-import { Globe, Loader2, RefreshCw, CheckCircle2, XCircle, ExternalLink, Unplug, Plug, X } from "lucide-react";
+import { Globe, Loader2, RefreshCw, CheckCircle2, XCircle, ExternalLink, Unplug, Plug, X, AlertTriangle } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import {
@@ -45,6 +45,7 @@ interface ServiceCardProps {
 function ServiceCard({ connector, userId, onPollUntilConnected, onDisconnect }: ServiceCardProps) {
   const [waiting, setWaiting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const colorCls = SERVICE_COLORS[connector.id] ?? "bg-slate-500/15 text-slate-300 border-slate-500/30";
@@ -78,7 +79,8 @@ function ServiceCard({ connector, userId, onPollUntilConnected, onDisconnect }: 
     setWaiting(false);
   };
 
-  const handleDisconnect = async () => {
+  const confirmDisconnect = async () => {
+    setConfirmOpen(false);
     setDisconnecting(true);
     try {
       await onDisconnect(connector.id);
@@ -91,6 +93,80 @@ function ServiceCard({ connector, userId, onPollUntilConnected, onDisconnect }: 
   };
 
   return (
+    <>
+    {/* ── Revoke confirmation dialog ── */}
+    {confirmOpen && (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        backdropFilter: "blur(4px)",
+      }}
+        onClick={(e) => { if (e.target === e.currentTarget) setConfirmOpen(false); }}
+      >
+        <div style={{
+          width: "100%", maxWidth: 400,
+          background: "var(--sp-bg-2)",
+          border: "1px solid var(--sp-line-2)",
+          borderRadius: 14,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
+          overflow: "hidden",
+          fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
+        }}>
+          {/* Header */}
+          <div style={{ padding: "18px 20px 14px", display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+              background: "rgba(201,112,100,0.1)",
+              border: "1px solid rgba(201,112,100,0.2)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <AlertTriangle size={17} style={{ color: "var(--sp-err)" }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "var(--sp-ink)" }}>
+                Revoke {connector.display_name} access?
+              </p>
+              <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--sp-ink-3)", lineHeight: 1.55 }}>
+                This will revoke Spark's access to your {connector.display_name} account. You won't be able to manage {connector.display_name} from Spark afterward.
+              </p>
+            </div>
+          </div>
+          {/* Footer */}
+          <div style={{
+            padding: "12px 20px 16px",
+            borderTop: "1px solid var(--sp-line)",
+            display: "flex", justifyContent: "flex-end", gap: 8,
+          }}>
+            <button
+              onClick={() => setConfirmOpen(false)}
+              style={{
+                padding: "7px 16px", borderRadius: 7,
+                background: "var(--sp-bg-3)",
+                border: "1px solid var(--sp-line-2)",
+                color: "var(--sp-ink-2)", fontSize: 13, cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDisconnect}
+              style={{
+                padding: "7px 16px", borderRadius: 7,
+                background: "rgba(201,112,100,0.12)",
+                border: "1px solid rgba(201,112,100,0.30)",
+                color: "var(--sp-err)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", gap: 6,
+              }}
+            >
+              <Unplug size={13} />
+              Revoke access
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div style={{
       position: "relative",
       background: "var(--sp-bg-2)",
@@ -150,7 +226,7 @@ function ServiceCard({ connector, userId, onPollUntilConnected, onDisconnect }: 
       <div style={{ marginTop: "auto" }}>
         {connector.connected ? (
           <button
-            onClick={handleDisconnect}
+            onClick={() => setConfirmOpen(true)}
             disabled={disconnecting}
             style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--sp-ink-3)", background: "none", border: "1px solid var(--sp-line-2)", borderRadius: 6, padding: "5px 12px", cursor: "pointer", transition: "all 140ms" }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--sp-err)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(201,112,100,0.30)"; }}
@@ -182,6 +258,7 @@ function ServiceCard({ connector, userId, onPollUntilConnected, onDisconnect }: 
         )}
       </div>
     </div>
+    </>
   );
 }
 

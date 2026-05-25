@@ -1,9 +1,10 @@
 import {
   Activity, Clock, Settings, Globe, Bot, CalendarDays,
-  Wrench, Puzzle, Zap, Shield, MessageSquare, MoreHorizontal, Sparkles,
+  Shield, MessageSquare, MoreHorizontal, Sparkles,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Plus, Trash2, Pin, PinOff,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAppSelector } from "@/store/hooks";
 import {
   loadSessions, deleteSession, pinSession, getActiveSessionId,
@@ -25,21 +26,12 @@ type NavItem = { id: SidebarItem; label: string; icon: React.ComponentType<{ siz
 type NavGroup = { id: string; label: string; items: NavItem[] };
 
 const topItems: NavItem[] = [
-  { id: "home",       label: "Chat",    icon: MessageSquare },
+  { id: "home",       label: "Chat",     icon: MessageSquare },
   { id: "spark-logs", label: "Activity", icon: Activity },
-  { id: "history",    label: "History", icon: Clock },
+  { id: "history",    label: "History",  icon: Clock },
 ];
 
 const navGroups: NavGroup[] = [
-  {
-    id: "tools",
-    label: "Tools",
-    items: [
-      { id: "tools",   label: "Tools",   icon: Wrench },
-      { id: "plugins", label: "Plugins", icon: Puzzle },
-      { id: "skills",  label: "Skills",  icon: Zap },
-    ],
-  },
   {
     id: "connect",
     label: "Connect",
@@ -53,8 +45,9 @@ const navGroups: NavGroup[] = [
     id: "system",
     label: "System",
     items: [
-      { id: "permissions", label: "Permissions", icon: Shield },
-      { id: "settings",    label: "Settings",    icon: Settings },
+      { id: "tools",       label: "Capabilities", icon: Sparkles },
+      { id: "permissions", label: "Permissions",  icon: Shield },
+      { id: "settings",    label: "Settings",     icon: Settings },
     ],
   },
 ];
@@ -116,7 +109,9 @@ function NavBtn({ item, isActive, onClick, collapsed }: {
   );
 }
 
-// ── Session row with 3-dot menu ──────────────────────────────────────────────
+// ── Session row with 3-dot menu (portal dropdown) ────────────────────────────
+
+const MENU_HEIGHT = 76; // approximate height of the 2-item dropdown
 
 function SessionRow({
   session, isActive, onSelect, onDelete, onPin,
@@ -129,6 +124,8 @@ function SessionRow({
 }) {
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuCoords, setMenuCoords] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -140,13 +137,27 @@ function SessionRow({
     return () => document.removeEventListener("mousedown", close);
   }, [menuOpen]);
 
+  const openMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (menuOpen) { setMenuOpen(false); return; }
+    const rect = btnRef.current!.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const right = window.innerWidth - rect.right + 2;
+    if (spaceBelow >= MENU_HEIGHT + 8) {
+      setMenuCoords({ top: rect.bottom + 4, right });
+    } else {
+      setMenuCoords({ bottom: window.innerHeight - rect.top + 4, right });
+    }
+    setMenuOpen(true);
+  };
+
   const title = session.title || session.preview || "New Session";
 
   return (
     <div
       style={{ position: "relative" }}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setMenuOpen(false); }}
+      onMouseLeave={() => { setHovered(false); }}
     >
       <button
         onClick={onSelect}
@@ -192,7 +203,8 @@ function SessionRow({
       {/* 3-dot button — visible on hover */}
       {(hovered || menuOpen) && (
         <button
-          onClick={(e) => { e.stopPropagation(); setMenuOpen(o => !o); }}
+          ref={btnRef}
+          onClick={openMenu}
           style={{
             position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
             width: 22, height: 22, borderRadius: 5,
@@ -206,19 +218,23 @@ function SessionRow({
         </button>
       )}
 
-      {/* Dropdown menu */}
-      {menuOpen && (
+      {/* Dropdown — rendered in a portal so it's never clipped by overflow:hidden/auto */}
+      {menuOpen && menuCoords && createPortal(
         <div
           ref={menuRef}
           style={{
-            position: "absolute", right: 4, top: "100%", zIndex: 50,
-            marginTop: 2,
+            position: "fixed",
+            top: menuCoords.top,
+            bottom: menuCoords.bottom,
+            right: menuCoords.right,
+            zIndex: 9999,
             background: "var(--sp-bg-2)",
             border: "1px solid var(--sp-line-2)",
             borderRadius: 8,
             padding: 4,
             minWidth: 130,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            fontFamily: "'Geist', -apple-system, sans-serif",
           }}
         >
           <button
@@ -249,7 +265,8 @@ function SessionRow({
             <Trash2 size={12} />
             Delete
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -317,32 +334,22 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
       return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime();
-    }).slice(0, 12);
+    });
   }, [sessions, activeSessionId]);
 
   // Auto-expand group that contains the active item
   const activeGroupId = navGroups.find(g => g.items.some(i => i.id === active))?.id;
   const [openGroups, setOpenGroups] = useState<Set<string>>(
-    () => new Set(activeGroupId ? [activeGroupId] : ["tools"])
+    () => new Set(activeGroupId ? [activeGroupId] : [])
   );
 
   useEffect(() => {
-    if (activeGroupId) {
-      setOpenGroups(prev => {
-        if (prev.has(activeGroupId)) return prev;
-        const next = new Set(prev);
-        next.add(activeGroupId);
-        return next;
-      });
-    }
+    if (activeGroupId) setOpenGroups(new Set([activeGroupId]));
   }, [activeGroupId]);
 
+  // Only one group open at a time
   const toggleGroup = (id: string) => {
-    setOpenGroups(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    setOpenGroups(prev => prev.has(id) ? new Set() : new Set([id]));
   };
 
   const userInitial = useMemo(() =>
@@ -352,7 +359,6 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
 
   return (
     <aside
-      className="sp-scroll"
       style={{
         width: collapsed ? 64 : 256,
         flexShrink: 0,
@@ -363,8 +369,7 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
         flexDirection: "column",
         padding: collapsed ? "16px 10px" : "16px 12px",
         gap: collapsed ? 12 : 18,
-        overflowY: "auto",
-        overflowX: "hidden",
+        overflow: "hidden",
         fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
         transition: "width 220ms cubic-bezier(.4,0,.2,1), padding 220ms cubic-bezier(.4,0,.2,1)",
       }}
@@ -504,8 +509,8 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
 
       {/* ── Sessions (expanded only) ──────────────────────── */}
       {!collapsed && (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", padding: "0 8px 6px", gap: 6 }}>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", padding: "0 8px 6px", gap: 6, flexShrink: 0 }}>
             <p className="sp-mono" style={sectionLabel}>Sessions</p>
             <div style={{ flex: 1 }} />
             <button
@@ -530,7 +535,7 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
               <Plus size={11} />
             </button>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <div className="sp-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
             {sortedSessions.length === 0 ? (
               <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", padding: "4px 10px" }}>
                 No sessions yet
@@ -550,8 +555,6 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
           </div>
         </div>
       )}
-
-      <div style={{ flex: 1 }} />
 
       {/* ── User profile ─────────────────────────────────────── */}
       {collapsed ? (

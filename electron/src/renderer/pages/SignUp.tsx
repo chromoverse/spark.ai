@@ -71,7 +71,7 @@ function SignUp() {
         <div className="w-full max-w-sm px-6">
           <button
             onClick={() => step === 1 ? navigate("/welcome") : (setStep(1), setOtp(""))}
-            className="mb-6 text-slate-400 hover:text-white flex items-center gap-2 text-sm transition-colors"
+            className="mb-6 text-white/40 hover:text-white flex items-center gap-2 text-sm transition-colors"
           >
             <ArrowLeft size={16} /> Back
           </button>
@@ -79,7 +79,7 @@ function SignUp() {
           <h1 className="text-2xl font-semibold mb-2">
             {step === 1 ? "Create Account" : "Verify Email"}
           </h1>
-          <p className="text-slate-400 text-sm mb-8">
+          <p className="text-white/40 text-sm mb-8">
             {step === 1
               ? "Enter your email to get started"
               : <>Code sent to <span className="text-white">{email}</span></>}
@@ -93,7 +93,7 @@ function SignUp() {
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setEmailError(""); }}
                   onKeyDown={(e) => e.key === "Enter" && handleEmailSubmit()}
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-3 bg-[#0f0f16] border border-white/10 rounded-lg text-white placeholder-white/25 focus:outline-none focus:border-[#d97757] transition-colors"
                   placeholder="you@example.com"
                   disabled={isLoading}
                 />
@@ -102,7 +102,7 @@ function SignUp() {
               <button
                 onClick={handleEmailSubmit}
                 disabled={isLoading}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+                className="w-full py-3 bg-[#d97757] hover:bg-[#c96847] disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
               >
                 {isLoading ? "Sending..." : "Continue"}
               </button>
@@ -115,7 +115,7 @@ function SignUp() {
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   onKeyDown={(e) => e.key === "Enter" && otp.length === 6 && handleOtpSubmit()}
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-center text-2xl tracking-[0.4em] font-mono placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-4 py-3 bg-[#0f0f16] border border-white/10 rounded-lg text-white text-center text-2xl tracking-[0.4em] font-mono placeholder-white/25 focus:outline-none focus:border-[#d97757] transition-colors"
                   placeholder="000000"
                   maxLength={6}
                   disabled={isLoading}
@@ -127,13 +127,13 @@ function SignUp() {
               <button
                 onClick={handleOtpSubmit}
                 disabled={isLoading || otp.length !== 6}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+                className="w-full py-3 bg-[#d97757] hover:bg-[#c96847] disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
               >
                 {isLoading ? "Verifying..." : "Verify"}
               </button>
               <button
                 onClick={handleEmailSubmit}
-                className="w-full text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                className="w-full text-xs text-white/30 hover:text-white/60 transition-colors"
                 disabled={isLoading}
               >
                 Resend code

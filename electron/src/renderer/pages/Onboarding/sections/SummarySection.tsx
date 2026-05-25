@@ -27,8 +27,8 @@ interface SummarySectionProps {
 
 function Item({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-4 py-3 bg-slate-900 rounded-lg">
-      <p className="text-[11px] text-slate-500 uppercase tracking-wider">{label}</p>
+    <div className="px-4 py-3 bg-[#0f0f16] border border-white/8 rounded-lg">
+      <p className="text-[11px] text-white/30 uppercase tracking-wider">{label}</p>
       <p className="mt-1 text-sm text-white">{value || "Not set"}</p>
     </div>
   );
@@ -37,11 +37,11 @@ function Item({ label, value }: { label: string; value: string }) {
 function TokenSummary({ label, values }: { label: string; values: string[] }) {
   const active = values.filter((v) => v.trim());
   return (
-    <div className="px-4 py-3 bg-slate-900 rounded-lg">
-      <p className="text-[11px] text-slate-500 uppercase tracking-wider">{label}</p>
+    <div className="px-4 py-3 bg-[#0f0f16] border border-white/8 rounded-lg">
+      <p className="text-[11px] text-white/30 uppercase tracking-wider">{label}</p>
       <p className="mt-1 text-sm text-white">{active.length} key{active.length !== 1 ? "s" : ""}</p>
       {active.slice(0, 2).map((t, i) => (
-        <p key={i} className="text-xs text-slate-500 mt-0.5">{maskToken(t)}</p>
+        <p key={i} className="text-xs text-white/30 mt-0.5">{maskToken(t)}</p>
       ))}
     </div>
   );

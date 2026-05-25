@@ -1,5 +1,5 @@
 import {
-  Loader2, Sparkles, ChevronRight, Send, Briefcase, Plus,
+  Loader2, Sparkles, ChevronRight, ChevronDown, Send, Briefcase, Plus,
   Mail, Globe, Search, FileText, FolderOpen, Monitor, Terminal, Camera,
   MapPin, Wand2, Cloud, Battery, Clipboard, RefreshCw, Wrench, Check, X,
   AlertTriangle,
@@ -798,6 +798,135 @@ function ThreadView({
   );
 }
 
+// ─── Weather-aware greeting ──────────────────────────────────────────────────
+
+interface WeatherCache {
+  tempC: number;
+  wmoCode: number;
+  city: string;
+  fetchedAt: number;
+}
+
+const WEATHER_KEY = "spark_weather_cache";
+const WEATHER_TTL = 30 * 60 * 1000; // 30 min
+
+function loadWeatherCache(): WeatherCache | null {
+  try {
+    const raw = localStorage.getItem(WEATHER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function buildGreeting(firstName: string, w: WeatherCache | null): { line: string; nameIdx: number } {
+  const h = new Date().getHours();
+  const time = h >= 5 && h < 12 ? "morning"
+    : h >= 12 && h < 14 ? "midday"
+    : h >= 14 && h < 18 ? "afternoon"
+    : h >= 18 && h < 22 ? "evening" : "night";
+
+  if (!w) {
+    const fallbacks: Record<string, string> = {
+      morning:   `Early bird, ${firstName} — the morning's all yours.`,
+      midday:    `High noon, ${firstName} — keep the momentum going.`,
+      afternoon: `Good afternoon, ${firstName} — what's next on the list?`,
+      evening:   `Evening, ${firstName} — winding down or just getting started?`,
+      night:     `Burning the midnight oil, ${firstName}?`,
+    };
+    const line = fallbacks[time];
+    return { line, nameIdx: line.indexOf(firstName) };
+  }
+
+  const { tempC, wmoCode } = w;
+  const feel = tempC < 0 ? "freezing" : tempC < 8 ? "cold" : tempC < 15 ? "cool"
+    : tempC < 22 ? "mild" : tempC < 28 ? "warm" : "hot";
+  const sky = wmoCode === 0 ? "clear" : wmoCode <= 3 ? "cloudy" : wmoCode <= 48 ? "foggy"
+    : wmoCode <= 67 ? "rainy" : wmoCode <= 77 ? "snowy" : wmoCode <= 82 ? "showery" : "stormy";
+
+  if (sky === "rainy") {
+    const r: Record<string, string> = {
+      morning:   `Rainy morning, ${firstName} — the best kind for indoor focus.`,
+      midday:    `Midday rain, ${firstName} — stay in, stay sharp.`,
+      afternoon: `Rainy afternoon, ${firstName} — perfect excuse to go deep.`,
+      evening:   `Rainy evening, ${firstName} — cosy and productive sounds right.`,
+      night:     `Raining tonight, ${firstName} — rain and late-night work hit different.`,
+    };
+    const line = r[time]; return { line, nameIdx: line.indexOf(firstName) };
+  }
+  if (sky === "snowy") {
+    const s: Record<string, string> = {
+      morning:   `Snowy morning, ${firstName} — soft and still out there.`,
+      midday:    `Snowing midday, ${firstName} — world's on pause, you don't have to be.`,
+      afternoon: `Snowy afternoon, ${firstName} — winter magic outside, focus inside.`,
+      evening:   `Snowy evening, ${firstName} — lights and snowflakes, let's ship something.`,
+      night:     `Snowing tonight, ${firstName} — quiet, cold, and productive.`,
+    };
+    const line = s[time]; return { line, nameIdx: line.indexOf(firstName) };
+  }
+  if (sky === "stormy") {
+    const line = `Storm out there, ${firstName} — indoors is exactly where you want to be.`;
+    return { line, nameIdx: line.indexOf(firstName) };
+  }
+
+  const matrix: Record<string, Record<string, string>> = {
+    morning: {
+      freezing: `Frozen morning, ${firstName} — let's warm things up.`,
+      cold:     `Crisp cold morning, ${firstName} — perfect for deep focus.`,
+      cool:     `Cool morning air, ${firstName} — good energy today.`,
+      mild:     `Gentle morning, ${firstName} — let's make it count.`,
+      warm:     `Already warm, ${firstName} — summer energy is here.`,
+      hot:      `Scorching start, ${firstName} — work smart, stay cool.`,
+    },
+    midday: {
+      freezing: `Freezing midday, ${firstName} — hope there's somewhere warm.`,
+      cold:     `Cold but bright midday, ${firstName} — halfway through.`,
+      cool:     `Cool clear midday, ${firstName} — peak focus hours.`,
+      mild:     `Mild midday, ${firstName} — energy is just right.`,
+      warm:     `Warm midday glow, ${firstName} — let's ride it.`,
+      hot:      `Blazing midday, ${firstName} — stay hydrated, stay sharp.`,
+    },
+    afternoon: {
+      freezing: `Bitter afternoon, ${firstName} — warmth is on the other side of this.`,
+      cold:     `Cold afternoon, ${firstName} — the kind that sharpens the mind.`,
+      cool:     `Cool crisp afternoon, ${firstName} — solid time to push through.`,
+      mild:     `Pleasant afternoon, ${firstName} — good time to tackle big things.`,
+      warm:     `Warm afternoon, ${firstName} — don't let it slow you down.`,
+      hot:      `Hot afternoon, ${firstName} — the grind doesn't stop.`,
+    },
+    evening: {
+      freezing: `Freezing evening, ${firstName} — inside is where it's at.`,
+      cold:     `Cold evening, ${firstName} — cosy and productive is the vibe.`,
+      cool:     `Cool evening, ${firstName} — great time to reflect and plan.`,
+      mild:     `Mild evening, ${firstName} — easy and smooth.`,
+      warm:     `Warm golden evening, ${firstName} — let's close the day strong.`,
+      hot:      `Warm night ahead, ${firstName} — keep the momentum.`,
+    },
+    night: {
+      freezing: `Frozen night, ${firstName} — the quiet cold hours are yours.`,
+      cold:     `Cold and quiet night, ${firstName} — deep work time.`,
+      cool:     `Cool night, ${firstName} — the world's asleep, let's build.`,
+      mild:     `Still mild out, ${firstName} — night owl mode on.`,
+      warm:     `Warm night, ${firstName} — the city doesn't sleep and neither do you.`,
+      hot:      `Hot night, ${firstName} — late, warm, and wired in.`,
+    },
+  };
+
+  const line = matrix[time]?.[feel] ?? `Good ${time}, ${firstName} — what are we getting done?`;
+  return { line, nameIdx: line.indexOf(firstName) };
+}
+
+// ── Suggestion prompts ───────────────────────────────────────────────────────
+
+const SUGGESTIONS: { label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+  { label: "Summarize my unread emails",       icon: Mail      },
+  { label: "What's the weather right now?",    icon: Cloud     },
+  { label: "Latest news on AI",                icon: Globe     },
+  { label: "Organize my Downloads folder",     icon: FolderOpen},
+  { label: "Take a screenshot",                icon: Camera    },
+  { label: "Write a short professional email", icon: Wand2     },
+  { label: "What's my battery level?",         icon: Battery   },
+  { label: "Search for Python tutorials",      icon: Search    },
+];
+
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onToggleJobs }: HomeLiveProps = {}) {
@@ -811,7 +940,10 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
   const [quotaOpen, setQuotaOpen] = useState(false);
   const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
   const [approvalEdits, setApprovalEdits] = useState<Record<string, string>>({});
+  const [weatherCache, setWeatherCache] = useState<WeatherCache | null>(loadWeatherCache);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const quotaPopoverRef = useRef<HTMLDivElement>(null);
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
 
@@ -872,6 +1004,28 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
       .catch(() => {/* server offline */});
   }, []);
 
+  // Fetch weather in background; use cached value for instant greeting on mount
+  useEffect(() => {
+    const cached = loadWeatherCache();
+    if (cached && Date.now() - cached.fetchedAt < WEATHER_TTL) return; // still fresh
+    (async () => {
+      try {
+        const loc = await fetch("https://ipapi.co/json/").then(r => r.json());
+        const wx = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,weather_code&timezone=auto`
+        ).then(r => r.json());
+        const cache: WeatherCache = {
+          tempC: wx.current.temperature_2m,
+          wmoCode: wx.current.weather_code,
+          city: loc.city || "",
+          fetchedAt: Date.now(),
+        };
+        localStorage.setItem(WEATHER_KEY, JSON.stringify(cache));
+        setWeatherCache(cache);
+      } catch { /* silent — fallback to time-only greeting */ }
+    })();
+  }, []);
+
   // Handle approval requests from server (confidential tool confirmation modal)
   useEffect(() => {
     const handleApproval = (data: ApprovalRequest) => {
@@ -883,6 +1037,18 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
     on("task:approval:request", handleApproval);
     return () => { off("task:approval:request", handleApproval); };
   }, [on, off]);
+
+  // Close quota popover when clicking outside
+  useEffect(() => {
+    if (!quotaOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (quotaPopoverRef.current && !quotaPopoverRef.current.contains(e.target as Node)) {
+        setQuotaOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [quotaOpen]);
 
   // Handle tool:output for entity cards and rich data (separate socket event with full data)
   useEffect(() => {
@@ -1212,14 +1378,24 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
   }, [saveCurrentMeta, handleNewSession]);
 
   useEffect(() => {
-    if (threads.length === 0) return;
+    if (threads.length === 0 || !threads[0].query) return;
+    // First query: set title immediately so sidebar shows it right away
+    if (threads.length === 1) {
+      updateSession(currentSessionId, {
+        threadCount: 1,
+        title: threads[0].query.slice(0, 60),
+        preview: threads[0].query,
+      });
+      return;
+    }
+    // Subsequent updates: debounce to avoid rapid writes
     const timer = setTimeout(() => {
       updateSession(currentSessionId, {
         threadCount: threads.length,
         title: threads[0].query.slice(0, 60),
         preview: threads[0].query,
       });
-    }, 3000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [threads.length]);
 
@@ -1304,95 +1480,117 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
           </button>
         ))}
       </div>
-      {quotaInfo !== null && (
-        <div style={{ paddingTop: 4, borderTop: "1px solid var(--sp-line)" }}>
-          {/* Clickable circular quota indicator */}
-          <button
-            type="button"
-            onClick={() => setQuotaOpen(o => !o)}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              background: "transparent", border: 0, cursor: "pointer", padding: 0,
-            }}
-          >
-            {/* SVG circle arc */}
-            {(() => {
-              const R = 10, STROKE = 2.5, SIZE = (R + STROKE) * 2;
-              const circ = 2 * Math.PI * R;
-              const pct = Math.min(quotaInfo.pct_used, 100);
-              const dash = circ - (pct / 100) * circ;
-              const color = pct >= 80 ? "#c97164" : pct >= 50 ? "#d4a04a" : "var(--sp-accent)";
-              return (
-                <svg width={SIZE} height={SIZE} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
-                  <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={STROKE} />
-                  <circle
-                    cx={SIZE/2} cy={SIZE/2} r={R} fill="none"
-                    stroke={color} strokeWidth={STROKE}
-                    strokeDasharray={circ}
-                    strokeDashoffset={dash}
-                    strokeLinecap="round"
-                    style={{ transition: "stroke-dashoffset 600ms ease" }}
-                  />
-                </svg>
-              );
-            })()}
-            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)" }}>
-              {quotaInfo.total_tokens > 0
-                ? `${(quotaInfo.available_tokens / 1_000).toFixed(0)}k tokens · ${quotaInfo.configured_providers} provider${quotaInfo.configured_providers !== 1 ? "s" : ""}`
-                : "No API keys"}
-            </span>
-            <ChevronRight size={11} style={{
-              color: "var(--sp-ink-4)",
-              transform: quotaOpen ? "rotate(90deg)" : "rotate(0deg)",
-              transition: "transform 160ms",
-            }} />
-          </button>
-
-          {/* Expanded provider breakdown */}
-          {quotaOpen && (
-            <div style={{
-              marginTop: 8,
-              display: "flex", flexDirection: "column", gap: 6,
-              padding: "10px 12px",
-              background: "var(--sp-bg)",
-              borderRadius: 8,
-              border: "1px solid var(--sp-line)",
-            }}>
-              <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
-                Daily token quota by provider
-              </span>
-              {quotaInfo.providers.filter(p => p.has_keys).map(p => {
-                const providerPct = p.blocked ? 100 : 0;
-                const barW = `${100 - providerPct}%`;
-                const color = p.blocked ? "#c97164" : "var(--sp-accent)";
-                return (
-                  <div key={p.provider} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span className="sp-mono" style={{ fontSize: 11, color: p.blocked ? "var(--sp-err)" : "var(--sp-ink-2)", fontWeight: 500 }}>
-                        {p.provider}
-                        {p.blocked && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--sp-err)" }}>rate-limited</span>}
-                      </span>
-                      <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>
-                        {p.key_count} key{p.key_count !== 1 ? "s" : ""} · {(p.total_tokens / 1_000).toFixed(0)}k tok/day
-                      </span>
-                    </div>
-                    <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: barW, background: color, borderRadius: 99, transition: "width 400ms ease" }} />
-                    </div>
-                  </div>
-                );
-              })}
-              {quotaInfo.providers.filter(p => !p.has_keys).length > 0 && (
-                <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", marginTop: 2 }}>
-                  {quotaInfo.providers.filter(p => !p.has_keys).map(p => p.provider).join(", ")} — no keys
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
+
+  const quotaWidget = quotaInfo !== null ? (
+    <div ref={quotaPopoverRef} style={{ position: "relative", display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+      {/* Floating popover — appears above the button, aligned to right */}
+      {quotaOpen && (
+        <div style={{
+          position: "absolute",
+          bottom: "calc(100% + 6px)",
+          right: 0,
+          width: 272,
+          background: "var(--sp-bg-2)",
+          border: "1px solid var(--sp-line-2)",
+          borderRadius: 10,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
+          zIndex: 9000,
+          overflow: "hidden",
+        }}>
+          <div style={{ padding: "10px 12px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Daily quota by provider
+            </span>
+            {quotaInfo.providers.filter(p => p.has_keys).map(p => {
+              const color = p.blocked ? "#c97164" : "var(--sp-accent)";
+              return (
+                <div key={p.provider} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span className="sp-mono" style={{ fontSize: 11, color: p.blocked ? "var(--sp-err)" : "var(--sp-ink)", fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
+                      {p.provider}
+                      {p.blocked && <span style={{ fontSize: 9, color: "var(--sp-err)", background: "rgba(201,112,100,0.12)", padding: "1px 5px", borderRadius: 3 }}>blocked</span>}
+                    </span>
+                    <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>
+                      {p.key_count}× · {(p.total_tokens / 1_000).toFixed(0)}k/day
+                    </span>
+                  </div>
+                  <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: p.blocked ? "100%" : "8%", background: color, borderRadius: 99, transition: "width 400ms ease" }} />
+                  </div>
+                </div>
+              );
+            })}
+            {quotaInfo.providers.filter(p => !p.has_keys).length > 0 && (
+              <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>
+                +{quotaInfo.providers.filter(p => !p.has_keys).length} unconfigured
+              </span>
+            )}
+          </div>
+          <div style={{
+            padding: "8px 12px",
+            borderTop: "1px solid var(--sp-line)",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-3)" }}>
+              Spark · {quotaInfo.pct_used >= 80 ? "Low" : quotaInfo.pct_used >= 50 ? "Medium" : "Free"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const apiBase = (import.meta as unknown as { env: { VITE_API_BASE_URL?: string } }).env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+                const serverRoot = apiBase.replace(/\/api\/v\d+$/, "");
+                fetch(`${serverRoot}/quota`)
+                  .then(r => r.ok ? r.json() : null)
+                  .then(d => { if (d) setQuotaInfo(d); })
+                  .catch(() => {});
+              }}
+              style={{ background: "transparent", border: 0, cursor: "pointer", padding: 3, color: "var(--sp-ink-4)", display: "flex" }}
+            >
+              <RefreshCw size={11} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Circular arc button */}
+      <button
+        type="button"
+        onClick={() => setQuotaOpen(o => !o)}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 7,
+          background: "transparent", border: 0, cursor: "pointer", padding: "2px 0",
+        }}
+      >
+        {(() => {
+          const R = 9, STROKE = 2.5, SIZE = (R + STROKE) * 2;
+          const circ = 2 * Math.PI * R;
+          const pct = Math.min(quotaInfo.pct_used, 100);
+          const dash = circ - (pct / 100) * circ;
+          const color = pct >= 80 ? "#c97164" : pct >= 50 ? "#d4a04a" : "var(--sp-accent)";
+          return (
+            <svg width={SIZE} height={SIZE} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
+              <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={STROKE} />
+              <circle
+                cx={SIZE/2} cy={SIZE/2} r={R} fill="none"
+                stroke={color} strokeWidth={STROKE}
+                strokeDasharray={circ}
+                strokeDashoffset={dash}
+                strokeLinecap="round"
+                style={{ transition: "stroke-dashoffset 600ms ease" }}
+              />
+            </svg>
+          );
+        })()}
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)" }}>
+          {quotaInfo.total_tokens > 0
+            ? `${(quotaInfo.available_tokens / 1_000).toFixed(0)}k`
+            : "—"}
+        </span>
+      </button>
+    </div>
+  ) : null;
 
   const isEmailTool = approvalRequest?.tool_name === "email_send";
 
@@ -1520,22 +1718,117 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
       )}
 
       {isEmpty ? (
-        /* ── Empty state: centered greeting ──────────────── */
+        /* ── Empty state ─────────────────────────────────── */
         <div style={{
           flex: 1, display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center",
           padding: "0 24px",
           background: "radial-gradient(ellipse at 50% 45%, rgba(217,119,87,0.05) 0%, transparent 65%)",
         }}>
-          <p className="sp-serif" style={{
-            fontSize: 30, color: "var(--sp-ink)", fontWeight: 400,
-            margin: "0 0 32px", textAlign: "center", letterSpacing: "-0.01em",
-          }}>
-            What's the vibe, <span style={{ color: "var(--sp-accent)" }}>{userName}</span>?
-          </p>
-          <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 600 }}>
-            {inputBox}
-          </form>
+          {/* Dynamic weather-aware greeting */}
+          {(() => {
+            const firstName = (userName.split(" ")[0]) || "there";
+            const { line, nameIdx } = buildGreeting(firstName, weatherCache);
+            const before = line.slice(0, nameIdx);
+            const after  = line.slice(nameIdx + firstName.length);
+            return (
+              <p className="sp-serif" style={{
+                fontSize: 28, color: "var(--sp-ink)", fontWeight: 400,
+                margin: "0 0 8px", textAlign: "center", letterSpacing: "-0.01em",
+                lineHeight: 1.3,
+              }}>
+                {before}
+                <span style={{ color: "var(--sp-accent)" }}>{firstName}</span>
+                {after}
+              </p>
+            );
+          })()}
+
+          {/* City + temp subtitle if weather loaded */}
+          {weatherCache && (
+            <p className="sp-mono" style={{
+              fontSize: 12, color: "var(--sp-ink-4)",
+              margin: "0 0 28px", textAlign: "center",
+            }}>
+              {weatherCache.city && `${weatherCache.city} · `}{Math.round(weatherCache.tempC)}°C
+            </p>
+          )}
+          {!weatherCache && <div style={{ marginBottom: 28 }} />}
+
+          <div style={{ width: "100%", maxWidth: 600 }}>
+            <form onSubmit={handleSubmit}>
+              {inputBox}
+            </form>
+            {quotaWidget}
+
+            {/* Suggestions toggle */}
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowSuggestions(o => !o)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  background: "transparent", border: 0, cursor: "pointer",
+                  color: "var(--sp-ink-4)", fontSize: 12, padding: "2px 4px",
+                  transition: "color 140ms",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--sp-ink-2)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--sp-ink-4)"; }}
+              >
+                <Sparkles size={11} />
+                <span className="sp-mono">Try a suggestion</span>
+                <ChevronDown size={11} style={{
+                  transform: showSuggestions ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 200ms ease",
+                }} />
+              </button>
+
+              {/* Suggestions grid — smooth reveal */}
+              <div style={{
+                width: "100%",
+                overflow: "hidden",
+                maxHeight: showSuggestions ? 300 : 0,
+                opacity: showSuggestions ? 1 : 0,
+                transition: "max-height 280ms ease, opacity 200ms ease",
+              }}>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                  gap: 7,
+                  paddingTop: 4,
+                }}>
+                  {SUGGESTIONS.map(({ label, icon: Icon }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => { setInputVal(label); setShowSuggestions(false); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 11px", borderRadius: 8, textAlign: "left",
+                        background: "var(--sp-bg-2)",
+                        border: "1px solid var(--sp-line)",
+                        color: "var(--sp-ink-2)", fontSize: 12,
+                        cursor: "pointer", transition: "border-color 140ms, background 140ms",
+                      }}
+                      onMouseEnter={(e) => {
+                        const b = e.currentTarget as HTMLButtonElement;
+                        b.style.borderColor = "var(--sp-line-2)";
+                        b.style.background = "var(--sp-bg-3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        const b = e.currentTarget as HTMLButtonElement;
+                        b.style.borderColor = "var(--sp-line)";
+                        b.style.background = "var(--sp-bg-2)";
+                      }}
+                    >
+                      <Icon size={13} style={{ color: "var(--sp-accent)", flexShrink: 0 }} />
+                      <span style={{ lineHeight: 1.4 }}>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <>
@@ -1547,9 +1840,21 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
             background: "var(--sp-bg)",
             flexShrink: 0,
           }}>
-            <h1 className="sp-serif" style={{ margin: 0, fontSize: 18, color: "var(--sp-ink)", fontWeight: 400 }}>
+            <h1 className="sp-serif" style={{ margin: 0, fontSize: 18, color: "var(--sp-ink)", fontWeight: 400, flexShrink: 0 }}>
               Activity
             </h1>
+            {threads[0]?.query && (
+              <>
+                <span style={{ color: "var(--sp-line-2)", flexShrink: 0, fontSize: 16 }}>·</span>
+                <span style={{
+                  fontSize: 13, color: "var(--sp-ink-4)",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  minWidth: 0, maxWidth: 260,
+                }}>
+                  {threads[0].query.slice(0, 60)}
+                </span>
+              </>
+            )}
             <span style={{
               width: 6, height: 6, borderRadius: 99, flexShrink: 0,
               background: activeCount > 0 ? "var(--sp-warn)" : "var(--sp-ok)",
@@ -1672,9 +1977,12 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
             padding: "14px 24px 18px",
             flexShrink: 0,
           }}>
-            <form onSubmit={handleSubmit} style={{ maxWidth: 860, margin: "0 auto" }}>
-              {inputBox}
-            </form>
+            <div style={{ maxWidth: 860, margin: "0 auto" }}>
+              <form onSubmit={handleSubmit}>
+                {inputBox}
+              </form>
+              {quotaWidget}
+            </div>
           </div>
         </>
       )}

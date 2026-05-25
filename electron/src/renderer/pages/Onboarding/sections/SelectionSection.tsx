@@ -35,13 +35,13 @@ export default function SelectionSection({
               opt.disabled ? "opacity-40 cursor-not-allowed " : ""
             }${
               value === opt.value
-                ? "bg-white/10 border border-slate-500"
-                : "border border-slate-800 hover:border-slate-600"
+                ? "bg-white/10 border border-[#d97757]/50"
+                : "border border-white/8 hover:border-white/20"
             }`}
           >
             <p className="text-sm font-medium text-white">{opt.label}</p>
-            {opt.description && <p className="text-xs text-slate-500 mt-0.5">{opt.description}</p>}
-            {opt.badge && <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{opt.badge}</span>}
+            {opt.description && <p className="text-xs text-white/30 mt-0.5">{opt.description}</p>}
+            {opt.badge && <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-white/8 text-white/40">{opt.badge}</span>}
           </button>
         ))}
       </div>

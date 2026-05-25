@@ -37,11 +37,11 @@ export default function HeardAboutSection({
               onClick={() => onChange(opt.value)}
               className={`flex items-center gap-3 px-4 py-4 rounded-lg text-left text-sm transition-colors ${
                 value === opt.value
-                  ? "bg-white/10 border border-slate-500 text-white"
-                  : "text-slate-400 border border-slate-800 hover:border-slate-600 hover:text-slate-300"
+                  ? "bg-white/10 border border-[#d97757]/50 text-white"
+                  : "text-white/40 border border-white/8 hover:border-white/20 hover:text-white/70"
               }`}
             >
-              <Icon size={16} className="shrink-0 text-slate-400" />
+              <Icon size={16} className="shrink-0 text-white/40" />
               <span>{opt.label}</span>
             </button>
           );
@@ -54,7 +54,7 @@ export default function HeardAboutSection({
             value={customValue}
             onChange={(e) => onCustomValueChange(e.target.value)}
             placeholder="Where did you find Spark?"
-            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            className="w-full px-4 py-3 bg-[#0f0f16] border border-white/10 rounded-lg text-white placeholder-white/25 focus:outline-none focus:border-[#d97757] transition-colors"
           />
         </div>
       )}

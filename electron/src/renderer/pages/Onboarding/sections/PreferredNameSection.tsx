@@ -28,12 +28,12 @@ export default function PreferredNameSection({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && onSubmit()}
         placeholder="What should Spark call you?"
-        className="w-full px-4 py-3 bg-slate-900/60 border border-slate-700/60 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-slate-500 transition-colors text-lg"
+        className="w-full px-4 py-3 bg-[#0f0f16] border border-white/10 rounded-lg text-white placeholder-white/20 focus:outline-none focus:border-[#d97757] transition-colors text-lg"
       />
 
       {showGender && (
         <div className="mt-6">
-          <p className="text-xs text-slate-500 mb-2">Gender (optional)</p>
+          <p className="text-xs text-white/30 mb-2">Gender (optional)</p>
           <div className="flex gap-2">
             {genderOptions.map((opt) => (
               <button
@@ -42,8 +42,8 @@ export default function PreferredNameSection({
                 onClick={() => onGenderChange(opt.value)}
                 className={`px-4 py-2 rounded-md text-sm transition-colors ${
                   gender === opt.value
-                    ? "bg-white/10 text-white border border-slate-500"
-                    : "text-slate-400 border border-slate-800 hover:border-slate-600 hover:text-slate-300"
+                    ? "bg-white/10 text-white border border-[#d97757]/50"
+                    : "text-white/40 border border-white/8 hover:border-white/20 hover:text-white/70"
                 }`}
               >
                 {opt.label}

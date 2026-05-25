@@ -1,238 +1,309 @@
-import { Activity, Radio, Server, Clock } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useAppSelector } from "@/store/hooks";
-import { useSocket } from "@/context/socketContextProvider";
-import axiosInstance from "@/utils/axiosConfig";
-import type { SparkLogPayload } from "@shared/socket.types";
+import { BarChart2, MessageSquare, Wrench, Calendar, Flame } from "lucide-react";
+import { useMemo } from "react";
+import { loadSessions, threadStorageKey } from "@/hooks/useSessionManager";
 
-type Tab = "realtime" | "static" | "timeline";
+interface DayData { queries: number; tools: number }
 
-const BASE = (
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1"
-).replace("/api/v1", "");
-
-function StatusDot({ status }: { status?: string }) {
-  const color = status === "completed" || status === "success" ? "var(--sp-ok)"
-    : status === "failed" || status === "error" ? "var(--sp-err)"
-    : "var(--sp-ink-4)";
-  if (!status) return null;
-  return (
-    <span className="sp-mono" style={{ fontSize: 10, color, padding: "1px 6px", borderRadius: 4, background: color + "22", border: `1px solid ${color}33` }}>
-      {status}
-    </span>
-  );
-}
-
-function LogRow({ log }: { log: SparkLogPayload }) {
-  const latency = log.payload?.latency_ms;
-  return (
-    <div style={{ padding: "8px 12px", background: "var(--sp-bg-2)", border: "1px solid var(--sp-line)", borderRadius: 7, display: "flex", alignItems: "center", gap: 8 }}>
-      <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-info)", flexShrink: 0, width: 58 }}>
-        {new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-      </span>
-      <span style={{ fontSize: 13, color: "var(--sp-ink)", fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {log.tool_name || log.event_type}
-      </span>
-      <StatusDot status={log.status} />
-      {latency != null && (
-        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", flexShrink: 0 }}>{latency}ms</span>
-      )}
-    </div>
-  );
-}
-
-function RealtimeTab() {
-  const { on, off } = useSocket();
-  const [logs, setLogs] = useState<SparkLogPayload[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  const handler = useCallback((data: SparkLogPayload) => {
-    setLogs((prev) => [...prev.slice(-199), data]);
-  }, []);
-
-  useEffect(() => {
-    on("spark:log" as any, handler as any);
-    return () => { off("spark:log" as any, handler as any); };
-  }, [on, off, handler]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs.length]);
-
-  if (logs.length === 0) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--sp-ink-4)", gap: 10 }}>
-        <Radio size={26} strokeWidth={1.2} style={{ opacity: 0.35 }} className="animate-pulse" />
-        <p className="sp-mono" style={{ fontSize: 13 }}>Waiting for live events…</p>
-        <p className="sp-mono" style={{ fontSize: 11 }}>Talk to Spark to see real-time execution</p>
-      </div>
-    );
+function buildActivityMap(): Record<string, DayData> {
+  const sessions = loadSessions();
+  const map: Record<string, DayData> = {};
+  for (const session of sessions) {
+    try {
+      const raw = localStorage.getItem(threadStorageKey(session.id));
+      if (!raw) continue;
+      const threads: { timestamp?: string; tools?: unknown[] }[] = JSON.parse(raw);
+      for (const t of threads) {
+        if (!t.timestamp) continue;
+        const day = t.timestamp.slice(0, 10);
+        if (!map[day]) map[day] = { queries: 0, tools: 0 };
+        map[day].queries++;
+        map[day].tools += t.tools?.length ?? 0;
+      }
+    } catch { /* corrupt data — skip */ }
   }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      {logs.map((log, i) => <LogRow key={i} log={log} />)}
-      <div ref={bottomRef} />
-    </div>
-  );
+  return map;
 }
 
-function StaticTab() {
-  const { user } = useAppSelector((s) => s.auth);
-  const { on, off } = useSocket();
-  const [logs, setLogs] = useState<SparkLogPayload[]>([]);
-  const [loading, setLoading] = useState(true);
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  useEffect(() => {
-    if (!user?._id) return;
-    (async () => {
-      try {
-        const res = await axiosInstance.get(`/kernel/user-logs?user_id=${user._id}&limit=100`, { baseURL: BASE });
-        setLogs((res as any)?.logs || []);
-      } catch { /* silent */ }
-      finally { setLoading(false); }
-    })();
-  }, [user?._id]);
-
-  useEffect(() => {
-    const h = (data: SparkLogPayload) => setLogs((prev) => [...prev, data].slice(-200));
-    on("spark:log" as any, h as any);
-    return () => { off("spark:log" as any, h as any); };
-  }, [on, off]);
-
-  if (loading) return <SpinnerCenter />;
-  if (logs.length === 0) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--sp-ink-4)", gap: 10 }}>
-        <Activity size={26} strokeWidth={1.2} style={{ opacity: 0.35 }} />
-        <p className="sp-mono" style={{ fontSize: 13 }}>No logs yet</p>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      {logs.map((log, i) => <LogRow key={i} log={log} />)}
-    </div>
-  );
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
-interface TimelineEntry {
-  id: string;
-  tool_name: string;
-  status: string;
-  updated_at: string;
-  duration_ms?: number;
-  error?: string;
+function heatColor(count: number, max: number): string {
+  if (count === 0) return "rgba(255,255,255,0.04)";
+  const intensity = Math.min(count / max, 1);
+  if (intensity < 0.25) return "rgba(217,119,87,0.25)";
+  if (intensity < 0.5)  return "rgba(217,119,87,0.45)";
+  if (intensity < 0.75) return "rgba(217,119,87,0.65)";
+  return "rgba(217,119,87,0.90)";
 }
-
-function TimelineTab() {
-  const { user } = useAppSelector((s) => s.auth);
-  const [entries, setEntries] = useState<TimelineEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user?._id) return;
-    (async () => {
-      try {
-        const res = await axiosInstance.get(`/kernel/user-history?user_id=${user._id}&limit=80`, { baseURL: BASE });
-        setEntries((res as any)?.items || []);
-      } catch { /* silent */ }
-      finally { setLoading(false); }
-    })();
-  }, [user?._id]);
-
-  if (loading) return <SpinnerCenter />;
-  if (entries.length === 0) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--sp-ink-4)", gap: 10 }}>
-        <Server size={26} strokeWidth={1.2} style={{ opacity: 0.35 }} />
-        <p className="sp-mono" style={{ fontSize: 13 }}>No execution history</p>
-      </div>
-    );
-  }
-
-  const grouped: Record<string, TimelineEntry[]> = {};
-  for (const e of entries) {
-    const day = e.updated_at ? new Date(e.updated_at).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "Unknown";
-    (grouped[day] ??= []).push(e);
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {Object.entries(grouped).map(([day, items]) => (
-        <div key={day}>
-          <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8, padding: "0 2px" }}>
-            {day}
-          </p>
-          <div style={{ borderLeft: "2px solid var(--sp-line)", paddingLeft: 14, marginLeft: 2, display: "flex", flexDirection: "column", gap: 4 }}>
-            {items.map((e) => (
-              <div key={e.id} style={{ padding: "8px 12px", background: "var(--sp-bg-2)", border: "1px solid var(--sp-line)", borderRadius: 7 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 13, color: "var(--sp-ink)", fontWeight: 500 }}>{e.tool_name}</span>
-                  <StatusDot status={e.status} />
-                  {e.duration_ms != null && <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>{e.duration_ms}ms</span>}
-                  <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", marginLeft: "auto" }}>
-                    {e.updated_at ? new Date(e.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
-                  </span>
-                </div>
-                {e.error && <p style={{ marginTop: 3, fontSize: 11, color: "var(--sp-err)", lineHeight: 1.4 }}>{e.error}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
-  { id: "realtime", label: "Live",     icon: Radio },
-  { id: "static",   label: "Logs",     icon: Activity },
-  { id: "timeline", label: "Timeline", icon: Clock },
-];
 
 export default function SparkLogs() {
-  const [tab, setTab] = useState<Tab>("realtime");
+  const dayMap = useMemo(buildActivityMap, []);
+
+  // ── Stats ──────────────────────────────────────────────────────────────
+  const totalQueries = useMemo(() => Object.values(dayMap).reduce((s, d) => s + d.queries, 0), [dayMap]);
+  const totalTools   = useMemo(() => Object.values(dayMap).reduce((s, d) => s + d.tools,   0), [dayMap]);
+  const activeDays   = useMemo(() => Object.keys(dayMap).length, [dayMap]);
+  const avgPerDay    = activeDays > 0 ? (totalQueries / activeDays).toFixed(1) : "0";
+  const streak = useMemo(() => {
+    let s = 0;
+    const today = new Date();
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      if (!dayMap[isoDate(d)]) break;
+      s++;
+    }
+    return s;
+  }, [dayMap]);
+
+  // ── 14-day bar chart ───────────────────────────────────────────────────
+  const last14 = useMemo(() => {
+    const out = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const key = isoDate(d);
+      out.push({
+        key,
+        short: d.toLocaleDateString("en-US", { weekday: "short" }),
+        date:  d.getDate(),
+        month: d.getMonth(),
+        isToday: i === 0,
+        queries: dayMap[key]?.queries ?? 0,
+        tools:   dayMap[key]?.tools   ?? 0,
+      });
+    }
+    return out;
+  }, [dayMap]);
+  const barMax = Math.max(...last14.map(d => d.queries), 1);
+
+  // ── 90-day heatmap (13 weeks) ──────────────────────────────────────────
+  const heatmap = useMemo(() => {
+    const today = new Date();
+    // Align to Sunday of 13 weeks ago
+    const start = new Date(today);
+    start.setDate(today.getDate() - 90);
+    start.setDate(start.getDate() - start.getDay()); // back to Sunday
+
+    const weeks: { key: string; queries: number; label: string }[][] = [];
+    for (let w = 0; w < 13; w++) {
+      const week = [];
+      for (let d = 0; d < 7; d++) {
+        const cell = new Date(start);
+        cell.setDate(start.getDate() + w * 7 + d);
+        const key = isoDate(cell);
+        week.push({ key, queries: dayMap[key]?.queries ?? 0, label: cell.toLocaleDateString("en-US", { month: "short", day: "numeric" }) });
+      }
+      weeks.push(week);
+    }
+    return weeks;
+  }, [dayMap]);
+
+  const heatMax = Math.max(...heatmap.flat().map(c => c.queries), 1);
+
+  // Month labels for heatmap header
+  const monthMarkers = useMemo(() => {
+    const markers: { week: number; label: string }[] = [];
+    let lastMonth = -1;
+    heatmap.forEach((week, wi) => {
+      const m = new Date(week[0].key).getMonth();
+      if (m !== lastMonth) { markers.push({ week: wi, label: MONTH_LABELS[m] }); lastMonth = m; }
+    });
+    return markers;
+  }, [heatmap]);
+
+  const isEmpty = totalQueries === 0;
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--sp-bg)", fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif" }}>
-      <div style={{ padding: "14px 24px 12px", borderBottom: "1px solid var(--sp-line)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <Activity size={15} style={{ color: "var(--sp-accent)" }} />
-        <h2 className="sp-serif" style={{ margin: 0, fontSize: 20, color: "var(--sp-ink)", fontWeight: 400 }}>Spark Logs</h2>
-        <div style={{ display: "flex", gap: 4, marginLeft: 16 }}>
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              style={{
-                display: "flex", alignItems: "center", gap: 5,
-                padding: "4px 10px", borderRadius: 6,
-                background: tab === id ? "var(--sp-accent-soft)" : "transparent",
-                color: tab === id ? "var(--sp-accent)" : "var(--sp-ink-3)",
-                border: tab === id ? "1px solid rgba(217,119,87,0.18)" : "1px solid transparent",
-                fontSize: 12, cursor: "pointer", transition: "all 120ms",
-              }}
-            >
-              <Icon size={11} />
-              {label}
-            </button>
-          ))}
-        </div>
+    <div style={{
+      height: "100%", display: "flex", flexDirection: "column",
+      background: "var(--sp-bg)",
+      fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
+    }}>
+      {/* ── Header ── */}
+      <div style={{
+        padding: "14px 28px 12px",
+        borderBottom: "1px solid var(--sp-line)",
+        display: "flex", alignItems: "center", gap: 10,
+        flexShrink: 0,
+      }}>
+        <BarChart2 size={15} style={{ color: "var(--sp-accent)" }} />
+        <h2 className="sp-serif" style={{ margin: 0, fontSize: 20, color: "var(--sp-ink)", fontWeight: 400 }}>
+          Activity
+        </h2>
       </div>
-      <div className="sp-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
-        {tab === "realtime" && <RealtimeTab />}
-        {tab === "static"   && <StaticTab />}
-        {tab === "timeline" && <TimelineTab />}
-      </div>
-    </div>
-  );
-}
 
-function SpinnerCenter() {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-      <div style={{ width: 18, height: 18, border: "2px solid var(--sp-line-2)", borderTopColor: "var(--sp-accent)", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+      <div className="sp-scroll" style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 28 }}>
+
+        {isEmpty ? (
+          <div style={{
+            flex: 1, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", gap: 12,
+            color: "var(--sp-ink-4)",
+          }}>
+            <BarChart2 size={32} strokeWidth={1.2} style={{ opacity: 0.3 }} />
+            <p className="sp-mono" style={{ fontSize: 13 }}>No conversations yet</p>
+            <p className="sp-mono" style={{ fontSize: 11 }}>Chat with Spark to see your activity here</p>
+          </div>
+        ) : (
+          <>
+            {/* ── Stats row ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+              {[
+                { icon: MessageSquare, label: "Total queries",  value: totalQueries },
+                { icon: Wrench,        label: "Tools run",      value: totalTools   },
+                { icon: Calendar,      label: "Active days",    value: activeDays   },
+                { icon: Flame,         label: "Day streak",     value: streak       },
+              ].map(({ icon: Icon, label, value }) => (
+                <div key={label} style={{
+                  padding: "14px 16px",
+                  background: "var(--sp-bg-2)",
+                  border: "1px solid var(--sp-line)",
+                  borderRadius: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
+                    <Icon size={13} style={{ color: "var(--sp-accent)" }} />
+                    <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      {label}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 26, fontWeight: 600, color: "var(--sp-ink)", lineHeight: 1 }}>
+                    {value}
+                  </span>
+                  {label === "Active days" && (
+                    <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", display: "block", marginTop: 4 }}>
+                      avg {avgPerDay}/day
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* ── 14-day bar chart ── */}
+            <div style={{
+              background: "var(--sp-bg-2)",
+              border: "1px solid var(--sp-line)",
+              borderRadius: 12,
+              padding: "18px 20px 14px",
+            }}>
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 16 }}>
+                Last 14 days
+              </p>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 5, height: 100 }}>
+                {last14.map(day => {
+                  const h = barMax > 0 ? Math.max((day.queries / barMax) * 84, day.queries > 0 ? 6 : 0) : 0;
+                  return (
+                    <div key={day.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, position: "relative" }} title={`${day.key}: ${day.queries} queries, ${day.tools} tools`}>
+                      {day.queries > 0 && (
+                        <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", position: "absolute", top: 0, transform: "translateY(-14px)" }}>
+                          {day.queries}
+                        </span>
+                      )}
+                      <div style={{ width: "100%", flex: 1, display: "flex", alignItems: "flex-end" }}>
+                        <div style={{
+                          width: "100%",
+                          height: h,
+                          background: day.isToday
+                            ? "var(--sp-accent)"
+                            : day.queries > 0 ? "rgba(217,119,87,0.45)" : "rgba(255,255,255,0.04)",
+                          borderRadius: "3px 3px 0 0",
+                          transition: "height 400ms ease",
+                          minHeight: 3,
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Day labels */}
+              <div style={{ display: "flex", gap: 5, marginTop: 6 }}>
+                {last14.map(day => (
+                  <div key={day.key} style={{ flex: 1, textAlign: "center" }}>
+                    <span className="sp-mono" style={{
+                      fontSize: 9,
+                      color: day.isToday ? "var(--sp-accent)" : "var(--sp-ink-4)",
+                      fontWeight: day.isToday ? 600 : 400,
+                    }}>
+                      {day.isToday ? "today" : day.short}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── 90-day heatmap ── */}
+            <div style={{
+              background: "var(--sp-bg-2)",
+              border: "1px solid var(--sp-line)",
+              borderRadius: 12,
+              padding: "18px 20px",
+            }}>
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+                90-day overview
+              </p>
+              <div style={{ display: "flex", gap: 6 }}>
+                {/* Day-of-week labels */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingTop: 18 }}>
+                  {DAY_LABELS.map((d, i) => (
+                    <div key={d} style={{ height: 12, display: "flex", alignItems: "center" }}>
+                      {i % 2 === 1 && (
+                        <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", width: 24, textAlign: "right" }}>
+                          {d}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {/* Grid */}
+                <div style={{ flex: 1 }}>
+                  {/* Month markers */}
+                  <div style={{ display: "flex", marginBottom: 4, position: "relative", height: 14 }}>
+                    {monthMarkers.map(({ week, label }) => (
+                      <span key={label + week} className="sp-mono" style={{
+                        position: "absolute",
+                        left: `calc(${(week / 13) * 100}%)`,
+                        fontSize: 9, color: "var(--sp-ink-4)",
+                      }}>
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 3 }}>
+                    {heatmap.map((week, wi) => (
+                      <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {week.map(cell => (
+                          <div
+                            key={cell.key}
+                            title={cell.queries > 0 ? `${cell.label}: ${cell.queries} ${cell.queries === 1 ? "query" : "queries"}` : cell.label}
+                            style={{
+                              width: 12, height: 12,
+                              borderRadius: 3,
+                              background: heatColor(cell.queries, heatMax),
+                              border: "1px solid rgba(255,255,255,0.03)",
+                              cursor: cell.queries > 0 ? "default" : "default",
+                              transition: "background 200ms",
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {/* Legend */}
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 12, justifyContent: "flex-end" }}>
+                <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)" }}>Less</span>
+                {[0, 0.2, 0.5, 0.8, 1].map(v => (
+                  <div key={v} style={{ width: 10, height: 10, borderRadius: 2, background: heatColor(v * heatMax, heatMax) }} />
+                ))}
+                <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)" }}>More</span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

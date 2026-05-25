@@ -248,5 +248,42 @@
       "project_id": "587082774042",
       "api_enabled": "True"
     }
+  },
+  {
+    "timestamp": "2026-05-25T08:16:24",
+    "tool": "shell_execute",
+    "task_id": "step_1",
+    "error": "",
+    "inputs": {
+      "command": "dir \"C:\\\\Users\\\\Aanand\\\\Google Drive\"",
+      "working_dir": "C:\\Users\\Aanand",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_cbc735fa"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T09:11:16",
+    "tool": "email_send",
+    "task_id": "step_2",
+    "error": "EOF occurred in violation of protocol (_ssl.c:2427)",
+    "inputs": {
+      "to": "siddhantyadav4040@gmail.com",
+      "subject": "Update on Nepal's recent political condition",
+      "body": "**Subject:** Update on Recent Political Conditions in Nepal  \n\nDear [Recipient's Name],  \n\nI hope this email finds you well.  \n\nI am writing to provide a brief update on the recent political developme",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_55b9be7f"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T09:16:24",
+    "tool": "calendar_list_events",
+    "task_id": "step_1",
+    "error": "<HttpError 403 when requesting https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=2026-05-25T03%3A31%3A23.961172Z&timeMax=2026-05-26T03%3A31%3A23.961172Z&maxResults=10&singleEvents=true&orderBy=startTime&alt=json returned \"Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\". Details: \"[{'message': 'Google Calendar API has not been used in project 587082774042 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=587082774042 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.', 'domain': 'usageLimits', 'reason': 'accessNotConfigured', 'extendedHelp': 'https://console.developers.google.com'}]\">",
+    "inputs": {
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_30e43ad1",
+      "credentials": "your_service_account_key",
+      "calendar_id": "primary"
+    }
   }
 ]

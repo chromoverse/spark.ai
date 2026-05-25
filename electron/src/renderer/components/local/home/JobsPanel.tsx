@@ -1,5 +1,5 @@
 import { BriefcaseBusiness, Loader2, Check, X, Clock, AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSocket } from "@/context/socketContextProvider";
 
 interface JobInfo {
@@ -10,7 +10,7 @@ interface JobInfo {
   position?: number;
 }
 
-export default function JobsPanel() {
+export default function JobsPanel({ show = true }: { show?: boolean }) {
   const { on, off } = useSocket();
   const [jobs, setJobs] = useState<JobInfo[]>([]);
 
@@ -83,9 +83,10 @@ export default function JobsPanel() {
   const queuedJobs = jobs.filter(j => j.status === "queued");
   const recentJobs = jobs.filter(j => j.status === "completed" || j.status === "failed");
 
-  if (jobs.length === 0) return null;
+  // Always return null when hidden — hooks still run so job events are captured while invisible
+  if (!show) return null;
 
-  return (
+  const panelShell = (children: React.ReactNode) => (
     <div style={{
       width: 224,
       flexShrink: 0,
@@ -95,7 +96,6 @@ export default function JobsPanel() {
       flexDirection: "column",
       fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
-      {/* Header */}
       <div style={{
         padding: "14px 16px 12px",
         borderBottom: "1px solid var(--sp-line)",
@@ -120,37 +120,54 @@ export default function JobsPanel() {
           </span>
         )}
       </div>
+      {children}
+    </div>
+  );
 
-      {/* Job list */}
-      <div
-        className="sp-scroll"
-        style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}
-      >
-        {activeJobs.length > 0 && (
-          <div style={{ marginBottom: 2 }}>
-            <p className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 5, padding: "0 2px" }}>
-              Running
-            </p>
-            {activeJobs.map(job => <JobCard key={job.job_id} job={job} />)}
-          </div>
-        )}
-        {queuedJobs.length > 0 && (
-          <div style={{ marginBottom: 2 }}>
-            <p className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 5, padding: "0 2px" }}>
-              Queued
-            </p>
-            {queuedJobs.map(job => <JobCard key={job.job_id} job={job} />)}
-          </div>
-        )}
-        {recentJobs.length > 0 && (
-          <div>
-            <p className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 5, padding: "0 2px" }}>
-              Recent
-            </p>
-            {recentJobs.map(job => <JobCard key={job.job_id} job={job} />)}
-          </div>
-        )}
+  if (jobs.length === 0) {
+    return panelShell(
+      <div style={{
+        flex: 1, display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center", gap: 6,
+        padding: "24px 16px",
+      }}>
+        <BriefcaseBusiness size={18} style={{ color: "var(--sp-ink-4)" }} />
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-ink-4)", textAlign: "center" }}>
+          No jobs yet
+        </span>
       </div>
+    );
+  }
+
+  return panelShell(
+    <div
+      className="sp-scroll"
+      style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}
+    >
+      {activeJobs.length > 0 && (
+        <div style={{ marginBottom: 2 }}>
+          <p className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 5, padding: "0 2px" }}>
+            Running
+          </p>
+          {activeJobs.map(job => <JobCard key={job.job_id} job={job} />)}
+        </div>
+      )}
+      {queuedJobs.length > 0 && (
+        <div style={{ marginBottom: 2 }}>
+          <p className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 5, padding: "0 2px" }}>
+            Queued
+          </p>
+          {queuedJobs.map(job => <JobCard key={job.job_id} job={job} />)}
+        </div>
+      )}
+      {recentJobs.length > 0 && (
+        <div>
+          <p className="sp-mono" style={{ fontSize: 9, color: "var(--sp-ink-4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 5, padding: "0 2px" }}>
+            Recent
+          </p>
+          {recentJobs.map(job => <JobCard key={job.job_id} job={job} />)}
+        </div>
+      )}
     </div>
   );
 }

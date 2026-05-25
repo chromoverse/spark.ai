@@ -32,16 +32,16 @@ export default function VoicePreferencesSection({
       <SectionHeader eyebrow={eyebrow} title={title} description={description} />
 
       {isLoading ? (
-        <p className="text-sm text-slate-400">Loading voices...</p>
+        <p className="text-sm text-white/40">Loading voices...</p>
       ) : errorMessage ? (
         <p className="text-sm text-red-400">{errorMessage}</p>
       ) : (
         <div className="space-y-6">
           {groups.map((g) => (
             <div key={g.id}>
-              <h3 className="text-xs text-slate-500 uppercase tracking-wider mb-3">{g.title} voices</h3>
+              <h3 className="text-xs text-white/30 uppercase tracking-wider mb-3">{g.title} voices</h3>
               {g.voices.length === 0 ? (
-                <p className="text-sm text-slate-500">None available</p>
+                <p className="text-sm text-white/30">None available</p>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {g.voices.map((voice) => (

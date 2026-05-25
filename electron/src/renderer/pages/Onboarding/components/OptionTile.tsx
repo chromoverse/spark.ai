@@ -22,7 +22,7 @@ export default function OptionTile({
       disabled={disabled}
       className={`rounded-[24px] border p-5 text-left transition-all duration-300 ${
         active
-          ? "border-cyan-300/70 bg-white/14 shadow-[0_16px_48px_rgba(34,211,238,0.16)]"
+          ? "border-[#d97757]/70 bg-white/14 shadow-[0_16px_48px_rgba(217,119,87,0.16)]"
           : disabled
             ? "cursor-not-allowed border-white/8 bg-white/[0.04] opacity-65"
             : "border-white/12 bg-white/6 hover:border-white/24 hover:bg-white/10"
@@ -36,7 +36,7 @@ export default function OptionTile({
           </span>
         ) : null}
       </div>
-      <p className="mt-2 text-sm leading-6 text-slate-300">{description}</p>
+      <p className="mt-2 text-sm leading-6 text-white/60">{description}</p>
     </button>
   );
 }

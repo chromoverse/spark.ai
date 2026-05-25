@@ -43,7 +43,7 @@ export default function TokenListEditor({
             <span
               className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] ${
                 optional
-                  ? "border-white/12 bg-white/6 text-slate-300"
+                  ? "border-white/12 bg-white/6 text-white/60"
                   : activeCount >= minimumRequired
                     ? "border-emerald-300/30 bg-emerald-300/12 text-emerald-100"
                     : "border-amber-300/30 bg-amber-300/12 text-amber-100"
@@ -54,7 +54,7 @@ export default function TokenListEditor({
                 : `Required: ${minimumRequired} key${minimumRequired > 1 ? "s" : ""}`}
             </span>
           </div>
-          <p className="mt-1 text-sm leading-7 text-slate-300">
+          <p className="mt-1 text-sm leading-7 text-white/60">
             {optional
               ? "Keep this list tidy. Blank rows stay local and are ignored when you save."
               : `Add at least ${minimumRequired} key${minimumRequired > 1 ? "s" : ""}. Blank rows stay local and are ignored when you save.`}
@@ -64,14 +64,14 @@ export default function TokenListEditor({
           <button
             type="button"
             onClick={clearTokens}
-            className="rounded-full border border-white/12 px-4 py-2 text-sm font-medium text-slate-200 transition-all hover:border-white/24 hover:bg-white/10"
+            className="rounded-full border border-white/12 px-4 py-2 text-sm font-medium text-white/70 transition-all hover:border-white/24 hover:bg-white/10"
           >
             Clear
           </button>
           <button
             type="button"
             onClick={addTokenRow}
-            className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-medium text-cyan-100 transition-all hover:border-cyan-300/50 hover:bg-cyan-300/16"
+            className="inline-flex items-center gap-2 rounded-full border border-[#d97757]/30 bg-[#d97757]/10 px-4 py-2 text-sm font-medium text-[#f0c5b0] transition-all hover:border-[#d97757]/50 hover:bg-[#d97757]/16"
           >
             <Plus size={14} />
             Add token
@@ -80,7 +80,7 @@ export default function TokenListEditor({
       </div>
 
       {!optional ? (
-        <div className="mt-4 rounded-[22px] border border-white/10 bg-white/6 px-4 py-3 text-sm text-slate-300">
+        <div className="mt-4 rounded-[22px] border border-white/10 bg-white/6 px-4 py-3 text-sm text-white/60">
           {activeCount >= minimumRequired
             ? `${activeCount} key${activeCount > 1 ? "s" : ""} ready.`
             : `${minimumRequired - activeCount} more key${minimumRequired - activeCount > 1 ? "s" : ""} needed before you can continue.`}
@@ -96,11 +96,11 @@ export default function TokenListEditor({
             <div className="mb-2 flex items-center justify-between gap-3">
               <label
                 htmlFor={`${providerLabel}-${index}`}
-                className="text-[11px] uppercase tracking-[0.22em] text-slate-400"
+                className="text-[11px] uppercase tracking-[0.22em] text-white/40"
               >
                 Token {index + 1}
               </label>
-              <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+              <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-white/30">
                 Secure field
               </span>
             </div>
@@ -110,7 +110,7 @@ export default function TokenListEditor({
               value={value}
               onChange={(event) => updateValue(index, event.target.value)}
               placeholder={`Paste ${providerLabel} token ${index + 1}`}
-              className="w-full rounded-[18px] border border-white/12 bg-black/20 px-4 py-3.5 text-sm text-white outline-none transition-all placeholder:text-slate-500 focus:border-cyan-300/60 focus:bg-white/10 focus:shadow-[0_0_0_4px_rgba(34,211,238,0.12)]"
+              className="w-full rounded-[18px] border border-white/12 bg-black/20 px-4 py-3.5 text-sm text-white outline-none transition-all placeholder:text-white/25 focus:border-[#d97757]/60 focus:bg-white/10 focus:shadow-[0_0_0_4px_rgba(217,119,87,0.12)]"
             />
           </div>
         ))}

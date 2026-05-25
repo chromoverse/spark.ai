@@ -111,7 +111,7 @@ function Home() {
               {renderContent()}
             </Suspense>
           </main>
-          {activeTab === "home" && showJobs && <JobsPanel />}
+          {activeTab === "home" && <JobsPanel show={showJobs} />}
         </div>
         <BottomBar />
       </div>

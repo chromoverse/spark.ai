@@ -110,7 +110,7 @@ function buildInitialDraft(incomingDraft: OnboardingDraft | undefined, user: IUs
 }
 
 function SectionLoader() {
-  return <div className="flex items-center justify-center py-12"><div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
+  return <div className="flex items-center justify-center py-12"><div className="w-5 h-5 border-2 border-[#d97757] border-t-transparent rounded-full animate-spin" /></div>;
 }
 
 function Onboarding() {
@@ -414,12 +414,12 @@ function Onboarding() {
 
       {/* Progress bar */}
       <div className="px-6 pt-2">
-        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
+        <div className="flex items-center justify-between text-[11px] text-white/30 mb-1.5">
           <span>{section.eyebrow}</span>
           <span>{currentSectionIndex + 1} / {sections.length}</span>
         </div>
-        <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-          <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+        <div className="h-1 bg-white/8 rounded-full overflow-hidden">
+          <div className="h-full bg-[#d97757] rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
         </div>
       </div>
 
@@ -432,12 +432,12 @@ function Onboarding() {
             disabled={i > furthestVisitedIndex}
             className={`w-2.5 h-2.5 rounded-full transition-all ${
               i === currentSectionIndex
-                ? "bg-blue-500 scale-125"
+                ? "bg-[#d97757] scale-125"
                 : i < furthestVisitedIndex && isSectionSatisfied(s.id)
                   ? "bg-green-500/60"
                   : i <= furthestVisitedIndex
-                    ? "bg-slate-600 hover:bg-slate-500"
-                    : "bg-slate-800"
+                    ? "bg-white/20 hover:bg-white/35"
+                    : "bg-white/8"
             }`}
             title={s.title}
           />
@@ -452,11 +452,11 @@ function Onboarding() {
       </div>
 
       {/* Navigation buttons */}
-      <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between">
+      <div className="px-6 py-4 border-t border-white/8 flex items-center justify-between">
         <button
           onClick={() => void handleBack()}
           disabled={isSubmitting}
-          className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-400 hover:text-white border border-slate-700 hover:border-slate-600 rounded-lg transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2.5 text-sm text-white/40 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-colors disabled:opacity-50"
         >
           <ArrowLeft size={14} />
           {currentSectionIndex === 0 ? (hasAuthenticatedSession ? "Skip" : "Back") : "Previous"}
@@ -466,7 +466,7 @@ function Onboarding() {
           <button
             onClick={() => void handleComplete()}
             disabled={isSubmitting}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-6 py-2.5 bg-[#d97757] hover:bg-[#c96847] disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             {isSubmitting ? "Saving..." : hasAuthenticatedSession ? "Save & Launch" : "Create Account"}
           </button>
@@ -474,7 +474,7 @@ function Onboarding() {
           <button
             onClick={handleNext}
             disabled={isSubmitting}
-            className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-6 py-2.5 bg-[#d97757] hover:bg-[#c96847] disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             Next <ArrowRight size={14} />
           </button>
