@@ -28,7 +28,7 @@ async def extract_entities(
 ) -> List[Dict[str, Any]]:
     """
     scraped_texts: list of {"url": ..., "title": ..., "text": ...}
-    entity_schema: one of hotel | product | restaurant | local_business
+    entity_schema: one of hotel | product | restaurant | local_business | person | movie | event | college | place | flight
     query: user's original query
     location: detected location (e.g., "Kathmandu, Bagmati Province")
     Returns: list of entity dicts (validated against the schema, extras dropped).

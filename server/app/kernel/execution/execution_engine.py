@@ -133,6 +133,21 @@ def _build_result_summary(tool_name: str, data: Dict[str, Any]) -> str:
             if rt == "scraped_content":
                 pages = data.get("scraped_content", [])
                 return f"Gathered content from {len(pages)} pages"
+        if t == "organize_day":
+            s = data.get("summary", {})
+            parts = []
+            email = s.get("email", {})
+            cal = s.get("calendar", {})
+            slack = s.get("slack", {})
+            if email:
+                unread = email.get("unread_count", 0)
+                parts.append(f"Emails: {unread} unread")
+            if cal:
+                count = cal.get("event_count", 0)
+                parts.append(f"Calendar: {count} events")
+            if slack and slack.get("connected"):
+                parts.append("Slack: connected")
+            return " \u00b7 ".join(parts) if parts else ""
         if t == "ai_summarize":
             summary = data.get("summary", "")
             if summary:
@@ -468,7 +483,7 @@ class ExecutionEngine:
                 await self._check_and_replan(user_id, job_id, state)
 
                 # Emit lightweight progress snapshot for UI/agent listeners
-                progress = await self.orchestrator.get_execution_summary(user_id)
+                progress = await self.orchestrator.get_execution_summary(user_id, job_id=job_id)
                 progress["job_id"] = job_id
                 await _emit_progress_event(user_id, progress)
 
@@ -496,7 +511,7 @@ class ExecutionEngine:
                 logger.info(f"Completion event signaled for {engine_key}")
 
             # Update job coordinator
-            summary = await self.orchestrator.get_execution_summary(user_id)
+            summary = await self.orchestrator.get_execution_summary(user_id, job_id=job_id)
             if summary.get("failed", 0) > 0:
                 get_job_coordinator().update_status(user_id, job_id, JobStatus.FAILED)
             else:
@@ -782,7 +797,17 @@ class ExecutionEngine:
             if not state:
                 raise RuntimeError(f"No execution state for task {task.task_id}")
 
-            can_resolve, error = self.binding_resolver.validate_bindings(task, state)
+            # Retry binding validation to handle race conditions where dependencies just completed
+            can_resolve, error = False, None
+            max_retries = 3
+            for attempt in range(max_retries):
+                can_resolve, error = self.binding_resolver.validate_bindings(task, state)
+                if can_resolve:
+                    break
+                if attempt < max_retries - 1:
+                    logger.warning(f"Binding validation failed (attempt {attempt + 1}/{max_retries}): {error}. Retrying...")
+                    await asyncio.sleep(0.1)  # Small delay for state propagation
+            
             if not can_resolve:
                 raise ValueError(f"Cannot resolve bindings: {error}")
 
@@ -933,7 +958,13 @@ class ExecutionEngine:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output, job_id=job_id)
                 result_summary = _build_result_summary(task.tool, output.data or {})
                 display_msg = result_summary or f"✓ {task.tool} completed"
-                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=task.duration_ms, message=display_msg, result_summary=result_summary)
+                
+                # For tools that need full output in UI (ai_summarize, etc), emit complete data
+                _FULL_OUTPUT_TOOLS = {"ai_summarize", "web_research", "notion_read_page", "organize_day", "content_generate"}
+                if task.tool in _FULL_OUTPUT_TOOLS:
+                    await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data=output.data, duration_ms=task.duration_ms, message=display_msg, result_summary=result_summary)
+                else:
+                    await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=task.duration_ms, message=display_msg, result_summary=result_summary)
                 get_tool_context_service().record_tool_output(
                     user_id=user_id, task_id=task.task_id, tool_name=task.tool,
                     output_data=output.data, success=True,
@@ -1047,7 +1078,17 @@ class ExecutionEngine:
             if not state:
                 raise RuntimeError(f"No execution state for task {task.task_id}")
 
-            can_resolve, error = self.binding_resolver.validate_bindings(task, state)
+            # Retry binding validation to handle race conditions where dependencies just completed
+            can_resolve, error = False, None
+            max_retries = 3
+            for attempt in range(max_retries):
+                can_resolve, error = self.binding_resolver.validate_bindings(task, state)
+                if can_resolve:
+                    break
+                if attempt < max_retries - 1:
+                    logger.warning(f"Binding validation failed (attempt {attempt + 1}/{max_retries}): {error}. Retrying...")
+                    await asyncio.sleep(0.1)  # Small delay for state propagation
+            
             if not can_resolve:
                 raise ValueError(f"Cannot resolve bindings: {error}")
 
@@ -1106,7 +1147,13 @@ class ExecutionEngine:
                 await self.orchestrator.mark_task_completed(user_id, task.task_id, output, job_id=job_id)
                 result_summary = _build_result_summary(task.tool, output.data or {})
                 display_msg = result_summary or f"✓ {task.tool} completed"
-                await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=latency_ms, message=display_msg, result_summary=result_summary)
+                
+                # For tools that need full output in UI (ai_summarize, etc), emit complete data
+                _FULL_OUTPUT_TOOLS = {"ai_summarize", "web_research", "notion_read_page", "organize_day", "content_generate"}
+                if task.tool in _FULL_OUTPUT_TOOLS:
+                    await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data=output.data, duration_ms=latency_ms, message=display_msg, result_summary=result_summary)
+                else:
+                    await _emit_tool_detail(user_id, "tool_output", task.task_id, task.tool, job_id=job_id, success=True, data={k: str(v)[:100] for k, v in list((output.data or {}).items())[:6]}, duration_ms=latency_ms, message=display_msg, result_summary=result_summary)
                 await emit_kernel_event(
                     KernelEvent(
                         event_type="tool_invoked",
@@ -1324,7 +1371,7 @@ class ExecutionEngine:
     
     async def _print_final_summary(self, user_id: str, *, job_id: str = ""):
         """Print execution summary"""
-        summary = await self.orchestrator.get_execution_summary(user_id)
+        summary = await self.orchestrator.get_execution_summary(user_id, job_id=job_id or None)
         summary_payload: Dict[str, Any] = dict(summary)
 
         logger.info("\n" + "="*70)

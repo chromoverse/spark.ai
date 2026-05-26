@@ -37,6 +37,35 @@ _WEIGHTS: Dict[str, Dict[str, float]] = {
         "review_count": 0.30,
         "relevance": 0.20,
     },
+    "person": {
+        "relevance": 0.70,
+        "rating": 0.30,
+    },
+    "movie": {
+        "rating": 0.45,
+        "review_count": 0.25,
+        "relevance": 0.30,
+    },
+    "event": {
+        "relevance": 0.50,
+        "price": 0.30,
+        "rating": 0.20,
+    },
+    "college": {
+        "rating": 0.40,
+        "relevance": 0.40,
+        "review_count": 0.20,
+    },
+    "place": {
+        "rating": 0.45,
+        "review_count": 0.25,
+        "relevance": 0.30,
+    },
+    "flight": {
+        "price": 0.50,
+        "relevance": 0.30,
+        "rating": 0.20,
+    },
 }
 
 _DEFAULT_WEIGHTS = {"rating": 0.5, "review_count": 0.3, "relevance": 0.2}

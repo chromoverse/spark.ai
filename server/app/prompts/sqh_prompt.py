@@ -255,8 +255,20 @@ def build_user_message(
         category_rules_parts.append("""FILE_CREATE: inputs.content MUST be a plain text string (never list/dict). inputs.path MUST include file extension. Format structured data as readable text before passing.""")
 
     if "web_research" in tool_set:
-        category_rules_parts.append("""WEB RESEARCH: Pure data-gathering, no summarization. MUST set: formatted_queries (1-3 optimized search strings), intent (factual_lookup|research|hotel_search|product_search|restaurant_search|local_service).
-For entity intents: set entity_schema (hotel|product|restaurant|local_business). No site: operators in queries.
+        category_rules_parts.append("""WEB RESEARCH: Pure data-gathering, no summarization. MUST set: formatted_queries (1-3 optimized search strings), intent.
+Intents: factual_lookup | research | hotel_search | product_search | restaurant_search | local_service | person_search | movie_search | event_search | college_search | place_search | flight_search.
+For entity intents: set entity_schema (hotel|product|restaurant|local_business|person|movie|event|college|place|flight). No site: operators in queries.
+Intent mapping:
+- "hotels/hostels/places to stay in X" → hotel_search, entity_schema=hotel
+- "buy X"/"price of X"/"X on amazon" → product_search, entity_schema=product
+- "restaurants/where to eat in X" → restaurant_search, entity_schema=restaurant
+- "hospitals/gyms/clinics/plumbers near me" → local_service, entity_schema=local_business
+- "who is X"/"X biography"/"tell me about [person name]" → person_search, entity_schema=person
+- "X movie"/"best movies"/"X TV show"/"what to watch" → movie_search, entity_schema=movie
+- "events in X"/"concerts"/"X festival"/"upcoming shows" → event_search, entity_schema=event
+- "best colleges for X"/"X university"/"engineering colleges in X" → college_search, entity_schema=college
+- "places to visit in X"/"X attractions"/"things to do in X" → place_search, entity_schema=place
+- "flights to X"/"X to Y flights"/"cheapest flight" → flight_search, entity_schema=flight
 research intent→ALWAYS chain ai_summarize after (bind context to $.step.data.text).
 *_search/local_service/factual_lookup→web_research alone is enough.
 "near me"→plan current_location(client)→web_research(server) with input_bindings location=$.step_1.data.location_string. In formatted_queries, replace "near me" with the actual city name from location (e.g., "hospital near me" → "hospital Kathmandu").""")

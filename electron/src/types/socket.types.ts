@@ -229,6 +229,20 @@ export interface SparkLogPayload {
   timestamp: string;
 }
 
+export interface ApprovalRequestPayload {
+  task_id: string;
+  question: string;
+  tool_name: string;
+  inputs?: Record<string, unknown>;
+}
+
+export interface ApprovalResponsePayload {
+  task_id: string;
+  approved: boolean;
+  edited_inputs?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface SocketEvents {
   // ========= Client → Server Events =========
   register_user: (userId: string) => void;
@@ -280,6 +294,8 @@ export interface SocketEvents {
   "server-status": (data: ServerStatus) => void;
   "spark:log": (data: SparkLogPayload) => void;
   "spark:control": (data: SparkControlPayload) => void;
+  "task:approval:request": (data: ApprovalRequestPayload) => void;
+  "task:approval:response": (data: ApprovalResponsePayload) => void;
   "job:started": (data: { job_id: string; goal: string }) => void;
   "tool:output": (data: { success?: boolean; output?: { data?: Record<string, unknown>; tool?: string; task_id?: string; job_id?: string } }) => void;
   processing: (data: any) => void;

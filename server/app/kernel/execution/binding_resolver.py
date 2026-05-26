@@ -173,12 +173,15 @@ class BindingResolver:
             dep_task = state.get_task(task_id)
             
             if not dep_task:
+                logger.warning(f"Dependency task not found: {task_id} in state {state.execution_id}. Available tasks: {list(state.tasks.keys())}")
                 return False, f"Dependency not found: {task_id}"
             
             if dep_task.status != "completed":
-                return False, f"Dependency not completed: {task_id}"
+                logger.warning(f"Dependency task {task_id} status: {dep_task.status}, expected: completed")
+                return False, f"Dependency not completed: {task_id} (status: {dep_task.status})"
             
             if not dep_task.output or not dep_task.output.success:
+                logger.warning(f"Dependency task {task_id} failed or has no output")
                 return False, f"Dependency failed: {task_id}"
         
         return True, None

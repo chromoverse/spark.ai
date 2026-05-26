@@ -57,6 +57,10 @@ desktop.ini
 ehthumbs.db
 $RECYCLE.BIN/
 
+landing_videos_animations
+
+ui_insp
+
 # ---- Editors / IDEs ------------------------------------------------
 .idea/
 *.swp

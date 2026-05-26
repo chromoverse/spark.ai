@@ -48,6 +48,12 @@ _VALID_INTENTS = {
     "product_search",
     "restaurant_search",
     "local_service",
+    "person_search",
+    "movie_search",
+    "event_search",
+    "college_search",
+    "place_search",
+    "flight_search",
 }
 
 _ENTITY_INTENT_MAP = {
@@ -55,6 +61,25 @@ _ENTITY_INTENT_MAP = {
     "product_search": "product",
     "restaurant_search": "restaurant",
     "local_service": "local_business",
+    "person_search": "person",
+    "movie_search": "movie",
+    "event_search": "event",
+    "college_search": "college",
+    "place_search": "place",
+    "flight_search": "flight",
+}
+
+_TYPE_LABELS = {
+    "hotel": "Hotel",
+    "product": "Product",
+    "restaurant": "Restaurant",
+    "local_business": "Local Business",
+    "person": "Person",
+    "movie": "Movie / Show",
+    "event": "Event",
+    "college": "College",
+    "place": "Place",
+    "flight": "Flight",
 }
 
 # Hard caps so this tool can never block the server indefinitely.
@@ -77,6 +102,7 @@ _MAX_PARALLEL_SEARCHES = 2
 _MAX_QUERIES = 3
 _SCRAPE_TIMEOUT_S = 35.0
 _EXTRACT_TIMEOUT_S = 20.0
+_IMAGE_ENRICH_TIMEOUT_S = 25.0   # budget for post-extraction nodriver image enrichment
 _TOTAL_TIMEOUT_S = 75.0
 
 # Site-scoped fallback queries appended when an entity search returns thin
@@ -93,6 +119,30 @@ _SCRAPEABLE_SITE_QUERIES: Dict[str, List[str]] = {
     ],
     "local_service": [
         "{location} {query} near me reviews",
+    ],
+    "person_search": [
+        "{query} biography wikipedia",
+        "{query} imdb OR linkedin profile",
+    ],
+    "movie_search": [
+        "site:imdb.com {query}",
+        "{query} movie review rating cast rotten tomatoes OR metacritic",
+    ],
+    "event_search": [
+        "{location} events {query} 2026",
+        "{query} tickets {location} bookmyshow OR eventbrite",
+    ],
+    "college_search": [
+        "{query} college university ranking admission fees {location}",
+        "site:collegedunia.com OR site:shiksha.com {query}",
+    ],
+    "place_search": [
+        "{query} tourist attraction things to do {location}",
+        "site:tripadvisor.com {query} {location} attractions",
+    ],
+    "flight_search": [
+        "{query} flight price schedule airline",
+        "{query} flights skyscanner OR google flights",
     ],
 }
 
@@ -135,8 +185,8 @@ class WebResearchTool(BaseTool):
     TOOL_DESCRIPTION = (
         "Gathers raw web data for a query. Returns search snippets, scraped "
         "page content, or structured entities (hotels, products, restaurants, "
-        "local businesses like hospitals/clinics/gyms) depending on intent. "
-        "Does NOT summarize — chain ai_summarize after for prose answers."
+        "local businesses, people, movies/shows, events, colleges, places, flights) "
+        "depending on intent. Does NOT summarize — chain ai_summarize after for prose answers."
     )
     EXECUTION_TARGET = "server"
     PARAMS_SCHEMA: Dict[str, Any] = {
@@ -151,7 +201,10 @@ class WebResearchTool(BaseTool):
         "entity_schema": {
             "type": "string",
             "required": False,
-            "enum": ["hotel", "product", "restaurant", "local_business"],
+            "enum": [
+                "hotel", "product", "restaurant", "local_business",
+                "person", "movie", "event", "college", "place", "flight",
+            ],
         },
         "location": {
             "type": "string",
@@ -311,6 +364,55 @@ class WebResearchTool(BaseTool):
             entity_schema + "_search",
         )
 
+        # ── Fast path: OpenCLI browser agent ────────────────────────────────
+        # For any entity intent with registered site adapters, try the
+        # Playwright browser agent first — it navigates live sites, fills
+        # search forms, and extracts structured DOM nodes directly.
+        # No search queries, no LLM, no scraping.
+        # Falls back silently to the standard search→scrape→extract path below.
+        from .browser_agent import BrowserAgent, SITE_REGISTRY as _BA_REGISTRY
+        if intent_key in _BA_REGISTRY:
+            _intent_label = intent_key.replace("_", " ")
+            await _emit(
+                user_id, task_id, "browser_agent",
+                f"Opening live browser agent for {_intent_label}…",
+            )
+            ba_entities, ba_sources = await BrowserAgent.run(
+                intent=intent_key,
+                location=location,
+                query=query,
+                max_results=max_results,
+                user_id=user_id,
+                task_id=task_id,
+            )
+            if ba_entities:
+                from .ranker import rank_entities
+                ranked = rank_entities(ba_entities, entity_schema, query)
+                _enrich_maps_urls(ranked, location)
+                _enrich_type_labels(ranked, entity_schema)
+                # Enrich images for entities that the browser adapter couldn't capture
+                await _enrich_images_nodriver(ranked, top_n=5, user_id=user_id, task_id=task_id)
+                await _emit(
+                    user_id, task_id, "complete",
+                    f"Done — {len(ranked[:15])} results via browser agent",
+                    count=len(ranked[:15]),
+                )
+                actions: List[Dict[str, Any]] = _build_actions(entity_schema)
+                return ToolOutput(
+                    success=True,
+                    data=_build_response(
+                        intent_key, "entities",
+                        entities=ranked[:15],
+                        sources=ba_sources,
+                        actions=actions,
+                    ),
+                )
+            await _emit(
+                user_id, task_id, "browser_fallback",
+                "Browser agent returned no results — falling back to web search",
+            )
+        # ── End fast path ────────────────────────────────────────────────────
+
         # Build site-scoped fallback queries (kept here, not in SQH)
         fallback_templates = _SCRAPEABLE_SITE_QUERIES.get(intent_key, [])
         loc = location or query
@@ -348,7 +450,8 @@ class WebResearchTool(BaseTool):
             url_count=min(len(urls), max_results),
             urls=[{"url": u, "domain": urlparse(u).netloc.replace("www.", "")} for u in urls[:max_results]],
         )
-        scraped = await self._scrape_urls(urls, max_results, max_chars)
+        # Entity pages are often JS-rendered — use nodriver so we capture real images
+        scraped = await self._scrape_urls(urls, max_results, max_chars, use_nodriver=True)
         scraped_with_text = [s for s in scraped if s.get("text")]
         await _emit(
             user_id, task_id, "scrape_complete",
@@ -398,11 +501,15 @@ class WebResearchTool(BaseTool):
         from .ranker import rank_entities
         ranked = rank_entities(entities, entity_schema, query)
 
-        # 5. Image enrichment
+        # 5. Image enrichment — pull from scraped HTML first, then nodriver for gaps
         _enrich_images_from_scraped(ranked, scraped)
+        await _enrich_images_nodriver(ranked, top_n=5, user_id=user_id, task_id=task_id)
 
         # 6. Map links — pure string construction, no API calls
         _enrich_maps_urls(ranked, location)
+
+        # 7. Type labels for UI display
+        _enrich_type_labels(ranked, entity_schema)
 
         # Append scraped pages as additional sources
         for item in scraped:
@@ -416,9 +523,7 @@ class WebResearchTool(BaseTool):
             count=len(ranked[:15]),
         )
 
-        actions: List[Dict[str, Any]] = []
-        if entity_schema == "hotel":
-            actions.append({"type": "book", "available": True})
+        actions: List[Dict[str, Any]] = _build_actions(entity_schema)
 
         return ToolOutput(
             success=True,
@@ -568,18 +673,23 @@ class WebResearchTool(BaseTool):
         urls: List[str],
         max_results: int,
         max_chars: int,
+        use_nodriver: bool = False,
     ) -> List[Dict]:
-        """Scrape via WebScrapeTool (it already runs internal page fetches in parallel).
+        """Scrape via WebScrapeTool. Pass use_nodriver=True for entity pages to get
+        rendered images from real Chrome instead of Playwright's image-blocked path.
 
-        Wrapped in ``asyncio.wait_for`` so a hung Playwright launch (the JS-heavy
-        fallback path is known to fail on Windows with NotImplementedError, but
-        can also hang on slow JS-heavy sites) cannot stall the whole tool.
+        Wrapped in asyncio.wait_for so a hung Chrome/Playwright launch cannot
+        stall the whole tool.
         """
         scrape_tool = WebScrapeTool(max_chars=max_chars)
         try:
             scrape_result = await asyncio.wait_for(
                 scrape_tool._execute(
-                    {"base_links": urls[:max_results], "max_results": max_results}
+                    {
+                        "base_links": urls[:max_results],
+                        "max_results": max_results,
+                        "use_nodriver": use_nodriver,
+                    }
                 ),
                 timeout=_SCRAPE_TIMEOUT_S,
             )
@@ -622,6 +732,64 @@ def _enrich_images_from_scraped(
         if picks:
             entity["images"] = picks
             used.update(picks)
+
+
+# ── nodriver post-extraction image enrichment ───────────────────────────────
+
+async def _enrich_images_nodriver(
+    entities: List[Dict],
+    top_n: int = 5,
+    user_id: str = "",
+    task_id: str = "",
+) -> None:
+    """Visit source_url of top entities that still lack images via nodriver.
+
+    Gated: only runs if the average images-per-entity across the list is < 2,
+    meaning we actually need more images. Only enriches the top `top_n` ranked
+    entities. Total budget is _IMAGE_ENRICH_TIMEOUT_S (shared across all fetches).
+    """
+    if not entities:
+        return
+    avg_images = sum(len(e.get("images") or []) for e in entities) / len(entities)
+    if avg_images >= 2:
+        return
+
+    targets = [
+        e for e in entities[:top_n]
+        if e.get("source_url") and not e.get("images")
+    ]
+    if not targets:
+        return
+
+    await _emit(user_id, task_id, "image_enrichment",
+                f"Fetching images for {len(targets)} entities…",
+                count=len(targets))
+
+    from .scrape import WebScrapeTool
+    scrape_tool = WebScrapeTool()
+
+    async def _fetch_one(entity: Dict) -> None:
+        url = entity.get("source_url", "")
+        if not url:
+            return
+        try:
+            result = await asyncio.wait_for(
+                scrape_tool._scrape_nodriver(url),
+                timeout=15.0,
+            )
+            imgs = result.get("images", [])
+            if imgs:
+                entity["images"] = imgs[:3]
+        except Exception as exc:
+            _log.debug("image enrichment failed for %s: %s", url, exc)
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*[_fetch_one(e) for e in targets]),
+            timeout=_IMAGE_ENRICH_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        _log.warning("image enrichment timed out (>%.0fs)", _IMAGE_ENRICH_TIMEOUT_S)
 
 
 # ── Maps URL enrichment ─────────────────────────────────────────────────────
@@ -673,12 +841,54 @@ _NEAR_ME_RE = re.compile(
 
 
 def _inject_location(text: str, location: str) -> str:
-    """Replace 'near me' / 'nearby' / 'near my location' with the actual city name."""
-    city_part = location.split(",")[0].strip()
-    if city_part.lower() in text.lower():
-        return text  # already baked in, don't double-inject
-    # Replace "near me" patterns with just the city name (better for search engines)
-    return _NEAR_ME_RE.sub(city_part, text)
+    """Replace 'near me' / 'nearby' patterns and qualify city-only mentions with country.
+
+    Two passes:
+    1. Substitute 'near me' / 'nearby' / 'near my location' with 'City, Country'
+       so DDGS gets an unambiguous place name (not just a bare city that could
+       match a similarly-named place in another country — e.g. Janakpur → Jaipur).
+    2. If the query already names the city but omits the country, append the
+       country so search engines don't autocorrect to a more-popular homonym.
+    """
+    parts = [p.strip() for p in location.split(",") if p.strip()]
+    city_part    = parts[0] if parts else location
+    country_part = parts[-1] if len(parts) >= 2 else ""
+
+    # Use "City, Country" as the substitution target so the search is unambiguous
+    qualified = f"{city_part}, {country_part}" if country_part else city_part
+
+    # Pass 1 — replace "near me" / "nearby" patterns
+    result = text
+    if _NEAR_ME_RE.search(text):
+        result = _NEAR_ME_RE.sub(qualified, text)
+
+    # Pass 2 — city is mentioned but country is not → append country
+    if (city_part.lower() in result.lower()
+            and country_part
+            and country_part.lower() not in result.lower()):
+        result = f"{result} {country_part}"
+
+    return result
+
+
+# ── Type label enrichment ───────────────────────────────────────────────────
+
+def _enrich_type_labels(entities: List[Dict], entity_schema: str) -> None:
+    label = _TYPE_LABELS.get(entity_schema, entity_schema.replace("_", " ").title())
+    for e in entities:
+        if not e.get("type_label"):
+            e["type_label"] = label
+
+
+# ── Actions builder ─────────────────────────────────────────────────────────
+
+def _build_actions(entity_schema: str) -> List[Dict[str, Any]]:
+    actions: List[Dict[str, Any]] = []
+    if entity_schema in ("hotel", "restaurant", "event", "flight"):
+        actions.append({"type": "book", "available": True})
+    elif entity_schema == "product":
+        actions.append({"type": "buy", "available": True})
+    return actions
 
 
 # ── Response builder ────────────────────────────────────────────────────────

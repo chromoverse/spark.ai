@@ -2,7 +2,8 @@
 Entity data contracts for web_research structured extraction.
 
 Each model maps to one entity_schema value SQH can pass to web_research:
-  hotel | product | restaurant | local_business
+  hotel | product | restaurant | local_business |
+  person | movie | event | college | place | flight
 """
 
 from __future__ import annotations
@@ -76,11 +77,113 @@ class LocalBusinessEntity(BaseModel):
     source_url: Optional[str] = None
 
 
+class PersonEntity(BaseModel):
+    type: str = "person"
+    name: str
+    title: Optional[str] = None
+    born: Optional[str] = None
+    nationality: Optional[str] = None
+    known_for: Optional[str] = None
+    bio: Optional[str] = None
+    images: List[str] = Field(default_factory=list)
+    website: Optional[str] = None
+    social_links: List[str] = Field(default_factory=list)
+    source_url: Optional[str] = None
+
+
+class MovieShowEntity(BaseModel):
+    type: str = "movie"
+    name: str
+    year: Optional[str] = None
+    genre: Optional[str] = None
+    rating: Optional[float] = None
+    review_count: Optional[int] = None
+    director: Optional[str] = None
+    cast: List[str] = Field(default_factory=list)
+    runtime: Optional[str] = None
+    plot: Optional[str] = None
+    streaming_on: List[str] = Field(default_factory=list)
+    images: List[str] = Field(default_factory=list)
+    trailer_url: Optional[str] = None
+    source_url: Optional[str] = None
+
+
+class EventEntity(BaseModel):
+    type: str = "event"
+    name: str
+    date: Optional[str] = None
+    time: Optional[str] = None
+    venue: Optional[str] = None
+    address: Optional[str] = None
+    price: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    images: List[str] = Field(default_factory=list)
+    booking_url: Optional[str] = None
+    maps_url: Optional[str] = None
+    source_url: Optional[str] = None
+
+
+class CollegeEntity(BaseModel):
+    type: str = "college"
+    name: str
+    location: Optional[str] = None
+    ranking: Optional[str] = None
+    rating: Optional[float] = None
+    review_count: Optional[int] = None
+    type_label: Optional[str] = None
+    programs: List[str] = Field(default_factory=list)
+    tuition: Optional[str] = None
+    acceptance_rate: Optional[str] = None
+    description: Optional[str] = None
+    images: List[str] = Field(default_factory=list)
+    website: Optional[str] = None
+    maps_url: Optional[str] = None
+    source_url: Optional[str] = None
+
+
+class PlaceEntity(BaseModel):
+    type: str = "place"
+    name: str
+    location: Optional[str] = None
+    rating: Optional[float] = None
+    review_count: Optional[int] = None
+    category: Optional[str] = None
+    hours: Optional[str] = None
+    price: Optional[str] = None
+    description: Optional[str] = None
+    images: List[str] = Field(default_factory=list)
+    maps_url: Optional[str] = None
+    website: Optional[str] = None
+    source_url: Optional[str] = None
+
+
+class FlightEntity(BaseModel):
+    type: str = "flight"
+    name: str
+    airline: Optional[str] = None
+    departure: Optional[str] = None
+    arrival: Optional[str] = None
+    duration: Optional[str] = None
+    price: Optional[str] = None
+    stops: Optional[str] = None
+    aircraft: Optional[str] = None
+    images: List[str] = Field(default_factory=list)
+    booking_url: Optional[str] = None
+    source_url: Optional[str] = None
+
+
 ENTITY_SCHEMA_MAP = {
     "hotel": HotelEntity,
     "product": ProductEntity,
     "restaurant": RestaurantEntity,
     "local_business": LocalBusinessEntity,
+    "person": PersonEntity,
+    "movie": MovieShowEntity,
+    "event": EventEntity,
+    "college": CollegeEntity,
+    "place": PlaceEntity,
+    "flight": FlightEntity,
 }
 
 ENTITY_FIELD_DESCRIPTIONS = {
@@ -99,5 +202,37 @@ ENTITY_FIELD_DESCRIPTIONS = {
     "local_business": (
         "Extract: name, category, rating (0-5 float), review_count, address, "
         "phone, hours, website, description."
+    ),
+    "person": (
+        "Extract: name, title (role/occupation e.g. 'Actor', 'CEO'), born (date or year), "
+        "nationality, known_for (brief phrase), bio (1-2 sentences), website, social_links (list of URLs)."
+    ),
+    "movie": (
+        "Extract: name (film/show title), year, genre, rating (0-10 float from IMDb/RT), "
+        "review_count, director, cast (list of actor names), runtime (e.g. '2h 15m'), "
+        "plot (1-2 sentences), streaming_on (list e.g. ['Netflix','Prime']), trailer_url."
+    ),
+    "event": (
+        "Extract: name, date (e.g. 'June 15, 2026'), time, venue (venue name), "
+        "address, price (ticket price string), description, "
+        "category (concert/conference/festival/sports/etc), booking_url."
+    ),
+    "college": (
+        "Extract: name, location (city/state/country), ranking (e.g. '#5 in India'), "
+        "rating (0-5 float), type_label (Private/Public/IIT/NIT/etc), "
+        "programs (list of offered degrees/fields), tuition (fee string), "
+        "acceptance_rate (e.g. '12%'), description, website."
+    ),
+    "place": (
+        "Extract: name, location (city/country), rating (0-5 float), review_count, "
+        "category (temple/park/museum/beach/fort/etc), hours (opening hours), "
+        "price (entry fee if any), description (1-2 sentences), website."
+    ),
+    "flight": (
+        "Extract: name (airline + flight number or route e.g. 'Air India AI-814'), "
+        "airline, departure (airport code + time e.g. 'DEL 06:30 AM'), "
+        "arrival (airport code + time), duration (e.g. '2h 15m'), "
+        "price (fare string), stops (e.g. 'Non-stop' or '1 stop via HYD'), "
+        "aircraft (e.g. 'Boeing 737'), booking_url."
     ),
 }

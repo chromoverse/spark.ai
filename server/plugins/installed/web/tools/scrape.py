@@ -1,8 +1,9 @@
 """
-pip install httpx trafilatura playwright
+pip install httpx trafilatura playwright nodriver
 playwright install chromium
 """
 import asyncio
+import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,17 @@ GITHUB_API_BASE = "https://api.github.com/users/"
 # Trafilatura config: be generous, grab everything
 _trafilatura_cfg = use_config()
 _trafilatura_cfg.set("DEFAULT", "EXTRACTION_TIMEOUT", "0")
+
+# nodriver (real Chrome) constants — shared semaphore caps Chrome instances globally
+_NODRIVER_TIMEOUT_S = 20.0
+_nodriver_sem: Optional[asyncio.Semaphore] = None
+
+
+def _get_nodriver_sem() -> asyncio.Semaphore:
+    global _nodriver_sem
+    if _nodriver_sem is None:
+        _nodriver_sem = asyncio.Semaphore(2)
+    return _nodriver_sem
 
 # Sites that need a real browser (JS-rendered)
 JS_DOMAINS = {
@@ -79,6 +91,7 @@ class WebScrapeTool(BaseTool):
         "base_links": {"type": "array", "required": True},
         "query": {"type": "string", "required": False},
         "max_results": {"type": "integer", "required": False, "default": 10},
+        "use_nodriver": {"type": "boolean", "required": False, "default": False},
     }
     OUTPUT_SCHEMA: Dict[str, Any] = {
         "success": {"type": "boolean"},
@@ -114,11 +127,12 @@ class WebScrapeTool(BaseTool):
         base_links: List[str] = self.get_input(inputs, "base_links", [])
         max_results: int = self.get_input(inputs, "max_results", 10)
         _query: Optional[str] = self.get_input(inputs, "query", None)
+        use_nodriver: bool = bool(self.get_input(inputs, "use_nodriver", False))
 
         if not base_links:
             return ToolOutput(success=False, data={}, error="'base_links' must be a non-empty array.")
 
-        results = await self._scrape_all(base_links[:max_results])
+        results = await self._scrape_all(base_links[:max_results], use_nodriver=use_nodriver)
 
         elapsed = round((time.time() * 1000) - start_ms, 2)
         return ToolOutput(
@@ -134,24 +148,42 @@ class WebScrapeTool(BaseTool):
     # Parallel scraping — fully async, no threads
     # ------------------------------------------------------------------
 
-    async def _scrape_all(self, urls: List[str]) -> List[Dict[str, Any]]:
+    async def _scrape_all(self, urls: List[str], use_nodriver: bool = False) -> List[Dict[str, Any]]:
         sem = asyncio.Semaphore(self.max_workers)
 
         async def bounded(url: str) -> Dict[str, Any]:
             async with sem:
-                return await self._scrape_one(url)
+                return await self._scrape_one(url, use_nodriver=use_nodriver)
 
         return await asyncio.gather(*[bounded(u) for u in urls])
 
-    async def _scrape_one(self, url: str) -> Dict[str, Any]:
+    async def _scrape_one(self, url: str, use_nodriver: bool = False) -> Dict[str, Any]:
         try:
             domain = _extract_domain(url)
             if any(d in domain for d in API_DOMAINS):
                 data = await self._scrape_github(url)
-            elif any(d in domain for d in JS_DOMAINS):
-                data = await self._scrape_playwright(url)
             else:
-                data = await self._scrape_httpx(url)
+                nd_images: List[str] = []
+                data = None
+
+                # Try nodriver first if requested (gets real rendered images)
+                if use_nodriver:
+                    nd_data = await self._scrape_nodriver(url)
+                    nd_images = nd_data.get("images", [])
+                    if nd_data.get("text", "").strip():
+                        data = nd_data
+
+                # Fall back to standard strategy if nodriver got no text
+                if data is None:
+                    if any(d in domain for d in JS_DOMAINS):
+                        data = await self._scrape_playwright(url)
+                    else:
+                        data = await self._scrape_httpx(url)
+                    # Merge nodriver images into fallback result (nodriver captures
+                    # rendered images that httpx/playwright-with-images-disabled miss)
+                    if nd_images and not data.get("images"):
+                        data["images"] = nd_images
+
             return {"url": url, "success": True, **data}
         except Exception as exc:
             logger.error(f"Error scraping {url}: {exc}")
@@ -279,7 +311,103 @@ class WebScrapeTool(BaseTool):
         return {"title": title, "text": text[: self.max_chars], "links": links[:50], "images": images}
 
     # ------------------------------------------------------------------
-    # Strategy 3: GitHub REST API
+    # Strategy 3: nodriver — real Chrome, images enabled, no webdriver flag
+    # ------------------------------------------------------------------
+
+    async def _scrape_nodriver(self, url: str) -> Dict[str, Any]:
+        """Scrape via real headless Chrome (nodriver). Images are enabled so
+        entity cards get actual photos instead of placeholder icons."""
+        try:
+            return await asyncio.wait_for(
+                self._scrape_nodriver_inner(url),
+                timeout=_NODRIVER_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("nodriver timed out (>%.0fs) for %s", _NODRIVER_TIMEOUT_S, url)
+            return {"title": "", "text": "", "links": [], "images": []}
+        except Exception as exc:
+            logger.warning("nodriver error for %s: %s", url, exc)
+            return {"title": "", "text": "", "links": [], "images": []}
+
+    async def _scrape_nodriver_inner(self, url: str) -> Dict[str, Any]:
+        import nodriver as uc
+        async with _get_nodriver_sem():
+            browser = await uc.start(headless=True)
+            try:
+                page = await browser.get(url)
+                await asyncio.sleep(2)
+
+                # Single JS round-trip: title + rendered images + HTML
+                payload_raw = await page.evaluate("""JSON.stringify((() => {
+                    const title = document.title || '';
+
+                    const imgs = [];
+                    const seen = new Set();
+
+                    // OG / Twitter meta images first (highest quality)
+                    const og = document.querySelector('meta[property="og:image"]')?.content;
+                    if (og && og.startsWith('http')) { seen.add(og); imgs.push(og); }
+                    const tw = document.querySelector('meta[name="twitter:image"]')?.content;
+                    if (tw && tw.startsWith('http') && !seen.has(tw)) { seen.add(tw); imgs.push(tw); }
+
+                    for (const img of document.querySelectorAll('img')) {
+                        if (imgs.length >= 10) break;
+                        const src = img.currentSrc || img.src || '';
+                        if (!src || src.startsWith('data:') || seen.has(src)) continue;
+                        if (!src.startsWith('http')) continue;
+                        if (img.naturalWidth < 50 || img.naturalHeight < 50) continue;
+                        const low = src.toLowerCase();
+                        if (['logo','icon','sprite','pixel','1x1','blank','placeholder'].some(s => low.includes(s))) continue;
+                        if (low.endsWith('.svg') || low.endsWith('.ico') || low.endsWith('.gif')) continue;
+                        seen.add(src);
+                        imgs.push(src);
+                    }
+
+                    const html = document.documentElement.outerHTML;
+                    return { title, imgs, html };
+                })())""")
+
+                images: List[str] = []
+                title = ""
+                html = ""
+
+                try:
+                    payload = json.loads(payload_raw) if isinstance(payload_raw, str) else (payload_raw or {})
+                    if isinstance(payload, dict):
+                        title = str(payload.get("title") or "")
+                        images = [i for i in (payload.get("imgs") or []) if isinstance(i, str)][:10]
+                        html = str(payload.get("html") or "")
+                except Exception:
+                    pass
+
+                text = ""
+                if html:
+                    text = await run_in_executor(
+                        trafilatura.extract,
+                        html,
+                        config=_trafilatura_cfg,
+                        include_tables=True,
+                        favor_recall=True,
+                    ) or ""
+                    if len(text.strip()) < 100:
+                        text = await run_in_executor(_bs4_fallback, html)
+
+                links = await run_in_executor(_extract_links, html, url) if html else []
+
+                return {
+                    "title": title,
+                    "text": text[: self.max_chars],
+                    "links": links[:50],
+                    "images": images,
+                }
+            finally:
+                try:
+                    browser.stop()
+                except Exception:
+                    pass
+
+    # ------------------------------------------------------------------
+    # Strategy 4: GitHub REST API
     # ------------------------------------------------------------------
 
     async def _scrape_github(self, url: str) -> Dict[str, Any]:

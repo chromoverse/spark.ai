@@ -22,7 +22,16 @@ NOTION_API_BASE = "https://api.notion.com/v1"
 async def _get_token(user_id: str) -> str:
     """Return a valid Notion access token for the user."""
     from app.features.external_service.token_manager import get_valid_access_token
-    return await get_valid_access_token(user_id=user_id, service="notion")
+    try:
+        return await get_valid_access_token(user_id=user_id, service="notion")
+    except RuntimeError as e:
+        # Token is invalid or revoked - provide clear reconnection message
+        error_msg = str(e)
+        if "No active" in error_msg or "Re-auth required" in error_msg or "revoked" in error_msg:
+            raise RuntimeError(
+                "Notion connection is no longer authorized. Please reconnect Notion in Settings > Connectors."
+            ) from e
+        raise
 
 
 def _headers(token: str) -> Dict[str, str]:
@@ -111,9 +120,16 @@ class NotionSearchTool(BaseTool):
                 )
 
             if resp.status_code != 200:
+                error_text = resp.text
+                # Handle 401 unauthorized specifically
+                if resp.status_code == 401:
+                    return ToolOutput(
+                        success=False, data={},
+                        error="Notion connection is no longer authorized. Please reconnect Notion in Settings > Connectors.",
+                    )
                 return ToolOutput(
                     success=False, data={},
-                    error=f"Notion API error {resp.status_code}: {resp.text}",
+                    error=f"Notion API error {resp.status_code}: {error_text}",
                 )
 
             data = resp.json()
@@ -189,11 +205,21 @@ class NotionReadPageTool(BaseTool):
                 )
 
             if page_resp.status_code != 200:
+                if page_resp.status_code == 401:
+                    return ToolOutput(
+                        success=False, data={},
+                        error="Notion connection is no longer authorized. Please reconnect Notion in Settings > Connectors.",
+                    )
                 return ToolOutput(
                     success=False, data={},
                     error=f"Failed to fetch page: {page_resp.status_code}",
                 )
             if blocks_resp.status_code != 200:
+                if blocks_resp.status_code == 401:
+                    return ToolOutput(
+                        success=False, data={},
+                        error="Notion connection is no longer authorized. Please reconnect Notion in Settings > Connectors.",
+                    )
                 return ToolOutput(
                     success=False, data={},
                     error=f"Failed to fetch page content: {blocks_resp.status_code}",
@@ -314,6 +340,11 @@ class NotionCreatePageTool(BaseTool):
                 )
 
             if resp.status_code not in (200, 201):
+                if resp.status_code == 401:
+                    return ToolOutput(
+                        success=False, data={},
+                        error="Notion connection is no longer authorized. Please reconnect Notion in Settings > Connectors.",
+                    )
                 return ToolOutput(
                     success=False, data={},
                     error=f"Failed to create page: {resp.status_code} — {resp.text}",

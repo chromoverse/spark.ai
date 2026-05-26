@@ -19,19 +19,19 @@ class _FakeOrchestrator:
         self.failed: list[tuple[str, str, str]] = []
         self.running: list[tuple[str, str]] = []
 
-    async def mark_task_running(self, user_id: str, task_id: str) -> None:
+    async def mark_task_running(self, user_id: str, task_id: str, **kwargs) -> None:
         self.running.append((user_id, task_id))
 
-    async def mark_task_completed(self, user_id: str, task_id: str, output: TaskOutput) -> None:
+    async def mark_task_completed(self, user_id: str, task_id: str, output: TaskOutput, **kwargs) -> None:
         self.completed.append((user_id, task_id, output))
 
-    async def mark_task_failed(self, user_id: str, task_id: str, error: str) -> None:
+    async def mark_task_failed(self, user_id: str, task_id: str, error: str, **kwargs) -> None:
         self.failed.append((user_id, task_id, error))
 
     def get_state(self, user_id: str, job_id=None):
         return SimpleNamespace(execution_id="test")
 
-    def _find_state_for_task(self, user_id: str, task_id: str):
+    def _find_state_for_task(self, user_id: str, task_id: str, **kwargs):
         return SimpleNamespace(execution_id="test")
 
     def get_task(self, user_id: str, task_id: str):
@@ -62,7 +62,7 @@ class ExecutionEngineFailureHandlingTests(unittest.IsolatedAsyncioTestCase):
         return TaskRecord(
             task=Task(
                 task_id="step_1",
-                tool="message_send",
+                tool="web_search",
                 execution_target="server",
                 inputs={"contact": "daddy", "message": "hello"},
             )

@@ -385,5 +385,28 @@
       "execution_id": "job_8cab1fbc",
       "api_token": "your_api_token_from_predecessor_output"
     }
+  },
+  {
+    "timestamp": "2026-05-25T19:38:51",
+    "tool": "web_search",
+    "task_id": "step_1",
+    "error": "automation failed",
+    "inputs": {
+      "contact": "user_id",
+      "message": "execution_id",
+      "user_id": "contact",
+      "execution_id": "message"
+    }
+  },
+  {
+    "timestamp": "2026-05-25T21:20:37",
+    "tool": "notion_search",
+    "task_id": "step_1",
+    "error": "Notion connection is no longer authorized. Please reconnect Notion in Settings > Connectors.",
+    "inputs": {
+      "user_id": "your_actual_notion_api_key",
+      "query": "tasks",
+      "execution_id": "job_3881b31e"
+    }
   }
 ]

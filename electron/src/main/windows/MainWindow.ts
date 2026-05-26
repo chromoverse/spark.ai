@@ -36,7 +36,7 @@ export class MainWindow {
 
     if (isDevMode()) {
       console.log("Development window");
-      this.window.webContents.openDevTools();
+      // this.window.webContents.openDevTools();
       this.window.loadURL("http://localhost:5123");
     } else {
       console.log("Production window");

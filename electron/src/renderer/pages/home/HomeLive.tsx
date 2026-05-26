@@ -7,7 +7,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppSelector } from "@/store/hooks";
 import { useSocket } from "@/context/socketContextProvider";
-import type { SparkLogPayload } from "@shared/socket.types";
+import type { SparkLogPayload, ApprovalRequestPayload } from "@shared/socket.types";
 import EntityCards, { type EntityCardData } from "@/components/local/home/EntityCards";
 import DriveFileCards, { type DriveFile } from "@/components/local/home/DriveFileCards";
 import WebSearchCards, { type WebSearchData } from "@/components/local/home/WebSearchCards";
@@ -75,12 +75,7 @@ interface QuotaInfo {
   configured_providers: number;
 }
 
-interface ApprovalRequest {
-  task_id: string;
-  question: string;
-  tool_name: string;
-  inputs?: Record<string, unknown>;
-}
+type ApprovalRequest = ApprovalRequestPayload;
 
 function loadThreads(): Thread[] {
   try {
@@ -954,7 +949,7 @@ function buildGreeting(firstName: string, w: WeatherCache | null): { line: strin
 
 // ── Suggestion prompts ───────────────────────────────────────────────────────
 
-const SUGGESTIONS: { label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+const SUGGESTIONS: { label: string; icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }> }[] = [
   { label: "Summarize my unread emails",       icon: Mail      },
   { label: "What's the weather right now?",    icon: Cloud     },
   { label: "Latest news on AI",                icon: Globe     },
@@ -987,9 +982,9 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
   threadsRef.current = threads;
 
   const userInitial = useMemo(() =>
-    (user?.full_name?.[0] || user?.username?.[0] || "U").toUpperCase()
+    (user?.fullName?.[0] || user?.username?.[0] || "U").toUpperCase()
   , [user]);
-  const userName = user?.full_name || user?.username || "there";
+  const userName = user?.fullName || user?.username || "there";
 
   // Handle spark:log events (primary event stream)
   const handleLog = useCallback((data: SparkLogPayload) => {
@@ -1595,7 +1590,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
 
   const sendApproval = (approved: boolean) => {
     if (!approvalRequest) return;
-    const payload: Record<string, unknown> = {
+    const payload: { task_id: string; approved: boolean; edited_inputs?: Record<string, string> } = {
       task_id: approvalRequest.task_id,
       approved,
     };
