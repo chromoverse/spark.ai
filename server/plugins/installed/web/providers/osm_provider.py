@@ -85,11 +85,13 @@ def _now() -> float:
     return time.monotonic()
 
 
-def _cache_key(intent: str, query: str, lat: float, lon: float, radius_km: float) -> str:
+def _cache_key(intent: str, query: str, lat: Optional[float], lon: Optional[float], radius_km: float) -> str:
     # ~1km grid via 2 decimals. Query → sorted alpha tokens so phrasing
     # variants collapse to the same key.
     tokens = sorted(set(re.findall(r"[a-z0-9]+", query.lower())))
-    payload = f"{intent}|{round(lat, 2)}|{round(lon, 2)}|{round(radius_km, 1)}|{','.join(tokens)}"
+    lat_val = round(lat, 2) if lat is not None else "None"
+    lon_val = round(lon, 2) if lon is not None else "None"
+    payload = f"{intent}|{lat_val}|{lon_val}|{round(radius_km, 1)}|{','.join(tokens)}"
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
@@ -152,8 +154,8 @@ def supports(intent: str) -> bool:
 async def search(
     intent: str,
     query: str,
-    user_lat: float,
-    user_lon: float,
+    user_lat: Optional[float] = None,
+    user_lon: Optional[float] = None,
     radius_km: float = 25.0,
     max_results: int = 25,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -167,6 +169,10 @@ async def search(
     Empty list on any failure — the caller is expected to fall back to
     its existing DDGS+scrape+LLM path.
     """
+    if user_lat is None or user_lon is None:
+        logger.debug("OSM: missing coordinates (lat=%s, lon=%s) - returning empty", user_lat, user_lon)
+        return [], []
+
     filters = await overpass_filters(intent, query)
     if not filters:
         logger.debug("OSM: no filter mapping for intent=%s query=%r", intent, query)
@@ -195,6 +201,15 @@ async def search(
         return [], []
 
     provider_entities = _parse_elements(elements, intent)
+    
+    # Sort geographically by distance from user coords so we keep the closest ones
+    import math as _m
+    def _dist(lat1, lon1, lat2, lon2):
+        r1, r2 = _m.radians(lat1), _m.radians(lat2)
+        a = _m.sin((r2-r1)/2)**2 + _m.cos(r1)*_m.cos(r2)*_m.sin(_m.radians(lon2-lon1)/2)**2
+        return 6371.0 * 2 * _m.asin(_m.sqrt(a))
+    provider_entities.sort(key=lambda p: _dist(user_lat, user_lon, p.latitude, p.longitude) if p.latitude is not None and p.longitude is not None else 999999.0)
+
     # Cap before reshape so we don't hand 500 entities to downstream enrichment.
     provider_entities = provider_entities[:max_results]
 

@@ -398,7 +398,7 @@ class EntitySearchTool(BaseTool):
                     )
                     _enrich_maps_urls(ranked, location)
                     _enrich_type_labels(ranked, entity_schema)
-                    await _enrich_images_nodriver(ranked, top_n=5, user_id=user_id, task_id=task_id)
+                    await _enrich_images_nodriver(ranked, top_n=5, user_id=user_id, task_id=task_id, user_city=user_city)
                     winning_source = ranked[0].get("source") if ranked else None
                     await _emit(
                         user_id, task_id, "complete",
@@ -491,7 +491,7 @@ class EntitySearchTool(BaseTool):
         )
 
         _enrich_images_from_scraped(ranked, scraped)
-        await _enrich_images_nodriver(ranked, top_n=5, user_id=user_id, task_id=task_id)
+        await _enrich_images_nodriver(ranked, top_n=5, user_id=user_id, task_id=task_id, user_city=user_city)
         _enrich_maps_urls(ranked, location)
         _enrich_type_labels(ranked, entity_schema)
 
@@ -544,47 +544,144 @@ def _enrich_images_from_scraped(entities: List[Dict], scraped: List[Dict]) -> No
             used.update(picks)
 
 
+def _is_valid_image(url: str) -> bool:
+    low = url.lower()
+    skip_terms = (
+        "1x1", "pixel", "spacer", "blank", "logo", "icon", "sprite", "data:",
+        "tiny.png", "placeholder", "openstreetmap.org", "osm.org", "matomo",
+        "google.com", "gstatic.com", "facebook.com/tr", "analytics", "doubleclick",
+        "favicon", "wp-content/themes", "wp-content/uploads/assets", "theme",
+        "wikimedia.org/img", "maps.wikimedia.org"
+    )
+    if any(term in low for term in skip_terms):
+        return False
+    if low.endswith((".svg", ".ico", ".gif")) and "photo" not in low:
+        return False
+    return True
+
+
+# Serialize DDG image searches to avoid 403 rate-limiting from concurrent hits.
+_DDG_IMAGE_SEM: Optional[asyncio.Semaphore] = None
+
+
+def _get_ddg_image_sem() -> asyncio.Semaphore:
+    global _DDG_IMAGE_SEM
+    if _DDG_IMAGE_SEM is None:
+        _DDG_IMAGE_SEM = asyncio.Semaphore(1)
+    return _DDG_IMAGE_SEM
+
+
+async def _fetch_ddg_images(query: str, limit: int = 3) -> List[str]:
+    """Search DDG for images of a venue — serialized to avoid 403."""
+    async with _get_ddg_image_sem():
+        try:
+            from ddgs import DDGS
+
+            def _sync_search():
+                with DDGS(timeout=8) as ddgs:
+                    return list(ddgs.images(query, max_results=limit, safesearch="moderate"))
+
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(None, _sync_search)
+            return [r["image"] for r in results if r.get("image") and _is_valid_image(r["image"])]
+        except Exception as exc:
+            _log.warning("DDG image search failed for %s: %s", query, exc)
+            return []
+
+
 async def _enrich_images_nodriver(
     entities: List[Dict],
     top_n: int = 5,
     user_id: str = "",
     task_id: str = "",
+    user_city: str = "",
 ) -> None:
-    """Gated image enrichment via nodriver. Only runs when the avg
-    images-per-entity is below 2 (so we don't burn Chrome budget
-    when providers already returned photos)."""
+    """Multi-tiered image enrichment.
+
+    Strategy per entity (stops at first success):
+      1. Static httpx scrape of official website (fast, <1s)
+      2. DDG Image Search for ``name + city`` (fast, reliable, ~2s)
+      3. Nodriver scrape of venue page found via web search (slow, 5-10s)
+
+    Only runs when the average images-per-entity is below 2 so we don't
+    burn Chrome/network budget when providers already returned photos.
+    """
     if not entities:
         return
     avg_images = sum(len(e.get("images") or []) for e in entities) / len(entities)
     if avg_images >= 2:
         return
 
-    targets = [e for e in entities[:top_n]
-               if e.get("source_url") and not e.get("images")]
+    targets = [e for e in entities[:top_n] if not e.get("images")]
     if not targets:
         return
 
     await _emit(user_id, task_id, "image_enrichment",
-                f"Fetching images for {len(targets)} entities…",
+                f"Fetching images for {len(targets)} entities\u2026",
                 count=len(targets))
 
     from .scrape import WebScrapeTool
     scrape_tool = WebScrapeTool()
 
     async def _fetch_one(entity: Dict) -> None:
-        url = entity.get("source_url", "")
-        if not url:
-            return
-        try:
-            result = await asyncio.wait_for(
-                scrape_tool._scrape_nodriver(url),
-                timeout=15.0,
-            )
-            imgs = result.get("images", [])
+        name = entity.get("name", "")
+
+        # ── Tier 1: fast static scrape of official website ────────────
+        website = entity.get("website") or ""
+        if website:
+            if not website.startswith("http"):
+                website = "http://" + website
+            # Skip sites that never return useful images via static fetch
+            skip_static = ("facebook.com", "instagram.com", "twitter.com", "x.com")
+            if not any(d in website for d in skip_static):
+                try:
+                    res = await asyncio.wait_for(
+                        scrape_tool._scrape_httpx(website), timeout=5.0,
+                    )
+                    if res and res.get("images"):
+                        filtered = [i for i in res["images"] if _is_valid_image(i)]
+                        if filtered:
+                            entity["images"] = filtered[:3]
+                            return
+                except Exception:
+                    pass  # fall through to next tier
+
+        # ── Tier 2: DDG Image Search (fast, reliable) ─────────────────
+        if name:
+            search_q = f"{name} {user_city}".strip()
+            imgs = await _fetch_ddg_images(search_q, limit=3)
             if imgs:
                 entity["images"] = imgs[:3]
-        except Exception as exc:
-            _log.debug("image enrichment failed for %s: %s", url, exc)
+                return
+
+        # ── Tier 3: nodriver scrape of official website or venue page ─
+        scrape_url = website or ""
+        if not scrape_url:
+            # Try to discover a venue page via web search
+            if name:
+                try:
+                    from .search import WebSearchTool
+                    search_tool = WebSearchTool()
+                    search_res = await search_tool._fetch_and_rank(
+                        f"{name} {user_city}".strip(), limit=1,
+                    )
+                    if search_res:
+                        scrape_url = search_res[0].get("url") or ""
+                except Exception:
+                    pass
+
+        if scrape_url and "openstreetmap.org" not in scrape_url:
+            try:
+                res = await asyncio.wait_for(
+                    scrape_tool._scrape_nodriver(scrape_url), timeout=12.0,
+                )
+                if res and res.get("images"):
+                    filtered = [i for i in res["images"] if _is_valid_image(i)]
+                    if filtered:
+                        entity["images"] = filtered[:3]
+                        return
+            except Exception:
+                pass
 
     try:
         await asyncio.wait_for(

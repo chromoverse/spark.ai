@@ -52,11 +52,13 @@ def _now() -> float:
     return time.monotonic()
 
 
-def _cache_key(intent: str, query: str, lat: float, lon: float, radius_km: float) -> str:
+def _cache_key(intent: str, query: str, lat: Optional[float], lon: Optional[float], radius_km: float) -> str:
     import hashlib
     import re
     tokens = sorted(set(re.findall(r"[a-z0-9]+", query.lower())))
-    payload = f"fsq|{intent}|{round(lat, 2)}|{round(lon, 2)}|{round(radius_km, 1)}|{','.join(tokens)}"
+    lat_val = round(lat, 2) if lat is not None else "None"
+    lon_val = round(lon, 2) if lon is not None else "None"
+    payload = f"fsq|{intent}|{lat_val}|{lon_val}|{round(radius_km, 1)}|{','.join(tokens)}"
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
@@ -96,13 +98,17 @@ def supports(intent: str) -> bool:
 async def search(
     intent: str,
     query: str,
-    user_lat: float,
-    user_lon: float,
+    user_lat: Optional[float] = None,
+    user_lon: Optional[float] = None,
     radius_km: float = 25.0,
     max_results: int = 25,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     key = _api_key()
     if not key:
+        return [], []
+
+    if user_lat is None or user_lon is None:
+        logger.debug("Foursquare: missing coordinates (lat=%s, lon=%s) - returning empty", user_lat, user_lon)
         return [], []
 
     pf = await foursquare_filter(intent, query)

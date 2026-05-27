@@ -89,6 +89,15 @@ INTENT_MAP: Dict[str, ProviderFilter] = {
         foursquare_query="theater",
         foursquare_categories=["10032"],  # Theater
     ),
+    "college_search": ProviderFilter(
+        osm_filters=[
+            'node["amenity"~"^(school|college|university)$"]',
+            'way["amenity"~"^(school|college|university)$"]',
+        ],
+        google_type="university",
+        foursquare_query="university",
+        foursquare_categories=["12013"],  # University
+    ),
 }
 
 
@@ -254,6 +263,34 @@ AMENITIES: List[Amenity] = [
             osm_filters=['node["amenity"="parking"]', 'way["amenity"="parking"]'],
             google_type="parking",
             foursquare_query="parking",
+        ),
+    ),
+    Amenity("cafe",
+        lemmas=["cafe", "cafes", "caffee", "coffee", "coffeeshop", "coffeehouse",
+                "espresso", "latte", "cappuccino", "tea", "teahouse"],
+        description="a cafe, coffee shop, or tea house serving beverages and light meals",
+        filters=ProviderFilter(
+            osm_filters=[
+                'node["amenity"="cafe"]',
+                'way["amenity"="cafe"]',
+            ],
+            google_type="cafe",
+            foursquare_query="cafe",
+            foursquare_categories=["13032"],  # Coffee Shop
+        ),
+    ),
+    Amenity("restaurant",
+        lemmas=["restaurant", "restaurants", "diner", "diners", "eatery", "eateries",
+                "bistro", "bistros", "dining", "food"],
+        description="a restaurant, diner, or eatery serving full meals",
+        filters=ProviderFilter(
+            osm_filters=[
+                'node["amenity"="restaurant"]',
+                'way["amenity"="restaurant"]',
+            ],
+            google_type="restaurant",
+            foursquare_query="restaurant",
+            foursquare_categories=["13065"],  # Restaurant
         ),
     ),
 ]
