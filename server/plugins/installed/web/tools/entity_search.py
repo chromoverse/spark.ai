@@ -452,7 +452,11 @@ class EntitySearchTool(BaseTool):
                     url_count=min(len(urls), max_results),
                     urls=[{"url": u, "domain": urlparse(u).netloc.replace("www.", "")}
                           for u in urls[:max_results]])
-        scraped = await _shared.scrape_urls(urls, max_results, max_chars, use_nodriver=True)
+        scraped = await _shared.scrape_urls(
+            urls, max_results, max_chars,
+            use_nodriver=True,
+            user_id=user_id, task_id=task_id, tool_name="entity_search",
+        )
         scraped_with_text = [s for s in scraped if s.get("text")]
         await _emit(user_id, task_id, "scrape_complete",
                     f"Scraped {len(scraped_with_text)} pages",

@@ -26,6 +26,7 @@ _trafilatura_cfg.set("DEFAULT", "EXTRACTION_TIMEOUT", "0")
 
 # nodriver (real Chrome) constants — shared semaphore caps Chrome instances globally
 _NODRIVER_TIMEOUT_S = 20.0
+_PER_URL_TIMEOUT_S = 12.0   # hard cap per URL — prevents one hung site from blocking a semaphore slot
 _nodriver_sem: Optional[asyncio.Semaphore] = None
 
 
@@ -153,7 +154,14 @@ class WebScrapeTool(BaseTool):
 
         async def bounded(url: str) -> Dict[str, Any]:
             async with sem:
-                return await self._scrape_one(url, use_nodriver=use_nodriver)
+                try:
+                    return await asyncio.wait_for(
+                        self._scrape_one(url, use_nodriver=use_nodriver),
+                        timeout=_PER_URL_TIMEOUT_S,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("scrape per-URL timeout (>%.0fs) for %s", _PER_URL_TIMEOUT_S, url)
+                    return {"url": url, "success": False, "title": "", "text": "", "links": [], "images": []}
 
         return await asyncio.gather(*[bounded(u) for u in urls])
 

@@ -264,7 +264,10 @@ class WebResearchTool(BaseTool):
         await _emit(user_id, task_id, "scraping",
                     f"Scraping {min(len(urls), max_results)} pages",
                     url_count=min(len(urls), max_results))
-        scraped = await _shared.scrape_urls(urls, max_results, max_chars)
+        scraped = await _shared.scrape_urls(
+            urls, max_results, max_chars,
+            user_id=user_id, task_id=task_id, tool_name="web_research",
+        )
 
         pages = [
             {

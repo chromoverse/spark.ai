@@ -35,7 +35,8 @@ _log = logging.getLogger(__name__)
 PER_QUERY_TIMEOUT_S = 12.0
 MAX_PARALLEL_SEARCHES = 2
 MAX_QUERIES = 3
-SCRAPE_TIMEOUT_S = 35.0
+SCRAPE_TIMEOUT_S = 25.0       # primary scrape budget (was 35s)
+SCRAPE_RETRY_TIMEOUT_S = 15.0 # retry budget when 0 pages returned text
 
 
 # ── Live-progress emitter ────────────────────────────────────────────────────
@@ -205,28 +206,50 @@ async def scrape_urls(
     max_chars: int,
     *,
     use_nodriver: bool = False,
+    user_id: str = "",
+    task_id: str = "",
+    tool_name: str = "",
 ) -> List[Dict[str, Any]]:
-    """Scrape via WebScrapeTool. ``use_nodriver=True`` for entity pages so we
-    capture real images from rendered Chrome instead of Playwright's
-    image-blocked path. Wrapped in ``asyncio.wait_for`` so a hung
-    Chrome/Playwright launch cannot stall the caller."""
+    """Scrape via WebScrapeTool with automatic retry.
+
+    If the primary attempt yields 0 pages with text (all nodriver/playwright
+    failed), automatically retries with plain httpx (use_nodriver=False) using
+    a shorter budget. This covers the common Windows case where nodriver errors
+    out immediately but static httpx can still read SSR pages.
+    """
     scrape_tool = WebScrapeTool(max_chars=max_chars)
-    try:
-        scrape_result = await asyncio.wait_for(
-            scrape_tool._execute(
-                {
+
+    async def _attempt(nd: bool, budget: float) -> List[Dict[str, Any]]:
+        try:
+            result = await asyncio.wait_for(
+                scrape_tool._execute({
                     "base_links": urls[:max_results],
                     "max_results": max_results,
-                    "use_nodriver": use_nodriver,
-                }
-            ),
-            timeout=SCRAPE_TIMEOUT_S,
-        )
-        return scrape_result.data.get("results", [])
-    except asyncio.TimeoutError:
-        _log.warning("scrape phase timed out (>%.0fs) for %d urls",
-                     SCRAPE_TIMEOUT_S, len(urls))
-        return []
+                    "use_nodriver": nd,
+                }),
+                timeout=budget,
+            )
+            return result.data.get("results", [])
+        except asyncio.TimeoutError:
+            _log.warning("scrape phase timed out (>%.0fs) for %d urls", budget, len(urls))
+            return []
+
+    scraped = await _attempt(use_nodriver, SCRAPE_TIMEOUT_S)
+
+    # Auto-retry with plain httpx when every URL came back empty
+    if use_nodriver and not any(s.get("text") for s in scraped):
+        _log.info("scrape_urls: 0 pages with text — retrying without nodriver")
+        if user_id:
+            await emit_progress(
+                tool_name or "scrape", user_id, task_id,
+                "scrape_retry",
+                "Scraped 0 pages — retrying with httpx…",
+            )
+        retry = await _attempt(False, SCRAPE_RETRY_TIMEOUT_S)
+        if any(s.get("text") for s in retry):
+            return retry
+
+    return scraped
 
 
 # ── Numeric coercion (rejects NaN/inf) ───────────────────────────────────────

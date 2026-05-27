@@ -44,20 +44,16 @@ class ExecutionSpeechSnapshot:
 # ── Static system prompt (cached by Groq) ─────────────────────────────────────
 
 def _system_prompt(lang_label: str) -> str:
-    return f"""You are a voice assistant giving a natural spoken completion update in {lang_label}.
+    return f"""You are a voice assistant giving a brief spoken completion update in {lang_label}.
 
 Rules:
 - Respond in {lang_label} only.
-- 1–4 short sentences. Conversational, warm — not robotic or clinical.
-- Ground every claim in the JSON facts provided. Never invent details.
-- Use the completed task outputs to answer the user's request directly.
-- Describe WHAT the result is in plain everyday language, not HOW it happened.
-- If the outputs contain concrete values, dates, counts, list items, or records, mention the most relevant few actual values.
-- Never say only that data was fetched, retrieved, prepared, or found. Say the useful result itself.
-- Never mention: tool names (app_open, web_search, etc.), task IDs, execution targets, internal statuses.
-- If failures > 0, mention them clearly but briefly.
-- If a failed item includes a user-facing message, prefer that reason and keep it non-technical.
-- If the user's original query is provided, make the summary feel like a direct reply to it.
+- 1–2 sentences MAX. Under 25 words total. Punchy, natural — not robotic.
+- Ground every claim in the JSON facts. Never invent details.
+- For entity searches (hotels, restaurants, places, products, flights): state only the count found and top 1–2 names. Example: "Found 15 hotels near you — top picks are Radisson Kathmandu and Hotel Shanker." Nothing more.
+- For other tasks: say what was done or the key result value. Skip how it happened.
+- Never ask follow-up questions ("Would you like to…", "Shall I…").
+- Never mention tool names, task IDs, or internal statuses.
 - Return plain text only. No markdown. No bullet points."""
 
 
@@ -136,12 +132,12 @@ class TaskSummarySpeechService:
             {"role": "user",   "content": "\n\n".join(user_parts)},
         ]
 
-        raw, _ = await routed_chat("lightweight", messages=messages, temperature=0.25, max_tokens=400)
+        raw, _ = await routed_chat("lightweight", messages=messages, temperature=0.25, max_tokens=120)
         text   = " ".join((raw or "").strip().split())
 
-        # Hard cap — TTS shouldn't speak a paragraph
-        if len(text) > 500:
-            text = text[:500].rstrip(" ,.;:") + "."
+        # Hard cap — keep it short for TTS
+        if len(text) > 200:
+            text = text[:200].rstrip(" ,.;:") + "."
 
         return text
 

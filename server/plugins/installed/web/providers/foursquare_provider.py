@@ -1,5 +1,5 @@
 """
-Foursquare Places v3 nearby-entity provider (scaffold, env-key driven).
+Foursquare Places API provider (migrated to new places-api.foursquare.com host).
 
 Activation
 ──────────
@@ -7,14 +7,13 @@ Reads ``FOURSQUARE_API_KEY`` from the environment at call time. When the
 key is absent, ``supports()`` returns False and the multi-provider chain
 skips this backend entirely.
 
-Foursquare's developer tier is free and generous for an interactive
-assistant — sign up at https://foursquare.com/developers/, create a
-project, copy the API key into your .env, and Spark picks it up.
-
 Endpoint
 ────────
-  GET https://api.foursquare.com/v3/places/search
-  Authorization: <api-key>
+  GET https://places-api.foursquare.com/places/search
+  Authorization: Bearer <SERVICE_KEY>
+  X-Places-Api-Version: 2025-06-17
+
+The old api.foursquare.com/v3/places/search was permanently removed (HTTP 410).
 
 Trust
 ─────
@@ -38,7 +37,8 @@ from .provider_registry import foursquare_filter, supported_intents
 logger = logging.getLogger(__name__)
 
 # ── Limits ───────────────────────────────────────────────────────────────────
-_ENDPOINT = "https://api.foursquare.com/v3/places/search"
+_ENDPOINT = "https://places-api.foursquare.com/places/search"
+_API_VERSION = "2025-06-17"
 _REQUEST_TIMEOUT_S = 6.0
 _GLOBAL_SEMAPHORE = asyncio.Semaphore(3)
 
@@ -90,9 +90,9 @@ def _api_key() -> Optional[str]:
 
 
 def supports(intent: str) -> bool:
-    if not _api_key():
-        return False
-    return intent in supported_intents()
+    # Disabled: account has no API credits. Re-enable once credits are added
+    # at foursquare.com/developers/orgs. Auth and endpoint are correct.
+    return False
 
 
 async def search(
@@ -132,14 +132,18 @@ async def search(
         "sort": "RELEVANCE",
         # Ask for the fields we actually consume — Foursquare bills per-field
         # in the long run and we only need a fixed subset.
-        "fields": "fsq_id,name,location,geocodes,categories,rating,price,distance,website,tel,hours",
+        "fields": "fsq_place_id,name,location,latitude,longitude,categories,rating,price,distance,website,tel,hours",
     }
     if pf.foursquare_categories:
         params["categories"] = ",".join(pf.foursquare_categories)
     if pf.foursquare_query:
         params["query"] = pf.foursquare_query
 
-    headers = {"Authorization": key, "Accept": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Accept": "application/json",
+        "X-Places-Api-Version": _API_VERSION,
+    }
 
     async with _GLOBAL_SEMAPHORE:
         results = await _http_call(params, headers)
@@ -196,15 +200,19 @@ def _parse_results(results: List[Dict[str, Any]], intent: str) -> List[ProviderE
             continue
         seen.add(nk)
 
-        # Foursquare puts coords under "geocodes.main" (lat/lng).
-        geocodes = r.get("geocodes") or {}
-        main = geocodes.get("main") or {}
-        lat = _safe_float(main.get("latitude"))
-        lon = _safe_float(main.get("longitude"))
+        # New API returns top-level latitude/longitude instead of geocodes.main.
+        lat = _safe_float(r.get("latitude"))
+        lon = _safe_float(r.get("longitude"))
+        if lat is None or lon is None:
+            # Fall back to old geocodes shape in case of mixed response.
+            geocodes = r.get("geocodes") or {}
+            main = geocodes.get("main") or {}
+            lat = _safe_float(main.get("latitude"))
+            lon = _safe_float(main.get("longitude"))
         if lat is None or lon is None:
             continue
 
-        fsq_id = r.get("fsq_id") or ""
+        fsq_id = r.get("fsq_place_id") or r.get("fsq_id") or ""
         source_url = f"https://foursquare.com/v/{fsq_id}" if fsq_id else None
 
         # Foursquare rating is 0..10 → normalize to 0..5 for cross-provider parity.

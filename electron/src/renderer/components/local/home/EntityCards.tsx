@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   X, Star, MapPin, ExternalLink,
   Navigation, Phone, ChevronLeft, ChevronRight,
-  MessageSquare, User,
+  MessageSquare, User, BookOpen, ShoppingCart, Play,
+  Ticket, UtensilsCrossed, Plane,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -83,6 +84,32 @@ interface EntityCardsProps {
   entities: EntityCardData[];
   intent?: string;
   onDismiss: () => void;
+  onAction?: (action: string, entity: EntityCardData) => void;
+}
+
+// ── Entity action config ──────────────────────────────────────────────────────
+
+interface EntityAction {
+  label: string;
+  actionKey: string;
+  Icon: React.ComponentType<{ size?: number }>;
+}
+
+function getEntityAction(entity: EntityCardData): EntityAction | null {
+  const t = (entity.type || "").toLowerCase();
+  if (t === "hotel" || t === "hostel" || entity.booking_url)
+    return { label: "Book Now", actionKey: "book_hotel", Icon: BookOpen };
+  if (t === "restaurant" || t === "cafe" || t === "food" || entity.menu_url)
+    return { label: "Reserve", actionKey: "reserve_table", Icon: UtensilsCrossed };
+  if (t === "product" || entity.buy_url)
+    return { label: "Buy Now", actionKey: "buy_product", Icon: ShoppingCart };
+  if (t === "movie" || t === "show" || t === "tv_show")
+    return { label: "Watch", actionKey: "play_media", Icon: Play };
+  if (t === "event" || t === "concert" || t === "festival")
+    return { label: "Get Tickets", actionKey: "book_ticket", Icon: Ticket };
+  if (t === "flight")
+    return { label: "Book Flight", actionKey: "book_ticket", Icon: Plane };
+  return null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -625,11 +652,12 @@ function EntityDetailModal({ entity, onClose }: { entity: EntityCardData; onClos
 // ── Featured panel (left 55%) ─────────────────────────────────────────────────
 
 function FeaturedPanel({
-  entity, rank, onOpenDetail,
+  entity, rank, onOpenDetail, onAction,
 }: {
   entity: EntityCardData;
   rank: number;
   onOpenDetail: () => void;
+  onAction?: (action: string, entity: EntityCardData) => void;
 }) {
   const images   = entity.images || [];
   const [bgIdx, setBgIdx]   = useState(0);
@@ -830,11 +858,31 @@ function FeaturedPanel({
         {/* Action buttons */}
         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 6 }}
           onClick={e => e.stopPropagation()}>
+          {/* Entity-specific primary action */}
+          {onAction && (() => {
+            const act = getEntityAction(entity);
+            if (!act) return null;
+            return (
+              <button
+                onClick={e => { e.stopPropagation(); onAction(act.actionKey, entity); }}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "6px 11px", borderRadius: 7,
+                  background: "var(--sp-accent)", color: "#1a1208",
+                  fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer",
+                }}
+              >
+                <act.Icon size={11} /> {act.label}
+              </button>
+            );
+          })()}
           {mapsUrl && (
             <a href={mapsUrl} target="_blank" rel="noreferrer" style={{
               display: "inline-flex", alignItems: "center", gap: 5,
               padding: "6px 11px", borderRadius: 7,
-              background: "var(--sp-accent)", color: "#1a1208",
+              background: onAction && getEntityAction(entity) ? "var(--sp-bg-3)" : "var(--sp-accent)",
+              color: onAction && getEntityAction(entity) ? "var(--sp-ink-2)" : "#1a1208",
+              border: onAction && getEntityAction(entity) ? "1px solid var(--sp-line-2)" : "none",
               fontSize: 11, fontWeight: 600, textDecoration: "none",
             }}>
               <Navigation size={11} /> Directions
@@ -1002,7 +1050,7 @@ function EntityList({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function EntityCards({ entities, intent, onDismiss }: EntityCardsProps) {
+export default function EntityCards({ entities, intent, onDismiss, onAction }: EntityCardsProps) {
   const [featuredIdx, setFeaturedIdx] = useState(0);
   const [showModal, setShowModal]     = useState(false);
 
@@ -1075,6 +1123,7 @@ export default function EntityCards({ entities, intent, onDismiss }: EntityCards
             entity={featured}
             rank={featuredIdx + 1}
             onOpenDetail={() => setShowModal(true)}
+            onAction={onAction}
           />
           <EntityList
             entities={entities}

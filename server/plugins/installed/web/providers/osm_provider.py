@@ -42,15 +42,25 @@ logger = logging.getLogger(__name__)
 
 # ── Limits ───────────────────────────────────────────────────────────────────
 _OVERPASS_ENDPOINTS = [
+    # Primary. Public, reliable, but rate-limited under load.
     "https://overpass-api.de/api/interpreter",
+    # Backup. kumi.systems has been intermittently unreachable from some
+    # networks (504s after hundreds of seconds) — keep it last and rely
+    # on the circuit breaker + per-endpoint timeout to skip it quickly.
     "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.openstreetmap.fr/api/interpreter",
 ]
-_PER_ENDPOINT_TIMEOUT_S = 6.0
-_TOTAL_TIMEOUT_S = 8.0
+# Overpass-side budget (the `[timeout:N]` in the QL). Must be < the HTTP
+# timeout below or we'll cancel the request before Overpass can finish.
+# Dense regions (Kathmandu, Bangkok, etc) need >=20s for hotel-radius
+# unions of nodes + ways; tighter budgets get a "dispatcher timeout" 504.
+_OVERPASS_QL_TIMEOUT_S = 20
+_PER_ENDPOINT_TIMEOUT_S = 24.0
+_TOTAL_TIMEOUT_S = 28.0
 _HTTP_HEADERS = {
+    # NOTE: do NOT send `Accept: application/json`. overpass-api.de's
+    # Apache config rejects it with HTTP 406. The body type is controlled
+    # by the `[out:json]` directive inside the QL query.
     "User-Agent": "SparkAI/1.0 (https://github.com/SiddTheCoder) web_research/osm_provider",
-    "Accept": "application/json",
 }
 
 # ── Concurrency / circuit breaker / cache ───────────────────────────────────
@@ -236,7 +246,7 @@ def _build_overpass_query(
     """Assemble an Overpass QL union query bounded to the given radius."""
     body = "\n".join(f"  {f}(around:{radius_m},{lat},{lon});" for f in filters)
     return (
-        f"[out:json][timeout:{int(_PER_ENDPOINT_TIMEOUT_S)}];\n"
+        f"[out:json][timeout:{_OVERPASS_QL_TIMEOUT_S}];\n"
         f"(\n{body}\n);\n"
         "out tags center 60;"
     )

@@ -102,7 +102,24 @@
       "Bash(git reset *)",
       "Bash(PYTHONIOENCODING=utf-8 python -c ' *)",
       "Bash(xargs grep -l \"ranker\\\\|osm_provider\\\\|multi_provider\\\\|browser_action\\\\|geo_filter\\\\|haversine\")",
-      "Bash(PYTHONIOENCODING=utf-8 python -m unittest testing.test_retrieval_invariants -v)"
+      "Bash(PYTHONIOENCODING=utf-8 python -m unittest testing.test_retrieval_invariants -v)",
+      "Bash(xargs grep -l -i \"hotel\\\\|entity\\\\|summary\\\\|book\")",
+      "Bash(xargs grep -l -i \"hotel\\\\|entity_search\\\\|summariz\")",
+      "Bash(xargs grep -l \"entity_search\\\\|EntityCards\\\\|entities\\\\b\")",
+      "Bash(xargs grep -l \"entity_search\\\\|hotel\\\\|OSM\\\\|openstreetmap\")",
+      "Bash(curl -s 'https://api.foursquare.com/v3/places/search?ll=27.7083,85.3206&radius=30000&limit=5&categories=19014&fields=fsq_id,name,location,geocodes,categories,rating' -H 'Authorization: KZLPLVRZIWUQRG4SK14CZEFPESOJWJ4HRG303ICQZRIF3GRX' -H 'Accept: application/json')",
+      "Bash(curl -s 'https://api.foursquare.com/v3/places?ll=27.7083,85.3206&radius=30000&limit=5&categories=19014&fields=fsq_id,name,location,geocodes,categories,rating' -H 'Authorization: fsq3X/hX7aiDny/ch41uPe64f3A45OjYMc0dgFsTvveB+9Q=' -H 'Accept: application/json')",
+      "Bash(curl -s 'https://places.foursquare.com/v3/places/search?ll=27.7083,85.3206&radius=30000&limit=5&categories=19014&fields=fsq_id,name,location,geocodes,categories,rating' -H 'Authorization: fsq3X/hX7aiDny/ch41uPe64f3A45OjYMc0dgFsTvveB+9Q=' -H 'Accept: application/json')",
+      "Bash(curl -s https://api.foursquare.com/v3/places/search -G --data-urlencode ll=27.7083,85.3206 --data-urlencode radius=30000 --data-urlencode limit=5 --data-urlencode 'query=hostel hotel' --data-urlencode fields=fsq_id,name,location,geocodes,categories,rating -H 'Authorization: fsq3X/hX7aiDny/ch41uPe64f3A45OjYMc0dgFsTvveB+9Q=' -H 'Accept: application/json' -H 'X-Foursquare-API-Version: 20240101')",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' 'https://api.foursquare.com/v3/places/search?ll=27.7083,85.3206&limit=3&query=hotel' -H 'Authorization: fsq3X/hX7aiDny/ch41uPe64f3A45OjYMc0dgFsTvveB+9Q=')",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' https://api.foursquare.com/v3/tastes?ll=27.7083,85.3206 -H 'Authorization: fsq3X/hX7aiDny/ch41uPe64f3A45OjYMc0dgFsTvveB+9Q=')",
+      "Bash(curl -s https://api.foursquare.com/v3/ -H 'Authorization: fsq3X/hX7aiDny/ch41uPe64f3A45OjYMc0dgFsTvveB+9Q=')",
+      "Bash(cat /tmp/osm_test.json | head -50)",
+      "Bash(curl -s -o /tmp/osm_noaccept.json -w \"HTTP %{http_code} time %{time_total}s size %{size_download}\\\\n\" -X POST \"https://overpass-api.de/api/interpreter\" -H \"User-Agent: SparkAI/1.0 \\(https://github.com/SiddTheCoder\\) web_research/osm_provider\" --data-urlencode 'data=[out:json][timeout:10];\\(node[\"tourism\"~\"^\\(hotel|hostel|guest_house|motel|apartment|chalet\\)$\"]\\(around:25000,27.7172,85.3240\\);way[\"tourism\"~\"^\\(hotel|hostel|guest_house|motel|apartment|chalet\\)$\"]\\(around:25000,27.7172,85.3240\\);\\);out tags center 10;')",
+      "Bash(curl -s -o /tmp/osm_kumi.json -w \"HTTP %{http_code} time %{time_total}s size %{size_download}\\\\n\" -X POST \"https://overpass.kumi.systems/api/interpreter\" -H \"User-Agent: SparkAI/1.0\" -H \"Accept: application/json\" --data-urlencode 'data=[out:json][timeout:8];node[\"amenity\"=\"cafe\"]\\(around:1000,27.7172,85.3240\\);out 5;')",
+      "Bash(curl -s -o /tmp/osm_fr.json -w \"HTTP %{http_code} time %{time_total}s size %{size_download}\\\\n\" -X POST \"https://overpass.openstreetmap.fr/api/interpreter\" -H \"User-Agent: SparkAI/1.0\" -H \"Accept: application/json\" --data-urlencode 'data=[out:json][timeout:8];node[\"amenity\"=\"cafe\"]\\(around:1000,27.7172,85.3240\\);out 5;')",
+      "Bash(curl -s -o /tmp/osm_main2.json -w \"HTTP %{http_code} time %{time_total}s size %{size_download}\\\\n\" -X POST \"https://overpass-api.de/api/interpreter\" -H \"User-Agent: SparkAI/1.0\" --data-urlencode 'data=[out:json][timeout:8];node[\"amenity\"=\"cafe\"]\\(around:1000,27.7172,85.3240\\);out 5;')",
+      "Bash(git --no-pager diff -- server/plugins/installed/web/providers/osm_provider.py)"
     ]
   }
 }

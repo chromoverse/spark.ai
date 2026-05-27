@@ -678,13 +678,14 @@ function ToolCard({ tool }: { tool: ToolStep }) {
 // ─── Thread view ─────────────────────────────────────────────────────────────
 
 function ThreadView({
-  thread, userInitial, onDismissEntities, onDismissDriveFiles, onDismissWebSearch,
+  thread, userInitial, onDismissEntities, onDismissDriveFiles, onDismissWebSearch, onEntityAction,
 }: {
   thread: Thread;
   userInitial: string;
   onDismissEntities?: () => void;
   onDismissDriveFiles?: () => void;
   onDismissWebSearch?: () => void;
+  onEntityAction?: (action: string, entity: EntityCardData) => void;
 }) {
   const hasAssistantContent = !!(
     thread.ai_response ||
@@ -788,6 +789,7 @@ function ThreadView({
                   entities={thread.entities}
                   intent={thread.entityIntent}
                   onDismiss={() => onDismissEntities?.()}
+                  onAction={onEntityAction}
                 />
               </div>
             )}
@@ -1506,6 +1508,20 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
       return next;
     });
   }, []);
+
+  const handleEntityAction = useCallback((action: string, entity: EntityCardData) => {
+    const loc = entity.location || entity.address || "";
+    const queries: Record<string, string> = {
+      book_hotel:    `book ${entity.name}${loc ? ` in ${loc}` : ""}`,
+      buy_product:   `buy ${entity.name}`,
+      reserve_table: `reserve a table at ${entity.name}`,
+      play_media:    `watch ${entity.name}`,
+      book_ticket:   `book ticket for ${entity.name}`,
+      open_url:      entity.website || entity.source_url || "",
+    };
+    const q = queries[action];
+    if (q) emit("send-user-text-query", q);
+  }, [emit]);
 
   const dismissWebSearch = useCallback((threadId: string) => {
     setThreads(prev => {
@@ -2288,6 +2304,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
                         onDismissEntities={() => dismissEntities(thread.id)}
                         onDismissDriveFiles={() => dismissDriveFiles(thread.id)}
                         onDismissWebSearch={() => dismissWebSearch(thread.id)}
+                        onEntityAction={handleEntityAction}
                       />
                     </div>
                   ))}
