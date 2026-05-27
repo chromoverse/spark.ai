@@ -7,12 +7,16 @@
   "capabilities": [
     "web_search",
     "web_scrape",
-    "web_research"
+    "web_research",
+    "entity_search",
+    "browser_action"
   ],
   "tools": [
     "web_search",
     "web_scrape",
-    "web_research"
+    "web_research",
+    "entity_search",
+    "browser_action"
   ],
   "skills": [],
   "dependencies": [],

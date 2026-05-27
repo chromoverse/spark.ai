@@ -88,7 +88,21 @@
       "Bash(echo \"EXIT:$?\")",
       "WebFetch(domain:github.com)",
       "Bash(python server/testing/test_nodriver_booking.py)",
-      "Bash(xargs grep -l \"web_research\")"
+      "Bash(xargs grep -l \"web_research\")",
+      "Bash(xargs grep -l \"notion\\\\|Notion\")",
+      "Bash(xargs grep -l \"system_prompt\\\\|persona\\\\|SPARK\\\\|spark\")",
+      "WebFetch(domain:www.hostelworld.com)",
+      "Bash(python -m py_compile plugins/installed/web/tools/research.py)",
+      "Bash(python -m py_compile plugins/installed/web/tools/search.py)",
+      "Bash(python -m py_compile plugins/installed/web/tools/scrape.py)",
+      "Bash(python -m py_compile plugins/installed/web/tools/browser_agent.py)",
+      "Bash(python -m py_compile app/prompts/stream_prompt.py)",
+      "Bash(git checkout *)",
+      "Bash(git restore *)",
+      "Bash(git reset *)",
+      "Bash(PYTHONIOENCODING=utf-8 python -c ' *)",
+      "Bash(xargs grep -l \"ranker\\\\|osm_provider\\\\|multi_provider\\\\|browser_action\\\\|geo_filter\\\\|haversine\")",
+      "Bash(PYTHONIOENCODING=utf-8 python -m unittest testing.test_retrieval_invariants -v)"
     ]
   }
 }

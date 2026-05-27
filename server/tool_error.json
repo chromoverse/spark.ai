@@ -408,5 +408,18 @@
       "query": "tasks",
       "execution_id": "job_3881b31e"
     }
+  },
+  {
+    "timestamp": "2026-05-27T10:02:30",
+    "tool": "entity_search",
+    "task_id": "step_1",
+    "error": "No module named 'plugins._installed'",
+    "inputs": {
+      "query": "hotels near me",
+      "intent": "hotel_search",
+      "user_id": "695e2bbaf8efc966aaf9f218",
+      "execution_id": "job_239cf2bd",
+      "plugins": "plugins._installed"
+    }
   }
 ]

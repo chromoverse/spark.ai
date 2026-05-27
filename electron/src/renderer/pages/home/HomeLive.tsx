@@ -455,6 +455,7 @@ const TOOL_LABELS: Record<string, string> = {
   web_research: "Research",
   web_search: "Search",
   web_scrape: "Scrape",
+  entity_search: "Entity Search",
   current_location: "Location",
   file_create: "File",
   file_open: "Open",
@@ -492,6 +493,7 @@ const TOOL_ICON_MAP: Record<string, React.ComponentType<{ size?: number }>> = {
   web_research:       Globe,
   web_search:         Search,
   web_scrape:         Globe,
+  entity_search:      Search,
   file_create:        FileText,
   file_open:          FolderOpen,
   file_read:          FileText,
@@ -1093,7 +1095,7 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
       const toolName = output.tool || "";
 
       console.log(`📡 [HomeLive] tool:output received — tool=${toolName} task_id=${output.task_id} job_id=${output.job_id}`, Object.keys(toolData));
-      if (toolName === "web_research" && toolData.result_type === "entities") {
+      if ((toolName === "web_research" || toolName === "entity_search") && toolData.result_type === "entities") {
         console.log(`📡 [HomeLive] 🏨 ENTITY COUNT IN PAYLOAD: ${Array.isArray(toolData.entities) ? (toolData.entities as unknown[]).length : 'NOT_ARRAY'}`, toolData.entities);
       }
 
@@ -1101,9 +1103,9 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
         const next = [...prev];
         const jobId = output.job_id;
 
-        // ── Entity cards from web_research ──
+        // ── Entity cards from web_research or entity_search ──
         if (
-          toolName === "web_research" &&
+          (toolName === "web_research" || toolName === "entity_search") &&
           toolData.result_type === "entities" &&
           Array.isArray(toolData.entities) &&
           (toolData.entities as unknown[]).length > 0
@@ -1137,19 +1139,21 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
               }
             }
           }
-          // Fallback: most recent thread with web_research tool that has no entities yet
+          // Fallback: most recent thread with web_research or entity_search tool that has no entities yet
           if (!target) {
             for (let i = next.length - 1; i >= 0; i--) {
-              if (next[i].tools.some((t: ToolStep) => t.tool_name === "web_research") && !next[i].entities?.length) {
+              const hasMatchingTool = next[i].tools.some((t: ToolStep) => t.tool_name === "web_research" || t.tool_name === "entity_search");
+              if (hasMatchingTool && !next[i].entities?.length) {
                 target = next[i];
                 break;
               }
             }
           }
-          // Last resort: most recent thread with web_research in plan
+          // Last resort: most recent thread with web_research or entity_search in plan
           if (!target) {
             for (let i = next.length - 1; i >= 0; i--) {
-              if (next[i].plan?.includes("web_research") && !next[i].entities?.length) {
+              const hasMatchingPlan = next[i].plan?.includes("web_research") || next[i].plan?.includes("entity_search");
+              if (hasMatchingPlan && !next[i].entities?.length) {
                 target = next[i];
                 break;
               }
@@ -1401,13 +1405,14 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
     setThreads(prev => {
       const next = [...prev];
       for (let i = next.length - 1; i >= 0; i--) {
-        if (next[i].tools.some((t: ToolStep) => t.tool_name === "web_research") && !next[i].entities?.length) {
+        const hasMatchingTool = next[i].tools.some((t: ToolStep) => t.tool_name === "web_research" || t.tool_name === "entity_search");
+        if (hasMatchingTool && !next[i].entities?.length) {
           console.log(`📡 [HomeLive] 🏨 entityResult PROP: attaching ${entities.length} entities to thread "${next[i].query.slice(0,40)}"`);
           next[i].entities = entities;
           next[i].entityIntent = intent;
           saveThreads(next);
           break;
-        } else if (next[i].tools.some((t: ToolStep) => t.tool_name === "web_research")) {
+        } else if (hasMatchingTool) {
           console.log(`📡 [HomeLive] 🏨 entityResult PROP: skipping thread "${next[i].query.slice(0,40)}" — already has ${next[i].entities?.length} entities`);
         }
       }

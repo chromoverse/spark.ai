@@ -1,6 +1,13 @@
 """
 Entity extractor: scraped text + schema name → list of typed entity dicts.
 
+Architectural role: **fallback / enrichment only**. The primary retrieval
+substrate for entity intents is the structured-providers package
+(``providers/osm_provider.py`` today; Google Places / Foursquare next).
+This LLM path is reached only when no structured provider covers the
+intent (or all available providers returned empty). Coordinates extracted
+here must come from page-visible signals, never from the model's prior.
+
 Single LLM call with schema-constrained prompt. Returns plain dicts so
 the caller doesn't need to import Pydantic models.
 """

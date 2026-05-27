@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scroll Video Animation</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #000;
+      overflow-x: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      cursor: none;
+    }
+
+    /* Custom cursor */
+    #cursor {
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      transition: transform 0.15s ease-out, border-color 0.2s;
+      mix-blend-mode: difference;
+    }
+
+    #cursor.hover {
+      transform: scale(2);
+      border-color: rgba(255, 100, 100, 0.9);
+    }
+
+    /* Video container with 3D transform */
+    #video-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1;
+      perspective: 1000px;
+    }
+
+    #video-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #scroll-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: brightness(0.9) contrast(1.1);
+    }
+
+    /* Floating particles */
+    .particle {
+      position: fixed;
+      width: 4px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 5;
+      filter: blur(1px);
+    }
+
+    /* Content overlay */
+    #content {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      z-index: 10;
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+    }
+
+    #content h1 {
+      font-size: clamp(2rem, 8vw, 6rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.6) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    #content p {
+      font-size: clamp(0.9rem, 2vw, 1.2rem);
+      opacity: 0.7;
+      font-weight: 300;
+      letter-spacing: 0.05em;
+    }
+
+    /* Progress indicator */
+    #progress {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 0%;
+      height: 3px;
+      background: linear-gradient(90deg, #ff6b6b, #4ecdc4);
+      z-index: 100;
+      transition: width 0.1s ease-out;
+    }
+
+    /* Scroll hint */
+    #scroll-hint {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.85rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      z-index: 10;
+      animation: float 2s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(-50%, 0); }
+      50% { transform: translate(-50%, -10px); }
+    }
+
+    #spacer {
+      height: 500vh;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Vignette effect */
+    #vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.4) 100%);
+      z-index: 3;
+    }
+  </style>
+</head>
+<body>
+  <!-- Custom cursor -->
+  <div id="cursor"></div>
+
+  <!-- Progress bar -->
+  <div id="progress"></div>
+
+  <!-- Vignette -->
+  <div id="vignette"></div>
+
+  <!-- Video container -->
+  <div id="video-container">
+    <div id="video-wrapper">
+      <video id="scroll-video" preload="auto" muted playsinline>
+        <source src="ai_second_anim.mp4" type="video/mp4">
+      </video>
+    </div>
+  </div>
+
+  <!-- Content overlay -->
+  <div id="content">
+    <h1>Scroll Experience</h1>
+    <p>Move your mouse to explore</p>
+  </div>
+
+  <!-- Scroll hint -->
+  <div id="scroll-hint">Scroll Down</div>
+
+  <!-- Spacer for scroll -->
+  <div id="spacer"></div>
+
+  <script>
+    gsap.registerPlugin(ScrollTrigger);
+
+    const video = document.getElementById('scroll-video');
+    const videoWrapper = document.getElementById('video-wrapper');
+    const cursor = document.getElementById('cursor');
+    const content = document.getElementById('content');
+    const progress = document.getElementById('progress');
+    const scrollHint = document.getElementById('scroll-hint');
+
+    // Custom cursor follow
+    let mouseX = 0, mouseY = 0;
+    let cursorX = 0, cursorY = 0;
+
+    document.addEventListener('mousemove', (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    function animateCursor() {
+      cursorX += (mouseX - cursorX) * 0.15;
+      cursorY += (mouseY - cursorY) * 0.15;
+      cursor.style.left = cursorX + 'px';
+      cursor.style.top = cursorY + 'px';
+      requestAnimationFrame(animateCursor);
+    }
+    animateCursor();
+
+    // Hover effect on interactive elements
+    document.querySelectorAll('a, button').forEach(el => {
+      el.addEventListener('mouseenter', () => cursor.classList.add('hover'));
+      el.addEventListener('mouseleave', () => cursor.classList.remove('hover'));
+    });
+
+    // Mouse parallax on video
+    document.addEventListener('mousemove', (e) => {
+      const xAxis = (window.innerWidth / 2 - e.pageX) / 50;
+      const yAxis = (window.innerHeight / 2 - e.pageY) / 50;
+      
+      gsap.to(videoWrapper, {
+        rotationY: xAxis,
+        rotationX: -yAxis,
+        duration: 0.8,
+        ease: 'power2.out'
+      });
+    });
+
+    // Create floating particles
+    function createParticles() {
+      for (let i = 0; i < 30; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.style.left = Math.random() * 100 + 'vw';
+        particle.style.top = Math.random() * 100 + 'vh';
+        document.body.appendChild(particle);
+
+        gsap.to(particle, {
+          y: 'random(-100, 100)',
+          x: 'random(-100, 100)',
+          duration: 'random(3, 6)',
+          repeat: -1,
+          yoyo: true,
+          ease: 'sine.inOut'
+        });
+      }
+    }
+    createParticles();
+
+    // Particle mouse interaction
+    document.addEventListener('mousemove', (e) => {
+      document.querySelectorAll('.particle').forEach(particle => {
+        const rect = particle.getBoundingClientRect();
+        const dx = e.clientX - (rect.left + rect.width / 2);
+        const dy = e.clientY - (rect.top + rect.height / 2);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist < 150) {
+          const force = (150 - dist) / 150;
+          gsap.to(particle, {
+            x: '+=' + (-dx * force * 0.5),
+            y: '+=' + (-dy * force * 0.5),
+            duration: 0.3
+          });
+        }
+      });
+    });
+
+    // Video scroll animation
+    video.addEventListener('loadedmetadata', () => {
+      // Scroll-triggered video scrubbing
+      gsap.to(video, {
+        currentTime: video.duration,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: '#spacer',
+          start: 'top top',
+          end: 'bottom bottom',
+          scrub: 1,
+          onUpdate: (self) => {
+            progress.style.width = (self.progress * 100) + '%';
+          }
+        }
+      });
+
+      // Content fade in/out
+      gsap.timeline({
+        scrollTrigger: {
+          trigger: '#spacer',
+          start: 'top top',
+          end: '20% top',
+          scrub: 1
+        }
+      })
+      .to(content, { opacity: 1, duration: 0.5 })
+      .to(content, { opacity: 0, duration: 0.5 }, 0.5);
+
+      // Scroll hint fade out
+      gsap.to(scrollHint, {
+        opacity: 0,
+        scrollTrigger: {
+          trigger: '#spacer',
+          start: 'top top',
+          end: '10% top',
+          scrub: 1
+        }
+      });
+
+      // Video scale effect
+      gsap.to(videoWrapper, {
+        scale: 1.2,
+        scrollTrigger: {
+          trigger: '#spacer',
+          start: 'top top',
+          end: 'bottom bottom',
+          scrub: 1
+        }
+      });
+    });
+
+    // Smooth scroll reveal
+    gsap.from(content, {
+      opacity: 0,
+      y: 50,
+      duration: 1.5,
+      delay: 0.5,
+      ease: 'power3.out'
+    });
+  </script>
+</body>
+</html>

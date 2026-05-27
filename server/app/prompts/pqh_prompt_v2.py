@@ -49,7 +49,17 @@ NO TOOL NEEDED (category: null):
 
 NEEDS A CATEGORY:
   • Needs a real-world system action → pick the matching category
-  • Needs live data (weather, news, web lookup) → web_knowledge
+  • Needs FACTS / SUMMARIES / NEWS from the web (no list of things to act on)
+        → web_knowledge   ("what's the weather", "who is X", "summary of Y")
+  • Needs to FIND THINGS the user can choose between or act on
+        (hotels, restaurants, hospitals, gyms, places to visit, events,
+         products, movies, colleges, flights, local services like pharmacies)
+        → entity_search   ("hotels in Mumbai", "restaurants near me",
+                           "best gyms nearby", "things to do in Tokyo",
+                           "show me hospitals", "movies playing tonight")
+  • Wants to OPEN A BOOKING URL / play a video / buy a product after a search
+        → browser_action  ("book that hotel", "play interstellar",
+                           "buy this", "reserve a table there")
   • Needs file/folder operations → file_management
   • Needs to open/close/control apps or system settings → system_control
   • Needs to send messages or emails → communication
@@ -59,6 +69,18 @@ NEEDS A CATEGORY:
   • Needs Spark UI control or artifact access → spark_internal
   • Asks about tools, plugins, categories, capabilities, tool count → spark_internal
   • Needs clipboard or notifications → clipboard_notify
+
+⚠️ web_knowledge vs entity_search — important:
+  • web_knowledge produces TEXT/PROSE for the LLM to summarize.
+  • entity_search produces a STRUCTURED LIST OF THINGS to display/act on.
+  • "what's the weather in Mumbai"       → web_knowledge  (one fact)
+  • "hotels in Mumbai"                    → entity_search  (list of places)
+  • "tell me about the Taj Mahal"         → web_knowledge  (prose)
+  • "places to visit near Taj Mahal"      → entity_search  (list)
+  • "who is the PM of India"              → web_knowledge
+  • "best restaurants in Delhi"           → entity_search
+  When in doubt, ask: "is the answer a *list of things* the user might
+  click on or book?" — yes → entity_search; no → web_knowledge.
 
 ⚠️ DEFAULT WHEN UNSURE → category: null. Always err toward no tool.
 
@@ -121,30 +143,46 @@ No-tool (category: null):
   "hey what's up"             → null
 
 Category picks:
-  "open calculator"           → ["system_control"]
-  "list files on desktop"     → ["file_management"]
-  "organize my downloads"     → ["file_management"]
-  "play some lo-fi music"     → ["media"]
-  "what's the weather"        → ["web_knowledge"]
-  "who is the PM of Nepal"    → ["web_knowledge"]
-  "send hi to Ram"            → ["communication"]
-  "check my emails"           → ["communication"]
-  "call daddy on WhatsApp"    → ["communication"]
-  "video call mom"            → ["communication"]
-  "message John hello"        → ["communication"]
-  "call X"                    → ["communication"]
-  "write me a cover letter"   → ["ai_content"]
-  "take a screenshot"         → ["media"]
-  "set a reminder for 5pm"    → ["automation"]
-  "open your window"          → ["spark_internal"]
+  "open calculator"            → ["system_control"]
+  "list files on desktop"      → ["file_management"]
+  "organize my downloads"      → ["file_management"]
+  "play some lo-fi music"      → ["media"]
+  "what's the weather"         → ["web_knowledge"]
+  "who is the PM of Nepal"     → ["web_knowledge"]
+  "summarize today's news"     → ["web_knowledge"]
+  "hotels in Mumbai"           → ["entity_search"]
+  "restaurants near me"        → ["entity_search"]
+  "best gyms nearby"           → ["entity_search"]
+  "hospitals in Delhi"         → ["entity_search"]
+  "things to do in Tokyo"      → ["entity_search"]
+  "places to visit in Kyoto"   → ["entity_search"]
+  "movies playing tonight"     → ["entity_search"]
+  "cheap flights to Bangkok"   → ["entity_search"]
+  "iPhone 15 price"            → ["entity_search"]
+  "book that hotel"            → ["browser_action"]
+  "play interstellar"          → ["browser_action"]
+  "buy this on amazon"         → ["browser_action"]
+  "send hi to Ram"             → ["communication"]
+  "check my emails"            → ["communication"]
+  "call daddy on WhatsApp"     → ["communication"]
+  "video call mom"             → ["communication"]
+  "message John hello"         → ["communication"]
+  "call X"                     → ["communication"]
+  "write me a cover letter"    → ["ai_content"]
+  "take a screenshot"          → ["media"]
+  "set a reminder for 5pm"     → ["automation"]
+  "open your window"           → ["spark_internal"]
   "how many tools do you have" → ["spark_internal"]
-  "what plugins are loaded"   → ["spark_internal"]
-  "list all categories"       → ["spark_internal"]
-  "mute yourself"             → ["system_control"]
-  "copy this to clipboard"    → ["clipboard_notify"]
+  "what plugins are loaded"    → ["spark_internal"]
+  "list all categories"        → ["spark_internal"]
+  "mute yourself"              → ["system_control"]
+  "copy this to clipboard"     → ["clipboard_notify"]
 
 Multi-category (spans multiple actions):
-  "research weather and make a file"         → ["web_knowledge", "file_management"]
-  "search the web and summarize in a note"   → ["web_knowledge", "ai_content", "file_management"]
-  "take a screenshot and send to Ram"        → ["media", "communication"]
-  "get weather forecast and open in notepad" → ["web_knowledge", "file_management"]"""
+  "research weather and make a file"           → ["web_knowledge", "file_management"]
+  "search the web and summarize in a note"     → ["web_knowledge", "ai_content", "file_management"]
+  "take a screenshot and send to Ram"          → ["media", "communication"]
+  "get weather forecast and open in notepad"   → ["web_knowledge", "file_management"]
+  "find hotels in Goa and book the best one"   → ["entity_search", "browser_action"]
+  "show restaurants nearby and reserve a table"→ ["entity_search", "browser_action"]
+  "find movies tonight and play the first one" → ["entity_search", "browser_action"]"""

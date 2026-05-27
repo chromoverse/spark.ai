@@ -207,19 +207,34 @@ class PluginManager:
     def _import_plugin_module(py_file: Path, plugin_name: str) -> ModuleType:
         """Import a plugin's tool file under a stable, isolated module name."""
         module_name = f"plugins._installed.{plugin_name}.tools.{py_file.stem}"
-        # Register parent packages so relative imports work between tool files
-        package_name = f"plugins._installed.{plugin_name}.tools"
-        if package_name not in sys.modules:
-            import types
-            pkg = types.ModuleType(package_name)
-            pkg.__path__ = [str(py_file.parent)]
-            pkg.__package__ = package_name
-            sys.modules[package_name] = pkg
+
+        # Register the full ancestor package chain so that both same-level
+        # relative imports (``from . import _shared``) and parent-level
+        # relative imports (``from ..providers import geo_resolver``) resolve
+        # correctly.  Python's import machinery requires every intermediate
+        # package to exist in ``sys.modules`` with a valid ``__path__``.
+        import types
+
+        tools_dir = py_file.parent                       # .../installed/<plugin>/tools
+        plugin_dir = tools_dir.parent                    # .../installed/<plugin>
+        installed_dir = plugin_dir.parent                # .../installed
+
+        _ancestors = [
+            ("plugins._installed",                       str(installed_dir)),
+            (f"plugins._installed.{plugin_name}",        str(plugin_dir)),
+            (f"plugins._installed.{plugin_name}.tools",  str(tools_dir)),
+        ]
+        for pkg_name, pkg_path in _ancestors:
+            if pkg_name not in sys.modules:
+                pkg = types.ModuleType(pkg_name)
+                pkg.__path__ = [pkg_path]
+                pkg.__package__ = pkg_name
+                sys.modules[pkg_name] = pkg
         spec = importlib.util.spec_from_file_location(module_name, py_file, submodule_search_locations=[])
         if not spec or not spec.loader:
             raise ImportError(f"Could not build spec for {py_file}")
         module = importlib.util.module_from_spec(spec)
-        module.__package__ = package_name
+        module.__package__ = f"plugins._installed.{plugin_name}.tools"
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
         return module

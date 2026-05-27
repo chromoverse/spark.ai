@@ -208,6 +208,19 @@ def build_user_message(
         tool_names = []
         for cat in categories_list:
             tool_names.extend(get_tools_in_category(cat))
+
+        # Cross-category dependencies: some categories need tools from other
+        # categories to build correct multi-step plans.
+        #   entity_search needs current_location (web_knowledge) so SQH can
+        #   plan "current_location → entity_search" for "near me" queries.
+        _CROSS_CATEGORY_TOOLS: dict[str, list[str]] = {
+            "entity_search": ["current_location"],
+        }
+        for cat in categories_list:
+            for extra_tool in _CROSS_CATEGORY_TOOLS.get(cat, []):
+                if extra_tool not in tool_names:
+                    tool_names.append(extra_tool)
+
         tool_names = list(dict.fromkeys(tool_names))  # dedupe preserving order
     else:
         tool_names = []
@@ -255,23 +268,45 @@ def build_user_message(
         category_rules_parts.append("""FILE_CREATE: inputs.content MUST be a plain text string (never list/dict). inputs.path MUST include file extension. Format structured data as readable text before passing.""")
 
     if "web_research" in tool_set:
-        category_rules_parts.append("""WEB RESEARCH: Pure data-gathering, no summarization. MUST set: formatted_queries (1-3 optimized search strings), intent.
-Intents: factual_lookup | research | hotel_search | product_search | restaurant_search | local_service | person_search | movie_search | event_search | college_search | place_search | flight_search.
-For entity intents: set entity_schema (hotel|product|restaurant|local_business|person|movie|event|college|place|flight). No site: operators in queries.
+        category_rules_parts.append("""WEB RESEARCH: Knowledge retrieval only. MUST set: formatted_queries (1-3 optimized search strings), intent.
+Intents: factual_lookup | research.
+- factual_lookup: short factual answers, snippets, weather, current state. Output: search snippets only (no scraping).
+- research: deep dive, summaries, explanations. Output: scraped page content + concatenated text. ALWAYS chain ai_summarize after (bind context to $.step.data.text).
+DO NOT use web_research for finding entities (hotels, restaurants, places, products, events, movies, colleges, flights, local services). Those go to entity_search.""")
+
+    if "entity_search" in tool_set:
+        category_rules_parts.append("""ENTITY SEARCH: Find structured entities (hotels, restaurants, places, etc). MUST set: query, intent.
+Intents: hotel_search | restaurant_search | local_service | place_search | event_search | person_search | movie_search | college_search | flight_search | product_search.
+entity_schema is auto-derived from intent; only set explicitly if overriding.
 Intent mapping:
-- "hotels/hostels/places to stay in X" → hotel_search, entity_schema=hotel
-- "buy X"/"price of X"/"X on amazon" → product_search, entity_schema=product
-- "restaurants/where to eat in X" → restaurant_search, entity_schema=restaurant
-- "hospitals/gyms/clinics/plumbers near me" → local_service, entity_schema=local_business
-- "who is X"/"X biography"/"tell me about [person name]" → person_search, entity_schema=person
-- "X movie"/"best movies"/"X TV show"/"what to watch" → movie_search, entity_schema=movie
-- "events in X"/"concerts"/"X festival"/"upcoming shows" → event_search, entity_schema=event
-- "best colleges for X"/"X university"/"engineering colleges in X" → college_search, entity_schema=college
-- "places to visit in X"/"X attractions"/"things to do in X" → place_search, entity_schema=place
-- "flights to X"/"X to Y flights"/"cheapest flight" → flight_search, entity_schema=flight
-research intent→ALWAYS chain ai_summarize after (bind context to $.step.data.text).
-*_search/local_service/factual_lookup→web_research alone is enough.
-"near me"→plan current_location(client)→web_research(server) with input_bindings location=$.step_1.data.location_string. In formatted_queries, replace "near me" with the actual city name from location (e.g., "hospital near me" → "hospital Kathmandu").""")
+- "hotels/hostels/places to stay in X"            → hotel_search
+- "buy X"/"price of X"/"X on amazon/flipkart"     → product_search
+- "restaurants/where to eat in X"                  → restaurant_search
+- "hospitals/gyms/pharmacies/clinics/banks/atms"   → local_service
+- "who is X"/"X biography"/"tell me about Y"       → person_search   (person facts → use web_research instead)
+- "X movie"/"best movies"/"what to watch tonight"  → movie_search
+- "events in X"/"concerts in X"/"X festival"       → event_search
+- "best colleges for X"/"X university"             → college_search
+- "places to visit in X"/"things to do in Y"       → place_search
+- "flights to X"/"X to Y flights"                  → flight_search
+Geographic resolution — CRITICAL:
+- "near me" / "nearby" / "around me" → plan current_location(client) FIRST, then entity_search(server) with input_bindings location=$.step_1.data.location_string, latitude=$.step_1.data.latitude, longitude=$.step_1.data.longitude. Bind ALL THREE. Latitude/longitude enable structured-provider retrieval (Google Places / Foursquare / OSM) and geo hard-filtering.
+- "in <city>" / "around <place>" / "at <location>" → DO NOT plan current_location. The entity_search tool extracts the place name from the query and forward-geocodes it internally. Just pass the raw query through. Example: "hotels in Mumbai" → entity_search(intent=hotel_search, query="hotels in Mumbai"). The tool resolves Mumbai → coords → OSM by itself.
+- No location mention at all → entity_search runs DDGS+LLM-extract fallback (lower quality). Avoid this when possible.
+formatted_queries: only used by the DDGS fallback path. Set 1-3 short queries that include the resolved city name when relevant. No "site:" operators.
+entity_search returns ranked entities directly — no chaining needed for the search itself. For follow-up actions (book, buy, play), chain browser_action with the entity as input.""")
+
+    if "browser_action" in tool_set:
+        category_rules_parts.append("""BROWSER ACTION: Transactional browser ops only — never search. MUST set: action.
+Actions: open_url | play_media | book_hotel | buy_product | reserve_table | book_ticket.
+Inputs:
+- action: the verb (required, enum above)
+- entity: the structured entity dict from a prior entity_search step (optional, recommended)
+- url: explicit URL override (optional)
+- title: for play_media when no entity is given
+Typical chain: entity_search(intent=hotel_search) → browser_action(action=book_hotel, entity=$.step_1.data.entities[0]).
+"play X movie"/"watch X" → action=play_media, title="X". Does not need entity_search first.
+"book/buy/reserve that one" (referring to a prior search result) → action=book_hotel/buy_product/reserve_table with entity bound to the selected step output.""")
 
     category_rules_block = ""
     if category_rules_parts:

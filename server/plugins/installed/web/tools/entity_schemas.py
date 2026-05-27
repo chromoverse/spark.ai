@@ -4,6 +4,15 @@ Entity data contracts for web_research structured extraction.
 Each model maps to one entity_schema value SQH can pass to web_research:
   hotel | product | restaurant | local_business |
   person | movie | event | college | place | flight
+
+Coords ownership
+────────────────
+``latitude`` / ``longitude`` are owned by *structured providers* (OSM today,
+Google Places / Foursquare next). The LLM-extraction path is the fallback
+when no provider covers the intent and is allowed to *opportunistically*
+fill coords only when they are literally visible on the page (e.g. an
+embedded map JSON or microdata). It must never guess them — geo-filtering
+depends on the integrity of these values.
 """
 
 from __future__ import annotations
@@ -18,12 +27,16 @@ class HotelEntity(BaseModel):
     rating: Optional[float] = None
     review_count: Optional[int] = None
     location: Optional[str] = None
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     amenities: List[str] = Field(default_factory=list)
     images: List[str] = Field(default_factory=list)
     booking_url: Optional[str] = None
     maps_url: Optional[str] = None
     description: Optional[str] = None
     stars: Optional[int] = None
+    source: Optional[str] = None
     source_url: Optional[str] = None
 
 
@@ -51,6 +64,8 @@ class RestaurantEntity(BaseModel):
     rating: Optional[float] = None
     review_count: Optional[int] = None
     address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     phone: Optional[str] = None
     hours: Optional[str] = None
     menu_url: Optional[str] = None
@@ -58,6 +73,7 @@ class RestaurantEntity(BaseModel):
     maps_url: Optional[str] = None
     images: List[str] = Field(default_factory=list)
     features: List[str] = Field(default_factory=list)
+    source: Optional[str] = None
     source_url: Optional[str] = None
 
 
@@ -68,12 +84,15 @@ class LocalBusinessEntity(BaseModel):
     rating: Optional[float] = None
     review_count: Optional[int] = None
     address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     phone: Optional[str] = None
     hours: Optional[str] = None
     website: Optional[str] = None
     maps_url: Optional[str] = None
     description: Optional[str] = None
     images: List[str] = Field(default_factory=list)
+    source: Optional[str] = None
     source_url: Optional[str] = None
 
 
@@ -115,12 +134,15 @@ class EventEntity(BaseModel):
     time: Optional[str] = None
     venue: Optional[str] = None
     address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     price: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
     images: List[str] = Field(default_factory=list)
     booking_url: Optional[str] = None
     maps_url: Optional[str] = None
+    source: Optional[str] = None
     source_url: Optional[str] = None
 
 
@@ -146,6 +168,9 @@ class PlaceEntity(BaseModel):
     type: str = "place"
     name: str
     location: Optional[str] = None
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     rating: Optional[float] = None
     review_count: Optional[int] = None
     category: Optional[str] = None
@@ -155,6 +180,7 @@ class PlaceEntity(BaseModel):
     images: List[str] = Field(default_factory=list)
     maps_url: Optional[str] = None
     website: Optional[str] = None
+    source: Optional[str] = None
     source_url: Optional[str] = None
 
 
@@ -189,7 +215,12 @@ ENTITY_SCHEMA_MAP = {
 ENTITY_FIELD_DESCRIPTIONS = {
     "hotel": (
         "Extract: name, price_per_night (e.g. '$120/night'), rating (0-5 float), "
-        "review_count, location, amenities (list), booking_url, stars (1-5 int), description."
+        "review_count, location, address (street/full address), amenities (list), "
+        "booking_url, stars (1-5 int), description. "
+        "Only include latitude/longitude (decimal degrees) when they are LITERALLY visible "
+        "on the page (embedded map JSON, microdata 'geo.latitude', explicit 'lat=…' params). "
+        "Never guess coords — the structured providers own them and a hallucinated value "
+        "breaks geo-filtering."
     ),
     "product": (
         "Extract: name, price (current price string), original_price (if discounted), "
@@ -197,11 +228,13 @@ ENTITY_FIELD_DESCRIPTIONS = {
     ),
     "restaurant": (
         "Extract: name, cuisine, price_range (e.g. '$$'), rating (0-5 float), "
-        "review_count, address, phone, hours, menu_url, booking_url, features (list)."
+        "review_count, address, phone, hours, menu_url, booking_url, features (list). "
+        "Only include latitude/longitude when literally visible on the page — never guess."
     ),
     "local_business": (
         "Extract: name, category, rating (0-5 float), review_count, address, "
-        "phone, hours, website, description."
+        "phone, hours, website, description. "
+        "Only include latitude/longitude when literally visible on the page — never guess."
     ),
     "person": (
         "Extract: name, title (role/occupation e.g. 'Actor', 'CEO'), born (date or year), "
@@ -215,7 +248,8 @@ ENTITY_FIELD_DESCRIPTIONS = {
     "event": (
         "Extract: name, date (e.g. 'June 15, 2026'), time, venue (venue name), "
         "address, price (ticket price string), description, "
-        "category (concert/conference/festival/sports/etc), booking_url."
+        "category (concert/conference/festival/sports/etc), booking_url. "
+        "Only include latitude/longitude when literally visible on the page — never guess."
     ),
     "college": (
         "Extract: name, location (city/state/country), ranking (e.g. '#5 in India'), "
@@ -224,9 +258,10 @@ ENTITY_FIELD_DESCRIPTIONS = {
         "acceptance_rate (e.g. '12%'), description, website."
     ),
     "place": (
-        "Extract: name, location (city/country), rating (0-5 float), review_count, "
+        "Extract: name, location (city/country), address, rating (0-5 float), review_count, "
         "category (temple/park/museum/beach/fort/etc), hours (opening hours), "
-        "price (entry fee if any), description (1-2 sentences), website."
+        "price (entry fee if any), description (1-2 sentences), website. "
+        "Only include latitude/longitude when literally visible on the page — never guess."
     ),
     "flight": (
         "Extract: name (airline + flight number or route e.g. 'Air India AI-814'), "
