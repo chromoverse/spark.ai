@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
@@ -44,6 +45,30 @@ _VALID_INTENTS = {"factual_lookup", "research"}
 
 # Overall wall-clock cap for the entire web_research call.
 _TOTAL_TIMEOUT_S = 75.0
+
+# Phrases that mean "I want pictures" — both implicit and explicit. We use this
+# to opportunistically add an `images` field to the response without changing
+# the tool's contract for non-image queries.
+_IMAGE_INTENT_RE = re.compile(
+    r"\b(images?|photos?|pictures?|pics?|portraits?|headshots?|"
+    r"poster|cover\s+art|screenshots?)\b",
+    re.IGNORECASE,
+)
+_IMAGE_FETCH_TIMEOUT_S = 8.0
+_IMAGE_LIMIT = 8
+
+
+def _wants_images(query: str) -> bool:
+    return bool(_IMAGE_INTENT_RE.search(query or ""))
+
+
+def _image_query(query: str) -> str:
+    """Strip image-intent words from the query before sending to image search —
+    Bing/DDG image endpoints already know they're returning images, and the
+    extra word usually hurts ranking ('siddthecoder images' < 'siddthecoder')."""
+    stripped = _IMAGE_INTENT_RE.sub(" ", query or "").strip()
+    stripped = re.sub(r"\s+", " ", stripped)
+    return stripped or query
 
 
 class WebResearchTool(BaseTool):
@@ -92,6 +117,7 @@ class WebResearchTool(BaseTool):
             "snippets":        {"type": "array",  "optional": True, "description": "factual_lookup only"},
             "scraped_content": {"type": "array",  "optional": True, "description": "research only"},
             "text":            {"type": "string", "optional": True, "description": "research only — ready for ai_summarize"},
+            "images":          {"type": "array",  "optional": True, "description": "Present only when the query mentions images/photos/pictures."},
         },
         "error": {"type": "string"},
     }
@@ -173,10 +199,12 @@ class WebResearchTool(BaseTool):
         task_id: str,
     ) -> ToolOutput:
         """Search snippets only — no scraping, no LLM. Pure data."""
-        all_results, sources = await _shared.multi_search(
+        search_coro = _shared.multi_search(
             search_queries, max_results,
             tool_name="web_research", user_id=user_id, task_id=task_id,
         )
+        images_coro = self._fetch_images_if_requested(query, user_id, task_id)
+        (all_results, sources), images = await asyncio.gather(search_coro, images_coro)
         await _emit(user_id, task_id, "search_complete",
                     f"Found {len(all_results)} snippets", count=len(all_results))
 
@@ -189,15 +217,15 @@ class WebResearchTool(BaseTool):
             for r in all_results[:max_results]
             if r.get("snippet")
         ]
-        return ToolOutput(
-            success=True,
-            data={
-                "intent": "factual_lookup",
-                "result_type": "snippets",
-                "snippets": snippets,
-                "sources": sources,
-            },
-        )
+        data: Dict[str, Any] = {
+            "intent": "factual_lookup",
+            "result_type": "snippets",
+            "snippets": snippets,
+            "sources": sources,
+        }
+        if images:
+            data["images"] = images
+        return ToolOutput(success=True, data=data)
 
     # ── research (raw scraped pages) ────────────────────────────────────────
 
@@ -211,24 +239,26 @@ class WebResearchTool(BaseTool):
         task_id: str,
     ) -> ToolOutput:
         await _emit(user_id, task_id, "searching", f"Searching {len(search_queries)} queries")
-        all_results, sources = await _shared.multi_search(
+        search_coro = _shared.multi_search(
             search_queries, max_results,
             tool_name="web_research", user_id=user_id, task_id=task_id,
         )
+        images_coro = self._fetch_images_if_requested(query, user_id, task_id)
+        (all_results, sources), images = await asyncio.gather(search_coro, images_coro)
         await _emit(user_id, task_id, "search_complete",
                     f"Found {len(all_results)} results", count=len(all_results))
 
         if not all_results:
-            return ToolOutput(
-                success=True,
-                data={
-                    "intent": "research",
-                    "result_type": "scraped_content",
-                    "scraped_content": [],
-                    "text": "",
-                    "sources": [],
-                },
-            )
+            data: Dict[str, Any] = {
+                "intent": "research",
+                "result_type": "scraped_content",
+                "scraped_content": [],
+                "text": "",
+                "sources": [],
+            }
+            if images:
+                data["images"] = images
+            return ToolOutput(success=True, data=data)
 
         urls = [r["url"] for r in all_results]
         await _emit(user_id, task_id, "scraping",
@@ -255,16 +285,45 @@ class WebResearchTool(BaseTool):
         await _emit(user_id, task_id, "complete",
                     f"Scraped {len(pages)} pages", count=len(pages))
 
-        return ToolOutput(
-            success=True,
-            data={
-                "intent": "research",
-                "result_type": "scraped_content",
-                "scraped_content": pages,
-                "text": text_context,
-                "sources": sources,
-            },
-        )
+        data: Dict[str, Any] = {
+            "intent": "research",
+            "result_type": "scraped_content",
+            "scraped_content": pages,
+            "text": text_context,
+            "sources": sources,
+        }
+        if images:
+            data["images"] = images
+        return ToolOutput(success=True, data=data)
+
+    # ── Image side-channel ───────────────────────────────────────────────────
+
+    async def _fetch_images_if_requested(
+        self,
+        query: str,
+        user_id: str,
+        task_id: str,
+    ) -> List[str]:
+        """If the query asks for images/photos/pictures, fetch them in
+        parallel with the main search. Never raises — empty list on failure."""
+        if not _wants_images(query):
+            return []
+        img_query = _image_query(query)
+        await _emit(user_id, task_id, "image_search",
+                    f"Fetching images for: {img_query[:60]}",
+                    query=img_query)
+        try:
+            return await asyncio.wait_for(
+                _shared.search_images(img_query, limit=_IMAGE_LIMIT),
+                timeout=_IMAGE_FETCH_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            _log.info("image side-search timed out (>%.0fs) for %r",
+                      _IMAGE_FETCH_TIMEOUT_S, img_query)
+            return []
+        except Exception as exc:
+            _log.debug("image side-search failed for %r: %s", img_query, exc)
+            return []
 
 
 __all__ = ["WebResearchTool"]

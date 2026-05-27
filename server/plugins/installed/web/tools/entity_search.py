@@ -521,7 +521,7 @@ def _enrich_images_from_scraped(entities: List[Dict], scraped: List[Dict]) -> No
     page_images: Dict[str, List[str]] = {}
     all_images: List[str] = []
     for item in scraped:
-        imgs = item.get("images") or []
+        imgs = [u for u in (item.get("images") or []) if _shared.is_valid_image_url(u)]
         url = item.get("url", "")
         if imgs:
             page_images[url] = imgs
@@ -544,51 +544,6 @@ def _enrich_images_from_scraped(entities: List[Dict], scraped: List[Dict]) -> No
             used.update(picks)
 
 
-def _is_valid_image(url: str) -> bool:
-    low = url.lower()
-    skip_terms = (
-        "1x1", "pixel", "spacer", "blank", "logo", "icon", "sprite", "data:",
-        "tiny.png", "placeholder", "openstreetmap.org", "osm.org", "matomo",
-        "google.com", "gstatic.com", "facebook.com/tr", "analytics", "doubleclick",
-        "favicon", "wp-content/themes", "wp-content/uploads/assets", "theme",
-        "wikimedia.org/img", "maps.wikimedia.org"
-    )
-    if any(term in low for term in skip_terms):
-        return False
-    if low.endswith((".svg", ".ico", ".gif")) and "photo" not in low:
-        return False
-    return True
-
-
-# Serialize DDG image searches to avoid 403 rate-limiting from concurrent hits.
-_DDG_IMAGE_SEM: Optional[asyncio.Semaphore] = None
-
-
-def _get_ddg_image_sem() -> asyncio.Semaphore:
-    global _DDG_IMAGE_SEM
-    if _DDG_IMAGE_SEM is None:
-        _DDG_IMAGE_SEM = asyncio.Semaphore(1)
-    return _DDG_IMAGE_SEM
-
-
-async def _fetch_ddg_images(query: str, limit: int = 3) -> List[str]:
-    """Search DDG for images of a venue — serialized to avoid 403."""
-    async with _get_ddg_image_sem():
-        try:
-            from ddgs import DDGS
-
-            def _sync_search():
-                with DDGS(timeout=8) as ddgs:
-                    return list(ddgs.images(query, max_results=limit, safesearch="moderate"))
-
-            loop = asyncio.get_running_loop()
-            results = await loop.run_in_executor(None, _sync_search)
-            return [r["image"] for r in results if r.get("image") and _is_valid_image(r["image"])]
-        except Exception as exc:
-            _log.warning("DDG image search failed for %s: %s", query, exc)
-            return []
-
-
 async def _enrich_images_nodriver(
     entities: List[Dict],
     top_n: int = 5,
@@ -600,19 +555,21 @@ async def _enrich_images_nodriver(
 
     Strategy per entity (stops at first success):
       1. Static httpx scrape of official website (fast, <1s)
-      2. DDG Image Search for ``name + city`` (fast, reliable, ~2s)
+      2. Image search via _shared.search_images — DDG with Bing fallback (~2s)
       3. Nodriver scrape of venue page found via web search (slow, 5-10s)
 
-    Only runs when the average images-per-entity is below 2 so we don't
-    burn Chrome/network budget when providers already returned photos.
+    Per-entity gating: any entity in the top_n whose existing ``images`` list
+    has zero *valid* URLs is a target. We deliberately don't short-circuit on
+    a global average — that used to leave half the list with empty thumbnails
+    whenever providers returned a couple of placeholder images.
     """
     if not entities:
         return
-    avg_images = sum(len(e.get("images") or []) for e in entities) / len(entities)
-    if avg_images >= 2:
-        return
 
-    targets = [e for e in entities[:top_n] if not e.get("images")]
+    def _has_valid_image(e: Dict) -> bool:
+        return any(_shared.is_valid_image_url(u) for u in (e.get("images") or []))
+
+    targets = [e for e in entities[:top_n] if not _has_valid_image(e)]
     if not targets:
         return
 
@@ -639,17 +596,17 @@ async def _enrich_images_nodriver(
                         scrape_tool._scrape_httpx(website), timeout=5.0,
                     )
                     if res and res.get("images"):
-                        filtered = [i for i in res["images"] if _is_valid_image(i)]
+                        filtered = [i for i in res["images"] if _shared.is_valid_image_url(i)]
                         if filtered:
                             entity["images"] = filtered[:3]
                             return
                 except Exception:
                     pass  # fall through to next tier
 
-        # ── Tier 2: DDG Image Search (fast, reliable) ─────────────────
+        # ── Tier 2: multi-source image search (DDG → Bing fallback) ───
         if name:
-            search_q = f"{name} {user_city}".strip()
-            imgs = await _fetch_ddg_images(search_q, limit=3)
+            search_q = " ".join(p for p in (name, user_city) if p).strip()
+            imgs = await _shared.search_images(search_q, limit=3)
             if imgs:
                 entity["images"] = imgs[:3]
                 return
@@ -676,7 +633,7 @@ async def _enrich_images_nodriver(
                     scrape_tool._scrape_nodriver(scrape_url), timeout=12.0,
                 )
                 if res and res.get("images"):
-                    filtered = [i for i in res["images"] if _is_valid_image(i)]
+                    filtered = [i for i in res["images"] if _shared.is_valid_image_url(i)]
                     if filtered:
                         entity["images"] = filtered[:3]
                         return
