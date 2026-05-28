@@ -56,6 +56,58 @@ class PlaywrightRuntime(BrowserRuntime):
             return []
         return self._context.pages
 
+    async def find_or_create_page(self, host_match: str | None = None) -> Page:
+        """Reuse a tab whose URL contains ``host_match``; else create one.
+
+        Why: keeps "play another song" reusing the YouTube tab instead of
+        spawning a new one each time. The match is intentionally loose
+        (substring on URL) so ``youtube.com/watch?...`` and
+        ``youtube.com/results?...`` both count as "the YouTube tab".
+        """
+        if not self._context:
+            raise BrowserError(BrowserErrorType.BROWSER_DEAD, "Not connected")
+
+        if host_match:
+            needle = host_match.lower()
+            best: Optional[Page] = None
+            for p in self._context.pages:
+                url = (p.url or "").lower()
+                if needle in url:
+                    best = p
+                    break
+            if best is not None:
+                return best
+
+        # No match — prefer an existing about:blank/new-tab over spawning yet another.
+        for p in self._context.pages:
+            url = (p.url or "").lower()
+            if url in ("", "about:blank", "chrome://newtab/"):
+                return p
+
+        return await self.new_page()
+
+    async def bring_to_front(self, page: Page) -> None:
+        """Raise the tab inside Chrome, then raise the Chrome window itself.
+
+        page.bring_to_front handles the in-Chrome tab focus. On Windows we
+        additionally pull the Chrome OS window to the foreground via the
+        Win32 API, since CDP cannot do that for us. Failures are logged
+        and swallowed — focus is best-effort, not a correctness requirement.
+        """
+        try:
+            await page.bring_to_front()
+        except Exception as e:
+            logger.debug("page.bring_to_front failed: %s", e)
+
+        # OS-level window raise (Windows only — no-op elsewhere).
+        import sys
+        if sys.platform != "win32":
+            return
+        try:
+            await asyncio.to_thread(_raise_chrome_window_win32)
+        except Exception as e:
+            logger.debug("Windows foreground raise failed: %s", e)
+
     async def disconnect(self) -> None:
         """Disconnect from browser."""
         if self._health_task:
@@ -124,3 +176,80 @@ class PlaywrightRuntime(BrowserRuntime):
                 break
             except Exception as e:
                 logger.exception("Health monitor error: %s", e)
+
+
+def _raise_chrome_window_win32() -> None:
+    """Find a Chrome top-level window and yank it to the foreground.
+
+    Uses ctypes so we don't take a hard dep on pywin32. We look for the
+    debug Chrome we launched (window class ``Chrome_WidgetWin_1`` and a
+    visible window owned by chrome.exe). SetForegroundWindow has well-known
+    rules — it can be denied when the calling process isn't the
+    foreground; we work around that by sending a NULL ALT keypress first,
+    which is the standard trick to unlock focus stealing.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    psapi = ctypes.windll.psapi
+
+    EnumWindowsProc = ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+    )
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    SW_RESTORE = 9
+    SW_SHOW = 5
+    VK_MENU = 0x12  # ALT
+    KEYEVENTF_KEYUP = 0x0002
+
+    target_hwnd: list[int] = []
+
+    def _proc_name_for(hwnd: int) -> str:
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        if not h:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(260)
+            size = wintypes.DWORD(260)
+            if psapi.GetModuleBaseNameW(h, None, buf, size) > 0:
+                return buf.value.lower()
+            return ""
+        finally:
+            kernel32.CloseHandle(h)
+
+    def _cb(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        if cls.value != "Chrome_WidgetWin_1":
+            return True
+        if _proc_name_for(hwnd) != "chrome.exe":
+            return True
+        # Skip zero-area/tooltip windows.
+        rect = wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        if (rect.right - rect.left) < 100 or (rect.bottom - rect.top) < 100:
+            return True
+        target_hwnd.append(hwnd)
+        return False  # stop enumerating
+
+    user32.EnumWindows(EnumWindowsProc(_cb), 0)
+    if not target_hwnd:
+        return
+
+    hwnd = target_hwnd[0]
+    # If minimized, restore first.
+    user32.ShowWindow(hwnd, SW_RESTORE)
+    # Focus-stealing workaround: synthesize an ALT keypress so Windows
+    # grants us SetForegroundWindow.
+    user32.keybd_event(VK_MENU, 0, 0, 0)
+    user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+    user32.SetForegroundWindow(hwnd)
+    user32.BringWindowToTop(hwnd)
+    user32.ShowWindow(hwnd, SW_SHOW)

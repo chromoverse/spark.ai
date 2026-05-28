@@ -52,3 +52,16 @@ class BrowserRuntime(ABC):
     async def on_tab_crashed(self, cb: Callable) -> None:
         """Register callback for tab crash events."""
         pass
+
+    async def find_or_create_page(self, host_match: str | None = None) -> Any:
+        """Reuse an existing tab whose URL contains ``host_match`` (e.g.
+        ``youtube.com``); otherwise return a new tab. Default impl falls
+        back to ``new_page`` — runtimes override if they can introspect.
+        """
+        return await self.new_page()
+
+    async def bring_to_front(self, page: Any) -> None:
+        """Raise both the given tab inside the browser and the browser
+        window itself. Default impl is a no-op; runtimes override.
+        """
+        return None

@@ -9,14 +9,16 @@
     "web_scrape",
     "web_research",
     "entity_search",
-    "browser_action"
+    "browser_action",
+    "media_control"
   ],
   "tools": [
     "web_search",
     "web_scrape",
     "web_research",
     "entity_search",
-    "browser_action"
+    "browser_action",
+    "media_control"
   ],
   "skills": [],
   "dependencies": [],

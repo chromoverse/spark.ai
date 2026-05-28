@@ -4,6 +4,7 @@ from typing import Any, Dict
 from pathlib import Path
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
 from .runtime.playwright import PlaywrightRuntime
+from .session import get_browser_session
 from .state_machine import Flow
 from .replay_log import ReplayLog
 from .verification import GoalVerifier
@@ -134,19 +135,35 @@ class BrowserAgentTool(BaseTool):
         run_id = f"{intent}_{hash(query) % 10000}"
         replay_log.start_run(run_id)
         
-        runtime = None
+        # We use the process-wide BrowserSession so the CDP connection lives
+        # between calls — "next song" doesn't pay the reconnect cost, and a
+        # follow-up control intent ("pause") can act on the same live tab.
+        # Dry-run callers get a private runtime because dry_run is a flag on
+        # the runtime instance and the shared session is always real.
+        session = None if dry_run else get_browser_session()
+        private_runtime: PlaywrightRuntime | None = None
+
         try:
-            # Connect to browser
-            runtime = PlaywrightRuntime(dry_run=dry_run)
-            await runtime.connect()
-            
-            # Get or create page
-            pages = await runtime.pages()
-            if pages:
-                page = pages[0]
+            if session is not None:
+                runtime = await session.runtime()
             else:
-                page = await runtime.new_page()
-            
+                private_runtime = PlaywrightRuntime(dry_run=True)
+                await private_runtime.connect()
+                runtime = private_runtime
+
+            # Reuse the adapter's tab if it's already open (so "play another
+            # song" updates the existing YouTube tab instead of stacking a
+            # new one), then bring Chrome to the foreground.
+            host_hint = None
+            base_url = getattr(adapter_class, "base_url", None) or ""
+            if base_url:
+                from urllib.parse import urlparse
+                host = urlparse(base_url).netloc.lower()
+                host_hint = host.removeprefix("www.") if host else None
+
+            page = await runtime.find_or_create_page(host_hint)
+            await runtime.bring_to_front(page)
+
             # Create adapter and flow
             adapter = adapter_class()
             adapter.verifier = GoalVerifier()
@@ -186,8 +203,13 @@ class BrowserAgentTool(BaseTool):
             )
         finally:
             replay_log.end_run()
-            if runtime:
-                await runtime.disconnect()
+            # Only disconnect the private (dry-run) runtime — the shared
+            # session must stay alive across calls.
+            if private_runtime is not None:
+                try:
+                    await private_runtime.disconnect()
+                except Exception:
+                    logger.debug("private runtime disconnect failed", exc_info=True)
 
 
 # Register adapters

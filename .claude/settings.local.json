@@ -122,7 +122,11 @@
       "Bash(git --no-pager diff -- server/plugins/installed/web/providers/osm_provider.py)",
       "Bash(mkdir -p server/plugins/installed/web/browser/devx/fixtures && mv server/testing/fixtures/*.html server/plugins/installed/web/browser/devx/fixtures/ && rmdir server/testing/fixtures && ls server/plugins/installed/web/browser/devx/fixtures/)",
       "Bash(python -c \"from plugins.installed.web.browser.tool import BrowserAgentTool; from plugins.installed.web.browser.state_machine import Flow; import inspect; sig = inspect.signature\\(Flow.__init__\\); print\\('Flow params:', list\\(sig.parameters.keys\\(\\)\\)\\); t = BrowserAgentTool\\(\\); print\\('FORBIDDEN:', __import__\\('plugins.installed.web.browser.tool', fromlist=['FORBIDDEN_INTENTS']\\).FORBIDDEN_INTENTS\\)\")",
-      "Bash(timeout 240 python server/testing/test_browser_youtube_e2e.py)"
+      "Bash(timeout 240 python server/testing/test_browser_youtube_e2e.py)",
+      "Bash(python server/testing/test_browser_youtube_e2e.py --query \"Morning Songs Mind Fresh\")",
+      "Bash(python server/testing/test_browser_youtube_e2e.py --query \"lofi beats\")",
+      "Bash(python server/testing/test_browser_session_reuse.py)",
+      "Bash(python server/testing/test_media_control.py)"
     ]
   }
 }

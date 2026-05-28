@@ -107,6 +107,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Close the persistent browser session (CDP connection). Best-effort —
+    # never let a stuck browser block shutdown.
+    try:
+        from plugins.installed.web.browser.session import shutdown_browser_session
+        await shutdown_browser_session()
+        logger.info(" Browser session closed")
+    except Exception as e:
+        logger.debug("browser session shutdown skipped: %s", e)
+
     # Cleanup database
     await close_mongo_connection()
     logger.info(" Database disconnected")
