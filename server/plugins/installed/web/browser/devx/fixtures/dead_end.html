@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dead End Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .error { color: #b00; }
+    </style>
+</head>
+<body>
+    <h1>Search Results</h1>
+    <p>The page loads but no results are present. The adapter's
+       <code>verify_goal_completed</code> must return false and the
+       state machine must surface <code>GOAL_UNVERIFIED</code> instead
+       of silently calling the flow done.</p>
+
+    <div id="results" data-testid="results-container">
+        <p class="error">No results match your query.</p>
+    </div>
+
+    <!-- Intentionally no /watch link, no add-to-cart, no confirmation. -->
+</body>
+</html>

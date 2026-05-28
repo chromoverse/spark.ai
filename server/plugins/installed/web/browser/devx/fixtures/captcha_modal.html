@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Captcha Modal Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #captcha {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999;
+        }
+        .box {
+            background: white; padding: 24px; border-radius: 6px;
+            min-width: 320px; text-align: center;
+        }
+        .checkbox {
+            display: inline-block; width: 22px; height: 22px;
+            border: 2px solid #888; vertical-align: middle; margin-right: 8px;
+            cursor: pointer; border-radius: 3px;
+        }
+        .checkbox.checked { background: #0a0; }
+    </style>
+</head>
+<body>
+    <h1>Protected page</h1>
+    <p>Behind the captcha is the real content.</p>
+    <button id="continue-btn" style="display:none">Continue</button>
+
+    <!--
+        Human-loop fixture.
+
+        intelligence.detect_captcha should match this overlay (iframe-less
+        recaptcha-style class names + visible "I'm not a robot" text).
+        The state machine must call pause_for_human and only proceed once
+        the box is checked (simulating the user solving it).
+    -->
+    <div id="captcha" class="g-recaptcha" data-sitekey="test">
+        <div class="box">
+            <h3>Verify you are human</h3>
+            <div>
+                <span id="cb" class="checkbox" role="checkbox" aria-checked="false"></span>
+                <span>I'm not a robot</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('cb').addEventListener('click', function() {
+            this.classList.add('checked');
+            this.setAttribute('aria-checked', 'true');
+            setTimeout(() => {
+                document.getElementById('captcha').style.display = 'none';
+                document.getElementById('continue-btn').style.display = 'inline-block';
+            }, 400);
+        });
+    </script>
+</body>
+</html>

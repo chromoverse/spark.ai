@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Delayed Render Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .loading { color: #999; }
+        .content { display: none; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="loading">Loading...</div>
+    </div>
+    
+    <script>
+        // Simulate React-style delayed mount
+        setTimeout(() => {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="content">
+                    <h1>Content Loaded</h1>
+                    <p>This content appeared after 1 second delay.</p>
+                    <button id="action-btn">Click Me</button>
+                </div>
+            `;
+            
+            // Add more DOM changes to test stability
+            setTimeout(() => {
+                const p = document.createElement('p');
+                p.textContent = 'Additional content loaded.';
+                app.appendChild(p);
+            }, 200);
+            
+            setTimeout(() => {
+                const p = document.createElement('p');
+                p.textContent = 'Final content loaded.';
+                app.appendChild(p);
+            }, 400);
+        }, 1000);
+    </script>
+</body>
+</html>

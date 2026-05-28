@@ -119,7 +119,10 @@
       "Bash(curl -s -o /tmp/osm_kumi.json -w \"HTTP %{http_code} time %{time_total}s size %{size_download}\\\\n\" -X POST \"https://overpass.kumi.systems/api/interpreter\" -H \"User-Agent: SparkAI/1.0\" -H \"Accept: application/json\" --data-urlencode 'data=[out:json][timeout:8];node[\"amenity\"=\"cafe\"]\\(around:1000,27.7172,85.3240\\);out 5;')",
       "Bash(curl -s -o /tmp/osm_fr.json -w \"HTTP %{http_code} time %{time_total}s size %{size_download}\\\\n\" -X POST \"https://overpass.openstreetmap.fr/api/interpreter\" -H \"User-Agent: SparkAI/1.0\" -H \"Accept: application/json\" --data-urlencode 'data=[out:json][timeout:8];node[\"amenity\"=\"cafe\"]\\(around:1000,27.7172,85.3240\\);out 5;')",
       "Bash(curl -s -o /tmp/osm_main2.json -w \"HTTP %{http_code} time %{time_total}s size %{size_download}\\\\n\" -X POST \"https://overpass-api.de/api/interpreter\" -H \"User-Agent: SparkAI/1.0\" --data-urlencode 'data=[out:json][timeout:8];node[\"amenity\"=\"cafe\"]\\(around:1000,27.7172,85.3240\\);out 5;')",
-      "Bash(git --no-pager diff -- server/plugins/installed/web/providers/osm_provider.py)"
+      "Bash(git --no-pager diff -- server/plugins/installed/web/providers/osm_provider.py)",
+      "Bash(mkdir -p server/plugins/installed/web/browser/devx/fixtures && mv server/testing/fixtures/*.html server/plugins/installed/web/browser/devx/fixtures/ && rmdir server/testing/fixtures && ls server/plugins/installed/web/browser/devx/fixtures/)",
+      "Bash(python -c \"from plugins.installed.web.browser.tool import BrowserAgentTool; from plugins.installed.web.browser.state_machine import Flow; import inspect; sig = inspect.signature\\(Flow.__init__\\); print\\('Flow params:', list\\(sig.parameters.keys\\(\\)\\)\\); t = BrowserAgentTool\\(\\); print\\('FORBIDDEN:', __import__\\('plugins.installed.web.browser.tool', fromlist=['FORBIDDEN_INTENTS']\\).FORBIDDEN_INTENTS\\)\")",
+      "Bash(timeout 240 python server/testing/test_browser_youtube_e2e.py)"
     ]
   }
 }

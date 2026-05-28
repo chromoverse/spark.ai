@@ -129,10 +129,33 @@ async def _handle_open_url(ctx: BrowserActionContext) -> Dict[str, Any]:
 
 
 async def _handle_play_media(ctx: BrowserActionContext) -> Dict[str, Any]:
-    """Open a YouTube search for the requested title / entity name."""
+    """Delegate to BrowserAgentTool if available, else fallback to URL open."""
     title = ctx.title or ctx.entity.get("name") or ctx.entity.get("title")
     if not title:
         return {"opened": False, "reason": "no title or entity name to play"}
+    
+    # Try automated flow first
+    try:
+        from ..browser.tool import BrowserAgentTool
+        tool = BrowserAgentTool()
+        result = await tool._execute({
+            "intent": "youtube_play",
+            "query": str(title),
+            "dry_run": False
+        })
+        if result.success:
+            return {
+                "opened": True,
+                "automated": True,
+                "action": "play_media",
+                "title": str(title),
+                "message": f"Automated YouTube play for {title!r}",
+                "data": result.data
+            }
+    except Exception as e:
+        logger.warning("BrowserAgentTool failed, falling back to URL open: %s", e)
+    
+    # Fallback to URL open
     url = ctx.url or _youtube_search_url(str(title))
     ok = await _open_browser(url)
     return {
@@ -140,6 +163,7 @@ async def _handle_play_media(ctx: BrowserActionContext) -> Dict[str, Any]:
         "url": url,
         "action": "play_media",
         "title": str(title),
+        "automated": False,
         "message": f"Opened YouTube for {title!r}" if ok else "Browser launch failed",
     }
 

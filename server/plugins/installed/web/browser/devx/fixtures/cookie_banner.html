@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cookie Banner Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #cookie-banner {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #333;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            z-index: 1000;
+        }
+        #cookie-banner button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        .content { margin-bottom: 100px; }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <h1>Cookie Banner Test</h1>
+        <p>This page has a cookie banner that must be dismissed.</p>
+        <button id="target-btn">Target Button</button>
+    </div>
+    
+    <div id="cookie-banner">
+        <p>We use cookies to improve your experience.</p>
+        <button id="accept-all">Accept all</button>
+        <button id="reject">Reject</button>
+    </div>
+    
+    <script>
+        document.getElementById('accept-all').addEventListener('click', function() {
+            document.getElementById('cookie-banner').style.display = 'none';
+        });
+        
+        document.getElementById('reject').addEventListener('click', function() {
+            document.getElementById('cookie-banner').style.display = 'none';
+        });
+        
+        document.getElementById('target-btn').addEventListener('click', function() {
+            alert('Target button clicked!');
+        });
+    </script>
+</body>
+</html>

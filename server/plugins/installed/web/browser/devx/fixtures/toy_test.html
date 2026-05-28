@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Toy Test Page</title>
+</head>
+<body>
+    <h1>Test Form</h1>
+    
+    <!-- Cookie banner for recovery testing -->
+    <div id="cookie-banner" style="position: fixed; bottom: 0; width: 100%; background: #333; color: white; padding: 10px;">
+        <p>We use cookies. <button id="accept-cookies">Accept</button></p>
+    </div>
+    
+    <form id="test-form">
+        <label for="search">Search:</label>
+        <input type="text" id="search" name="search" placeholder="Enter search term">
+        <br><br>
+        <button type="submit" id="submit-btn">Submit</button>
+    </form>
+    
+    <div id="result" style="display: none; margin-top: 20px;">
+        <h2>Success!</h2>
+        <p>Form submitted successfully.</p>
+    </div>
+    
+    <script>
+        // Dismiss cookie banner
+        document.getElementById('accept-cookies').addEventListener('click', function() {
+            document.getElementById('cookie-banner').style.display = 'none';
+        });
+        
+        // Handle form submission
+        document.getElementById('test-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('test-form').style.display = 'none';
+        });
+    </script>
+</body>
+</html>

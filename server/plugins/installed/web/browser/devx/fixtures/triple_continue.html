@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Triple Continue Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        section { border: 1px solid #ccc; padding: 15px; margin-bottom: 12px; }
+        button { padding: 8px 16px; cursor: pointer; }
+        .modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999;
+        }
+        .modal-body { background: white; padding: 24px; border-radius: 6px; }
+    </style>
+</head>
+<body>
+    <h1>Multi-strategy Resolver Test</h1>
+    <p>Three buttons share the visible text "Continue". The resolver must
+       disambiguate by viewport, modal stacking context, or refuse with a
+       low-confidence result.</p>
+
+    <!-- 1: out of viewport (placed far below) -->
+    <section style="margin-top: 1500px;">
+        <h2>Step A (offscreen)</h2>
+        <button id="continue-offscreen">Continue</button>
+    </section>
+
+    <!-- 2: in normal flow, visible -->
+    <section>
+        <h2>Step B (visible)</h2>
+        <button id="continue-visible">Continue</button>
+    </section>
+
+    <!-- 3: inside a modal (topmost layer) -->
+    <div id="modal" class="modal">
+        <div class="modal-body" role="dialog" aria-modal="true" aria-label="Confirm">
+            <p>Are you sure?</p>
+            <button id="continue-modal" data-testid="modal-continue">Continue</button>
+            <button id="cancel-modal">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('cancel-modal').addEventListener('click', () => {
+            document.getElementById('modal').style.display = 'none';
+        });
+    </script>
+</body>
+</html>
