@@ -146,6 +146,108 @@ _SCRAPEABLE_SITE_QUERIES: Dict[str, List[str]] = {
     ],
 }
 
+
+# ── Default marketplace country ──────────────────────────────────────────────
+# SparkAI is a Nepal-centric personal assistant; when no country signal
+# has been bound (SQH didn't plan current_location, geo_resolver was
+# skipped for product_search, the location string lacks a country), we
+# default to NP so the Daraz JSON path still runs. Override per-call by
+# binding ``country_code`` from current_location for users elsewhere.
+_DEFAULT_MARKETPLACE_CC = "NP"
+
+
+# ── Last-seen country cache ──────────────────────────────────────────────────
+# When ``current_location`` *does* run (in this or any previous turn), we
+# stash the resolved country_code here so subsequent product_search calls
+# don't need SQH to re-plan it. Cheap, in-process, per-user — survives the
+# lifetime of the server.
+_LAST_SEEN_COUNTRY: Dict[str, str] = {}
+
+
+def remember_country_code(user_id: str, country_code: str) -> None:
+    """Called by current_location after it resolves a country. Best-effort —
+    if anything goes wrong, we just don't cache."""
+    try:
+        if user_id and country_code:
+            _LAST_SEEN_COUNTRY[str(user_id)] = country_code.strip().upper()
+    except Exception:
+        pass
+
+
+# ── Country-conditional commerce sites ───────────────────────────────────────
+# product_search needs to ask the *right* marketplace for each user. A
+# generic "amazon OR flipkart OR ebay" search ignores Daraz Nepal entirely
+# and returns shelf prices the user can't actually buy at. Pick site
+# filters per country; fall back to the global template above when we
+# don't recognise the code.
+
+_PRODUCT_SITES_BY_COUNTRY: Dict[str, List[str]] = {
+    "NP": [
+        "{query} price specifications site:daraz.com.np",
+        "{query} site:daraz.com.np OR site:hamrobazar.com OR site:sastodeal.com",
+    ],
+    "IN": [
+        "{query} price specifications",
+        "{query} site:amazon.in OR site:flipkart.com OR site:croma.com",
+    ],
+    "BD": [
+        "{query} price specifications site:daraz.com.bd",
+        "{query} site:daraz.com.bd OR site:pickaboo.com",
+    ],
+    "LK": [
+        "{query} price specifications site:daraz.lk",
+        "{query} site:daraz.lk OR site:ikman.lk",
+    ],
+    "PK": [
+        "{query} price specifications site:daraz.pk",
+        "{query} site:daraz.pk OR site:olx.com.pk",
+    ],
+}
+
+
+def _product_templates_for(country_code: Optional[str]) -> List[str]:
+    """Return the product_search query templates for ``country_code``.
+
+    Falls back to the global default in ``_SCRAPEABLE_SITE_QUERIES`` when
+    the code is missing or unrecognised — keeps current behaviour for
+    every market we haven't tuned yet.
+    """
+    if country_code:
+        cc = country_code.strip().upper()
+        if cc in _PRODUCT_SITES_BY_COUNTRY:
+            return _PRODUCT_SITES_BY_COUNTRY[cc]
+    return _SCRAPEABLE_SITE_QUERIES.get("product_search", [])
+
+
+# Minimal country-name → ISO code map so we can infer the marketplace
+# even when only a place name is available (geo_resolver returns names,
+# not codes). Cover the markets we have tuned product sites for; anything
+# else falls through to the global default.
+_COUNTRY_NAME_TO_CODE: Dict[str, str] = {
+    "nepal": "NP",
+    "india": "IN",
+    "bangladesh": "BD",
+    "sri lanka": "LK",
+    "pakistan": "PK",
+    "united states": "US",
+    "united states of america": "US",
+    "united kingdom": "UK",
+    "uk": "UK",
+    "usa": "US",
+}
+
+
+def _normalize_country_code(raw: Optional[str]) -> Optional[str]:
+    """Accept either an ISO code or a country name and return the code."""
+    if not raw:
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    if len(s) == 2 and s.isalpha():
+        return s.upper()
+    return _COUNTRY_NAME_TO_CODE.get(s.lower())
+
 # Wall-clock caps. Mirrors the previous web_research budget so behaviour
 # under load is unchanged.
 _EXTRACT_TIMEOUT_S = 20.0
@@ -226,6 +328,16 @@ class EntitySearchTool(BaseTool):
             "required": False,
             "description": "User longitude. Required alongside latitude.",
         },
+        "country_code": {
+            "type": "string",
+            "required": False,
+            "description": (
+                "ISO-3166 alpha-2 country code from current_location. Used by "
+                "product_search to pick the right marketplace (NP→Daraz, "
+                "IN→Amazon/Flipkart, …). Optional — falls back to the global "
+                "site filter when missing."
+            ),
+        },
         "max_radius_km": {
             "type": "number",
             "required": False,
@@ -294,6 +406,7 @@ class EntitySearchTool(BaseTool):
         location: str = str(self.get_input(inputs, "location", "") or "").strip()
         user_lat = _shared.safe_float(self.get_input(inputs, "latitude", None))
         user_lon = _shared.safe_float(self.get_input(inputs, "longitude", None))
+        country_code: str = str(self.get_input(inputs, "country_code", "") or "").strip()
         max_radius_km = _shared.safe_float(self.get_input(inputs, "max_radius_km", None))
         max_results = int(self.get_input(inputs, "max_results", 5) or 5)
         max_chars = int(self.get_input(inputs, "max_chars", 5000) or 5000)
@@ -324,6 +437,7 @@ class EntitySearchTool(BaseTool):
             max_results, max_chars, location,
             user_lat, user_lon, max_radius_km,
             user_id, task_id,
+            country_code=country_code,
         )
 
     # ── Core handler (replaces the old _handle_entity) ───────────────────────
@@ -342,18 +456,28 @@ class EntitySearchTool(BaseTool):
         max_radius_km: Optional[float],
         user_id: str,
         task_id: str,
+        *,
+        country_code: str = "",
     ) -> ToolOutput:
         radius_km = max_radius_km if max_radius_km else _DEFAULT_RADIUS_KM.get(intent_key)
 
         # ── Resolve coords from the query if SQH didn't bind them ────────────
+        # Skip for intents whose entities aren't place-bound. "best water
+        # bottles" has no geography; running it through Nominatim residue
+        # extraction returns garbage like "Ad Dir`iyah, Saudi Arabia",
+        # which then poisons both the marketplace routing and the
+        # extractor's location filter.
         user_city: str = ""
-        if user_lat is None or user_lon is None:
+        resolved_country: Optional[str] = None
+        intent_uses_geo = intent_key not in {"product_search", "movie_search", "person_search", "flight_search"}
+        if intent_uses_geo and (user_lat is None or user_lon is None):
             from ..providers import geo_resolver
             resolved = await geo_resolver.resolve_query_geo(query)
             if resolved is not None:
                 user_lat = resolved.lat
                 user_lon = resolved.lon
                 user_city = resolved.city or ""
+                resolved_country = resolved.country
                 if not location and resolved.display_name:
                     location = ", ".join(
                         p for p in [resolved.city, resolved.country] if p
@@ -365,6 +489,71 @@ class EntitySearchTool(BaseTool):
                 )
         else:
             user_city = (location.split(",")[0].strip() if location else "")
+
+        # Pick a country code for product_search marketplace routing.
+        # Order: explicit SQH binding > geo-resolved country name > trailing
+        # token of the location string > last-seen cache for this user >
+        # project default. Each step is best-effort — the cache + default
+        # guarantee we always have *something* for product_search, because
+        # SQH can't be relied on to plan current_location every time.
+        marketplace_cc = _normalize_country_code(country_code)
+        if marketplace_cc is None and resolved_country:
+            marketplace_cc = _normalize_country_code(resolved_country)
+        if marketplace_cc is None and location and "," in location:
+            marketplace_cc = _normalize_country_code(location.split(",")[-1].strip())
+        if marketplace_cc is None:
+            cached = _LAST_SEEN_COUNTRY.get(str(user_id)) if user_id else None
+            if cached:
+                marketplace_cc = cached
+        if marketplace_cc is None and intent_key == "product_search":
+            marketplace_cc = _DEFAULT_MARKETPLACE_CC
+
+        # ── Marketplace direct-API path (product_search only) ─────────────────
+        # For product_search in a market we've integrated, hit the
+        # marketplace's listing JSON directly. Skips DDGS + scrape + LLM
+        # extract entirely — faster, free, and ~10× more reliable for
+        # price/image fields than parsing rendered HTML.
+        if intent_key == "product_search" and marketplace_cc == "NP":
+            await _emit(
+                user_id, task_id, "marketplace_query",
+                "Querying Daraz Nepal directly",
+                marketplace="daraz.com.np",
+            )
+            try:
+                from ..providers.daraz_provider import fetch_daraz_products
+                daraz_products = await fetch_daraz_products(query, limit=max(max_results, 10))
+            except Exception as exc:
+                _log.warning("daraz_provider failed: %s — falling back to web search", exc)
+                daraz_products = []
+            if daraz_products:
+                from .ranker import rank_entities
+                ranked = await rank_entities(
+                    daraz_products, entity_schema, query,
+                    user_lat=user_lat, user_lon=user_lon,
+                    max_radius_km=radius_km,
+                    user_city=user_city or None,
+                )
+                _enrich_type_labels(ranked, entity_schema)
+                sources = [{"url": "https://www.daraz.com.np/", "title": "Daraz Nepal"}]
+                await _emit(
+                    user_id, task_id, "complete",
+                    f"Done — {len(ranked[:15])} products via daraz.com.np",
+                    count=len(ranked[:15]),
+                    provider="daraz",
+                )
+                return ToolOutput(
+                    success=True,
+                    data=_build_response(
+                        intent_key,
+                        entities=ranked[:15],
+                        sources=sources,
+                        actions=_build_actions(entity_schema),
+                    ),
+                )
+            await _emit(
+                user_id, task_id, "marketplace_fallback",
+                "Daraz direct API returned 0 — falling back to web search",
+            )
 
         # ── Structured-provider primary path ─────────────────────────────────
         if user_lat is not None and user_lon is not None:
@@ -421,7 +610,10 @@ class EntitySearchTool(BaseTool):
                 )
 
         # ── DDGS + LLM-extract fallback (for non-OSM intents or empty primaries) ─
-        fallback_templates = _SCRAPEABLE_SITE_QUERIES.get(intent_key, [])
+        if intent_key == "product_search":
+            fallback_templates = _product_templates_for(marketplace_cc)
+        else:
+            fallback_templates = _SCRAPEABLE_SITE_QUERIES.get(intent_key, [])
         loc = location or query
         fallback_queries = [t.format(location=loc, query=query) for t in fallback_templates]
         all_search_queries = list(dict.fromkeys(search_queries + fallback_queries))

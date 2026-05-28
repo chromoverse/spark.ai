@@ -80,11 +80,24 @@ export interface EntityCardData {
   source_url?: string;
 }
 
+// Progress for an in-flight (or just-finished) entity-card action, keyed
+// by the normalised entity name. The renderer attaches a compact status
+// strip to the matching card so the user sees "Reaching payment page…"
+// directly under the product they clicked, instead of a separate Browser
+// Action card buried elsewhere in the thread.
+export interface EntityActionProgress {
+  entity_key: string;
+  status: "pending" | "running" | "completed" | "failed";
+  latest_step: string;
+  result_summary?: string;
+}
+
 interface EntityCardsProps {
   entities: EntityCardData[];
   intent?: string;
   onDismiss: () => void;
   onAction?: (action: string, entity: EntityCardData) => void;
+  entityActions?: EntityActionProgress[];
 }
 
 // ── Entity action config ──────────────────────────────────────────────────────
@@ -649,15 +662,73 @@ function EntityDetailModal({ entity, onClose }: { entity: EntityCardData; onClos
   );
 }
 
+// ── Inline action progress (Buy/Book/Play live status) ──────────────────────
+//
+// Renders below the product image once the user clicks an action button.
+// Surfaces the latest step from the running BrowserActionTool — e.g.
+// "Signing in to Daraz", "Reached payment page" — and switches to a
+// success/failure badge when the action completes. Keeping it inline
+// with the card means the user doesn't have to hunt for a separate
+// Browser Action card elsewhere in the thread.
+
+function ActionProgressStrip({ progress }: { progress: EntityActionProgress }) {
+  const isDone = progress.status === "completed";
+  const isFail = progress.status === "failed";
+  const isRunning = !isDone && !isFail;
+  const message = (
+    (isDone || isFail) ? (progress.result_summary || progress.latest_step) : progress.latest_step
+  ) || (isRunning ? "Working…" : "Done");
+
+  const tint = isFail ? "rgba(220, 80, 80, 0.55)"
+             : isDone ? "rgba(80, 180, 120, 0.55)"
+             : "var(--sp-accent)";
+  const bg   = isFail ? "rgba(220, 80, 80, 0.08)"
+             : isDone ? "rgba(80, 180, 120, 0.08)"
+             : "rgba(217, 119, 87, 0.08)";
+
+  return (
+    <div style={{
+      marginTop: 8,
+      padding: "7px 10px",
+      borderRadius: 7,
+      border: `1px solid ${tint}`,
+      background: bg,
+      display: "flex", alignItems: "center", gap: 8,
+      fontSize: 11, color: "var(--sp-ink-2)",
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%",
+        background: tint,
+        boxShadow: isRunning ? `0 0 6px ${tint}` : "none",
+        animation: isRunning ? "sp-pulse 1.2s ease-in-out infinite" : "none",
+        flexShrink: 0,
+      }} />
+      <span style={{
+        flex: 1, minWidth: 0,
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}>
+        {message}
+      </span>
+      {isRunning && (
+        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>
+          running
+        </span>
+      )}
+    </div>
+  );
+}
+
+
 // ── Featured panel (left 55%) ─────────────────────────────────────────────────
 
 function FeaturedPanel({
-  entity, rank, onOpenDetail, onAction,
+  entity, rank, onOpenDetail, onAction, actionProgress,
 }: {
   entity: EntityCardData;
   rank: number;
   onOpenDetail: () => void;
   onAction?: (action: string, entity: EntityCardData) => void;
+  actionProgress?: EntityActionProgress;
 }) {
   const images   = entity.images || [];
   const [bgIdx, setBgIdx]   = useState(0);
@@ -855,6 +926,11 @@ function FeaturedPanel({
           </div>
         )}
 
+        {/* Inline action progress (shows after user clicks Buy/Book/etc) */}
+        {actionProgress && (
+          <ActionProgressStrip progress={actionProgress} />
+        )}
+
         {/* Action buttons */}
         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 6 }}
           onClick={e => e.stopPropagation()}>
@@ -1050,13 +1126,21 @@ function EntityList({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function EntityCards({ entities, intent, onDismiss, onAction }: EntityCardsProps) {
+export default function EntityCards({ entities, intent, onDismiss, onAction, entityActions }: EntityCardsProps) {
   const [featuredIdx, setFeaturedIdx] = useState(0);
   const [showModal, setShowModal]     = useState(false);
 
   if (!entities?.length) return null;
 
   const featured = entities[featuredIdx];
+  // Match by normalised name — matches the server-side entity_key in
+  // chat_utils.entity_card_action (title.lower()).
+  const actionFor = (e?: EntityCardData): EntityActionProgress | undefined => {
+    if (!e || !entityActions?.length) return undefined;
+    const key = (e.name || "").trim().toLowerCase();
+    if (!key) return undefined;
+    return entityActions.find(a => a.entity_key === key);
+  };
   const label = intent
     ? intent.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
     : "Results";
@@ -1124,6 +1208,7 @@ export default function EntityCards({ entities, intent, onDismiss, onAction }: E
             rank={featuredIdx + 1}
             onOpenDetail={() => setShowModal(true)}
             onAction={onAction}
+            actionProgress={actionFor(featured)}
           />
           <EntityList
             entities={entities}

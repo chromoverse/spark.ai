@@ -56,14 +56,18 @@ NEEDS A CATEGORY:
          products, movies, colleges, flights, local services like pharmacies)
         → entity_search   ("hotels in Mumbai", "restaurants near me",
                            "best gyms nearby", "things to do in Tokyo",
-                           "show me hospitals", "movies playing tonight")
-  • Wants to OPEN A BOOKING URL / play a video / buy a product after a search
-        → browser_action  ("book that hotel", "play interstellar",
-                           "buy this", "reserve a table there")
+                           "show me hospitals", "movies playing tonight",
+                           "buy me the best pen under 100")
+  • Wants to OPEN a web page / use a browser site / play YouTube or Spotify /
+    buy a selected product / book a selected hotel after a search
+        → browser_action  ("book that hotel", "play interstellar on YouTube",
+                           "play Arctic Monkeys on Spotify", "buy this",
+                           "buy this Daraz link", "reserve a table there")
   • Needs file/folder operations → file_management
   • Needs to open/close/control apps or system settings → system_control
   • Needs to send messages or emails → communication
-  • Needs music or screenshots → media
+  • Needs local music playback or screenshots → media
+  • Needs browser playback on YouTube/Spotify or a website → browser_action
   • Needs long content written → ai_content
   • Needs multi-step shell automation → automation
   • Needs Spark UI control or artifact access → spark_internal
@@ -91,7 +95,7 @@ NEEDS A CATEGORY:
   4. "search the web for X" → web_knowledge
   5. "write me an article about X" → ai_content
   6. "organize my downloads" → file_management
-  7. "play some music" → media
+  7. "play local music" → media; "play X on Spotify/YouTube" → browser_action
   8. "call John" → communication (NEVER automation)
   9. "open Chrome" → system_control
   10. "remind me at 5pm" → automation
@@ -146,7 +150,9 @@ Category picks:
   "open calculator"            → ["system_control"]
   "list files on desktop"      → ["file_management"]
   "organize my downloads"      → ["file_management"]
-  "play some lo-fi music"      → ["media"]
+  "play some local music"      → ["media"]
+  "play lo-fi on YouTube"      → ["browser_action"]
+  "play Arctic Monkeys on Spotify" → ["browser_action"]
   "what's the weather"         → ["web_knowledge"]
   "who is the PM of Nepal"     → ["web_knowledge"]
   "summarize today's news"     → ["web_knowledge"]
@@ -157,11 +163,13 @@ Category picks:
   "things to do in Tokyo"      → ["entity_search"]
   "places to visit in Kyoto"   → ["entity_search"]
   "movies playing tonight"     → ["entity_search"]
+  "buy me the best pen under 100" → ["entity_search"]
   "cheap flights to Bangkok"   → ["entity_search"]
   "iPhone 15 price"            → ["entity_search"]
   "book that hotel"            → ["browser_action"]
   "play interstellar"          → ["browser_action"]
   "buy this on amazon"         → ["browser_action"]
+  "buy this Daraz product"     → ["browser_action"]
   "send hi to Ram"             → ["communication"]
   "check my emails"            → ["communication"]
   "call daddy on WhatsApp"     → ["communication"]
@@ -184,5 +192,7 @@ Multi-category (spans multiple actions):
   "take a screenshot and send to Ram"          → ["media", "communication"]
   "get weather forecast and open in notepad"   → ["web_knowledge", "file_management"]
   "find hotels in Goa and book the best one"   → ["entity_search", "browser_action"]
+  "find cheap laptops under 500"               → ["entity_search"]
+  "buy the selected laptop from the card"      → ["browser_action"]
   "show restaurants nearby and reserve a table"→ ["entity_search", "browser_action"]
   "find movies tonight and play the first one" → ["entity_search", "browser_action"]"""

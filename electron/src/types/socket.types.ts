@@ -243,11 +243,25 @@ export interface ApprovalResponsePayload {
   [key: string]: unknown;
 }
 
+// Direct entity-card action — runs the picked entity through browser_action
+// without re-routing through PQH/SQH. ``thread_id`` keeps the resulting tool
+// card under the originating query in the UI.
+export interface EntityCardActionPayload {
+  action: string;
+  entity: Record<string, unknown>;
+  thread_id: string;
+  intent?: string;
+  query?: string;
+  params?: Record<string, unknown>;
+}
+
 export interface SocketEvents {
   // ========= Client → Server Events =========
   register_user: (userId: string) => void;
   "send-user-voice-query": (data: UserQueryPayload) => void;
   "send-user-text-query": (query: string) => void;
+  "entity-card-action": (data: EntityCardActionPayload) => void;
+  "entity-card-action-result": (data: { success: boolean; task_id?: string; job_id?: string; error?: string }) => void;
   "user-speaking": (data: UserSpeakingPayload) => void;
   "user-stop-speaking": (data: UserStopSpeakingPayload) => void;
   "user-interrupt": (data: UserInterruptPayload) => void;

@@ -9,6 +9,8 @@ Registers:
 
 import asyncio
 import logging
+import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from app.socket.server import sio
@@ -214,6 +216,145 @@ def register_chat_events():
         except Exception as exc:
             logger.error("send_user_text_query failed sid=%s: %s", sid, exc)
             await sio.emit("query-result", {"error": str(exc), "success": False}, to=sid)
+
+    @sio.on("entity-card-action")  # type: ignore
+    async def entity_card_action(sid: str, data: Any):
+        """Run a selected rich-card action without turning it into a new chat query.
+
+        Entity cards already contain the concrete item/hotel/movie the user picked.
+        Sending only "buy <name>" back through PQH loses that entity and can route
+        to the wrong generic intent. This direct path preserves the full entity and
+        emits the normal live-log/tool-output events with the originating thread_id
+        so the UI renders the action below the same query.
+        """
+        try:
+            user_id = await get_user_from_session(sid)
+            payload = data if isinstance(data, dict) else {}
+            action = str(payload.get("action") or "").strip().lower()
+            entity = payload.get("entity") if isinstance(payload.get("entity"), dict) else {}
+            thread_id = str(payload.get("thread_id") or "").strip()
+            query = str(payload.get("query") or "").strip()
+            intent = str(payload.get("intent") or "").strip()
+            params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+
+            if not action:
+                raise ValueError("No entity action provided")
+            if not entity:
+                raise ValueError("No entity payload provided")
+
+            title = str(entity.get("name") or entity.get("title") or "").strip()
+            task_id = f"entity_action_{uuid.uuid4().hex[:10]}"
+            job_id = f"entity_action_{uuid.uuid4().hex[:10]}"
+            started = time.perf_counter()
+
+            from app.socket.log_stream import emit_spark_log
+
+            # Stable per-click identifier the renderer uses to attach
+            # progress to the correct entity card. We normalise the same
+            # way client-side (lowercase, trimmed name) so both ends
+            # agree without us shipping the entity ID through every log
+            # event.
+            entity_key = title.lower() if title else ""
+
+            common = {
+                "thread_id": thread_id,
+                "query": query or f"{action.replace('_', ' ')} {title}".strip(),
+                "source": "entity_card",
+                "entity_key": entity_key,
+            }
+            await emit_spark_log(
+                user_id,
+                "plan_created",
+                job_id=job_id,
+                payload={
+                    **common,
+                    "tools": ["browser_action"],
+                    "task_count": 1,
+                    "message": "Plan: browser_action",
+                },
+            )
+            await emit_spark_log(
+                user_id,
+                "task_running",
+                task_id=task_id,
+                tool_name="browser_action",
+                status="running",
+                job_id=job_id,
+                payload={**common, "message": f"Running {action.replace('_', ' ')}"},
+            )
+
+            from plugins.installed.web.tools.browser_action import BrowserActionTool
+
+            inputs = {
+                "action": action,
+                "entity": entity,
+                "title": title,
+                "params": {
+                    **params,
+                    "source": "entity_card",
+                    "entity_intent": intent,
+                    "thread_id": thread_id,
+                },
+                "_user_id": user_id,
+                "_task_id": task_id,
+            }
+            result = await BrowserActionTool().execute(inputs)
+            latency_ms = round((time.perf_counter() - started) * 1000, 2)
+            result_summary = ""
+            if result.data:
+                result_summary = str(
+                    result.data.get("message")
+                    or result.data.get("reason")
+                    or result.data.get("stage")
+                    or ""
+                )
+
+            await emit_spark_log(
+                user_id,
+                "tool_output" if result.success else "tool_failed",
+                task_id=task_id,
+                tool_name="browser_action",
+                status="completed" if result.success else "failed",
+                job_id=job_id,
+                payload={
+                    **common,
+                    "success": result.success,
+                    "duration_ms": latency_ms,
+                    "latency_ms": latency_ms,
+                    "result_summary": result_summary,
+                    "message": result_summary or ("browser_action completed" if result.success else "browser_action failed"),
+                    "error": result.error,
+                },
+            )
+            await sio.emit(
+                "tool:output",
+                {
+                    "success": result.success,
+                    "output": {
+                        "tool": "browser_action",
+                        "task_id": task_id,
+                        "job_id": job_id,
+                        "thread_id": thread_id,
+                        "data": result.data,
+                        "error": result.error,
+                    },
+                },
+                to=sid,
+            )
+            await emit_spark_log(
+                user_id,
+                "execution_complete",
+                job_id=job_id,
+                payload={**common, "message": result_summary or "Entity action completed"},
+            )
+            await sio.emit(
+                "entity-card-action-result",
+                {"success": result.success, "task_id": task_id, "job_id": job_id, "error": result.error},
+                to=sid,
+            )
+        except Exception as exc:
+            logger.error("entity_card_action failed sid=%s: %s", sid, exc, exc_info=True)
+            await sio.emit("entity-card-action-result", {"success": False, "error": str(exc)}, to=sid)
 
     # ── Streaming STT: receive audio chunk ────────────────────────────────
 

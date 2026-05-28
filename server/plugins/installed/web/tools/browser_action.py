@@ -48,11 +48,92 @@ import asyncio
 import logging
 import webbrowser
 from typing import Any, Awaitable, Callable, Dict, Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from app.plugins.tools.tool_base import BaseTool, ToolOutput
 
 logger = logging.getLogger(__name__)
+
+
+# ── Commerce site routing ────────────────────────────────────────────────────
+# Map a hostname substring to the adapter intent registered in
+# server/plugins/installed/web/browser/tool.py. The default (no host signal)
+# is picked at call time from the user's country.
+
+_HOST_TO_INTENT: Dict[str, str] = {
+    "daraz.com.np":  "daraz_buy",
+    "daraz.":        "daraz_buy",   # daraz.com, daraz.lk, etc.
+    "amazon.":       "amazon_buy",  # amazon.com, amazon.in, amazon.co.uk
+}
+
+# Country-default fallback when the entity carries no usable host. The
+# project is Nepal-centric so NP → Daraz, otherwise Amazon. Anything not
+# in this map collapses to the previous behaviour (daraz_buy via the
+# generic buy_product registration).
+_COUNTRY_DEFAULT_INTENT: Dict[str, str] = {
+    "NP": "daraz_buy",
+    "IN": "amazon_buy",
+    "US": "amazon_buy",
+    "UK": "amazon_buy",
+    "GB": "amazon_buy",
+}
+
+
+def _pick_buy_intent(
+    *,
+    entity: Optional[Dict[str, Any]],
+    url: Optional[str],
+    country_code: Optional[str],
+) -> str:
+    """Pick the BrowserAgentTool intent that should drive this purchase.
+
+    Order of precedence:
+      1. explicit ``url`` host
+      2. ``entity.buy_url`` / ``source_url`` / ``website`` host
+      3. country default
+      4. ``buy_product`` (legacy generic, currently DarazAdapter)
+    """
+    candidates = []
+    if url:
+        candidates.append(url)
+    if entity:
+        for key in ("buy_url", "source_url", "website"):
+            v = entity.get(key)
+            if isinstance(v, str) and v:
+                candidates.append(v)
+
+    for u in candidates:
+        try:
+            host = (urlparse(u).netloc or "").lower().removeprefix("www.")
+        except Exception:
+            continue
+        if not host:
+            continue
+        for needle, intent in _HOST_TO_INTENT.items():
+            if needle in host:
+                return intent
+
+    if country_code:
+        cc = country_code.strip().upper()
+        if cc in _COUNTRY_DEFAULT_INTENT:
+            return _COUNTRY_DEFAULT_INTENT[cc]
+
+    return "buy_product"
+
+
+def _country_code_from_params(params: Dict[str, Any]) -> Optional[str]:
+    """Pull a country code from the action params if upstream provided one.
+
+    SQH can bind it from the ``current_location`` tool's ``country_code``
+    so the handler doesn't need to call out to geo-IP itself.
+    """
+    if not params:
+        return None
+    for key in ("country_code", "country"):
+        v = params.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
 
 
 # ── Action registry ──────────────────────────────────────────────────────────
@@ -250,8 +331,17 @@ async def _handle_buy_product(ctx: BrowserActionContext) -> Dict[str, Any]:
         from ..browser.tool import BrowserAgentTool, _ADAPTERS
         from ..browser.commerce.watcher import start_receipt_watch
 
+        # Pick the right adapter from the entity's host (daraz/amazon).
+        # Falls back to the country default, then to the legacy generic
+        # ``buy_product`` registration if neither signal is present.
+        buy_intent = _pick_buy_intent(
+            entity=ctx.entity,
+            url=ctx.url,
+            country_code=_country_code_from_params(ctx.params),
+        )
+
         result = await BrowserAgentTool()._execute({
-            "intent": "buy_product",
+            "intent": buy_intent,
             "query": str(target),
             "dry_run": False,
             # approve_payment=True here means "I expect this flow to reach
@@ -267,7 +357,7 @@ async def _handle_buy_product(ctx: BrowserActionContext) -> Dict[str, Any]:
         # The agent landed at payment_handoff → spawn the watcher.
         state = (result.data or {}).get("state")
         if state == "payment_handoff":
-            adapter_cls = _ADAPTERS.get("buy_product")
+            adapter_cls = _ADAPTERS.get(buy_intent) or _ADAPTERS.get("buy_product")
             adapter = adapter_cls() if adapter_cls else None
             watch_task = None
             if adapter is not None:
@@ -361,8 +451,23 @@ async def _handle_buy_product(ctx: BrowserActionContext) -> Dict[str, Any]:
     except Exception as e:
         logger.warning("buy_product adapter failed, falling back to URL open: %s", e)
 
-    # Fallback: just open a search page so the user can do it manually.
-    url = target_url or f"https://www.daraz.com.np/catalog/?q={quote_plus(str(display_title))}"
+    # Fallback: open a search page so the user can do it manually. Pick the
+    # search host the same way we picked the adapter, so Amazon entities
+    # don't get redirected to a Daraz search and vice versa.
+    fallback_intent = _pick_buy_intent(
+        entity=ctx.entity,
+        url=ctx.url,
+        country_code=_country_code_from_params(ctx.params),
+    )
+    if target_url:
+        url = target_url
+        site_label = "the product page"
+    elif fallback_intent == "amazon_buy":
+        url = f"https://www.amazon.com/s?k={quote_plus(str(display_title))}"
+        site_label = "Amazon search"
+    else:
+        url = f"https://www.daraz.com.np/catalog/?q={quote_plus(str(display_title))}"
+        site_label = "Daraz search"
     ok = await _open_browser(url)
     return {
         "opened": ok,
@@ -370,7 +475,7 @@ async def _handle_buy_product(ctx: BrowserActionContext) -> Dict[str, Any]:
         "url": url,
         "action": "buy_product",
         "title": display_title,
-        "message": f"Opened Daraz search for {display_title!r}" if ok else "Browser launch failed",
+        "message": f"Opened {site_label} for {display_title!r}" if ok else "Browser launch failed",
     }
 
 

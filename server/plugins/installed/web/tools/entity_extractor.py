@@ -26,6 +26,19 @@ logger = logging.getLogger(__name__)
 
 _MAX_CONTEXT_CHARS = 12_000
 
+# Schemas whose entities are inherently place-bound — hotels live somewhere,
+# restaurants live somewhere, places-to-visit live somewhere. For those, the
+# extractor adds a hard "must be in/near {location}" filter so we don't
+# return Mumbai hotels for a "hotels in Kathmandu" query.
+#
+# Everything NOT in this set (product, movie, person, flight) describes a
+# thing or being that has no city. Applying a location filter to those
+# erases real results — e.g. "ignore water bottles not in Saudi Arabia"
+# rejects every Daraz Nepal listing.
+_PLACE_BOUND_SCHEMAS = frozenset({
+    "hotel", "restaurant", "local_business", "place", "college", "event",
+})
+
 
 async def extract_entities(
     scraped_texts: List[Dict[str, Any]],
@@ -74,9 +87,28 @@ async def extract_entities(
     )
 
     location_filter = ""
-    if location:
-        city = location.split(",")[0].strip()
+    if location and entity_schema in _PLACE_BOUND_SCHEMAS:
         location_filter = f"\n- CRITICAL: Only extract entities located in or near {location}. Ignore entities from other cities/countries."
+
+    schema_specific = ""
+    if entity_schema == "product":
+        # Listing pages on Daraz / Amazon / Flipkart render dozens of
+        # product cards. The model defaults to "pick the most prominent
+        # one" unless we explicitly say otherwise. Currency hints help
+        # because prices vary wildly in format across markets — Rs., NPR,
+        # ₹, $, "from $X".
+        schema_specific = (
+            "\n- PRODUCT EXTRACTION: this is usually a *listing page* with MANY products. "
+            "Return up to 10 distinct products, not just one. Each card on the page is a "
+            "separate entity."
+            "\n- Prices appear as: 'Rs. 1,200', 'NPR 1200', 'Rs1200', 'रू 1200', '₹1,500', '$24.99', "
+            "'from $X', 'starting at Rs ...'. Capture the *current* shown price as `price` and the "
+            "struck-through one as `original_price` if both are visible."
+            "\n- A product needs at minimum a `name`; price is strongly preferred but not required "
+            "if the listing only shows 'see details for price'. Keep partial entries."
+            "\n- Always try to set `buy_url` to the deep link of the product page if it appears "
+            "in the surrounding markup. For Daraz, hrefs containing '/products/' are product pages."
+        )
 
     user_msg = f"""Extract all distinct {entity_schema} entities from the text below.
 
@@ -90,7 +122,7 @@ EXTRACTION RULES:
 - If the same entity appears in multiple sources, merge into one entry (keep the richer data).
 - Deduplicate: never return two objects with the same or near-identical name.
 - Return an empty array [] if no entities are found.
-- source_url: set to the URL where this entity was found.{location_filter}
+- source_url: set to the URL where this entity was found.{schema_specific}{location_filter}
 
 CONTEXT:
 {context}

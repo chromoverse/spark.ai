@@ -47,6 +47,19 @@ class CurrentLocationTool(BaseTool):
                 data["timezone"] = location.get("timezone", "N/A")
                 data["isp"] = location.get("isp", "N/A")
                 data["accuracy_note"] = "IP-based geolocation. Accuracy ~1–10 km depending on ISP."
+
+            # Cache country_code so future product_search calls in this
+            # process can route to the right marketplace without SQH having
+            # to re-plan current_location every time.
+            try:
+                cc = location.get("country_code")
+                user_id = str(inputs.get("_user_id") or inputs.get("user_id") or "")
+                if cc and user_id:
+                    from plugins.installed.web.tools.entity_search import remember_country_code
+                    remember_country_code(user_id, cc)
+            except Exception:
+                pass
+
             return ToolOutput(success=True, data=data)
         except Exception as e:
             return ToolOutput(success=False, data={}, error=str(e))

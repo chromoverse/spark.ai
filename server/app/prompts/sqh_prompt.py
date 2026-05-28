@@ -275,12 +275,14 @@ Intents: factual_lookup | research.
 DO NOT use web_research for finding entities (hotels, restaurants, places, products, events, movies, colleges, flights, local services). Those go to entity_search.""")
 
     if "entity_search" in tool_set:
-        category_rules_parts.append("""ENTITY SEARCH: Find structured entities (hotels, restaurants, places, etc). MUST set: query, intent.
+        category_rules_parts.append("""ENTITY SEARCH: Find structured entities (hotels, restaurants, places, products, etc). MUST set: query, intent.
 Intents: hotel_search | restaurant_search | local_service | place_search | event_search | person_search | movie_search | college_search | flight_search | product_search.
 entity_schema is auto-derived from intent; only set explicitly if overriding.
 Intent mapping:
 - "hotels/hostels/places to stay in X"            → hotel_search
-- "buy X"/"price of X"/"X on amazon/flipkart"     → product_search
+- "show/find/search/best/cheap X product"          → product_search
+- "price of X"/"X on amazon/flipkart/daraz"        → product_search
+- "buy me the best X under budget Y"               → product_search only; show rich product cards so the user chooses
 - "restaurants/where to eat in X"                  → restaurant_search
 - "hospitals/gyms/pharmacies/clinics/banks/atms"   → local_service
 - "who is X"/"X biography"/"tell me about Y"       → person_search   (person facts → use web_research instead)
@@ -293,17 +295,50 @@ Geographic resolution — CRITICAL:
 - "near me" / "nearby" / "around me" → plan current_location(client) FIRST, then entity_search(server) with input_bindings location=$.step_1.data.location_string, latitude=$.step_1.data.latitude, longitude=$.step_1.data.longitude. Bind ALL THREE. Latitude/longitude enable structured-provider retrieval (Google Places / Foursquare / OSM) and geo hard-filtering.
 - "in <city>" / "around <place>" / "at <location>" → DO NOT plan current_location. The entity_search tool extracts the place name from the query and forward-geocodes it internally. Just pass the raw query through. Example: "hotels in Mumbai" → entity_search(intent=hotel_search, query="hotels in Mumbai"). The tool resolves Mumbai → coords → OSM by itself.
 - No location mention at all → entity_search runs DDGS+LLM-extract fallback (lower quality). Avoid this when possible.
-formatted_queries: only used by the DDGS fallback path. Set 1-3 short queries that include the resolved city name when relevant. No "site:" operators.
-entity_search returns ranked entities directly — no chaining needed for the search itself. For follow-up actions (book, buy, play), chain browser_action with the entity as input.""")
+- product_search SPECIFIC: marketplaces are country-specific (Daraz in Nepal, Amazon in India/US, etc). When the query has no explicit country/city, plan current_location(client) FIRST and bind country_code=$.step_1.data.country_code on entity_search. entity_search will use it to pick the right site filter automatically. Skip current_location only if the query already names a country/region the tool can geocode ("buy X in Mumbai") or carries an explicit currency-country hint ("under 100 NPR").
+formatted_queries: only used by the DDGS fallback path. Set 1-3 short queries that include the resolved city name when relevant. NEVER hardcode marketplaces (no "amazon OR flipkart", no "site:daraz") — entity_search picks the right site filter from country_code automatically. No "site:" operators.
+entity_search returns ranked entities directly — no chaining needed for the search itself. For follow-up actions (book, buy, play), chain browser_action only when the user already selected/referred to one concrete entity.
+Product/external source rule: entity_search is how SQH learns external products when the user did not provide a direct URL or exact item from context. Its output entities may carry buy_url/source_url/website/title/price. The Electron rich UI can render Buy/Book buttons on each entity card; clicking one should invoke browser_action with that selected whole entity.
+Selection safety: "best", "cheap", "under budget", "top-rated", "near me", or any broad comparison means entity_search only. Do not auto-buy/book the first result just because the user said buy/book in a broad search request.""")
 
     if "browser_action" in tool_set:
-        category_rules_parts.append("""BROWSER ACTION: Transactional browser ops only — never search. MUST set: action.
-Actions: open_url | play_media | book_hotel | buy_product | reserve_table | book_ticket.
+        category_rules_parts.append("""BROWSER ACTION: Public doorway for transactional browser automation. Use browser_action, NOT browser_agent directly. browser_action delegates internally to the right adapter (Daraz, Booking.com, YouTube, Spotify, etc).
+Transactional browser ops only — never broad search unless the user gave an exact target/title. MUST set: action.
+
+HARD RULE — DO NOT PLAN browser_action UNLESS the user query contains BOTH:
+  (a) an explicit transactional verb: buy / purchase / order / book / reserve / play / watch / listen, AND
+  (b) a concrete target: a URL, a specific product/hotel/song name, or a referent like "this/that/first one/result".
+Queries like "search/find/show/list/best/cheap/top X" are SEARCH intents — plan entity_search ONLY. Do not append a browser_action step "to be helpful". The user will click Buy on a card when they want to act. Auto-chaining a buy after a search is a common error; refuse the temptation.
+Examples that are SEARCH ONLY (no browser_action):
+  - "best water bottles", "show me good hotels in Pokhara", "find cheap headphones"
+Examples that ARE transactional (browser_action OK):
+  - "buy Platinum Preppy", "play Interstellar", "book Aloft Kathmandu"
+Actions: open_url | play_media | play_music | book_hotel | buy_product | reserve_table | book_ticket.
 Inputs:
 - action: the verb (required, enum above)
 - entity: the structured entity dict from a prior entity_search step (optional, recommended)
 - url: explicit URL override (optional)
-- title: for play_media when no entity is given
+- title: explicit product/hotel/song/video name when no entity is given
+- params: action-specific details. Preserve user-provided constraints; do not invent missing ones.
+Target identity priority:
+1. Direct URL in the query or artifact/context → pass inputs.url.
+2. Prior entity_search result / "this", "that one", "first result", "best one" → bind inputs.entity to the selected entity.
+3. Exact name/title in the user query → pass inputs.title.
+4. If no URL, entity, or exact title exists, do not invent a product/hotel/media target; rely on clarification upstream.
+Product buying:
+- "buy this/that/result" → action=buy_product with entity binding.
+- "buy <direct Daraz/Amazon/product URL>" → action=buy_product, url=<URL>.
+- "buy <specific product name>" → action=buy_product, title="<specific product name>" only if it is a concrete item, not a broad category.
+- "buy me the best/cheap <product> under budget <amount>" → do NOT call browser_action yet; plan entity_search(intent=product_search) so the rich UI shows options and the user chooses a card.
+- When the user clicks Buy on an entity card, or says "buy that one/first one", then call browser_action(action=buy_product, entity=<selected entity>).
+- Preserve quantity/color/size/variant/store hints in params when stated, e.g. params={"quantity":2,"color":"black","size":"M"}.
+Booking:
+- "book <hotel/entity>" → action=book_hotel with entity/url/title.
+- "book the best/cheap hotel in <place>" → entity_search(intent=hotel_search) first; wait for the user/card selection before browser_action.
+- Preserve checkin, checkout, adults, rooms, children in params using these keys when stated.
+Media:
+- "play/watch <video/movie> on YouTube" or unspecified web video → action=play_media, title="<title>".
+- "play <song/artist/album> on Spotify" → action=play_music, title="<title>".
 Typical chain: entity_search(intent=hotel_search) → browser_action(action=book_hotel, entity=$.step_1.data.entities[0]).
 "play X movie"/"watch X" → action=play_media, title="X". Does not need entity_search first.
 "book/buy/reserve that one" (referring to a prior search result) → action=book_hotel/buy_product/reserve_table with entity bound to the selected step output.""")

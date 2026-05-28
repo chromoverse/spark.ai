@@ -1,4 +1,25 @@
 # app/main.py
+import asyncio
+import sys
+
+# Defensive duplicate of the policy set in ../main.py. Uvicorn's reloader
+# re-imports this module as the worker; if it does so without going
+# through main.py (or before main.py's policy set takes effect for the
+# child), Playwright's subprocess spawn fails with NotImplementedError on
+# SelectorEventLoop. Set it again here BEFORE any code that may import
+# playwright transitively.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+    # Uvicorn passes an explicit loop_factory to asyncio.Runner, bypassing
+    # the policy above. With reload=True (or workers>1) the worker's
+    # factory returns SelectorEventLoop on Windows — Selector can't spawn
+    # subprocesses, so Playwright dies with NotImplementedError on its
+    # first async_playwright().start() call. Force Proactor here too:
+    # the reload worker imports this module, not ../main.py.
+    import uvicorn.loops.asyncio as _uv_asyncio
+    _uv_asyncio.asyncio_loop_factory = lambda use_subprocess=False: asyncio.ProactorEventLoop
+
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI

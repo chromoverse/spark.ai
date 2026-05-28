@@ -31,6 +31,7 @@ from playwright.async_api import Page
 
 from .runtime.playwright import PlaywrightRuntime
 from .errors import BrowserError, BrowserErrorType
+from .launcher import ensure_chrome_running
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,36 @@ class BrowserSession:
 
             logger.info("BrowserSession: connecting to %s", self._cdp_url)
             rt = PlaywrightRuntime(cdp_url=self._cdp_url, dry_run=False)
-            await rt.connect()
+            try:
+                await rt.connect()
+            except BrowserError as first_err:
+                # Most common cause: nobody launched Chrome with
+                # --remote-debugging-port. Bring one up ourselves (with a
+                # persistent profile so Daraz/Google logins stick) and try
+                # one more time. If that also fails, replace the opaque
+                # "Failed to connect" with the launcher's actual reason so
+                # the user sees what went wrong (Chrome missing, port
+                # conflict with a normal Chrome already running, etc.).
+                logger.info(
+                    "BrowserSession: first connect failed (%s) — auto-launching Chrome and retrying",
+                    first_err,
+                )
+                launch = await ensure_chrome_running()
+                if not launch.ok:
+                    raise BrowserError(
+                        BrowserErrorType.BROWSER_DEAD,
+                        f"Auto-launch failed: {launch.reason}",
+                    )
+                rt = PlaywrightRuntime(cdp_url=self._cdp_url, dry_run=False)
+                try:
+                    await rt.connect()
+                except BrowserError as retry_err:
+                    raise BrowserError(
+                        BrowserErrorType.BROWSER_DEAD,
+                        f"Chrome launched but connect still failed: {retry_err}. "
+                        "If a normal Chrome is open with your daily profile, "
+                        "close it once so the debug instance can take over.",
+                    )
             self._runtime = rt
             return rt
 

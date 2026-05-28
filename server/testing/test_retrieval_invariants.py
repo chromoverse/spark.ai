@@ -503,6 +503,17 @@ class ToolSplitTests(unittest.TestCase):
         self.assertIn("browser_action", prompt)
         # Disambiguation guidance must be visible.
         self.assertIn("hotels in Mumbai", prompt)
+        self.assertIn("buy me the best pen under 100", prompt)
+        self.assertIn("play Arctic Monkeys on Spotify", prompt)
+
+    def test_sqh_browser_action_rules_keep_fuzzy_product_search_safe(self):
+        prompt_path = _SERVER_DIR / "app" / "prompts" / "sqh_prompt.py"
+        prompt = prompt_path.read_text(encoding="utf-8")
+        self.assertIn("Use browser_action, NOT browser_agent directly", prompt)
+        self.assertIn("play_music", prompt)
+        self.assertIn("buy me the best/cheap <product> under budget <amount>", prompt)
+        self.assertIn("rich UI shows options", prompt)
+        self.assertIn("clicking one should invoke browser_action", prompt)
 
 
 if __name__ == "__main__":

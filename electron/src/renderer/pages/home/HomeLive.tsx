@@ -39,6 +39,11 @@ interface ToolStep {
   steps: string[];
   result_summary?: string;
   scraping_sites?: { url: string; domain: string }[];
+  // When set, this tool step belongs to an entity-card action (e.g.
+  // user clicked Buy on Hydro Flask). The renderer attaches the
+  // progress strip directly under the matching card image instead of
+  // showing a separate Browser Action card in the thread tool list.
+  entity_key?: string;
 }
 
 interface Thread {
@@ -120,6 +125,16 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
   const jobId = (log.job_id || log.payload?.job_id) as string | undefined;
   const taskId = (log.task_id || log.payload?.task_id) as string | undefined;
   const toolName = (log.tool_name || log.payload?.tool_name) as string | undefined;
+  const payloadThreadId = (
+    typeof payload.thread_id === "string" ? payload.thread_id :
+    typeof payload.threadId === "string" ? payload.threadId :
+    undefined
+  );
+
+  const findByThreadId = (threadId: string | undefined): Thread | undefined => {
+    if (!threadId) return undefined;
+    return updated.find(t => t.id === threadId);
+  };
 
   // Lookup by taskId and jobId
   const findByTaskIdAndJobId = (taskId: string | undefined, jobId: string | undefined): Thread | undefined => {
@@ -206,6 +221,15 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
 
   // Resolve thread by checking task_id & job_id, job_id, then transitioning the most recent "thinking" thread
   const resolveThread = (taskId: string | undefined, jobId: string | undefined, toolName?: string): Thread | undefined => {
+    const byThreadId = findByThreadId(payloadThreadId);
+    if (byThreadId) {
+      if (jobId && !byThreadId.job_id) byThreadId.job_id = jobId;
+      if (byThreadId.status === "completed" || byThreadId.status === "thinking") {
+        byThreadId.status = "executing";
+      }
+      return byThreadId;
+    }
+
     // 1. Match by task_id and job_id first
     let thread = findByTaskIdAndJobId(taskId, jobId);
     if (thread) return thread;
@@ -322,15 +346,18 @@ function reduceLog(threads: Thread[], log: SparkLogPayload): Thread[] {
           thread.status = "executing";
         }
         const existing = thread.tools.find(t => t.task_id === taskId);
+        const entityKey = typeof payload.entity_key === "string" ? payload.entity_key : undefined;
         if (!existing) {
           thread.tools.push({
             tool_name: toolName || "unknown",
             task_id: taskId || "",
             status: "running",
             steps: [],
+            entity_key: entityKey,
           });
         } else {
           existing.status = "running";
+          if (entityKey && !existing.entity_key) existing.entity_key = entityKey;
         }
       }
       break;
@@ -685,7 +712,7 @@ function ThreadView({
   onDismissEntities?: () => void;
   onDismissDriveFiles?: () => void;
   onDismissWebSearch?: () => void;
-  onEntityAction?: (action: string, entity: EntityCardData) => void;
+  onEntityAction?: (action: string, entity: EntityCardData, ctx: { threadId: string; intent?: string }) => void;
 }) {
   const hasAssistantContent = !!(
     thread.ai_response ||
@@ -773,26 +800,44 @@ function ThreadView({
             )}
 
 
-            {/* Tool cards */}
-            {thread.tools.length > 0 && (
-              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                {thread.tools.map((tool, i) => (
-                  <ToolCard key={`${tool.task_id}_${i}`} tool={tool} />
-                ))}
-              </div>
-            )}
+            {/* Tool cards — exclude entity-keyed tools; those render
+                inline below the matching entity card instead of as
+                separate free-floating cards in the thread tool list. */}
+            {(() => {
+              const genericTools = thread.tools.filter(t => !t.entity_key);
+              const entityActions = thread.tools.filter(t => !!t.entity_key);
+              return (
+                <>
+                  {genericTools.length > 0 && (
+                    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {genericTools.map((tool, i) => (
+                        <ToolCard key={`${tool.task_id}_${i}`} tool={tool} />
+                      ))}
+                    </div>
+                  )}
 
-            {/* Entity cards */}
-            {thread.entities && thread.entities.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <EntityCards
-                  entities={thread.entities}
-                  intent={thread.entityIntent}
-                  onDismiss={() => onDismissEntities?.()}
-                  onAction={onEntityAction}
-                />
-              </div>
-            )}
+                  {/* Entity cards */}
+                  {thread.entities && thread.entities.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <EntityCards
+                        entities={thread.entities}
+                        intent={thread.entityIntent}
+                        onDismiss={() => onDismissEntities?.()}
+                        onAction={onEntityAction
+                          ? (action, entity) => onEntityAction(action, entity, { threadId: thread.id, intent: thread.entityIntent })
+                          : undefined}
+                        entityActions={entityActions.map(t => ({
+                          entity_key: t.entity_key || "",
+                          status: t.status,
+                          latest_step: t.steps[t.steps.length - 1] || t.result_summary || "",
+                          result_summary: t.result_summary,
+                        }))}
+                      />
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {/* Drive file cards */}
             {thread.driveFiles && thread.driveFiles.length > 0 && (
@@ -1509,18 +1554,38 @@ export default function HomeLive({ entityResult, onEntityDismiss, showJobs, onTo
     });
   }, []);
 
-  const handleEntityAction = useCallback((action: string, entity: EntityCardData) => {
+  const handleEntityAction = useCallback((
+    action: string,
+    entity: EntityCardData,
+    ctx: { threadId: string; intent?: string },
+  ) => {
     const loc = entity.location || entity.address || "";
-    const queries: Record<string, string> = {
+    // Synthetic query text the server logs / the UI shows next to the tool
+    // card. The actual *execution* uses the entity payload below — the
+    // string is purely cosmetic.
+    const querySummary: Record<string, string> = {
       book_hotel:    `book ${entity.name}${loc ? ` in ${loc}` : ""}`,
       buy_product:   `buy ${entity.name}`,
       reserve_table: `reserve a table at ${entity.name}`,
       play_media:    `watch ${entity.name}`,
       book_ticket:   `book ticket for ${entity.name}`,
-      open_url:      entity.website || entity.source_url || "",
+      open_url:      `open ${entity.name}`,
     };
-    const q = queries[action];
-    if (q) emit("send-user-text-query", q);
+    const query = querySummary[action] || `${action.replace("_", " ")} ${entity.name}`;
+
+    // Direct entity-action path: preserves the full entity object (buy_url,
+    // source_url, type, price) and tags it with the originating thread_id
+    // so the resulting tool card renders below the same query block
+    // instead of starting a new SQH cycle. Server handler:
+    // server/app/socket/chat_utils.py @sio.on("entity-card-action").
+    emit("entity-card-action", {
+      action,
+      entity,
+      thread_id: ctx.threadId,
+      intent: ctx.intent,
+      query,
+      params: {},
+    });
   }, [emit]);
 
   const dismissWebSearch = useCallback((threadId: string) => {
