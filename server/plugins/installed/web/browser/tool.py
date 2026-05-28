@@ -68,6 +68,11 @@ class BrowserAgentTool(BaseTool):
             "default": False,
             "description": "Dry-run mode: highlights elements without clicking"
         },
+        "params": {
+            "type": "object",
+            "required": False,
+            "description": "Adapter-specific options such as dates, guests, rooms, or handoff timeout"
+        },
     }
     
     OUTPUT_SCHEMA: Dict[str, Any] = {
@@ -128,6 +133,7 @@ class BrowserAgentTool(BaseTool):
         
         dry_run = self.get_input(inputs, "dry_run", False)
         approve_payment = bool(self.get_input(inputs, "approve_payment", False))
+        params = self.get_input(inputs, "params", {}) or {}
         
         # Setup
         log_dir = Path.home() / ".sparkai_data" / "browser_logs"
@@ -175,6 +181,10 @@ class BrowserAgentTool(BaseTool):
                 page=page,
                 runtime=runtime,
                 approve_payment=approve_payment,
+                initial_context={
+                    "params": params,
+                    "entity": self.get_input(inputs, "entity", None) or {},
+                },
             )
             
             # Run flow
@@ -217,6 +227,7 @@ from .adapters.youtube import YouTubeAdapter
 from .adapters.amazon import AmazonAdapter
 from .adapters.spotify import SpotifyAdapter
 from .adapters.daraz import DarazAdapter
+from .adapters.booking import BookingAdapter
 
 register_adapter("youtube_play", YouTubeAdapter)
 register_adapter("spotify_play", SpotifyAdapter)
@@ -226,6 +237,8 @@ register_adapter("spotify_play", SpotifyAdapter)
 register_adapter("daraz_buy", DarazAdapter)
 register_adapter("amazon_buy", AmazonAdapter)
 register_adapter("buy_product", DarazAdapter)  # default for now
+register_adapter("book_hotel", BookingAdapter)
+register_adapter("booking_hotel", BookingAdapter)
 
 
 __all__ = ["BrowserAgentTool", "register_adapter"]

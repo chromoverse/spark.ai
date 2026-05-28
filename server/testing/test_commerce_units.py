@@ -201,6 +201,58 @@ async def _run_daraz_stage_detection() -> None:
     assert await DarazAdapter().is_confirmation_page(page) is True
 
 
+# ── Test 5: Daraz receipt item extraction + email rendering ────────────────
+
+class _FakeDarazReceiptPage:
+    url = "https://checkout.daraz.com.np/payment-cashier?checkoutOrderId=20990501103260528971614516793"
+
+    async def evaluate(self, script: str):
+        if "window.dataLayer" in script:
+            return {
+                "order_id": "215641564016793",
+                "orderItems": [
+                    {
+                        "simple_sku": "128056366_NP-12321181114",
+                        "quantity": "1",
+                        "seller_name": "The Choice",
+                        "item_id": "128056366",
+                        "price": "168",
+                        "brand_name": "No Brand",
+                        "sku_id": "12321181114",
+                        "item_name": "Multi-Color Spray Bottle Ballpoint Pens - Refillable Mist Pens",
+                    }
+                ],
+            }
+        if "NPR|Rs" in script:
+            return {"currency": "Rs", "total": "168"}
+        return None
+
+    async def title(self) -> str:
+        return "Daraz order success"
+
+
+async def _run_daraz_receipt_items() -> None:
+    receipt = await DarazAdapter().extract_receipt(_FakeDarazReceiptPage())
+    assert receipt["order_id"] == "215641564016793"
+    assert receipt["item_count"] == 1
+    assert receipt["total"] == 168.0
+
+    item = receipt["items"][0]
+    assert item["name"] == "Multi-Color Spray Bottle Ballpoint Pens - Refillable Mist Pens"
+    assert item["qty"] == "1"
+    assert item["price"] == "168"
+    assert item["currency"] == "Rs"
+    assert item["seller"] == "The Choice"
+    assert item["sku"] == "128056366_NP-12321181114"
+
+    html = email_mod._render_receipt_html(receipt, user_name="Sidd", icon_url=None)
+    assert "Products in this order" in html
+    assert "Multi-Color Spray Bottle Ballpoint Pens" in html
+    assert "Seller: The Choice" in html
+    assert "SKU: 128056366_NP-12321181114" in html
+    assert "Rs 168" in html
+
+
 # ── Minimal runner (no pytest dep) ─────────────────────────────────────────
 
 class _Monkeypatch:
@@ -261,6 +313,14 @@ def main() -> int:
     except Exception as e:
         print(f"FAIL: {e}")
         failures.append(f"test_daraz_stage_detection: {e}")
+
+    print("test_daraz_receipt_items ...", end=" ")
+    try:
+        asyncio.run(_run_daraz_receipt_items())
+        print("OK")
+    except Exception as e:
+        print(f"FAIL: {e}")
+        failures.append(f"test_daraz_receipt_items: {e}")
 
     if failures:
         print(f"\n[FAIL] {len(failures)} test(s) failed.")

@@ -374,8 +374,161 @@ async def _handle_buy_product(ctx: BrowserActionContext) -> Dict[str, Any]:
     }
 
 
+async def _handle_book_hotel(ctx: BrowserActionContext) -> Dict[str, Any]:
+    """Drive Booking.com to a safe handoff, then watch for confirmation.
+
+    The adapter can open a hotel/search result and reveal room
+    availability. It never clicks the final irreversible booking/charge
+    button; once the user is in the Booking.com flow, the receipt watcher
+    waits for a confirmation page and captures it.
+    """
+    title = (
+        ctx.title
+        or (ctx.entity.get("name") if ctx.entity else None)
+        or (ctx.entity.get("title") if ctx.entity else None)
+    )
+    target_url = ctx.url or _entity_url(
+        ctx.entity,
+        prefer=("booking_url", "website", "source_url", "maps_url"),
+    )
+    target = target_url or title
+    if not target:
+        return {"opened": False, "reason": "no hotel URL or name/title provided"}
+    display_title = str(title or target)
+
+    wait_for_confirmation = bool(ctx.params.get("wait_for_confirmation", True))
+    try:
+        watch_timeout_s = float(ctx.params.get("watch_timeout_s", ctx.params.get("timeout_s", 900.0)))
+    except (TypeError, ValueError):
+        watch_timeout_s = 900.0
+
+    try:
+        from ..browser.tool import BrowserAgentTool, _ADAPTERS
+        from ..browser.commerce.watcher import start_receipt_watch
+
+        result = await BrowserAgentTool()._execute({
+            "intent": "book_hotel",
+            "query": str(target),
+            "entity": ctx.entity,
+            "params": ctx.params,
+            "dry_run": False,
+            "approve_payment": True,
+        })
+
+        state = (result.data or {}).get("state")
+        if state == "payment_handoff":
+            adapter_cls = _ADAPTERS.get("book_hotel")
+            adapter = adapter_cls() if adapter_cls else None
+            watch_task = None
+            if adapter is not None:
+                watch_task = start_receipt_watch(
+                    adapter,
+                    timeout_s=watch_timeout_s,
+                    poll_every_s=2.0,
+                    reminder_every_s=30.0,
+                    desktop_reminder_every_s=10.0,
+                    desktop_reminder_max_s=120.0,
+                )
+
+            if wait_for_confirmation and watch_task is not None:
+                watch_result = await watch_task
+                saved = watch_result.saved
+                confirmation = {
+                    "captured": watch_result.captured,
+                    "timed_out": watch_result.timed_out,
+                    "duration_s": watch_result.duration_s,
+                    "email": watch_result.email,
+                    "error": watch_result.error,
+                }
+                if saved is not None:
+                    confirmation.update({
+                        "dir": str(saved.dir),
+                        "receipt_path": str(saved.receipt_path),
+                        "screenshot_path": str(saved.screenshot_path) if saved.screenshot_path else None,
+                        "html_path": str(saved.html_path) if saved.html_path else None,
+                        "booking_id": saved.data.get("order_id"),
+                        "total": saved.data.get("total"),
+                        "currency": saved.data.get("currency"),
+                    })
+
+                if watch_result.captured:
+                    stage = "booking_confirmation_captured"
+                    message = (
+                        f"Booking confirmation captured for {display_title!r}. "
+                        "It was saved to disk and email delivery was attempted."
+                    )
+                elif watch_result.timed_out:
+                    stage = "watch_timeout"
+                    message = (
+                        f"Timed out waiting for Booking.com confirmation for {display_title!r}. "
+                        "If you completed the booking, check your Booking.com account/email."
+                    )
+                else:
+                    stage = "watch_error"
+                    message = f"Booking watcher stopped for {display_title!r}: {watch_result.error}"
+
+                return {
+                    "opened": True,
+                    "automated": True,
+                    "action": "book_hotel",
+                    "title": display_title,
+                    "stage": stage,
+                    "message": message,
+                    "watching": False,
+                    "confirmation": confirmation,
+                    "data": result.data,
+                }
+
+            return {
+                "opened": True,
+                "automated": True,
+                "action": "book_hotel",
+                "title": display_title,
+                "stage": "awaiting_booking_completion",
+                "message": (
+                    f"Reached Booking.com handoff for {display_title!r}. "
+                    "Complete the booking in the browser; Spark will capture the confirmation."
+                ),
+                "watching": watch_task is not None,
+                "data": result.data,
+            }
+
+        if result.success:
+            return {
+                "opened": True,
+                "automated": True,
+                "action": "book_hotel",
+                "title": display_title,
+                "stage": state or "done",
+                "message": f"Booking flow completed in state {state!r} for {display_title!r}",
+                "data": result.data,
+            }
+
+        return {
+            "opened": False,
+            "automated": True,
+            "action": "book_hotel",
+            "title": display_title,
+            "reason": result.error or "book_hotel flow failed",
+            "data": result.data,
+        }
+    except Exception as e:
+        logger.warning("book_hotel adapter failed, falling back to URL open: %s", e)
+
+    url = target_url or f"https://www.booking.com/searchresults.html?ss={quote_plus(str(display_title))}"
+    ok = await _open_browser(url)
+    return {
+        "opened": ok,
+        "automated": False,
+        "url": url,
+        "action": "book_hotel",
+        "title": display_title,
+        "message": f"Opened Booking.com for {display_title!r}" if ok else "Browser launch failed",
+    }
+
+
 async def _handle_stub_booking(ctx: BrowserActionContext) -> Dict[str, Any]:
-    """Stub for book_hotel / reserve_table / book_ticket.
+    """Stub for reserve_table / book_ticket.
 
     Opens whatever booking URL the entity exposes so the user can
     complete the flow manually. Real automation comes later.
@@ -412,10 +565,10 @@ _HANDLERS: Dict[str, _Handler] = {
     "play_media":    _handle_play_media,
     "play_music":    _handle_play_music,
     "buy_product":   _handle_buy_product,
+    "book_hotel":    _handle_book_hotel,
     # Remaining stubs share one impl — distinct action names so future
     # per-flow automation can override them individually without touching
     # callers.
-    "book_hotel":    _handle_stub_booking,
     "reserve_table": _handle_stub_booking,
     "book_ticket":   _handle_stub_booking,
 }

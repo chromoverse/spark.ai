@@ -62,6 +62,7 @@ class Flow:
         runtime: Any,
         *,
         approve_payment: bool = False,
+        initial_context: Optional[dict] = None,
     ):
         self.adapter = adapter
         self.intent = intent
@@ -76,7 +77,7 @@ class Flow:
         self.recovery = RecoveryEngine()
         self.bus = get_event_bus()
 
-        self._context: dict = {}
+        self._context: dict = dict(initial_context or {})
         self._aborted_emitted: bool = False
     
     async def run(self) -> FlowResult:

@@ -101,37 +101,79 @@ def _money(receipt: dict) -> str:
     return f"{currency} {total}".strip()
 
 
+def _format_item_price(item: dict) -> str:
+    price = item.get("price") or item.get("line_total") or item.get("total") or ""
+    if price == "":
+        return ""
+    currency = str(item.get("currency") or "").strip()
+    if isinstance(price, (int, float)):
+        price_text = f"{price:,.2f}"
+    else:
+        price_text = str(price).strip()
+    if currency and currency.lower() not in price_text.lower():
+        return f"{currency} {price_text}".strip()
+    return price_text
+
+
+def _item_meta(item: dict) -> str:
+    parts: list[str] = []
+    seller = str(item.get("seller") or item.get("seller_name") or "").strip()
+    brand = str(item.get("brand") or item.get("brand_name") or "").strip()
+    sku = str(item.get("sku") or item.get("simple_sku") or "").strip()
+    item_id = str(item.get("item_id") or "").strip()
+    if seller:
+        parts.append(f"Seller: {seller}")
+    if brand and brand.lower() != "no brand":
+        parts.append(f"Brand: {brand}")
+    if sku:
+        parts.append(f"SKU: {sku}")
+    if item_id:
+        parts.append(f"Item ID: {item_id}")
+    return " · ".join(parts)
+
+
 def _items_block(receipt: dict) -> str:
     items = receipt.get("items") or []
     if not items:
         return ""
     rows = []
     for it in items:
-        name = (it.get("name") or "").strip()
+        name = str(it.get("name") or "").strip()
         qty = it.get("qty") or it.get("quantity") or ""
-        price = it.get("price") or ""
+        price = _format_item_price(it)
+        meta = _item_meta(it)
+        meta_html = (
+            f'<div style="margin-top:4px;color:#94a3b8;font-size:12px;line-height:1.4;">{_escape(meta)}</div>'
+            if meta else ""
+        )
         rows.append(
             f"""
             <tr>
-                <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:14px;">{_escape(name)}</td>
-                <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:13px;text-align:center;">{_escape(qty)}</td>
-                <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:14px;text-align:right;">{_escape(price)}</td>
+                <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:14px;line-height:1.45;">
+                    <div style="font-weight:600;">{_escape(name)}</div>
+                    {meta_html}
+                </td>
+                <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:13px;text-align:center;vertical-align:top;">{_escape(qty)}</td>
+                <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:14px;text-align:right;vertical-align:top;font-weight:600;">{_escape(price)}</td>
             </tr>
             """
         )
     return f"""
-    <table style="width:100%;border-collapse:collapse;margin-top:16px;">
-        <thead>
-            <tr>
-                <th style="text-align:left;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding-bottom:8px;">Item</th>
-                <th style="text-align:center;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding-bottom:8px;">Qty</th>
-                <th style="text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding-bottom:8px;">Price</th>
-            </tr>
-        </thead>
-        <tbody>
-            {"".join(rows)}
-        </tbody>
-    </table>
+    <div style="margin-top:18px;">
+        <div style="font-size:12px;color:#1e40af;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Products in this order</div>
+        <table style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align:left;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding-bottom:8px;">Product</th>
+                    <th style="text-align:center;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding-bottom:8px;">Qty</th>
+                    <th style="text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;padding-bottom:8px;">Line total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {"".join(rows)}
+            </tbody>
+        </table>
+    </div>
     """
 
 
@@ -213,7 +255,7 @@ body {{ margin:0; padding:0; background:linear-gradient(135deg,#f0f9ff 0%,#e0f2f
       {items_html}
       { f'<div style="text-align:center;margin:24px 0 8px;"><a href="{_escape(source_url)}" class="button">View on {_escape(source)}</a></div>' if source_url else "" }
       <div style="margin-top:18px;font-size:12px;color:#94a3b8;">
-        We'll watch this order and email you again when it ships.
+        Spark saved the receipt, screenshot, and page HTML locally for your records.
       </div>
     </div>
     <div class="footer">

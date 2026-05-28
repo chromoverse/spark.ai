@@ -255,12 +255,22 @@ def notify_stage_change(adapter_name: str, stage: str, guidance: Optional[str]) 
     deduplicate friendly titles per stage so the notifications read like
     a coherent step-by-step rather than a wall of identical popups.
     """
+    success_title = (
+        f"{adapter_name.capitalize()} — Booking confirmed"
+        if adapter_name.lower() == "booking"
+        else f"{adapter_name.capitalize()} — Order placed"
+    )
     titles = {
         "shipping": f"{adapter_name.capitalize()} — Step 1 of 3",
         "shipping_ready": f"{adapter_name.capitalize()} — Click Proceed to Pay",
         "confirm":  f"{adapter_name.capitalize()} — Step 2 of 3",
         "gateway":  f"{adapter_name.capitalize()} — Step 3 of 3",
-        "success":  f"{adapter_name.capitalize()} — Order placed",
+        "search": f"{adapter_name.capitalize()} — Choose Hotel",
+        "property": f"{adapter_name.capitalize()} — Review Property",
+        "availability": f"{adapter_name.capitalize()} — Choose Room",
+        "details": f"{adapter_name.capitalize()} — Booking Details",
+        "payment": f"{adapter_name.capitalize()} — Payment",
+        "success":  success_title,
         "unknown":  f"{adapter_name.capitalize()}",
     }
     title = titles.get(stage, adapter_name.capitalize())

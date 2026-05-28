@@ -327,6 +327,71 @@ def _order_id_from_url(url: str) -> str | None:
     return None
 
 
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+async def _extract_order_info(page: Any) -> dict:
+    """Read Daraz's structured checkout success payload.
+
+    Daraz success pages push a JSON-ish object into ``window.dataLayer``:
+    ``{ orderInfo: { order_id, orderItems: [...] } }``. That is much more
+    reliable than scraping visible text and gives us product names, seller,
+    SKU, quantity, and price for the confirmation email.
+    """
+    try:
+        info = await page.evaluate(
+            """
+            () => {
+                const layers = Array.isArray(window.dataLayer) ? window.dataLayer : [];
+                for (const entry of layers) {
+                    if (entry && entry.orderInfo && Array.isArray(entry.orderInfo.orderItems)) {
+                        return entry.orderInfo;
+                    }
+                }
+                return null;
+            }
+            """
+        )
+    except Exception as e:
+        logger.debug("daraz extract: dataLayer orderInfo scrape failed: %s", e)
+        info = None
+
+    if not isinstance(info, dict):
+        return {}
+
+    items = []
+    for raw in info.get("orderItems") or []:
+        if not isinstance(raw, dict):
+            continue
+        name = _clean_text(raw.get("item_name") or raw.get("name"))
+        if not name:
+            continue
+        qty = _clean_text(raw.get("quantity") or raw.get("qty") or "1")
+        price = _clean_text(raw.get("price"))
+        currency = _clean_text(info.get("currency") or info.get("currencyCode") or "Rs")
+        item = {
+            "name": name,
+            "qty": qty,
+            "price": price,
+            "currency": currency,
+            "seller": _clean_text(raw.get("seller_name")),
+            "brand": _clean_text(raw.get("brand_name")),
+            "sku": _clean_text(raw.get("simple_sku") or raw.get("sku_id")),
+            "item_id": _clean_text(raw.get("item_id")),
+        }
+        # Remove empty optional fields so receipt.json stays tidy.
+        items.append({k: v for k, v in item.items() if v not in ("", None)})
+
+    out: dict = {}
+    if info.get("order_id"):
+        out["order_id"] = _clean_text(info.get("order_id"))
+    if items:
+        out["items"] = items
+        out["item_count"] = len(items)
+    return out
+
+
 # ── Steps ──────────────────────────────────────────────────────────────────
 
 def goto_daraz_search(query: str) -> ActionStep:
@@ -621,6 +686,12 @@ class DarazAdapter(SiteAdapter):
         # Try a couple of common DOM places. Wrapped in try/except since
         # any of them may not exist on a given Daraz layout version.
         scraped: dict = {}
+        order_info = await _extract_order_info(page)
+        if order_info.get("order_id"):
+            order_id = order_info["order_id"]
+        for key, value in order_info.items():
+            if key != "order_id":
+                scraped[key] = value
 
         # Order id from DOM if URL didn't carry it.
         if not order_id:
@@ -659,6 +730,31 @@ class DarazAdapter(SiteAdapter):
                     scraped["total"] = raw_total
         except Exception as e:
             logger.debug("daraz extract: total scrape failed: %s", e)
+
+        # If the success page hides the total from visible text but the
+        # structured order payload has line prices, still give the email a
+        # useful total and currency.
+        items = order_info.get("items") or []
+        if items and not scraped.get("currency"):
+            for item in items:
+                if item.get("currency"):
+                    scraped["currency"] = item["currency"]
+                    break
+        if items and "total" not in scraped:
+            total = 0.0
+            found_price = False
+            for item in items:
+                raw_price = str(item.get("price") or "").replace(",", "")
+                match = re.search(r"\d+(?:\.\d+)?", raw_price)
+                if not match:
+                    continue
+                try:
+                    total += float(match.group(0))
+                    found_price = True
+                except ValueError:
+                    continue
+            if found_price:
+                scraped["total"] = total
 
         # Page title is a useful debugging anchor.
         try:
