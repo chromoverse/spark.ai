@@ -15,6 +15,17 @@ class BrowserEventType(str, Enum):
     PAYMENT_PAGE_REACHED = "payment_page_reached"
     BROWSER_DEAD = "browser_dead"
     TAB_CRASHED = "tab_crashed"
+    # Post-payment receipt lifecycle. Emitted by receipt_watcher after a
+    # PAYMENT_HANDOFF so any subscriber (UI, activity log, notifier) can
+    # follow the purchase without re-implementing the polling logic.
+    RECEIPT_WATCH_STARTED = "receipt_watch_started"
+    RECEIPT_CAPTURED = "receipt_captured"
+    RECEIPT_EMAILED = "receipt_emailed"
+    RECEIPT_WATCH_TIMEOUT = "receipt_watch_timeout"
+    # Fired by the watcher each time the user advances through a multi-step
+    # checkout (shipping → confirm → gateway → success). Lets the UI / CLI
+    # show meaningful progress instead of generic "still waiting".
+    CHECKOUT_STAGE_CHANGED = "checkout_stage_changed"
 
 
 @dataclass

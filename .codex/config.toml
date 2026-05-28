@@ -1,0 +1,7 @@
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+ANTHROPIC_API_KEY = "fe_oa_2e8ca5007d71fd5b6b48759b0af529bd1d1db69f38e792f7"
+ANTHROPIC_BASE_URL = "https://cc.freemodel.dev"
+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"

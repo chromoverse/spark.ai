@@ -216,10 +216,16 @@ class BrowserAgentTool(BaseTool):
 from .adapters.youtube import YouTubeAdapter
 from .adapters.amazon import AmazonAdapter
 from .adapters.spotify import SpotifyAdapter
+from .adapters.daraz import DarazAdapter
 
 register_adapter("youtube_play", YouTubeAdapter)
-register_adapter("buy_product", AmazonAdapter)
 register_adapter("spotify_play", SpotifyAdapter)
+# Commerce: Daraz is the primary "buy_product" target on this user's
+# region (Nepal). Amazon stays registered under a distinct intent so
+# the LLM can route to it when the entity is clearly an Amazon listing.
+register_adapter("daraz_buy", DarazAdapter)
+register_adapter("amazon_buy", AmazonAdapter)
+register_adapter("buy_product", DarazAdapter)  # default for now
 
 
 __all__ = ["BrowserAgentTool", "register_adapter"]

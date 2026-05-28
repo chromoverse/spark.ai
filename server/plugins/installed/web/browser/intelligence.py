@@ -114,20 +114,43 @@ async def detect_captcha(page: Any) -> bool:
 
 
 async def detect_payment_page(page: Any) -> bool:
-    """Detect if page is payment/checkout."""
+    """Detect if the current page is a real checkout/payment page.
+
+    The previous version matched on any of {"payment method", "place order",
+    "credit card"} appearing anywhere in the body text — which false-positived
+    on every modern e-commerce *product* page because their footers carry
+    payment-badge trust copy. That caused the state machine to short-circuit
+    to PAYMENT_HANDOFF before the adapter ever clicked Buy Now.
+
+    The fix: require the URL to look like a checkout / payment / cart route
+    AS WELL AS the page text containing payment-form indicators. Product
+    URLs (/products/..., /catalog/..., /search/...) never satisfy the URL
+    gate, so they can't trip the detector regardless of footer content.
+    """
     try:
-        indicators = [
+        url = (page.url or "").lower()
+        URL_GATES = (
+            "/checkout", "/payment", "/cashier",
+            "/buyer/order", "/buyer-order", "/order/",
+            "/cart/checkout",
+        )
+        if not any(g in url for g in URL_GATES):
+            return False
+
+        indicators = (
             "payment method",
             "credit card",
             "card number",
             "cvv",
             "billing address",
             "place order",
-            "complete purchase"
-        ]
+            "complete purchase",
+            "select payment",
+            "choose payment",
+        )
         text = await page.evaluate("() => document.body.innerText.toLowerCase()")
         return any(ind in text for ind in indicators)
-    except:
+    except Exception:
         return False
 
 

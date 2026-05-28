@@ -24,9 +24,12 @@ Shipped handlers
 
 Stubbed handlers (return graceful "opening URL for manual completion")
   book_hotel      → opens the hotel's booking_url; user finishes the flow.
-  buy_product     → opens the product's buy_url.
   reserve_table   → opens the restaurant's booking_url / Google Maps.
   book_ticket     → opens the event's booking_url.
+
+Automated handlers
+  buy_product     → drives Daraz to checkout, waits while the user pays,
+                    then captures/emails the receipt when confirmation appears.
 
 Real automation (Playwright/nodriver flows with auth) will replace these
 stubs as we add per-site adapters. The contract above doesn't change —
@@ -220,8 +223,159 @@ async def _handle_play_music(ctx: BrowserActionContext) -> Dict[str, Any]:
     }
 
 
+async def _handle_buy_product(ctx: BrowserActionContext) -> Dict[str, Any]:
+    """Real ``buy_product`` flow — drives the Daraz adapter to the
+    payment page, then hands off to the user and spawns the post-payment
+    receipt watcher.
+
+    By default this waits for the watcher to capture a receipt or time
+    out, so Spark stays alive while the user completes the browser-only
+    checkout steps. Callers can pass ``params.wait_for_receipt=false``
+    to restore the old fire-and-forget behavior.
+    """
+    title = ctx.title or (ctx.entity.get("name") if ctx.entity else None) or (ctx.entity.get("title") if ctx.entity else None)
+    target_url = ctx.url or _entity_url(ctx.entity, prefer=("buy_url", "source_url", "website"))
+    target = target_url or title
+    if not target:
+        return {"opened": False, "reason": "no product URL or name/title provided"}
+    display_title = str(title or target)
+
+    wait_for_receipt = bool(ctx.params.get("wait_for_receipt", True))
+    try:
+        watch_timeout_s = float(ctx.params.get("watch_timeout_s", ctx.params.get("timeout_s", 600.0)))
+    except (TypeError, ValueError):
+        watch_timeout_s = 600.0
+
+    try:
+        from ..browser.tool import BrowserAgentTool, _ADAPTERS
+        from ..browser.commerce.watcher import start_receipt_watch
+
+        result = await BrowserAgentTool()._execute({
+            "intent": "buy_product",
+            "query": str(target),
+            "dry_run": False,
+            # approve_payment=True here means "I expect this flow to reach
+            # the payment page, treat that as success, and DO NOT abort".
+            # It is NOT a permission to submit a payment form — that
+            # contract is enforced inside the state machine (see the
+            # comment in state_machine.py around PAYMENT_HANDOFF). The
+            # flag is misnamed historically; the docstring there spells
+            # out the actual semantics.
+            "approve_payment": True,
+        })
+
+        # The agent landed at payment_handoff → spawn the watcher.
+        state = (result.data or {}).get("state")
+        if state == "payment_handoff":
+            adapter_cls = _ADAPTERS.get("buy_product")
+            adapter = adapter_cls() if adapter_cls else None
+            watch_task = None
+            if adapter is not None:
+                watch_task = start_receipt_watch(
+                    adapter,
+                    timeout_s=watch_timeout_s,
+                    poll_every_s=2.0,
+                    reminder_every_s=30.0,
+                )
+            if wait_for_receipt and watch_task is not None:
+                watch_result = await watch_task
+                saved = watch_result.saved
+                receipt = {
+                    "captured": watch_result.captured,
+                    "timed_out": watch_result.timed_out,
+                    "duration_s": watch_result.duration_s,
+                    "email": watch_result.email,
+                    "error": watch_result.error,
+                }
+                if saved is not None:
+                    receipt.update({
+                        "dir": str(saved.dir),
+                        "receipt_path": str(saved.receipt_path),
+                        "screenshot_path": str(saved.screenshot_path) if saved.screenshot_path else None,
+                        "html_path": str(saved.html_path) if saved.html_path else None,
+                        "order_id": saved.data.get("order_id"),
+                        "total": saved.data.get("total"),
+                        "currency": saved.data.get("currency"),
+                    })
+                if watch_result.captured:
+                    stage = "receipt_captured"
+                    message = (
+                        f"Receipt captured for {display_title!r}. "
+                        "It was saved to disk and email delivery was attempted."
+                    )
+                elif watch_result.timed_out:
+                    stage = "watch_timeout"
+                    message = (
+                        f"Timed out waiting for Daraz confirmation for {display_title!r}. "
+                        "If you completed payment, check your Daraz orders."
+                    )
+                else:
+                    stage = "watch_error"
+                    message = f"Receipt watcher stopped for {display_title!r}: {watch_result.error}"
+                return {
+                    "opened": True,
+                    "automated": True,
+                    "action": "buy_product",
+                    "title": display_title,
+                    "stage": stage,
+                    "message": message,
+                    "watching": False,
+                    "receipt": receipt,
+                    "data": result.data,
+                }
+            return {
+                "opened": True,
+                "automated": True,
+                "action": "buy_product",
+                "title": display_title,
+                "stage": "awaiting_payment",
+                "message": (
+                    f"Reached payment page for {display_title!r}. Complete payment in the browser — "
+                    "the receipt will be saved to disk and emailed automatically."
+                ),
+                "watching": watch_task is not None,
+                "data": result.data,
+            }
+
+        # Flow succeeded without payment (shouldn't normally happen for
+        # buy_product) — surface as best-effort success.
+        if result.success:
+            return {
+                "opened": True,
+                "automated": True,
+                "action": "buy_product",
+                "title": display_title,
+                "stage": state or "done",
+                "message": f"Flow completed in state {state!r} for {display_title!r}",
+                "data": result.data,
+            }
+
+        return {
+            "opened": False,
+            "automated": True,
+            "action": "buy_product",
+            "title": display_title,
+            "reason": result.error or "buy_product flow failed",
+            "data": result.data,
+        }
+    except Exception as e:
+        logger.warning("buy_product adapter failed, falling back to URL open: %s", e)
+
+    # Fallback: just open a search page so the user can do it manually.
+    url = target_url or f"https://www.daraz.com.np/catalog/?q={quote_plus(str(display_title))}"
+    ok = await _open_browser(url)
+    return {
+        "opened": ok,
+        "automated": False,
+        "url": url,
+        "action": "buy_product",
+        "title": display_title,
+        "message": f"Opened Daraz search for {display_title!r}" if ok else "Browser launch failed",
+    }
+
+
 async def _handle_stub_booking(ctx: BrowserActionContext) -> Dict[str, Any]:
-    """Stub for book_hotel / buy_product / reserve_table / book_ticket.
+    """Stub for book_hotel / reserve_table / book_ticket.
 
     Opens whatever booking URL the entity exposes so the user can
     complete the flow manually. Real automation comes later.
@@ -257,10 +411,11 @@ _HANDLERS: Dict[str, _Handler] = {
     "open_url":      _handle_open_url,
     "play_media":    _handle_play_media,
     "play_music":    _handle_play_music,
-    # Stubs sharing one impl — distinct action names so future per-flow
-    # automation can override them individually without touching callers.
+    "buy_product":   _handle_buy_product,
+    # Remaining stubs share one impl — distinct action names so future
+    # per-flow automation can override them individually without touching
+    # callers.
     "book_hotel":    _handle_stub_booking,
-    "buy_product":   _handle_stub_booking,
     "reserve_table": _handle_stub_booking,
     "book_ticket":   _handle_stub_booking,
 }
