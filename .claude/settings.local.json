@@ -126,7 +126,9 @@
       "Bash(python server/testing/test_browser_youtube_e2e.py --query \"Morning Songs Mind Fresh\")",
       "Bash(python server/testing/test_browser_youtube_e2e.py --query \"lofi beats\")",
       "Bash(python server/testing/test_browser_session_reuse.py)",
-      "Bash(python server/testing/test_media_control.py)"
+      "Bash(python server/testing/test_media_control.py)",
+      "Bash(gh api *)",
+      "Bash(python server/testing/test_browser_spotify_e2e.py --query \"lofi hip hop\")"
     ]
   }
 }

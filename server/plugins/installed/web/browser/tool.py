@@ -215,9 +215,11 @@ class BrowserAgentTool(BaseTool):
 # Register adapters
 from .adapters.youtube import YouTubeAdapter
 from .adapters.amazon import AmazonAdapter
+from .adapters.spotify import SpotifyAdapter
 
 register_adapter("youtube_play", YouTubeAdapter)
 register_adapter("buy_product", AmazonAdapter)
+register_adapter("spotify_play", SpotifyAdapter)
 
 
 __all__ = ["BrowserAgentTool", "register_adapter"]

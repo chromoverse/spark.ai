@@ -168,6 +168,58 @@ async def _handle_play_media(ctx: BrowserActionContext) -> Dict[str, Any]:
     }
 
 
+async def _handle_play_music(ctx: BrowserActionContext) -> Dict[str, Any]:
+    """Play a track/album/playlist on Spotify Web.
+
+    Same shape as play_media (YouTube) but routes to the spotify_play
+    adapter. Requires sign-in the first time — the auth helper drives
+    that interactively, then the persistent profile carries the session.
+    """
+    title = ctx.title or ctx.entity.get("name") or ctx.entity.get("title")
+    if not title:
+        return {"opened": False, "reason": "no title or entity name to play"}
+
+    try:
+        from ..browser.tool import BrowserAgentTool
+        result = await BrowserAgentTool()._execute({
+            "intent": "spotify_play",
+            "query": str(title),
+            "dry_run": False,
+        })
+        if result.success:
+            return {
+                "opened": True,
+                "automated": True,
+                "action": "play_music",
+                "title": str(title),
+                "message": f"Playing {title!r} on Spotify",
+                "data": result.data,
+            }
+        # Adapter ran but didn't succeed — pass the typed reason up rather
+        # than silently falling back. Sign-in timeout / no results / etc.
+        return {
+            "opened": False,
+            "automated": True,
+            "action": "play_music",
+            "title": str(title),
+            "reason": result.error or "Spotify flow did not complete",
+            "data": result.data,
+        }
+    except Exception as e:
+        logger.warning("Spotify adapter failed, falling back to URL open: %s", e)
+
+    url = f"https://open.spotify.com/search/{quote_plus(str(title))}"
+    ok = await _open_browser(url)
+    return {
+        "opened": ok,
+        "automated": False,
+        "url": url,
+        "action": "play_music",
+        "title": str(title),
+        "message": f"Opened Spotify search for {title!r}" if ok else "Browser launch failed",
+    }
+
+
 async def _handle_stub_booking(ctx: BrowserActionContext) -> Dict[str, Any]:
     """Stub for book_hotel / buy_product / reserve_table / book_ticket.
 
@@ -204,6 +256,7 @@ async def _handle_stub_booking(ctx: BrowserActionContext) -> Dict[str, Any]:
 _HANDLERS: Dict[str, _Handler] = {
     "open_url":      _handle_open_url,
     "play_media":    _handle_play_media,
+    "play_music":    _handle_play_music,
     # Stubs sharing one impl — distinct action names so future per-flow
     # automation can override them individually without touching callers.
     "book_hotel":    _handle_stub_booking,
@@ -239,8 +292,8 @@ class BrowserActionTool(BaseTool):
             "required": True,
             "enum": list(_HANDLERS.keys()),
             "description": (
-                "open_url | play_media | book_hotel | buy_product | "
-                "reserve_table | book_ticket"
+                "open_url | play_media (YouTube) | play_music (Spotify) | "
+                "book_hotel | buy_product | reserve_table | book_ticket"
             ),
         },
         "entity": {
@@ -283,6 +336,7 @@ class BrowserActionTool(BaseTool):
     EXAMPLES = [
         {"user_utterance": "book that hotel"},
         {"user_utterance": "play interstellar"},
+        {"user_utterance": "play arctic monkeys on spotify"},
     ]
     SEMANTIC_TAGS = ["browser", "action", "book", "buy", "play", "open"]
     TOOL_CATEGORY = "browser_action"
