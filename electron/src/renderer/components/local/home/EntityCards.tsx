@@ -662,16 +662,20 @@ function EntityDetailModal({ entity, onClose }: { entity: EntityCardData; onClos
   );
 }
 
-// ── Inline action progress (Buy/Book/Play live status) ──────────────────────
+// ── Live action panel (Buy/Book/Play progress) ──────────────────────────────
 //
-// Renders below the product image once the user clicks an action button.
-// Surfaces the latest step from the running BrowserActionTool — e.g.
-// "Signing in to Daraz", "Reached payment page" — and switches to a
-// success/failure badge when the action completes. Keeping it inline
-// with the card means the user doesn't have to hunt for a separate
-// Browser Action card elsewhere in the thread.
+// Renders BELOW the entity card once the user clicks an action button.
+// Mirrors what the post-payment receipt watcher is doing in real time —
+// adapter stage transitions, "waiting for payment" reminders, capture,
+// cancellation. Keeping it below (not inside) the card means the rich
+// product visual stays clean while a checkout is in flight.
 
-function ActionProgressStrip({ progress }: { progress: EntityActionProgress }) {
+function ActionProgressPanel({
+  progress, entityName,
+}: {
+  progress: EntityActionProgress;
+  entityName: string;
+}) {
   const isDone = progress.status === "completed";
   const isFail = progress.status === "failed";
   const isRunning = !isDone && !isFail;
@@ -682,38 +686,48 @@ function ActionProgressStrip({ progress }: { progress: EntityActionProgress }) {
   const tint = isFail ? "rgba(220, 80, 80, 0.55)"
              : isDone ? "rgba(80, 180, 120, 0.55)"
              : "var(--sp-accent)";
-  const bg   = isFail ? "rgba(220, 80, 80, 0.08)"
-             : isDone ? "rgba(80, 180, 120, 0.08)"
-             : "rgba(217, 119, 87, 0.08)";
+  const bg   = isFail ? "rgba(220, 80, 80, 0.06)"
+             : isDone ? "rgba(80, 180, 120, 0.06)"
+             : "rgba(217, 119, 87, 0.06)";
+  const statusLabel = isFail ? "stopped" : isDone ? "done" : "running";
 
   return (
     <div style={{
       marginTop: 8,
-      padding: "7px 10px",
-      borderRadius: 7,
+      borderRadius: 10,
       border: `1px solid ${tint}`,
       background: bg,
-      display: "flex", alignItems: "center", gap: 8,
-      fontSize: 11, color: "var(--sp-ink-2)",
+      padding: "10px 14px",
+      display: "flex", flexDirection: "column", gap: 6,
     }}>
-      <span style={{
-        width: 6, height: 6, borderRadius: "50%",
-        background: tint,
-        boxShadow: isRunning ? `0 0 6px ${tint}` : "none",
-        animation: isRunning ? "sp-pulse 1.2s ease-in-out infinite" : "none",
-        flexShrink: 0,
-      }} />
-      <span style={{
-        flex: 1, minWidth: 0,
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%",
+          background: tint,
+          boxShadow: isRunning ? `0 0 8px ${tint}` : "none",
+          animation: isRunning ? "sp-pulse 1.2s ease-in-out infinite" : "none",
+          flexShrink: 0,
+        }} />
+        <span className="sp-mono" style={{
+          fontSize: 10, color: "var(--sp-ink-4)",
+          textTransform: "uppercase", letterSpacing: "0.08em",
+        }}>
+          Browser action · {statusLabel}
+        </span>
+        <span style={{ flex: 1 }} />
+        <span style={{
+          fontSize: 11, color: "var(--sp-ink-3)",
+          maxWidth: "60%",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {entityName}
+        </span>
+      </div>
+      <p style={{
+        margin: 0, fontSize: 13, color: "var(--sp-ink-2)", lineHeight: 1.4,
       }}>
         {message}
-      </span>
-      {isRunning && (
-        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-ink-4)" }}>
-          running
-        </span>
-      )}
+      </p>
     </div>
   );
 }
@@ -722,13 +736,12 @@ function ActionProgressStrip({ progress }: { progress: EntityActionProgress }) {
 // ── Featured panel (left 55%) ─────────────────────────────────────────────────
 
 function FeaturedPanel({
-  entity, rank, onOpenDetail, onAction, actionProgress,
+  entity, rank, onOpenDetail, onAction,
 }: {
   entity: EntityCardData;
   rank: number;
   onOpenDetail: () => void;
   onAction?: (action: string, entity: EntityCardData) => void;
-  actionProgress?: EntityActionProgress;
 }) {
   const images   = entity.images || [];
   const [bgIdx, setBgIdx]   = useState(0);
@@ -924,11 +937,6 @@ function FeaturedPanel({
           <div onClick={e => e.stopPropagation()}>
             <ImageStrip images={images} activeIdx={bgIdx} onSelect={setBgIdx} />
           </div>
-        )}
-
-        {/* Inline action progress (shows after user clicks Buy/Book/etc) */}
-        {actionProgress && (
-          <ActionProgressStrip progress={actionProgress} />
         )}
 
         {/* Action buttons */}
@@ -1208,7 +1216,6 @@ export default function EntityCards({ entities, intent, onDismiss, onAction, ent
             rank={featuredIdx + 1}
             onOpenDetail={() => setShowModal(true)}
             onAction={onAction}
-            actionProgress={actionFor(featured)}
           />
           <EntityList
             entities={entities}
@@ -1217,6 +1224,16 @@ export default function EntityCards({ entities, intent, onDismiss, onAction, ent
           />
         </div>
       </div>
+
+      {/* Live action progress for the featured entity. Rendered as a
+          sibling of the card (not inside the FeaturedPanel) so the
+          checkout-watcher's stage transitions get real estate of their
+          own and don't squeeze the product image. */}
+      {(() => {
+        const p = actionFor(featured);
+        if (!p) return null;
+        return <ActionProgressPanel progress={p} entityName={featured.name} />;
+      })()}
 
       {showModal && (
         <EntityDetailModal entity={featured} onClose={() => setShowModal(false)} />

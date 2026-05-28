@@ -22,6 +22,10 @@ class BrowserEventType(str, Enum):
     RECEIPT_CAPTURED = "receipt_captured"
     RECEIPT_EMAILED = "receipt_emailed"
     RECEIPT_WATCH_TIMEOUT = "receipt_watch_timeout"
+    # User closed Chrome mid-checkout — treat as an explicit cancellation
+    # of the order. The watcher exits, notifications stop, no email goes
+    # out. Distinct from TIMEOUT so the UI can phrase it differently.
+    RECEIPT_WATCH_CANCELLED = "receipt_watch_cancelled"
     # Fired by the watcher each time the user advances through a multi-step
     # checkout (shipping → confirm → gateway → success). Lets the UI / CLI
     # show meaningful progress instead of generic "still waiting".
@@ -44,6 +48,18 @@ class EventBus:
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []
         self._subscribers[event_type].append(callback)
+
+    def unsubscribe(self, event_type: BrowserEventType, callback: Callable) -> None:
+        """Remove a previously-subscribed callback. Silently no-ops if the
+        callback wasn't subscribed — callers don't have to track that.
+        """
+        subs = self._subscribers.get(event_type)
+        if not subs:
+            return
+        try:
+            subs.remove(callback)
+        except ValueError:
+            pass
 
     def emit(self, event: BrowserEvent):
         """Emit an event to all subscribers."""

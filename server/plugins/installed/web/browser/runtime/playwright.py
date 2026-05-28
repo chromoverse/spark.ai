@@ -20,12 +20,21 @@ class PlaywrightRuntime(BrowserRuntime):
         self._context: Optional[BrowserContext] = None
         self._health_task: Optional[asyncio.Task] = None
         self._crash_callbacks: list[Callable] = []
+        # Fires once when the underlying CDP socket dies — used by the
+        # session to cancel any in-flight receipt watchers so closing
+        # Chrome immediately cancels the order it was watching.
+        self._disconnect_callbacks: list[Callable] = []
 
     async def connect(self) -> None:
         """Connect to existing Chrome via CDP."""
         try:
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.connect_over_cdp(self.cdp_url)
+            # Playwright fires "disconnected" when the CDP transport closes
+            # — which is exactly what happens when the user quits Chrome.
+            # We translate that into a synchronous fanout so the session
+            # can cancel watcher tasks before they hit BROWSER_DEAD.
+            self._browser.on("disconnected", lambda _b=None: self._on_browser_disconnected())
             contexts = self._browser.contexts
             if not contexts:
                 raise BrowserError(
@@ -41,6 +50,20 @@ class PlaywrightRuntime(BrowserRuntime):
                 BrowserErrorType.BROWSER_DEAD,
                 f"Failed to connect to browser: {e}"
             )
+
+    def on_disconnect(self, cb: Callable) -> None:
+        """Register a callback for when Chrome quits / CDP drops."""
+        self._disconnect_callbacks.append(cb)
+
+    def _on_browser_disconnected(self) -> None:
+        """Translate Playwright's "disconnected" event into our callbacks."""
+        logger.info("PlaywrightRuntime: browser disconnected")
+        self._connected = False
+        for cb in list(self._disconnect_callbacks):
+            try:
+                cb()
+            except Exception:
+                logger.exception("disconnect callback failed")
 
     async def new_page(self) -> Page:
         """Create new page in existing context."""
@@ -89,15 +112,44 @@ class PlaywrightRuntime(BrowserRuntime):
     async def bring_to_front(self, page: Page) -> None:
         """Raise the tab inside Chrome, then raise the Chrome window itself.
 
-        page.bring_to_front handles the in-Chrome tab focus. On Windows we
-        additionally pull the Chrome OS window to the foreground via the
-        Win32 API, since CDP cannot do that for us. Failures are logged
-        and swallowed — focus is best-effort, not a correctness requirement.
+        Three layers, in order:
+
+        1. ``page.bring_to_front()`` — switches to this tab inside Chrome.
+        2. ``Browser.setWindowBounds`` over CDP — un-minimizes the *exact*
+           Chrome window this tab belongs to. This is the only way to be
+           sure we're acting on our debug Chrome and not the user's
+           everyday Chrome that may also be open.
+        3. Win32 ``SetForegroundWindow`` (with AttachThreadInput) — pulls
+           the OS window to the actual foreground. CDP can restore the
+           window but cannot grant Z-order/focus.
+
+        Every step is best-effort; failures are logged, not raised.
         """
         try:
             await page.bring_to_front()
         except Exception as e:
             logger.debug("page.bring_to_front failed: %s", e)
+
+        # CDP restore: works on every platform and targets THIS window
+        # specifically. Eliminates the "we minimized the wrong Chrome"
+        # class of bug entirely.
+        try:
+            cdp = await page.context.new_cdp_session(page)
+            try:
+                info = await cdp.send("Browser.getWindowForTarget")
+                window_id = info.get("windowId")
+                if window_id is not None:
+                    await cdp.send("Browser.setWindowBounds", {
+                        "windowId": window_id,
+                        "bounds": {"windowState": "normal"},
+                    })
+            finally:
+                try:
+                    await cdp.detach()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug("CDP window restore failed: %s", e)
 
         # OS-level window raise (Windows only — no-op elsewhere).
         import sys
@@ -179,14 +231,19 @@ class PlaywrightRuntime(BrowserRuntime):
 
 
 def _raise_chrome_window_win32() -> None:
-    """Find a Chrome top-level window and yank it to the foreground.
+    """Find every visible Chrome top-level window and force it to the foreground.
 
-    Uses ctypes so we don't take a hard dep on pywin32. We look for the
-    debug Chrome we launched (window class ``Chrome_WidgetWin_1`` and a
-    visible window owned by chrome.exe). SetForegroundWindow has well-known
-    rules — it can be denied when the calling process isn't the
-    foreground; we work around that by sending a NULL ALT keypress first,
-    which is the standard trick to unlock focus stealing.
+    CDP ``Browser.setWindowBounds`` already restored the *correct* window
+    from minimized state — this function only has to grant foreground/Z-
+    order, which CDP can't do. We use ``AttachThreadInput`` to attach our
+    input queue to the current foreground thread, which lifts the
+    SetForegroundWindow restrictions Windows 10/11 normally enforce.
+    Far more reliable than the older ``ALT keypress`` trick.
+
+    We iterate ALL chrome.exe windows (not just the first), because a
+    user running their everyday Chrome alongside our debug Chrome will
+    otherwise hit the wrong one. Raising both is harmless — Z-order ends
+    up with our window on top because we raise it last.
     """
     import ctypes
     from ctypes import wintypes
@@ -202,10 +259,8 @@ def _raise_chrome_window_win32() -> None:
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
     SW_RESTORE = 9
     SW_SHOW = 5
-    VK_MENU = 0x12  # ALT
-    KEYEVENTF_KEYUP = 0x0002
 
-    target_hwnd: list[int] = []
+    chrome_hwnds: list[int] = []
 
     def _proc_name_for(hwnd: int) -> str:
         pid = wintypes.DWORD()
@@ -229,27 +284,33 @@ def _raise_chrome_window_win32() -> None:
         user32.GetClassNameW(hwnd, cls, 64)
         if cls.value != "Chrome_WidgetWin_1":
             return True
-        if _proc_name_for(hwnd) != "chrome.exe":
+        proc = _proc_name_for(hwnd)
+        if proc not in ("chrome.exe", "msedge.exe"):
             return True
-        # Skip zero-area/tooltip windows.
         rect = wintypes.RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(rect))
         if (rect.right - rect.left) < 100 or (rect.bottom - rect.top) < 100:
             return True
-        target_hwnd.append(hwnd)
-        return False  # stop enumerating
+        chrome_hwnds.append(hwnd)
+        return True  # keep going — we want all of them
 
     user32.EnumWindows(EnumWindowsProc(_cb), 0)
-    if not target_hwnd:
+    if not chrome_hwnds:
         return
 
-    hwnd = target_hwnd[0]
-    # If minimized, restore first.
-    user32.ShowWindow(hwnd, SW_RESTORE)
-    # Focus-stealing workaround: synthesize an ALT keypress so Windows
-    # grants us SetForegroundWindow.
-    user32.keybd_event(VK_MENU, 0, 0, 0)
-    user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
-    user32.SetForegroundWindow(hwnd)
-    user32.BringWindowToTop(hwnd)
-    user32.ShowWindow(hwnd, SW_SHOW)
+    fg = user32.GetForegroundWindow()
+    fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    our_thread = kernel32.GetCurrentThreadId()
+    attached = False
+    if fg_thread and fg_thread != our_thread:
+        attached = bool(user32.AttachThreadInput(our_thread, fg_thread, True))
+
+    try:
+        for hwnd in chrome_hwnds:
+            user32.ShowWindow(hwnd, SW_RESTORE)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.ShowWindow(hwnd, SW_SHOW)
+    finally:
+        if attached:
+            user32.AttachThreadInput(our_thread, fg_thread, False)

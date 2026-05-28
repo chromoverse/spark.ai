@@ -45,6 +45,11 @@ class BrowserSession:
         # Serializes connect / reconnect / disconnect. Read paths don't take it.
         self._lifecycle_lock = asyncio.Lock()
         self._shutdown = False
+        # Tasks that should be cancelled when the user quits Chrome. The
+        # canonical case: receipt watchers polling for an order
+        # confirmation — if the browser is gone, the order is cancelled,
+        # so the watcher must stop instead of polling to its timeout.
+        self._cancel_on_disconnect: set[asyncio.Task] = set()
 
     # ─── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -79,6 +84,7 @@ class BrowserSession:
 
             logger.info("BrowserSession: connecting to %s", self._cdp_url)
             rt = PlaywrightRuntime(cdp_url=self._cdp_url, dry_run=False)
+            rt.on_disconnect(self._on_browser_disconnect)
             try:
                 await rt.connect()
             except BrowserError as first_err:
@@ -100,6 +106,7 @@ class BrowserSession:
                         f"Auto-launch failed: {launch.reason}",
                     )
                 rt = PlaywrightRuntime(cdp_url=self._cdp_url, dry_run=False)
+                rt.on_disconnect(self._on_browser_disconnect)
                 try:
                     await rt.connect()
                 except BrowserError as retry_err:
@@ -125,6 +132,34 @@ class BrowserSession:
                 logger.info("BrowserSession: shut down")
             except Exception as e:
                 logger.warning("BrowserSession shutdown error (ignored): %s", e)
+
+    # ─── Cancellation on Chrome quit ────────────────────────────────────────
+
+    def register_cancel_on_disconnect(self, task: asyncio.Task) -> None:
+        """Mark ``task`` to be cancelled when Chrome quits / CDP drops.
+
+        Receipt watchers register themselves so that closing Chrome
+        immediately cancels the order being watched, instead of letting
+        the watcher poll its way to a timeout.
+        """
+        self._cancel_on_disconnect.add(task)
+        task.add_done_callback(self._cancel_on_disconnect.discard)
+
+    def _on_browser_disconnect(self) -> None:
+        """Runtime callback — Chrome died, cancel everyone listening."""
+        if not self._cancel_on_disconnect:
+            return
+        logger.info(
+            "BrowserSession: browser disconnected, cancelling %d watcher task(s)",
+            len(self._cancel_on_disconnect),
+        )
+        for task in list(self._cancel_on_disconnect):
+            if not task.done():
+                task.cancel()
+        self._cancel_on_disconnect.clear()
+        # Drop the dead runtime so the next caller forces a reconnect
+        # instead of using a corpse.
+        self._runtime = None
 
     # ─── Public API ─────────────────────────────────────────────────────────
 

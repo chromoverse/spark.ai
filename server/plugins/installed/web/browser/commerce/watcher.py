@@ -115,7 +115,12 @@ def start_receipt_watch(
         desktop_reminder_every_s=desktop_reminder_every_s,
         desktop_reminder_max_s=desktop_reminder_max_s,
     )
-    return asyncio.create_task(coro, name=f"receipt-watch-{adapter.name}")
+    task = asyncio.create_task(coro, name=f"receipt-watch-{adapter.name}")
+    # Closing Chrome is the user's "cancel order" signal — wire the task
+    # into the session so the disconnect handler cancels it immediately
+    # instead of letting it poll its way to the timeout.
+    get_browser_session().register_cancel_on_disconnect(task)
+    return task
 
 
 # ── Implementation ─────────────────────────────────────────────────────────
@@ -195,7 +200,12 @@ async def _watch_for_receipt(
             # paying; pulling focus would be hostile).
             try:
                 page = await session.get_page(host_match, focus=False)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
+                # If Chrome is genuinely gone, the disconnect handler
+                # will cancel us on the next event loop tick. Until then,
+                # back off briefly — don't hammer the dead CDP socket.
                 logger.debug("receipt watcher: get_page failed (retry): %s", e)
                 await asyncio.sleep(poll_every_s)
                 continue
@@ -312,9 +322,29 @@ async def _watch_for_receipt(
             await asyncio.sleep(poll_every_s)
 
     except asyncio.CancelledError:
-        # Shutdown — propagate cancellation so the event loop tears down cleanly.
-        logger.info("receipt watcher (%s): cancelled", adapter.name)
-        raise
+        # Two reasons we get cancelled:
+        #   1. Server shutdown — propagate so the loop tears down cleanly.
+        #   2. User closed Chrome mid-checkout — that's an explicit
+        #      "cancel this order" signal. Surface it as a distinct event,
+        #      kill the desktop notification thread, and DON'T re-raise
+        #      (the caller fire-and-forgets this task; re-raising just
+        #      logs a noisy "Task exception was never retrieved").
+        duration = asyncio.get_event_loop().time() - started_at
+        logger.info("receipt watcher (%s): cancelled after %.0fs", adapter.name, duration)
+        bus.emit(BrowserEvent(
+            type=BrowserEventType.RECEIPT_WATCH_CANCELLED,
+            data={"source": adapter.name, "duration_s": duration},
+        ))
+        clear_notifications()
+        notify(
+            f"{adapter.name.capitalize()} — order cancelled",
+            "You closed the browser, so I stopped watching for the receipt.",
+            sound=False,
+        )
+        return ReceiptWatchResult(
+            captured=False, timed_out=False, duration_s=duration,
+            error="cancelled by user (browser closed)",
+        )
     except Exception as e:
         logger.exception("receipt watcher (%s): crashed", adapter.name)
         duration = asyncio.get_event_loop().time() - started_at

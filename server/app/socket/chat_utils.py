@@ -284,6 +284,10 @@ def register_chat_events():
             )
 
             from plugins.installed.web.tools.browser_action import BrowserActionTool
+            from plugins.installed.web.browser.events import (
+                get_event_bus as get_browser_event_bus,
+                BrowserEventType,
+            )
 
             inputs = {
                 "action": action,
@@ -298,7 +302,85 @@ def register_chat_events():
                 "_user_id": user_id,
                 "_task_id": task_id,
             }
-            result = await BrowserActionTool().execute(inputs)
+
+            # Live progress bridge: the buy/book handlers block on the
+            # receipt watcher, which fires lifecycle events on the browser
+            # event bus (stage changes, awaiting-user reminders, capture,
+            # cancellation). Surface those to the UI as tool_progress
+            # entries so the entity card's progress strip shows the actual
+            # checkout stage instead of staring at a stale "Running …".
+            browser_bus = get_browser_event_bus()
+            loop = asyncio.get_running_loop()
+            last_msg: list[str] = [""]
+
+            def _humanize(ev) -> str:
+                d = ev.data or {}
+                t = ev.type
+                if t is BrowserEventType.RECEIPT_WATCH_STARTED:
+                    src = (d.get("source") or "site").capitalize()
+                    return f"Watching {src} for order confirmation"
+                if t is BrowserEventType.CHECKOUT_STAGE_CHANGED:
+                    return d.get("guidance") or f"Checkout stage: {d.get('stage') or 'unknown'}"
+                if t is BrowserEventType.AWAITING_USER:
+                    return d.get("message") or "Waiting for you in the browser"
+                if t is BrowserEventType.PAYMENT_PAGE_REACHED:
+                    return "Reached payment page — complete it in the browser"
+                if t is BrowserEventType.RECEIPT_CAPTURED:
+                    oid = d.get("order_id")
+                    return f"Receipt captured (order {oid})" if oid else "Receipt captured"
+                if t is BrowserEventType.RECEIPT_EMAILED:
+                    if d.get("sent"):
+                        return f"Receipt emailed to {d.get('to') or 'you'}"
+                    return f"Receipt save ok — email failed: {d.get('error') or 'unknown'}"
+                if t is BrowserEventType.RECEIPT_WATCH_TIMEOUT:
+                    return "Timed out waiting for the order confirmation"
+                if t is BrowserEventType.RECEIPT_WATCH_CANCELLED:
+                    return "Order cancelled (browser closed)"
+                if t is BrowserEventType.BROWSER_DEAD:
+                    return "Browser disconnected"
+                return ""
+
+            def _on_browser_event(ev) -> None:
+                msg = _humanize(ev)
+                if not msg or msg == last_msg[0]:
+                    return
+                last_msg[0] = msg
+                # The bus calls subscribers synchronously; emit_spark_log
+                # is async, so schedule it on the running loop.
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.ensure_future(emit_spark_log(
+                        user_id, "tool_progress",
+                        task_id=task_id, tool_name="browser_action",
+                        job_id=job_id,
+                        payload={
+                            **common,
+                            "message": msg,
+                            "stage": ev.type.value,
+                            "browser_event": ev.type.value,
+                            "browser_data": ev.data or {},
+                        },
+                    ))
+                )
+
+            _bridged_types = (
+                BrowserEventType.RECEIPT_WATCH_STARTED,
+                BrowserEventType.CHECKOUT_STAGE_CHANGED,
+                BrowserEventType.AWAITING_USER,
+                BrowserEventType.PAYMENT_PAGE_REACHED,
+                BrowserEventType.RECEIPT_CAPTURED,
+                BrowserEventType.RECEIPT_EMAILED,
+                BrowserEventType.RECEIPT_WATCH_TIMEOUT,
+                BrowserEventType.RECEIPT_WATCH_CANCELLED,
+                BrowserEventType.BROWSER_DEAD,
+            )
+            for _et in _bridged_types:
+                browser_bus.subscribe(_et, _on_browser_event)
+
+            try:
+                result = await BrowserActionTool().execute(inputs)
+            finally:
+                for _et in _bridged_types:
+                    browser_bus.unsubscribe(_et, _on_browser_event)
             latency_ms = round((time.perf_counter() - started) * 1000, 2)
             result_summary = ""
             if result.data:
