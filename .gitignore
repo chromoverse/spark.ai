@@ -16,6 +16,7 @@
 .clauderc.yaml
 .claude/
 
+test_ui_land
 # ---- Graphify ------------------------------------------------------
 # graph.json's manifest contains absolute local paths and the whole
 # directory is rebuilt by the post-commit hook, so we don't track it.

@@ -189,6 +189,86 @@ def _maps_search_url(name: str, address: Optional[str] = None) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={q}"
 
 
+def _url_host(value: Optional[str]) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    text = value.strip()
+    try:
+        parsed = urlparse(text if "://" in text else f"https://{text}")
+    except Exception:
+        return ""
+    return (parsed.netloc or "").lower().removeprefix("www.")
+
+
+def _is_booking_site_url(value: Optional[str]) -> bool:
+    host = _url_host(value)
+    return host == "booking.com" or host.endswith(".booking.com")
+
+
+def _is_map_or_directory_url(value: Optional[str]) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    text = value.strip()
+    try:
+        parsed = urlparse(text if "://" in text else f"https://{text}")
+    except Exception:
+        return False
+    host = (parsed.netloc or "").lower().removeprefix("www.")
+    path = (parsed.path or "").lower()
+    if host == "openstreetmap.org" or host.endswith(".openstreetmap.org"):
+        return True
+    if host == "osm.org" or host.endswith(".osm.org"):
+        return True
+    if host in {"maps.app.goo.gl", "goo.gl"}:
+        return True
+    if ("google." in host or host == "google.com") and "/maps" in path:
+        return True
+    return False
+
+
+def _hotel_booking_query(entity: Dict[str, Any], title: Optional[str]) -> Optional[str]:
+    parts = []
+    seen = set()
+    for value in (
+        title,
+        entity.get("name"),
+        entity.get("address"),
+        entity.get("location"),
+        entity.get("city"),
+        entity.get("country"),
+    ):
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        parts.append(text)
+        seen.add(key)
+    return ", ".join(parts) if parts else None
+
+
+def _hotel_direct_booking_url(entity: Dict[str, Any], explicit_url: Optional[str]) -> Optional[str]:
+    for value in (explicit_url, entity.get("booking_url")):
+        if isinstance(value, str) and _is_booking_site_url(value):
+            return value.strip()
+    return None
+
+
+def _hotel_manual_booking_url(entity: Dict[str, Any], explicit_url: Optional[str]) -> Optional[str]:
+    for value in (explicit_url, entity.get("booking_url"), entity.get("website")):
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if _is_map_or_directory_url(value):
+            continue
+        return value.strip()
+    return None
+
+
+def _booking_search_url(query: str) -> str:
+    return f"https://www.booking.com/searchresults.html?ss={quote_plus(query)}"
+
+
 def _youtube_search_url(title: str) -> str:
     return f"https://www.youtube.com/results?search_query={quote_plus(title)}"
 
@@ -492,13 +572,26 @@ async def _handle_book_hotel(ctx: BrowserActionContext) -> Dict[str, Any]:
         or (ctx.entity.get("name") if ctx.entity else None)
         or (ctx.entity.get("title") if ctx.entity else None)
     )
-    target_url = ctx.url or _entity_url(
-        ctx.entity,
-        prefer=("booking_url", "website", "source_url", "maps_url"),
-    )
-    target = target_url or title
+    direct_booking_url = _hotel_direct_booking_url(ctx.entity, ctx.url)
+    manual_booking_url = _hotel_manual_booking_url(ctx.entity, ctx.url)
+    hotel_query = _hotel_booking_query(ctx.entity, title)
+    target = direct_booking_url or hotel_query
     if not target:
-        return {"opened": False, "reason": "no hotel URL or name/title provided"}
+        if manual_booking_url:
+            manual_title = str(title or manual_booking_url)
+            ok = await _open_browser(manual_booking_url)
+            return {
+                "opened": ok,
+                "automated": False,
+                "url": manual_booking_url,
+                "action": "book_hotel",
+                "title": manual_title,
+                "message": (
+                    f"Opened hotel booking page for {manual_title!r}"
+                    if ok else "Browser launch failed"
+                ),
+            }
+        return {"opened": False, "reason": "no hotel booking URL or name/title provided"}
     display_title = str(title or target)
 
     wait_for_confirmation = bool(ctx.params.get("wait_for_confirmation", True))
@@ -515,7 +608,7 @@ async def _handle_book_hotel(ctx: BrowserActionContext) -> Dict[str, Any]:
             "intent": "book_hotel",
             "query": str(target),
             "entity": ctx.entity,
-            "params": ctx.params,
+            "params": {**ctx.params, "hotel_search_query": hotel_query},
             "dry_run": False,
             "approve_payment": True,
         })
@@ -609,18 +702,26 @@ async def _handle_book_hotel(ctx: BrowserActionContext) -> Dict[str, Any]:
                 "data": result.data,
             }
 
+        fallback_url = manual_booking_url or _booking_search_url(hotel_query or display_title)
+        ok = await _open_browser(fallback_url)
         return {
-            "opened": False,
-            "automated": True,
+            "opened": ok,
+            "automated": False,
+            "url": fallback_url,
             "action": "book_hotel",
             "title": display_title,
             "reason": result.error or "book_hotel flow failed",
+            "message": (
+                f"Opened fallback booking page for {display_title!r}"
+                if ok else "Browser launch failed"
+            ),
             "data": result.data,
         }
     except Exception as e:
         logger.warning("book_hotel adapter failed, falling back to URL open: %s", e)
 
-    url = target_url or f"https://www.booking.com/searchresults.html?ss={quote_plus(str(display_title))}"
+    url = manual_booking_url or _booking_search_url(hotel_query or display_title)
+    site_label = "hotel site" if manual_booking_url else "Booking.com"
     ok = await _open_browser(url)
     return {
         "opened": ok,
@@ -628,7 +729,7 @@ async def _handle_book_hotel(ctx: BrowserActionContext) -> Dict[str, Any]:
         "url": url,
         "action": "book_hotel",
         "title": display_title,
-        "message": f"Opened Booking.com for {display_title!r}" if ok else "Browser launch failed",
+        "message": f"Opened {site_label} for {display_title!r}" if ok else "Browser launch failed",
     }
 
 
