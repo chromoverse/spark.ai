@@ -15,7 +15,7 @@ from spark_body import hands
 from spark_body.clock import Clock
 from spark_body.fitness import Fitness, Plan, hardware
 from spark_body.hands.apps import INDEX, AppIndex
-from spark_body.mouth.engines import EdgeTts, TtsEngine
+from spark_body.mouth.engines import BrainLink, EdgeTts, OrpheusProxy, TtsEngine
 from spark_body.mouth.speaker import Mouth, Utterance
 from spark_body.reflex_arc import Phrases, decide
 from spark_body.rpc import INVALID_PARAMS, Rpc, RpcError
@@ -49,6 +49,7 @@ class Body:
     db_path: Path | None = None
     phrases: Phrases = field(default_factory=Phrases)
     last_said: list[str] = field(default_factory=list)
+    link: BrainLink = field(default_factory=BrainLink)
 
     def __post_init__(self) -> None:
         self.fitness = Fitness(self.engines, self.clock, self.db_path, self._plan_changed)
@@ -169,6 +170,18 @@ class Body:
                 "history": self.fitness.history(),
             }
 
+        @r.method("auth.set")
+        async def auth_set(p: dict[str, Any]) -> dict[str, Any]:
+            """Brain URL + access token for cloud voice engines (memory only, never logged)."""
+            fresh = not self.link.token
+            self.link.url = _need(p, "brain_url", str).rstrip("/")
+            self.link.token = _need(p, "access_token", str)
+            if fresh:  # a cloud engine just became available: give it its benchmark now
+                task = asyncio.create_task(self.fitness.full("cloud_link"))
+                self.rpc.tasks.add(task)
+                task.add_done_callback(self.rpc.tasks.discard)
+            return {"ok": True}
+
         @r.method("apps.refresh")
         async def apps_refresh(_: dict[str, Any]) -> dict[str, Any]:
             fresh = await asyncio.to_thread(AppIndex.scan)
@@ -181,7 +194,9 @@ async def main() -> None:
         stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(name)s %(message)s"
     )
     rpc = Rpc()
-    body = Body(rpc, {"edge-tts": EdgeTts()}, db_path=data_dir() / "fitness.db")
+    link = BrainLink()
+    engines: dict[str, TtsEngine] = {"groq-orpheus": OrpheusProxy(link), "edge-tts": EdgeTts()}
+    body = Body(rpc, engines, db_path=data_dir() / "fitness.db", link=link)
     body.mouth.start()
     INDEX.entries = (await asyncio.to_thread(AppIndex.scan)).entries
     background = [

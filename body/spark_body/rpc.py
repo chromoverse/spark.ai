@@ -41,7 +41,7 @@ class Rpc:
     def __init__(self, write: Callable[[bytes], None] = _stdout) -> None:
         self.methods: dict[str, Handler] = {}
         self._write = write
-        self.tasks: set[asyncio.Task[None]] = set()
+        self.tasks: set[asyncio.Task[Any]] = set()
 
     def method(self, name: str) -> Callable[[Handler], Handler]:
         def register(fn: Handler) -> Handler:
