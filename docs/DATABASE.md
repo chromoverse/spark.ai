@@ -76,7 +76,9 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 | `hot:{user}:profile` | profile summary + settings | 1 h |
 | `prefetch:{signal}` | retrieved memories for an in-flight signal | 30 s |
 | `health:{provider}:{key}` | error rate, TTFT EWMA, circuit state, quota left | rolling |
-| `rl:{scope}:{id}` | token bucket | per window |
+| `rl:{scope}:{id}` | request counter (fixed window; R0 scopes: `otp_start`, `otp_verify`, `refresh`, `google_start`, `google_exchange`, keyed by IP) | per window |
+| `oauth:google:state:{state}` | sign-in flow: nonce, PKCE challenge, loopback port, device info | 10 min, deleted on use |
+| `oauth:google:login:{code}` | Google identity waiting for the app's PKCE exchange | 60 s, deleted on use |
 | `wake:{user}:{window}` | arbitration claims | 2 s |
 | `cache:tool:{tool}:{hash}` | idempotent tool result (weather, places) | per tool (10 min – 1 day) |
 

@@ -30,8 +30,9 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 |---|---|---|---|
 | POST | `/v2/auth/otp/start` | `{ email }` | sends a 6-digit code; cooldown 60 s |
 | POST | `/v2/auth/otp/verify` | `{ email, code, device }` | 5 attempts per code → tokens + `device_id` |
-| GET | `/v2/auth/google/start` | `?device_name` | OIDC sign-in (can also connect Gmail/Calendar/Drive) |
-| GET | `/v2/auth/google/callback` | provider redirect | state carries a server-stored nonce |
+| GET | `/v2/auth/google/start` | `?device_name&platform&device_id&code_challenge&port` | opened in the system browser; OIDC sign-in (R4 adds Gmail/Calendar/Drive connect) |
+| GET | `/v2/auth/google/callback` | provider redirect | state carries a server-stored nonce; redirects to the app's loopback listener |
+| POST | `/v2/auth/google/exchange` | `{ code, code_verifier }` | one-time login code + PKCE verifier → tokens |
 | POST | `/v2/auth/refresh` | `{ refresh_token }` | rotates; reuse → session revoked |
 | POST | `/v2/auth/logout` | — | revokes this device's session |
 | GET | `/v2/me` | — | profile + settings |
@@ -52,6 +53,12 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
   session (`401`). Clients must refresh one call at a time.
 - Every authenticated request also checks the session isn't revoked, so logout and reuse-revocation
   apply immediately, not after the 15-minute access token runs out.
+- **Google (desktop, RFC 8252 loopback + PKCE):** the app listens on `127.0.0.1:<port>`, opens
+  `google/start` with `code_challenge = base64url(sha256(code_verifier))` (S256), and the brain keeps
+  state + nonce in Redis for 10 min. After Google, the brain checks the id_token (iss, aud, nonce, exp,
+  `email_verified`) and redirects to `http://127.0.0.1:<port>/callback?code=<login code>` (60 s, single
+  use) or `?error=cancelled|failed`. The app then calls `google/exchange`. A verified Google email
+  that matches an existing account links to it. Unknown or expired state → a small HTML page in the browser.
 - `GET /v2/me` → `{ user: { id, email, name, nickname, plan }, device_id, settings: {…§2.2} }`.
 
 ### 2.2 Settings, memory, usage

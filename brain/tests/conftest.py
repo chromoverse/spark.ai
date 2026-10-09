@@ -26,6 +26,7 @@ from app.db import models  # noqa: F401  (registers tables for TRUNCATE)
 from app.db.base import Base
 from app.main import create_app
 from tests.fakes.clock import FakeClock
+from tests.fakes.google import FakeGoogle
 from tests.fakes.resend import FakeResend
 
 TEST_DB = os.environ.get(
@@ -76,6 +77,7 @@ class Brain:
     fake_http: FakeHttp
     client: httpx.AsyncClient
     resend: FakeResend = field(default_factory=FakeResend)
+    google: FakeGoogle | None = None
 
     async def sign_in(
         self, email: str = "asha@example.com", device: str = "Laptop"
@@ -150,6 +152,15 @@ async def brain(brain_server: Brain) -> AsyncIterator[Brain]:
     async with brain_server.rt.engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_TABLES} RESTART IDENTITY CASCADE"))
     await brain_server.rt.redis.flushdb()
+    settings = brain_server.rt.settings
     brain_server.resend = FakeResend()
-    brain_server.fake_http.hosts = {"api.resend.com": brain_server.resend.handle}
+    brain_server.google = FakeGoogle(
+        brain_server.clock,
+        settings.google_client_id,
+        settings.google_client_secret.get_secret_value(),
+    )
+    brain_server.fake_http.hosts = {
+        "api.resend.com": brain_server.resend.handle,
+        "oauth2.googleapis.com": brain_server.google.handle,
+    }
     yield brain_server
