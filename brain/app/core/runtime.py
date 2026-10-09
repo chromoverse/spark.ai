@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.clock import Clock
 from app.core.config import Settings
+from app.llm.chains import ChainRunner
 
 
 @dataclass
@@ -27,6 +28,7 @@ class Runtime:
     db: async_sessionmaker[AsyncSession]
     redis: Redis
     sio: socketio.AsyncServer
+    llm: ChainRunner
 
     @classmethod
     def build(cls, settings: Settings, clock: Clock, http: httpx.AsyncClient | None) -> Runtime:
@@ -43,19 +45,22 @@ class Runtime:
             logger=False,
             engineio_logger=False,
         )
+        http = http or httpx.AsyncClient(http2=True, timeout=httpx.Timeout(10, connect=5))
+        redis = Redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+        )
         return cls(
             settings=settings,
             clock=clock,
-            http=http or httpx.AsyncClient(http2=True, timeout=httpx.Timeout(10, connect=5)),
+            http=http,
             engine=engine,
             db=async_sessionmaker(engine, expire_on_commit=False),
-            redis=Redis.from_url(
-                settings.redis_url,
-                decode_responses=True,
-                socket_timeout=5,
-                socket_connect_timeout=5,
-            ),
+            redis=redis,
             sio=sio,
+            llm=ChainRunner(settings, clock, http, redis),
         )
 
     async def close(self) -> None:

@@ -19,7 +19,7 @@ def _url() -> str:
         return url
     from app.core.config import Settings
 
-    return Settings().database_url  # type: ignore[call-arg]
+    return Settings().database_url
 
 
 def _run(connection: Connection) -> None:

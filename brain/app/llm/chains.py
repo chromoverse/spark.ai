@@ -11,13 +11,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, TypeVar
 
 import httpx
 from redis.asyncio import Redis
 
-from app.core.clock import Clock
+from app.core.clock import Clock, within
 from app.core.config import Settings
 from app.llm import openai_compat
 from app.llm.health import Health, health_id
@@ -121,20 +121,11 @@ async def _next(agen: AsyncIterator[StreamEvent]) -> StreamEvent | None:
         return None
 
 
-async def within(clock: Clock, aw: Awaitable[T], seconds: float, kind: ErrorKind) -> T:
-    """`aw` on the injected clock: raises ProviderError(kind) if it takes longer than `seconds`."""
-    task = asyncio.ensure_future(aw)
-    timer = asyncio.ensure_future(clock.sleep(seconds))
+async def _within(clock: Clock, aw: Awaitable[T], seconds: float, kind: ErrorKind) -> T:
     try:
-        await asyncio.wait({task, timer}, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        timer.cancel()
-        if not task.done():
-            task.cancel()
-            await asyncio.wait({task})
-    if task.cancelled():
-        raise ProviderError(kind)
-    return task.result()
+        return await within(clock, aw, seconds)
+    except TimeoutError:
+        raise ProviderError(kind) from None
 
 
 class ChainRunner:
@@ -185,7 +176,7 @@ class ChainRunner:
         messages: Sequence[Message],
         tools: Sequence[ToolDef] = (),
         allow_training: bool = False,
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncGenerator[StreamEvent, None]:
         cfg = ROLES[role]
         pending = await self.candidates(role, allow_training=allow_training)
         if not pending:
@@ -195,10 +186,10 @@ class ChainRunner:
             try:
                 yield first
                 while True:
-                    ev = await within(self.clock, _next(agen), cfg.gap_s, "stalled")
+                    ev = await _within(self.clock, _next(agen), cfg.gap_s, "stalled")
                     if ev is None:
                         return
-                    yield ev
+                    yield replace(ev, provider=cand.label) if isinstance(ev, Done) else ev
             except ProviderError as exc:
                 logger.warning("llm stream broke", extra={"llm": cand.label, "error": exc.kind})
                 await self.health.fail(cand.hid, exc)
@@ -225,7 +216,7 @@ class ChainRunner:
             c = pending.pop(0)
             agen = self._open(c, role, system, messages, tools)
             task = asyncio.ensure_future(
-                within(self.clock, _next(agen), cfg.ttft_timeout_s, "timeout")
+                _within(self.clock, _next(agen), cfg.ttft_timeout_s, "timeout")
             )
             running[task] = (c, agen, self.clock.monotonic())
 

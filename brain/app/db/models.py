@@ -150,3 +150,23 @@ class AuditLog(Base):
     target: Mapped[str | None] = mapped_column(Text)
     meta: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
     ts: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Incident(Base):
+    """Supervisor and watchdog incidents (REDESIGN §19.3): what failed, which remedy ran, and
+    how it ended. 90-day retention."""
+
+    __tablename__ = "incidents"
+    __table_args__ = (Index(None, "user_id", "ts"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk())
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL")
+    )
+    stage: Mapped[str]  # llm | tool | tts | stt | wake | deadline
+    engine_or_provider: Mapped[str | None]
+    error: Mapped[str]
+    remedy: Mapped[str]  # hedge | switch | bridge | degrade | replan | explain
+    outcome: Mapped[str]  # answered | failed_explained | cancelled | recovered
+    signal_id: Mapped[str | None]
+    ts: Mapped[datetime] = mapped_column(server_default=func.now())

@@ -105,7 +105,7 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v2/engines/chains` | chain entries, enabled/paid, health, measured TTFT |
-| GET | `/v2/incidents` | supervisor incidents for this user |
+| GET | `/v2/incidents` | ✅ `?limit≤100` → `{ items: [{ id, device_id, stage, engine_or_provider, error, remedy, outcome, signal_id, ts }], next_cursor }`, newest first |
 | GET | `/health` | liveness (no auth) |
 | GET | `/ready` | DB, Redis, chain health (no auth, no details beyond up/down) |
 
@@ -132,26 +132,31 @@ where noted.
 | `device.state` | `{ battery, power_mode, active_app, locale, mic, speaker }` | on change |
 | `device.engine_plan` | `{ stt[], tts[], local_llm[], scores }` | after fitness runs (§18) |
 | `wake.claim` | `{ score, loudness, foreground }` | wake-word arbitration (§26.2) |
-| `signal.partial` | `{ signal_id, text }` | prefetch |
-| `signal.final` | `{ signal_id, text, lang, confidence, source: voice\|text\|schedule }` | ack: `signal.ack` |
-| `signal.handled_locally` | `{ signal_id, intent, slots, result }` | tier-0 reflex arc result (§27) |
-| `signal.interrupt` | `{ signal_id? }` | barge-in / stop |
+| `signal.partial` | `{ signal_id, text }` | ✅ prefetches the turn context (thread, recent turns, settings); ack `{ signal_id }` |
+| `signal.final` | `{ signal_id, text, lang?, confidence?, source?: voice\|text\|schedule, utc_offset_min? }` | ✅ the Socket.IO ack is the `signal.ack` payload `{ signal_id, tier }`; a repeated `signal_id` (5 min) acks `{ signal_id, duplicate: true }` and runs nothing. `utc_offset_min` = the device's current UTC offset, so "what time is it" is local |
+| `signal.handled_locally` | `{ signal_id, text, intent, slots, result: { ok, said?, output?, error?: { code, message } }, utc_offset_min? }` | ✅ tier-0 result (§27). `ok` → stored in the thread, ack `{ tier: 0 }`, no LLM. Not ok → the reflex LLM explains with the device's error, ack `{ tier: 2 }` |
+| `signal.interrupt` | `{ signal_id? }` | ✅ barge-in / cancelled speculative start; no id = this device's latest turn. Ack `{ cancelled: signal_id \| null }`. A cancelled turn isn't stored |
 | `tool.progress` | `{ call_id, note, pct? }` | |
-| `tool.result` | `{ call_id, ok, output \| error, artifacts[] }` | output validated against the tool's `output_schema` |
+| `tool.result` | `{ call_id, ok, output?, error?: { code, message }, artifacts[] }` | ✅ ack `{ accepted }`; another user's or an expired `call_id` → `false`. (`output_schema` validation lands with R2's ToolSpec) |
 | `approval.response` | `{ approval_id, decision: allow\|deny\|always }` | |
 | `ask.response` | `{ ask_id, answer }` | answer to `ask_user` |
-| `engine.incident` | `{ role, engine, error, remedy }` | watchdog report (§19) |
+| `engine.incident` | `{ role: stt\|tts\|wake\|vad\|local_llm\|tool, engine, error, remedy, outcome?: recovered\|failed_explained\|degraded }` | ✅ watchdog report (§19), stored in `incidents` |
+| `signal.trace` | `{ signal_id, spans: { endpoint, stt_final, first_audio, … (ms) }, stt_engine?, tts_engine? }` | ✅ device-measured spans (§13), logged next to the brain's own (`ack`, `ttft`, `first_delta`, `tool:*`, `end`) |
 | `sync.resume` | `{ last_event_id }` | replay missed events |
 
 ### 3.2 Brain → Device
+
+**Live events** (`reply.delta`, `reply.cue`, `tool.call`, `tool.cancel`) go only to the device the
+signal came from, aren't written to the sync log, and carry a random `id`. The thread history holds
+their outcome. Everything else below is synced to every device of the user.
 | Event | Payload | Notes |
 |---|---|---|
 | `wake.grant` / `wake.yield` | `{ claim_id }` | yielding devices stop listening |
-| `signal.ack` | `{ signal_id, tier, job_id? }` | within 300 ms |
-| `reply.delta` | `{ signal_id, text, tone?, speak: bool, final: bool }` | sentence-level chunks; `tone` = persona tag |
-| `reply.cue` | `{ kind: heard\|done\|error }` | earcons (§4.4) |
-| `tool.call` | `{ call_id, job_id, tool, input, timeout_s, risk }` | |
-| `tool.cancel` | `{ call_id }` | |
+| `signal.ack` | `{ signal_id, tier, job_id? }` | ✅ returned as the `signal.final` Socket.IO ack, right after routing (no DB or LLM wait) |
+| `reply.delta` | `{ signal_id, text, tone?, speak: bool, final: bool }` | ✅ one sentence (the first one cut early) per event, lint-clean, tone tag moved to `tone`. Every turn ends with `{ text: "", speak: false, final: true }`, sent after the turn is stored |
+| `reply.cue` | `{ signal_id, kind: heard\|done\|error }` | ✅ earcons (§4.4): `heard` when no sentence is out 500 ms after the signal or while a broken stream restarts; `done` when quick tools all succeeded within 1.5 s (slower → a spoken "Done."); `error` with an explained failure |
+| `tool.call` | `{ call_id, job_id, signal_id, tool, input, timeout_s, risk }` | ✅ to the origin device, input already schema-checked; no result within `timeout_s` → `tool.cancel` and the model is told |
+| `tool.cancel` | `{ call_id }` | ✅ |
 | `approval.request` | `{ approval_id, tool, summary, inputs_preview, risk, options }` | sent to all online devices; first answer wins |
 | `ask.request` | `{ ask_id, question, options? }` | voice prompt + UI choice |
 | `connect.request` | `{ service, scopes, reason, resume_job_id }` | just-in-time connect card (§23) |

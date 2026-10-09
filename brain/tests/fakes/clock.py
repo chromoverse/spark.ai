@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TypeVar
 
@@ -57,3 +57,12 @@ async def drive(clock: FakeClock, aw: Awaitable[T], step: float = 0.01, limit_s:
         clock.advance(step)
     task.cancel()
     raise AssertionError(f"still running after {limit_s}s of simulated time")
+
+
+async def until(pred: Callable[[], object], within: float = 3) -> None:
+    """Waits (real time) until pred() is truthy, e.g. a fake provider got its request."""
+    async with asyncio.timeout(within):
+        while True:  # polls state the server owns; there's no event to wait on
+            if pred():
+                return
+            await asyncio.sleep(0.002)

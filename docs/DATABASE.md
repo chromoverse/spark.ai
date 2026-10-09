@@ -63,7 +63,7 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 | Table | Columns | Notes |
 |---|---|---|
 | `usage_events` | id, user_id, role, provider, model, input_tokens, output_tokens, cache_tokens, audio_s, cost_micros, paid bool, ts | (user_id, ts); monthly partitions |
-| `incidents` | id, user_id, device_id, stage, engine_or_provider, error, remedy, outcome, ts | (user_id, ts) |
+| ✅ `incidents` | id, user_id, device_id (set null on device delete), stage (`llm`/`tool`/`tts`/`stt`/`wake`/`vad`/`local_llm`/`deadline`/`brain`), engine_or_provider, error, remedy (`bridge`/`switch`/`replan`/`explain`/…), outcome (`recovered`/`failed_explained`/`degraded`), signal_id, ts | (user_id, ts); 90 days |
 | ✅ `events` | seq (bigint identity, pk; sent to devices as the event `id`), user_id, type, payload jsonb, ts | sync log, 7-day retention, (user_id, seq) |
 | ✅ `audit_log` | id, user_id, actor (`user`/`device:<id>`/`system`), action, target, meta jsonb, ts | append-only, (user_id, ts) |
 
@@ -80,6 +80,8 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 | `oauth:google:state:{state}` | sign-in flow: nonce, PKCE challenge, loopback port, device info | 10 min, deleted on use |
 | `oauth:google:login:{code}` | Google identity waiting for the app's PKCE exchange | 60 s, deleted on use |
 | `wake:{user}:{window}` | arbitration claims | 2 s |
+| `signal:{user}:{signal_id}` | ✅ dedupe marker: a repeated `signal.final` / `signal.handled_locally` runs once | 5 min |
+| `phrase:{user}:{moment}` | ✅ last phrase-bank line used for that moment, so it never repeats twice in a row | 1 h |
 | `cache:tool:{tool}:{hash}` | idempotent tool result (weather, places) | per tool (10 min – 1 day) |
 
 ## 7. Device-local stores (`spark-body`, under `%LOCALAPPDATA%\SparkAI`)

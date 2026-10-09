@@ -9,20 +9,31 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal
+from typing import Any
 
 import socketio
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 
+from app.agent.voice import Voice
 from app.auth.sessions import check_session
 from app.core.errors import BAD_INPUT, INTERNAL, SIGN_IN_AGAIN, ApiError, ok
 from app.core.logging import device_id_var, trace_id_var, user_id_var
 from app.core.runtime import Runtime
 from app.core.security import Principal, decode_access
 from app.db.models import Device
-from app.gateway import presence
+from app.gateway import live, presence
+from app.gateway.envelope import Envelope
 from app.gateway.push import NAMESPACE, user_room
+from app.gateway.signals import (
+    EngineIncident,
+    SignalFinal,
+    SignalHandledLocally,
+    SignalInterrupt,
+    SignalPartial,
+    SignalTrace,
+    ToolResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +42,6 @@ class ConnectAuth(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: str = Field(max_length=2048)
     device_id: str = Field(max_length=64)
-
-
-class Envelope(BaseModel):
-    """Fields every device → brain event carries."""
-
-    model_config = ConfigDict(extra="forbid")
-    v: Literal[2]
-    id: str = Field(min_length=1, max_length=64)
-    ts: int  # epoch ms on the device
-    trace_id: str | None = Field(default=None, max_length=64)
 
 
 class DeviceHello(Envelope):
@@ -52,7 +53,16 @@ class DeviceHello(Envelope):
 
 
 # Every device → brain event and its payload model. The X1 sweep walks this table.
-EVENT_MODELS: dict[str, type[Envelope]] = {"device.hello": DeviceHello}
+EVENT_MODELS: dict[str, type[Envelope]] = {
+    "device.hello": DeviceHello,
+    "signal.partial": SignalPartial,
+    "signal.final": SignalFinal,
+    "signal.handled_locally": SignalHandledLocally,
+    "signal.interrupt": SignalInterrupt,
+    "signal.trace": SignalTrace,
+    "tool.result": ToolResult,
+    "engine.incident": EngineIncident,
+}
 
 
 def _refuse() -> socketio.exceptions.ConnectionRefusedError:
@@ -63,8 +73,9 @@ def _refuse() -> socketio.exceptions.ConnectionRefusedError:
     )
 
 
-def register(rt: Runtime) -> None:
+def register(rt: Runtime) -> Voice:
     sio = rt.sio
+    voice = Voice(rt)
     heartbeats: dict[str, asyncio.Task[None]] = {}
 
     async def principal_of(sid: str) -> Principal:
@@ -84,6 +95,7 @@ def register(rt: Runtime) -> None:
             raise _refuse() from None
         await sio.save_session(sid, {"principal": p}, namespace=NAMESPACE)
         await sio.enter_room(sid, user_room(p.user_id), namespace=NAMESPACE)
+        await sio.enter_room(sid, live.device_room(p.device_id), namespace=NAMESPACE)
         await presence.touch(rt, p.user_id, p.device_id)
         heartbeats[sid] = asyncio.create_task(heartbeat(sid, p))
         logger.info("device connected", extra={"device": str(p.device_id)})
@@ -154,3 +166,11 @@ def register(rt: Runtime) -> None:
     sio.on("connect", connect, namespace=NAMESPACE)
     sio.on("disconnect", disconnect, namespace=NAMESPACE)
     on("device.hello", device_hello)
+    on("signal.partial", voice.partial)
+    on("signal.final", voice.final)
+    on("signal.handled_locally", voice.handled_locally)
+    on("signal.interrupt", voice.interrupt)
+    on("signal.trace", voice.trace)
+    on("tool.result", voice.tool_result)
+    on("engine.incident", voice.engine_incident)
+    return voice

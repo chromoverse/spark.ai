@@ -35,6 +35,7 @@ class ToolUse:
 class Done:
     stop: StopReason
     usage: dict[str, int] = field(default_factory=dict)
+    provider: str = ""  # "provider/model" that produced the stream, set by the chain runner
 
 
 @dataclass(frozen=True)

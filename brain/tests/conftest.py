@@ -20,13 +20,16 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.agent.voice import Voice
 from app.core.config import Settings
 from app.core.runtime import Runtime
 from app.db import models  # noqa: F401  (registers tables for TRUNCATE)
 from app.db.base import Base
+from app.llm.chains import CHAINS, Entry
 from app.main import create_app
 from tests.fakes.clock import FakeClock
 from tests.fakes.google import FakeGoogle
+from tests.fakes.llm import FakeProvider
 from tests.fakes.resend import FakeResend
 
 TEST_DB = os.environ.get(
@@ -78,6 +81,13 @@ class Brain:
     client: httpx.AsyncClient
     resend: FakeResend = field(default_factory=FakeResend)
     google: FakeGoogle | None = None
+    groq: FakeProvider | None = None  # reflex chain entry 1 (api.groq.com)
+    mistral: FakeProvider | None = None  # reflex chain entry 2 (api.mistral.ai)
+
+    @property
+    def voice(self) -> Voice:
+        voice: Voice = self.asgi.other_asgi_app.state.voice
+        return voice
 
     async def sign_in(
         self, email: str = "asha@example.com", device: str = "Laptop"
@@ -126,7 +136,9 @@ async def brain_server() -> AsyncIterator[Brain]:
     clock = FakeClock()
     fake_http = FakeHttp()
     http = httpx.AsyncClient(transport=httpx.MockTransport(fake_http.handle))
-    asgi = create_app(make_settings(), clock=clock, http=http)
+    asgi = create_app(
+        make_settings(groq_api_keys="gk-test", mistral_api_keys="mk-test"), clock=clock, http=http
+    )
     server = uvicorn.Server(
         uvicorn.Config(asgi, host="127.0.0.1", port=0, lifespan="on", log_config=None)
     )
@@ -147,8 +159,16 @@ _TABLES = ", ".join(t.name for t in Base.metadata.sorted_tables)
 
 
 @pytest.fixture
-async def brain(brain_server: Brain) -> AsyncIterator[Brain]:
-    """The shared server with empty tables, empty Redis, and fresh fakes."""
+async def brain(brain_server: Brain, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Brain]:
+    """The shared server with empty tables, empty Redis, and fresh fakes. The reflex chain is
+    two free fakes: groq (first) and mistral (next)."""
+    voice = brain_server.voice
+    for task in list(voice.tasks):  # the last test's turns must not write into this one
+        task.cancel()
+    await asyncio.gather(*voice.tasks, return_exceptions=True)
+    voice.sup.watches.clear()
+    voice.prefetch.clear()
+    voice.calls.clear()
     async with brain_server.rt.engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_TABLES} RESTART IDENTITY CASCADE"))
     await brain_server.rt.redis.flushdb()
@@ -159,8 +179,13 @@ async def brain(brain_server: Brain) -> AsyncIterator[Brain]:
         settings.google_client_id,
         settings.google_client_secret.get_secret_value(),
     )
+    brain_server.groq = FakeProvider(brain_server.clock, "groq-fake")
+    brain_server.mistral = FakeProvider(brain_server.clock, "mistral-fake")
+    monkeypatch.setitem(CHAINS, "reflex", [Entry("groq", "fast"), Entry("mistral", "backup")])
     brain_server.fake_http.hosts = {
         "api.resend.com": brain_server.resend.handle,
         "oauth2.googleapis.com": brain_server.google.handle,
+        "api.groq.com": brain_server.groq.handle,
+        "api.mistral.ai": brain_server.mistral.handle,
     }
     yield brain_server

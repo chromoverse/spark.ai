@@ -22,10 +22,10 @@ without a test isn't done. Each test names the section it proves (e.g. `# proves
 | Component | What it is | Lives in |
 |---|---|---|
 | ✅ `FakeProvider` | OpenAI-compatible fake LLM: scripted text/tool-call streams, configurable time-to-first-token, gaps, 429s, 5xx, empty output, malformed tool calls | `brain/tests/fakes/llm.py` |
-| ✅ `FakeDevice` | in-process Socket.IO client speaking protocol v2: `device.hello`, wake claims, signals, tool execution with scripted results/delays, offline/online toggling | `brain/tests/fakes/device.py` |
+| ✅ `FakeDevice` | in-process Socket.IO client speaking protocol v2: `device.hello`, `say()` → `signal.final`, `reply()` collects a turn's `reply.delta`s, auto-answers `tool.call` from `tools` (optional `before_result` delay on the fake clock). Wake claims and offline toggling come with R2 | `brain/tests/fakes/device.py` |
 | `FakeEngines` | STT/TTS fakes with scripted latency, empty audio, errors (used by body tests) | `body/tests/fakes/engines.py` |
 | `FakeOAuth` / `FakeGoogle` | ✅ R0: Google sign-in (authorize + token endpoint). Later: Gmail/Calendar/Drive fakes with fixtures; expired/revoked token modes | `brain/tests/fakes/google.py` |
-| ✅ `Clock` (`FakeClock`) | controllable time for deadlines, hedging, cooldowns | `brain/tests/fakes/clock.py` |
+| ✅ `Clock` (`FakeClock`) | controllable time for deadlines, hedging, cooldowns. `drive(clock, aw)` moves simulated time while awaiting; `until(pred)` waits for server-side state | `brain/tests/fakes/clock.py` |
 | `Chaos` | injects provider failures, latency spikes, device drops, empty outputs at a set rate | `brain/tests/chaos.py` |
 | ✅ Test DB | Postgres + pgvector + Redis via `docker compose -f deploy/docker-compose.test.yml` | CI service containers |
 | ✅ `FakeResend` / `FakeHttp` | OTP mail capture + outage mode; `FakeHttp` routes the brain's shared httpx client to fakes by host and fails on any unexpected outbound call | `brain/tests/fakes/resend.py`, `brain/tests/conftest.py` |
@@ -40,7 +40,7 @@ before each test. Tests that need it fail (they don't skip) when the test stack 
 # brain
 docker compose -f deploy/docker-compose.test.yml up -d   # Postgres :55432 + Redis :56379
 cd brain && uv run pytest -q                 # unit + integration (fakes, test DB)
-cd brain && uv run ruff check . && uv run mypy app/core app/auth app/api app/gateway
+cd brain && uv run ruff check . && uv run mypy app
 cd brain && uv run pytest -q -m scenario     # scenario suite (§4)
 cd brain && uv run pytest -q -m chaos        # chaos suite (§5, from R1)
 # body (spark-body sidecar)
@@ -58,12 +58,12 @@ cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 ### 4.1 Request flows (`REDESIGN.md` §26)
 | ID | Scenario | Assertions |
 |---|---|---|
-| A1 | "volume to 30" (tier-0 reflex arc) | no LLM call made; device tool ran; `signal.handled_locally` stored in the thread; chime event; ≤ 300 ms simulated |
+| A1 | "volume to 30" (tier-0 reflex arc) | no LLM call made; device tool ran; `signal.handled_locally` stored in the thread; chime event; ≤ 300 ms simulated. Brain half ✅ `test_a1_tier0_result_is_recorded_without_an_llm`; device half with the body (R1) |
 | A2 | near-miss "play a song that fits my mood" | reflex arc does **not** accept; goes to the reflex LLM |
-| A3 | tier-0 action fails (app not installed) | escalates to the reflex LLM with the error; spoken alternative offered |
-| B1 | normal conversation | reflex LLM called once; `reply.delta` streamed per sentence; first delta within budget given fake TTFT 300 ms |
-| B2 | first provider slow (TTFT 600 ms) | hedge fires at 350 ms; second provider's stream used; first cancelled |
-| C1 | "open Spotify and play something calm" | speech delta and `tool.call` emitted in the same turn (parallel); done chime on success |
+| A3 ✅ | tier-0 action fails (app not installed) | escalates to the reflex LLM with the error; spoken alternative offered. `test_a3_tier0_failure_escalates_to_the_reflex` |
+| B1 ✅ | normal conversation | reflex LLM called once; `reply.delta` streamed per sentence; first delta within budget given fake TTFT 300 ms. `test_b1_*` (+ recent turns carried into the follow-up) |
+| B2 ✅ | first provider slow (TTFT 600 ms) | hedge fires at 350 ms; second provider's stream used; first cancelled. `brain/tests/test_llm_chains.py::test_b2_hedge_at_350ms_second_stream_wins` |
+| C1 ✅ | "open Spotify and play something calm" | speech delta and `tool.call` emitted in the same turn (parallel); done chime on success. `test_c1_*`: chime ≤ 1.5 s, spoken "Done." when slower, explained failure with a next step |
 | D1 | invoice email → save PDF | agent loop: gmail_search → get_attachment → file_write on the origin device; job steps persisted; summary contains only items from tool outputs |
 | D2 | D1 with Gmail not connected | connect card emitted; job paused; after fake OAuth completes, job resumes without a new signal |
 | E1 | spoken to laptop: "open YouTube on my phone" | target resolved to `adb:<serial>`; tool runs on the phone sub-device; the laptop speaks the ack before the tool result |
@@ -102,14 +102,14 @@ cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 ### 4.5 Supervisor — never silent (§19)
 | ID | Scenario | Assertions |
 |---|---|---|
-| S1 | stalled LLM stream (gap > 1.5 s) | switch to the next provider; the user hears a bridge cue |
+| S1 ✅ | stalled LLM stream (gap > 1.5 s) | switch to the next provider; the user hears a bridge cue. `test_s1_stalled_stream_bridges_then_next_provider_answers` + `test_llm_chains.py::test_s1_*` |
 | S2 | tool times out | agent gets a tool error and re-plans; job doesn't hang |
 | S3 | target device sleeps mid-job | re-route to another capable device, or explain |
 | S4 | identical tool call 3× | loop broken; agent told; job ends explained |
 | S5 | grounding: summary names an event absent from tool output | blocked before speaking; regenerated or corrected (v1 calendar bug) |
-| S6 | Groq quota exhausted | next chain entry used; health marks Groq cooling down until reset |
+| S6 ✅ | Groq quota exhausted | next chain entry used; health marks Groq cooling down until reset. `test_llm_chains.py::test_s6_rate_limit_falls_through_and_cools_down`; all entries down → `test_every_provider_down_is_explained_never_silent` |
 | S7 | estimate miss (job 2× over estimate) | user gets a progress note with a new estimate |
-| S8 | invariant sweep | any signal past its deadline without a terminal state triggers the playbook |
+| S8 ✅ | invariant sweep | any signal past its deadline without a terminal state triggers the playbook. `test_s8_signal_past_its_deadline_is_explained` |
 
 ### 4.6 Agent, tools, permissions (§5.2, §7, §20)
 | ID | Scenario | Assertions |
@@ -145,15 +145,15 @@ cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 ### 4.8 Persona (`PERSONA.md`)
 | ID | Scenario | Assertions |
 |---|---|---|
-| PS1 | banned phrase in a model reply ("Task completed successfully") | post-hook lint rewrites it before speaking |
+| PS1 ✅ | banned phrase in a model reply ("Task completed successfully") | post-hook lint rewrites it before speaking. `test_ps1_banned_phrases_are_rewritten_before_speaking` |
 | PS2 | tier-0 acknowledgements over 10 signals | no identical phrase twice in a row |
 | PS3 | job wrap-up | ≤ 3 spoken sentences: done → needs you → optional next step; details in an artifact |
-| PS4 | tone tags | `[serious]` on approvals/failures involving money or other people; stripped on non-expressive engines |
+| PS4 | tone tags | `[serious]` on approvals/failures involving money or other people; stripped on non-expressive engines. Brain half ✅ `test_ps4_tone_tags_travel_as_tone_not_speech` (tag → `tone`, never spoken; explained failures are `serious`); stripping is FT5 in the body |
 
 ### 4.9 Language (§25)
 | ID | Scenario | Assertions |
 |---|---|---|
-| LG1 | "switch to Hindi" at launch | tier-1, no LLM; persona-voiced "not ready yet"; settings unchanged |
+| LG1 ✅ | "switch to Hindi" at launch | tier-1, no LLM; persona-voiced "not ready yet"; settings unchanged. `test_lg1_switch_to_hindi_is_tier1_and_changes_nothing` |
 | LG2 | `set_language` to a supported language | `settings.changed` on all devices; engine plans re-selected |
 | LG3 | auto-detect with a low-confidence language | reply stays in the settings language |
 
@@ -169,6 +169,12 @@ inputs; connect card; job panel stop. E2E (Playwright for Electron against a fak
 Home conversation, Capabilities search, Engines "Run benchmark", Settings permission rule edit.
 
 ## 5. Chaos Suite
+
+✅ R1: `brain/tests/test_chaos.py` sends 100 signals through the real gateway with a 20% failure mix
+(429, 5xx, stalls after output, empty output, slow first token, malformed tool calls, failing device
+tools) and asserts none is silent and every watch reaches a terminal state. Engine and device-drop
+chaos joins with the body.
+
 - 100 scripted signals with a 20% random failure rate across providers, engines, and devices.
 - **Assert:** 100% end in `answered`, `done`, `cancelled`, or `failed_explained`; zero silent; p95
   first-feedback (audio or earcon) within budget in simulated time.
