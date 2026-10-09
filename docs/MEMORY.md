@@ -16,9 +16,14 @@ happens.
   X1–X3), Electron v2 sign-in + socket + status, whole-app Electron lint/typecheck green, GitHub
   Actions CI. Brain: 40 tests green, ruff + mypy strict clean. Owner's desktop smoke (§8a) passed
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
-- **Next:** push + open the R0 PR (owner approves first), then R1 (voice loop < 1 s). Deferred
-  past R0: per-user rate limits, `sync.resume`/X4, retention jobs, real Caddy config, body
-  sidecar (R1), Electron lint warnings (react-hooks exhaustive-deps).
+- **R1 in progress** (branch `r1/voice-loop`, from `main` after R0 was pushed 2026-10-10):
+  brain LLM chains + hedging + health, the signal protocol, reflex with quick tools, tier-1 router,
+  supervisor + incidents, persona lint, chaos suite; `body/` sidecar (stdio NDJSON JSON-RPC, tier-0
+  reflex arc + 338-row eval, mouth with live engine switching, fitness, hands, endpointer). See the
+  R1 checklist in `PHASES.md` for what's left (real STT/wake/VAD engines, Electron BodyBridge, evals
+  against live providers, latency bench).
+- **Deferred past R0:** per-user rate limits, `sync.resume`/X4, retention jobs, real Caddy config,
+  Electron lint warnings (react-hooks exhaustive-deps).
 - **Run locally:** `docker compose -f deploy/docker-compose.yml up -d` (brain on :8080; secrets in
   git-ignored `deploy/.env`). Tests: `docker compose -f deploy/docker-compose.test.yml up -d`, then
   `cd brain && uv run pytest`. Desktop: `cd electron && npm run dev`. uv lives in
@@ -72,6 +77,14 @@ happens.
 - `pytest-asyncio`: async tests; `aiohttp` (dev): required by `socketio.AsyncClient` in FakeDevice
 - `ruff`, `mypy`: lint/format and strict typing, enforced in CI
 - Electron: no new packages (`keytar`, `socket.io-client` were already in v1)
+
+**Dependencies (R1)**
+- Brain: none new. The OpenAI-compatible adapter uses the shared httpx client (no provider SDKs).
+- Body core: stdlib only (asyncio, sqlite3, ctypes). Optional extras, each admitted only when its
+  engine passes fitness on the device: `tts` = `edge-tts` (free natural voices, device-side);
+  `audio` = `sounddevice` + `numpy` (mic capture for the ear); `hands` = `pycaw` (exact volume on
+  Windows) + `screen-brightness-control` (brightness beyond laptop panels). Without `hands`, volume
+  falls back to volume keys and brightness to WMI.
 
 ## Completed Work
 

@@ -23,7 +23,7 @@ without a test isn't done. Each test names the section it proves (e.g. `# proves
 |---|---|---|
 | ✅ `FakeProvider` | OpenAI-compatible fake LLM: scripted text/tool-call streams, configurable time-to-first-token, gaps, 429s, 5xx, empty output, malformed tool calls | `brain/tests/fakes/llm.py` |
 | ✅ `FakeDevice` | in-process Socket.IO client speaking protocol v2: `device.hello`, `say()` → `signal.final`, `reply()` collects a turn's `reply.delta`s, auto-answers `tool.call` from `tools` (optional `before_result` delay on the fake clock). Wake claims and offline toggling come with R2 | `brain/tests/fakes/device.py` |
-| `FakeEngines` | STT/TTS fakes with scripted latency, empty audio, errors (used by body tests) | `body/tests/fakes/engines.py` |
+| ✅ `FakeEngines` | TTS fakes with scripted latency, empty audio, 503s, hangs, and an installed flag (STT fakes join with the ear) | `body/tests/fakes/engines.py` |
 | `FakeOAuth` / `FakeGoogle` | ✅ R0: Google sign-in (authorize + token endpoint). Later: Gmail/Calendar/Drive fakes with fixtures; expired/revoked token modes | `brain/tests/fakes/google.py` |
 | ✅ `Clock` (`FakeClock`) | controllable time for deadlines, hedging, cooldowns. `drive(clock, aw)` moves simulated time while awaiting; `until(pred)` waits for server-side state | `brain/tests/fakes/clock.py` |
 | `Chaos` | injects provider failures, latency spikes, device drops, empty outputs at a set rate | `brain/tests/chaos.py` |
@@ -44,7 +44,7 @@ cd brain && uv run ruff check . && uv run mypy app
 cd brain && uv run pytest -q -m scenario     # scenario suite (§4)
 cd brain && uv run pytest -q -m chaos        # chaos suite (§5, from R1)
 # body (spark-body sidecar)
-cd body && pytest -q
+cd body && uv sync && uv run pytest -q   # + ruff check, mypy spark_body (CI on windows-latest)
 cd body && python -m spark_body.fitness --bench   # real hardware benchmark (manual / nightly)
 # desktop
 cd electron && npm run lint && npm run typecheck   # what CI runs
@@ -58,7 +58,7 @@ cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 ### 4.1 Request flows (`REDESIGN.md` §26)
 | ID | Scenario | Assertions |
 |---|---|---|
-| A1 | "volume to 30" (tier-0 reflex arc) | no LLM call made; device tool ran; `signal.handled_locally` stored in the thread; chime event; ≤ 300 ms simulated. Brain half ✅ `test_a1_tier0_result_is_recorded_without_an_llm`; device half with the body (R1) |
+| A1 | "volume to 30" (tier-0 reflex arc) | no LLM call made; device tool ran; `signal.handled_locally` stored in the thread; chime event; ≤ 300 ms simulated. ✅ brain half `test_a1_tier0_result_is_recorded_without_an_llm`, device half `body/tests/test_body.py::test_a1_device_half_volume_runs_locally_with_a_chime` (latency is real-time on the device: measured by the bench) |
 | A2 | near-miss "play a song that fits my mood" | reflex arc does **not** accept; goes to the reflex LLM |
 | A3 ✅ | tier-0 action fails (app not installed) | escalates to the reflex LLM with the error; spoken alternative offered. `test_a3_tier0_failure_escalates_to_the_reflex` |
 | B1 ✅ | normal conversation | reflex LLM called once; `reply.delta` streamed per sentence; first delta within budget given fake TTFT 300 ms. `test_b1_*` (+ recent turns carried into the follow-up) |
@@ -84,20 +84,20 @@ cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 ### 4.3 Reflex arc (§27)
 | ID | Scenario | Assertions |
 |---|---|---|
-| RA1 | eval set of ~300 utterances (positives, near-misses, negatives) | false-accept rate < 0.5%; per-intent slot accuracy ≥ 98% |
-| RA2 | destructive / send / purchase phrasing | never accepted by tier 0 |
+| RA1 ✅ | eval set of ~300 utterances (positives, near-misses, negatives) | false-accept rate < 0.5%; per-intent slot accuracy ≥ 98%. `body/evals/reflex_arc.jsonl` (338 rows) via `body/tests/test_reflex_arc.py`: 0 false accepts, 100% slots. Grammar only for now; the embedding classifier joins when the ONNX model ships |
+| RA2 ✅ | destructive / send / purchase phrasing | never accepted by tier 0 (30 `never` rows) |
 | RA3 | tier 1: "how's it going" during a job | answered from job state; no LLM call |
 | RA4 | tier 1: "yes do it" with a pending approval | resolves the approval; no LLM call |
 
 ### 4.4 Device fitness & engines (§18)
 | ID | Scenario | Assertions |
 |---|---|---|
-| FT1 | full benchmark with fake engines (one fast, one slow) | the slow engine is excluded; the plan is ordered by expressiveness then latency |
-| FT2 | quick check on start | completes ≤ 2 s; plan unchanged when scores are stable |
-| FT3 | power change (battery saver) | affected roles re-probed; plan updated |
-| FT4 | selected TTS returns empty audio twice | switches to the next engine for the same sentence; incident logged |
-| FT5 | tone tags | kept for Orpheus, stripped for engines without vocal-direction support |
-| FT6 | edge-tts 503 | circuit opens for 10 min; fallback engine used; Engines page reason text set |
+| FT1 ✅ | full benchmark with fake engines (one fast, one slow) | the slow engine is excluded; the plan is ordered by expressiveness then latency. `body/tests/test_mouth_fitness.py` (+ nothing fits → working engines stay, fastest first) |
+| FT2 ✅ | quick check on start | completes ≤ 2 s; plan unchanged when scores are stable |
+| FT3 ✅ | power change (battery saver) | affected roles re-probed; plan updated; the plan survives a restart |
+| FT4 ✅ | selected TTS returns empty audio twice | switches to the next engine for the same sentence; incident logged |
+| FT5 ✅ | tone tags | kept for Orpheus, stripped for engines without vocal-direction support |
+| FT6 ✅ | edge-tts 503 | circuit opens for 10 min; fallback engine used; Engines page reason text set |
 
 ### 4.5 Supervisor — never silent (§19)
 | ID | Scenario | Assertions |
@@ -146,7 +146,7 @@ cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 | ID | Scenario | Assertions |
 |---|---|---|
 | PS1 ✅ | banned phrase in a model reply ("Task completed successfully") | post-hook lint rewrites it before speaking. `test_ps1_banned_phrases_are_rewritten_before_speaking` |
-| PS2 | tier-0 acknowledgements over 10 signals | no identical phrase twice in a row |
+| PS2 ✅ | tier-0 acknowledgements over 10 signals | no identical phrase twice in a row. `test_reflex_arc.py` |
 | PS3 | job wrap-up | ≤ 3 spoken sentences: done → needs you → optional next step; details in an artifact |
 | PS4 | tone tags | `[serious]` on approvals/failures involving money or other people; stripped on non-expressive engines. Brain half ✅ `test_ps4_tone_tags_travel_as_tone_not_speech` (tag → `tone`, never spoken; explained failures are `serious`); stripping is FT5 in the body |
 

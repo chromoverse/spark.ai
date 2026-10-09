@@ -50,6 +50,27 @@ jobs:
       - run: uv run mypy app
       - run: uv run pytest -q
 
+  body:
+    name: body (ruff, mypy, pytest)
+    # The sidecar ships on Windows first; test it where it runs.
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: body
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.24"
+          enable-cache: true
+          cache-dependency-glob: body/uv.lock
+      - run: uv sync --frozen --python 3.11
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy spark_body
+      - run: uv run pytest -q
+
   electron:
     name: electron (lint, typecheck)
     runs-on: ubuntu-latest

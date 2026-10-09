@@ -1,0 +1,338 @@
+{"text": "volume to 30", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "Hey Spark, volume to 30", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "set the volume to 30", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "set volume to thirty", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "turn the volume to 30 percent", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "volume 30%", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "put the volume at 30", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "Spark, set the sound to 30", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "change the volume to thirty", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "can you set the volume to 30 please", "intent": "volume_set", "slots": {"level": 30}, "kind": "positive"}
+{"text": "volume to 75", "intent": "volume_set", "slots": {"level": 75}, "kind": "positive"}
+{"text": "set volume to seventy-five", "intent": "volume_set", "slots": {"level": 75}, "kind": "positive"}
+{"text": "volume seventy five percent", "intent": "volume_set", "slots": {"level": 75}, "kind": "positive"}
+{"text": "turn it to 75", "intent": "volume_set", "slots": {"level": 75}, "kind": "positive"}
+{"text": "volume to max", "intent": "volume_set", "slots": {"level": 100}, "kind": "positive"}
+{"text": "set the volume to 100", "intent": "volume_set", "slots": {"level": 100}, "kind": "positive"}
+{"text": "volume to full", "intent": "volume_set", "slots": {"level": 100}, "kind": "positive"}
+{"text": "turn the volume to a hundred", "intent": "volume_set", "slots": {"level": 100}, "kind": "positive"}
+{"text": "volume to half", "intent": "volume_set", "slots": {"level": 50}, "kind": "positive"}
+{"text": "set volume to 50", "intent": "volume_set", "slots": {"level": 50}, "kind": "positive"}
+{"text": "could you put the volume at fifty", "intent": "volume_set", "slots": {"level": 50}, "kind": "positive"}
+{"text": "volume to zero", "intent": "volume_set", "slots": {"level": 0}, "kind": "positive"}
+{"text": "set the volume to 0", "intent": "volume_set", "slots": {"level": 0}, "kind": "positive"}
+{"text": "volume 5", "intent": "volume_set", "slots": {"level": 5}, "kind": "positive"}
+{"text": "set volume to five percent", "intent": "volume_set", "slots": {"level": 5}, "kind": "positive"}
+{"text": "volume to 42", "intent": "volume_set", "slots": {"level": 42}, "kind": "positive"}
+{"text": "set volume to forty two", "intent": "volume_set", "slots": {"level": 42}, "kind": "positive"}
+{"text": "turn it up", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "louder", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "a bit louder", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "turn the volume up", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "volume up", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "increase the volume", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "raise the volume", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "crank it up", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "turn up the music", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "Spark, turn it up a bit", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "louder please", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "can you turn the sound up", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "pump it up", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "turn it up a notch", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "volume up by 20", "intent": "volume_change", "slots": {"direction": "up", "step": 20}, "kind": "positive"}
+{"text": "turn the volume up by 20 percent", "intent": "volume_change", "slots": {"direction": "up", "step": 20}, "kind": "positive"}
+{"text": "turn it down", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "quieter", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "a little quieter", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "turn the volume down", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "volume down", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "decrease the volume", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "lower the volume", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "softer", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "turn down the music", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "turn it down a bit", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "reduce the volume", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "bring it down", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "volume down by 10", "intent": "volume_change", "slots": {"direction": "down", "step": 10}, "kind": "positive"}
+{"text": "lower the volume down by ten", "intent": "volume_change", "slots": {"direction": "down", "step": 10}, "kind": "positive"}
+{"text": "mute", "intent": "volume_mute", "slots": {"mute": true}, "kind": "positive"}
+{"text": "mute the sound", "intent": "volume_mute", "slots": {"mute": true}, "kind": "positive"}
+{"text": "mute it", "intent": "volume_mute", "slots": {"mute": true}, "kind": "positive"}
+{"text": "Hey Spark, mute", "intent": "volume_mute", "slots": {"mute": true}, "kind": "positive"}
+{"text": "mute the audio", "intent": "volume_mute", "slots": {"mute": true}, "kind": "positive"}
+{"text": "mute everything", "intent": "volume_mute", "slots": {"mute": true}, "kind": "positive"}
+{"text": "unmute", "intent": "volume_mute", "slots": {"mute": false}, "kind": "positive"}
+{"text": "unmute the sound", "intent": "volume_mute", "slots": {"mute": false}, "kind": "positive"}
+{"text": "unmute it", "intent": "volume_mute", "slots": {"mute": false}, "kind": "positive"}
+{"text": "un mute", "intent": "volume_mute", "slots": {"mute": false}, "kind": "positive"}
+{"text": "play", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "resume", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "resume the music", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "continue the music", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "resume playback", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "keep playing", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "unpause the music", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "start the music", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "resume the song", "intent": "media_control", "slots": {"action": "play"}, "kind": "positive"}
+{"text": "pause", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "pause the music", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "pause it", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "pause the video", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "stop the music", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "pause the song", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "pause playback", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "Spark, pause", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "pause this", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "hold the music", "intent": "media_control", "slots": {"action": "pause"}, "kind": "positive"}
+{"text": "next", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "next song", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "skip", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "skip this song", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "next track", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "play the next song", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "skip it", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "next one", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "next please", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "skip this one", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "go to the next track", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "next video", "intent": "media_control", "slots": {"action": "next"}, "kind": "positive"}
+{"text": "previous", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "previous song", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "go back a song", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "last song", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "play the previous track", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "previous track", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "play that song again", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "back a track", "intent": "media_control", "slots": {"action": "previous"}, "kind": "positive"}
+{"text": "brightness to 60", "intent": "brightness_set", "slots": {"level": 60}, "kind": "positive"}
+{"text": "set the brightness to 60 percent", "intent": "brightness_set", "slots": {"level": 60}, "kind": "positive"}
+{"text": "set screen brightness to sixty", "intent": "brightness_set", "slots": {"level": 60}, "kind": "positive"}
+{"text": "brightness 60", "intent": "brightness_set", "slots": {"level": 60}, "kind": "positive"}
+{"text": "change the brightness to 60", "intent": "brightness_set", "slots": {"level": 60}, "kind": "positive"}
+{"text": "put the display brightness at 60", "intent": "brightness_set", "slots": {"level": 60}, "kind": "positive"}
+{"text": "brightness to 20", "intent": "brightness_set", "slots": {"level": 20}, "kind": "positive"}
+{"text": "set brightness to twenty", "intent": "brightness_set", "slots": {"level": 20}, "kind": "positive"}
+{"text": "brightness to max", "intent": "brightness_set", "slots": {"level": 100}, "kind": "positive"}
+{"text": "set brightness to 100", "intent": "brightness_set", "slots": {"level": 100}, "kind": "positive"}
+{"text": "what time is it", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "what's the time", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "what is the time", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "Hey Spark, what time is it?", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "time", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "tell me the time", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "what time is it now", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "current time", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "the time please", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "what's the time right now", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "do you know what time it is", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "whats the time", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "what's the date", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "what is the date today", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "what day is it", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "what's today", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "today's date", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "what is today's date", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "what day is today", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "tell me the date", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "what day of the week is it", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "whats the date", "intent": "date_today", "slots": {}, "kind": "positive"}
+{"text": "stop", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "Stop!", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "cancel", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "never mind", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "nevermind", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "forget it", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "be quiet", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "shut up", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "enough", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "stop talking", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "that's enough", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "okay stop", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "stop it", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "hush", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "cancel that", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "repeat that", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "say that again", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "what did you say", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "repeat", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "come again", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "say it again please", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "what did you just say", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "pardon", "intent": "repeat", "slots": {}, "kind": "positive"}
+{"text": "open spotify", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "launch spotify", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "open the spotify app", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "Hey Spark, open Spotify", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "start spotify", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "can you open spotify", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "fire up spotify", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "open spotify please", "intent": "app_open", "slots": {"app": "Spotify"}, "kind": "positive"}
+{"text": "open chrome", "intent": "app_open", "slots": {"app": "Google Chrome"}, "kind": "positive"}
+{"text": "launch chrome", "intent": "app_open", "slots": {"app": "Google Chrome"}, "kind": "positive"}
+{"text": "open google chrome", "intent": "app_open", "slots": {"app": "Google Chrome"}, "kind": "positive"}
+{"text": "bring up chrome", "intent": "app_open", "slots": {"app": "Google Chrome"}, "kind": "positive"}
+{"text": "open notepad", "intent": "app_open", "slots": {"app": "Notepad"}, "kind": "positive"}
+{"text": "start notepad", "intent": "app_open", "slots": {"app": "Notepad"}, "kind": "positive"}
+{"text": "open the notepad", "intent": "app_open", "slots": {"app": "Notepad"}, "kind": "positive"}
+{"text": "open calculator", "intent": "app_open", "slots": {"app": "Calculator"}, "kind": "positive"}
+{"text": "open the calculator", "intent": "app_open", "slots": {"app": "Calculator"}, "kind": "positive"}
+{"text": "launch the calculator app", "intent": "app_open", "slots": {"app": "Calculator"}, "kind": "positive"}
+{"text": "open vs code", "intent": "app_open", "slots": {"app": "Visual Studio Code"}, "kind": "positive"}
+{"text": "open visual studio code", "intent": "app_open", "slots": {"app": "Visual Studio Code"}, "kind": "positive"}
+{"text": "launch vs code", "intent": "app_open", "slots": {"app": "Visual Studio Code"}, "kind": "positive"}
+{"text": "open vlc", "intent": "app_open", "slots": {"app": "VLC media player"}, "kind": "positive"}
+{"text": "start vlc", "intent": "app_open", "slots": {"app": "VLC media player"}, "kind": "positive"}
+{"text": "open discord", "intent": "app_open", "slots": {"app": "Discord"}, "kind": "positive"}
+{"text": "launch discord for me", "intent": "app_open", "slots": {"app": "Discord"}, "kind": "positive"}
+{"text": "play a song that fits my mood", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "play some lo-fi", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "play despacito", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "play something calm on spotify", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "play my discover weekly", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "turn up the heat", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "turn the lights up", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "turn up the brightness and the volume", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "volume of a sphere formula", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what is volume in physics", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "set the volume to 300", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "volume to a million", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "set the volume to 30 on my phone", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "turn the volume up on the laptop", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what time is it in tokyo", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what time does the store close", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what time is my meeting", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "is it time to go", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "time to sleep", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "how much time is left", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "timer for five minutes", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "set an alarm for 7", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what's the date of the next full moon", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what day is christmas", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what date is easter this year", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open the door", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open youtube on my phone", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open my downloads folder", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open the file report.docx", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open google.com", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open the website for my bank", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open settings for bluetooth", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open spotify and play lo-fi", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open photoshop", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open the garage", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open a new tab", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open my email", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "open mail from mom", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "launch the rocket", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "start the car", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "start a timer", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "start my day", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "stop the timer", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "stop the download", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "stop sharing my screen", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "cancel my meeting", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "cancel the order", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "cancel my subscription", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "pause the download", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "next week's weather", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what's next on my calendar", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "skip my morning meeting", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "next time remind me", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "previous emails from john", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "go back to the last page", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "mute my microphone", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "mute the group chat", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "mute notifications from slack", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "unmute me in the meeting", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "louder than before, what did you think", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "brightness of the sun", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "set the brightness to 150", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "make the screen brighter", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "dim the screen", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "play the next episode of the office", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "repeat after me hello", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "repeat the last email", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "say that again in hindi", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what did you say about the weather earlier", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "stop the music on my laptop", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "pause the music in the living room", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "resume my download", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "continue the story", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "keep going", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "next slide", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "previous slide", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "volume up by 80", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "turn it up to eleven", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what's the volume", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "how loud is it", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "is the volume on", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "what time zone am i in", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "delete all my files", "intent": null, "slots": {}, "kind": "never"}
+{"text": "delete everything in downloads", "intent": null, "slots": {}, "kind": "never"}
+{"text": "shut down the computer", "intent": null, "slots": {}, "kind": "never"}
+{"text": "shut down", "intent": null, "slots": {}, "kind": "never"}
+{"text": "restart the computer", "intent": null, "slots": {}, "kind": "never"}
+{"text": "turn off the computer", "intent": null, "slots": {}, "kind": "never"}
+{"text": "format the drive", "intent": null, "slots": {}, "kind": "never"}
+{"text": "empty the recycle bin", "intent": null, "slots": {}, "kind": "never"}
+{"text": "send an email to mom", "intent": null, "slots": {}, "kind": "never"}
+{"text": "send a message to rahul", "intent": null, "slots": {}, "kind": "never"}
+{"text": "text my sister", "intent": null, "slots": {}, "kind": "never"}
+{"text": "email my boss that i'm late", "intent": null, "slots": {}, "kind": "never"}
+{"text": "buy this", "intent": null, "slots": {}, "kind": "never"}
+{"text": "order a pizza", "intent": null, "slots": {}, "kind": "never"}
+{"text": "purchase the premium plan", "intent": null, "slots": {}, "kind": "never"}
+{"text": "pay the electricity bill", "intent": null, "slots": {}, "kind": "never"}
+{"text": "transfer 500 to asha", "intent": null, "slots": {}, "kind": "never"}
+{"text": "uninstall spotify", "intent": null, "slots": {}, "kind": "never"}
+{"text": "kill all processes", "intent": null, "slots": {}, "kind": "never"}
+{"text": "close all apps", "intent": null, "slots": {}, "kind": "never"}
+{"text": "log me out", "intent": null, "slots": {}, "kind": "never"}
+{"text": "lock the computer and delete my history", "intent": null, "slots": {}, "kind": "never"}
+{"text": "factory reset", "intent": null, "slots": {}, "kind": "never"}
+{"text": "wipe my phone", "intent": null, "slots": {}, "kind": "never"}
+{"text": "post this on twitter", "intent": null, "slots": {}, "kind": "never"}
+{"text": "reply to that email", "intent": null, "slots": {}, "kind": "never"}
+{"text": "call mom", "intent": null, "slots": {}, "kind": "never"}
+{"text": "book a cab", "intent": null, "slots": {}, "kind": "never"}
+{"text": "book a hotel in pokhara", "intent": null, "slots": {}, "kind": "never"}
+{"text": "sign me up for the newsletter", "intent": null, "slots": {}, "kind": "never"}
+{"text": "what's a good name for a coffee shop in kathmandu", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "tell me a joke", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "how are you", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what's the weather like", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "who won the match yesterday", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "explain quantum computing", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "summarize my unread mail", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what's on my calendar today", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "remind me to call mom at 5", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "how far is pokhara from kathmandu", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "translate hello to nepali", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what's 25 times 4", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "write a poem about rain", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "find my last invoice email", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what can you do", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "good morning", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "thank you", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "i'm bored", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "recommend a movie", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what's the capital of france", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "how do i make momo", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "set up my morning routine", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "organize my desktop", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "create a note called groceries", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "search the web for flights to delhi", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what's my battery", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "how much storage do i have", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "switch to hindi", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "talk to me in nepali", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "who are you", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what's new", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "hello", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "yes", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "no", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "maybe later", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "hmm", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "okay", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "sure", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "what", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "why", "intent": null, "slots": {}, "kind": "negative"}

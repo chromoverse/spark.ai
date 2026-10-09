@@ -176,9 +176,29 @@ their outcome. Everything else below is synced to every device of the user.
 
 ## 4. Body ↔ Electron (local, stdio JSON-RPC)
 
-`spark-body` and Electron main talk JSON-RPC 2.0 over stdio:
-- Methods: `fitness.run`, `fitness.quick`, `engine.plan`, `tool.run`, `tts.speak`, `tts.stop`,
-  `stt.start`, `stt.stop`, `local_brain.chat`, `models.search`, `models.download`.
-- Notifications: `ear.wake`, `ear.partial`, `ear.final`, `mouth.started`, `mouth.done`,
-  `watchdog.incident`, `download.progress`.
-Electron main relays between this channel and the brain socket.
+`spark-body` (`python -m spark_body`) and Electron main talk JSON-RPC 2.0 over stdio, **one JSON
+object per line** (NDJSON). stdout is the channel; the sidecar logs to stderr. Requests run
+concurrently, so `tts.stop` never waits behind `fitness.run`. Electron main relays between this
+channel and the brain socket. ✅ = built in R1.
+
+| Method | Params → result | Notes |
+|---|---|---|
+| ✅ `hello` | `{}` → `{ version, hardware, capabilities[], engine_plan }` | `hardware` = cpu, cores, ram_gb, power `{ plugged, battery_pct, saver }`; feeds `device.hello` |
+| ✅ `reflex.handle` | `{ text, verbosity? }` → `{ handled: false }` or `{ handled: true, intent, slots, result: { ok, said?, output?, error? }, chime? }` | tier 0 (§27): decides, runs the hand, speaks the phrase. Electron then sends `signal.handled_locally` (or `signal.final` when not handled). `stop` → `{ intent: "stop", interrupt: true }` (Electron sends `signal.interrupt`); `repeat` → `{ record: false }` (nothing to send) |
+| ✅ `tool.run` | `{ tool, input }` → `{ ok, output }` or `{ ok: false, error: { code, message } }` | answers a brain `tool.call`; codes `unknown_tool`, `not_installed`, `unsupported` |
+| ✅ `tts.speak` | `{ utt_id, text, tone? }` → `{ queued: true }` | one `reply.delta` sentence; spoken in order on the engine plan |
+| ✅ `tts.stop` | `{}` → `{ stopped: true }` | barge-in: drops the queue and cancels the sentence being synthesized |
+| ✅ `fitness.run` / `fitness.quick` | `{}` → engine plan | full suite / start-up quick check (§18.1) |
+| ✅ `engine.plan` | `{}` → plan + `reasons` (per engine) + `history` (benchmark runs) | the Engines page readout |
+| ✅ `apps.refresh` | `{}` → `{ apps }` | rescans the Start Menu app index tier 0 resolves against |
+| `stt.start`, `stt.stop`, `local_brain.chat`, `models.search`, `models.download` | | later in R1 (ear) and R5 |
+
+| Notification (body → Electron) | Params | Notes |
+|---|---|---|
+| ✅ `body.ready` | `{ version }` | sent once at start |
+| ✅ `mouth.started` | `{ utt_id, engine, first_audio_ms }` | `first_audio_ms` = synthesis time to the first chunk |
+| ✅ `mouth.audio` | `{ utt_id, seq, mime, data }` | base64 audio chunk (`audio/mpeg` for edge-tts); the renderer plays chunks in order |
+| ✅ `mouth.done` | `{ utt_id, ok, engine, first_audio_ms? }` | `ok: false` = no engine could speak it: show it as text (§19.2 degrade) |
+| ✅ `watchdog.incident` | `{ role, engine, error, remedy, outcome, utt_id? }` | forward as `engine.incident` |
+| ✅ `engine.plan` | the plan | the plan changed (benchmark, power change, live EWMA): forward as `device.engine_plan` |
+| `ear.wake`, `ear.partial`, `ear.final`, `download.progress` | | with the ear (R1) and Models page (R5) |
