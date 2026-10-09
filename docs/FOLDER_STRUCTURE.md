@@ -20,7 +20,7 @@ ai_local/
 │   │   ├── gateway/          Socket.IO /v2 handlers, presence, wake arbitration, sync log
 │   │   ├── router/           tier-1 brain router (no-LLM intents, status, approvals) (§27)
 │   │   ├── agent/            reflex.py, loop.py, subagents.py, context.py, prompts/ (persona block)
-│   │   ├── llm/              openai_compat.py, anthropic.py, chains.py, hedging.py, health.py, usage.py
+│   │   ├── llm/              openai_compat.py, claude.py (Anthropic SDK), chains.py (+ hedging), health.py, types.py
 │   │   ├── supervisor/       per-user watcher, playbook, grounding check, incidents (§19)
 │   │   ├── tools/            spec.py, registry.py, permissions.py, reviewer.py, brain tools
 │   │   ├── capabilities/     skills/, plugins/, mcp/, hooks/ (§20)

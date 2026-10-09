@@ -64,6 +64,7 @@ class Runtime:
         )
 
     async def close(self) -> None:
+        await self.llm.aclose()
         await self.http.aclose()
         await self.redis.aclose()
         await self.engine.dispose()

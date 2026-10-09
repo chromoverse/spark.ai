@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "pyjwt>=2.10",
     "httpx[http2]>=0.28",
+    "anthropic>=1.0",
 ]
 
 [dependency-groups]

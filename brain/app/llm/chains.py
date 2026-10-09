@@ -19,7 +19,7 @@ from redis.asyncio import Redis
 
 from app.core.clock import Clock, within
 from app.core.config import Settings
-from app.llm import openai_compat
+from app.llm import claude, openai_compat
 from app.llm.health import Health, health_id
 from app.llm.types import (
     ChainExhausted,
@@ -67,7 +67,13 @@ CHAINS: dict[Role, list[Entry]] = {
         Entry("cloudflare", "@cf/openai/gpt-oss-20b"),
         Entry("gemini", "gemini-flash-lite-latest", trains_on_data=True),
         Entry("mistral", "mistral-small-latest"),
-        Entry("anthropic", "claude-haiku-5-5", paid=True),
+        # thinking off + low effort: the fastest Claude for spoken replies (§5.1)
+        Entry(
+            "anthropic",
+            "claude-haiku-5-5",
+            paid=True,
+            extra={"thinking": {"type": "disabled"}, "output_config": {"effort": "low"}},
+        ),
     ],
 }
 
@@ -96,6 +102,7 @@ def providers(settings: Settings) -> dict[str, tuple[str, list[str]]]:
             _keys(settings.gemini_api_keys),
         ),
         "openrouter": ("https://openrouter.ai/api/v1", _keys(settings.openrouter_api_keys)),
+        "anthropic": ("", _keys(settings.anthropic_api_key)),  # the SDK knows its own URL
     }
 
 
@@ -134,6 +141,11 @@ class ChainRunner:
         self.clock = clock
         self.http = http
         self.health = Health(redis, clock)
+        self._claude: dict[str, Any] = {}  # api key → AsyncAnthropic, built on first paid call
+
+    async def aclose(self) -> None:
+        for api in self._claude.values():
+            await api.close()
 
     async def candidates(self, role: Role, *, allow_training: bool) -> list[Candidate]:
         table = providers(self.settings)
@@ -156,6 +168,19 @@ class ChainRunner:
         messages: Sequence[Message],
         tools: Sequence[ToolDef],
     ) -> AsyncGenerator[StreamEvent, None]:
+        if c.entry.provider == "anthropic":
+            api = self._claude.get(c.api_key) or self._claude.setdefault(
+                c.api_key, claude.client(c.api_key)
+            )
+            return claude.stream(
+                api,
+                model=c.entry.model,
+                system=system,
+                messages=messages,
+                tools=tools,
+                max_tokens=ROLES[role].max_tokens,
+                extra=c.entry.extra,
+            )
         return openai_compat.stream(
             self.http,
             base_url=c.base_url,

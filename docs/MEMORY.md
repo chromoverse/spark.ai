@@ -79,7 +79,9 @@ happens.
 - Electron: no new packages (`keytar`, `socket.io-client` were already in v1)
 
 **Dependencies (R1)**
-- Brain: none new. The OpenAI-compatible adapter uses the shared httpx client (no provider SDKs).
+- Brain: `anthropic` (official SDK, as REDESIGN §5.4 asks) for the paid Claude entries, off during the
+  build. It runs on httpx2, so it keeps its own client with retries off. The OpenAI-compatible adapter
+  uses the shared httpx client (no other provider SDKs).
 - Body core: stdlib only (asyncio, sqlite3, ctypes). Optional extras, each admitted only when its
   engine passes fitness on the device: `tts` = `edge-tts` (free natural voices, device-side);
   `audio` = `sounddevice` + `numpy` (mic capture for the ear); `hands` = `pycaw` (exact volume on

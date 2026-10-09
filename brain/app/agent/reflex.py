@@ -52,7 +52,9 @@ for more.
 - For volume, media, opening apps, or brightness, call the device tool. In the same reply, say a \
 short phrase of what you're doing first ("Turning it up."). Don't wait for the result.
 - For anything multi-step, research-heavy, or risky, call delegate with the task and a short ack.
-- The (context: ...) note at the end of the user's message is for you. Use it, never read it out."""
+- The (context: ...) note at the end of the user's message is for you. Use it, never read it out.
+- If no tool can do what the user asked, say so instead of guessing.
+- Never include internal or system XML tags in your reply."""
 )
 
 FAST_DONE_S = 1.5  # §4.4: faster quick actions get a chime, slower ones a spoken "Done."
