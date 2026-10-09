@@ -7,10 +7,15 @@ backfilled from git history and grouped by theme.
 
 ## [Unreleased]
 
-### Planned
-- R0 — Brain foundations (see `PHASES.md`)
-
 ### Added
+- 2026-10-09 — **R0 Brain foundations** (branch `r0/brain-foundations`): `brain/` FastAPI +
+  Socket.IO `/v2` (uv-locked), `deploy/` local dev and test compose stacks (Postgres 16 + pgvector,
+  Redis, SearXNG; Caddy stub), first Alembic migration (10 tables), email OTP (hashed, 5 tries,
+  cooldown, Resend) + Google sign-in (loopback + PKCE), 15-min access JWTs + rotating per-device
+  refresh tokens with reuse → revoke, device sockets with `device.hello`, Redis presence and
+  `settings.changed` fan-out, test harness (FakeProvider, FakeDevice, FakeClock; X1–X3 + R0
+  acceptance), Electron v2 sign-in (keychain refresh token, main-process socket, status pill),
+  GitHub Actions CI (brain ruff/mypy/pytest, Electron lint/typecheck)
 - 2026-10-09 — **v2 documentation**: `REDESIGN.md` (cloud brain + device bodies, reflex arc, free-first
   chains, per-device engine fitness, supervisor, capabilities platform, cross-device flows),
   `RESEARCH.md` (Claude Code, Codex, MCP, free providers), `PERSONA.md` (how Spark talks), and v2
@@ -22,6 +27,9 @@ backfilled from git history and grouped by theme.
   CHANGELOG)
 - 2026-10-09 — Claude Opus 5.5 (`AnthropicClient`) leads the streaming route for PQH/SQH/chat;
   skipped when no `ANTHROPIC_API_KEY` is set
+
+### Fixed
+- 2026-10-09 — Whole-app Electron lint is green (v1 renderer + main), so CI can gate on it
 
 ---
 

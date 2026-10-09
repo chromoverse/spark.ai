@@ -48,25 +48,25 @@ hop reflects your home network. The real-region numbers come from the R7 benchma
 ## R0 — Brain Foundations
 
 ### Deliverables
-- ☐ `brain/` skeleton per `REDESIGN.md` §15; FastAPI + Socket.IO `/v2`; config from env; structured logs
-- ☐ `deploy/docker-compose.yml`: brain, Postgres 16 + pgvector, Redis, SearXNG, Caddy (HTTPS)
-- ☐ SQLAlchemy 2.0 async models + Alembic migration for `users`, `auth_identities`, `otp_codes`,
+- ☑ `brain/` skeleton per `REDESIGN.md` §15; FastAPI + Socket.IO `/v2`; config from env; structured logs
+- ☑ `deploy/docker-compose.yml`: brain, Postgres 16 + pgvector, Redis, SearXNG, Caddy (HTTPS; stub behind the `tls` profile until R7)
+- ☑ SQLAlchemy 2.0 async models + Alembic migration for `users`, `auth_identities`, `otp_codes`,
   `sessions`, `devices`, `user_settings`, `threads`, `messages`, `events`, `audit_log`
-- ☐ Auth: email OTP (hashed, 5 attempts, cooldown, Resend) + Google sign-in; access JWT (15 min,
+- ☑ Auth: email OTP (hashed, 5 attempts, cooldown, Resend) + Google sign-in; access JWT (15 min,
   secret from env) + rotating per-device refresh tokens (stored hashed)
-- ☐ Device registration + `device.hello` + presence in Redis
-- ☐ Electron: sign-in against the brain, refresh token in keychain, v2 socket in main process,
+- ☑ Device registration + `device.hello` + presence in Redis
+- ☑ Electron: sign-in against the brain, refresh token in keychain, v2 socket in main process,
   connection status in UI
-- ☐ CI (GitHub Actions): brain tests (pytest), Electron lint + typecheck
-- ☐ Test harness (`TESTING.md` §2): FakeProvider, FakeDevice, Clock, test DB compose; the X1 route sweep
-- ☐ Everything runs on the dev laptop: `docker compose up` (Postgres, Redis, SearXNG) + brain +
-  Electron + body. No cloud hosting until R7 (see "Where it runs" above)
+- ☑ CI (GitHub Actions): brain tests (pytest), Electron lint + typecheck
+- ☑ Test harness (`TESTING.md` §2): FakeProvider, FakeDevice, Clock, test DB compose; the X1 route sweep
+- ☑ Everything runs on the dev laptop: `docker compose up` (Postgres, Redis, SearXNG) + brain +
+  Electron (+ body from R1). No cloud hosting until R7 (see "Where it runs" above)
 
 ### Acceptance Tests
-- ☐ No route or socket event accepts a client-supplied `user_id` (test sweeps every route)
-- ☐ Refresh token reuse → session revoked; refresh token can't open a socket
-- ☐ 6th wrong OTP → locked; OTP stored only as a hash
-- ☐ Two devices of one user both receive a `settings.changed` event
+- ☑ No route or socket event accepts a client-supplied `user_id` (test sweeps every route)
+- ☑ Refresh token reuse → session revoked; refresh token can't open a socket
+- ☑ 6th wrong OTP → locked; OTP stored only as a hash
+- ☑ Two devices of one user both receive a `settings.changed` event
 - ☐ `docker compose up` on the dev laptop → `/health` green; the desktop app signs in to the local brain
 
 ---

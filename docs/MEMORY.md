@@ -9,17 +9,17 @@ happens.
 
 - **Direction:** v2: a cloud **Brain** + device **Bodies** (desktop now, mobile later). Full design
   in `REDESIGN.md`, one-page map in `ARCHITECTURE.md`, roadmap in `PHASES.md` (R0–R7).
-- **Phase:** R0, Brain foundations. Built on branch `r0/brain-foundations` (not pushed yet).
-  Done: `brain/` (FastAPI + Socket.IO /v2, uv + `uv.lock`), `deploy/` compose stacks, 10-table
-  migration, email OTP + Google (loopback + PKCE), rotating refresh tokens with reuse revoke,
-  devices/presence/settings fan-out, test harness (FakeProvider/FakeDevice/FakeClock, X1–X3),
-  Electron v2 sign-in + socket + status, whole-app Electron lint/typecheck green, GitHub Actions CI.
-  Brain: 40 tests green, ruff + mypy strict clean.
-- **Next session (R0 wrap-up):** CHANGELOG R0 entry; tick R0 in `PHASES.md`; Electron command
-  `npm run lint && npm run typecheck` in `RULES.md` §10.2 + `TESTING.md` §3; run steps in
-  `ENVIRONMENT.md` §2; dep reasons under Decisions; owner's manual desktop sign-in smoke; then ask
-  before pushing / opening the PR. Deferred past R0: per-user rate limits, `sync.resume`/X4,
-  retention jobs, real Caddy config, body sidecar (R1), 15 exhaustive-deps lint warnings.
+- **Phase:** R0, Brain foundations: code + docs complete on branch `r0/brain-foundations` (not
+  pushed yet). `brain/` (FastAPI + Socket.IO /v2, uv + `uv.lock`), `deploy/` compose stacks,
+  10-table migration, email OTP + Google (loopback + PKCE), rotating refresh tokens with reuse
+  revoke, devices/presence/settings fan-out, test harness (FakeProvider/FakeDevice/FakeClock,
+  X1–X3), Electron v2 sign-in + socket + status, whole-app Electron lint/typecheck green, GitHub
+  Actions CI. Brain: 40 tests green, ruff + mypy strict clean. R0 ticked in `PHASES.md` except the
+  last acceptance row.
+- **Next:** owner runs the R0 desktop smoke (`TESTING.md` §8a); if green, tick the last R0
+  acceptance row, then push + open the PR (ask first). Then R1. Deferred past R0: per-user rate
+  limits, `sync.resume`/X4, retention jobs, real Caddy config, body sidecar (R1), 15
+  exhaustive-deps lint warnings.
 - **Run locally:** `docker compose -f deploy/docker-compose.yml up -d` (brain on :8080; secrets in
   git-ignored `deploy/.env`). Tests: `docker compose -f deploy/docker-compose.test.yml up -d`, then
   `cd brain && uv run pytest`. Desktop: `cd electron && npm run dev`. uv lives in
@@ -65,6 +65,14 @@ happens.
 - **Every scenario has an automated test** (`TESTING.md` §4)
 - Keys: platform keys + quotas, optional BYOK; users' own free keys first; platform keys never leave the brain
 - Billing: free beta with quotas, metering from day one, payments later
+
+**Dependencies (R0)** — the stack table in `RULES.md` §2 covers the rest
+- `uvicorn[standard]`: ASGI server for the brain
+- `pydantic-settings`: typed config from env / `deploy/.env`
+- `pyjwt`: access JWTs (HS256, secret from env)
+- `pytest-asyncio`: async tests; `aiohttp` (dev): required by `socketio.AsyncClient` in FakeDevice
+- `ruff`, `mypy`: lint/format and strict typing, enforced in CI
+- Electron: no new packages (`keytar`, `socket.io-client` were already in v1)
 
 ## Completed Work
 

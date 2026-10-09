@@ -40,14 +40,15 @@ before each test. Tests that need it fail (they don't skip) when the test stack 
 # brain
 docker compose -f deploy/docker-compose.test.yml up -d   # Postgres :55432 + Redis :56379
 cd brain && uv run pytest -q                 # unit + integration (fakes, test DB)
+cd brain && uv run ruff check . && uv run mypy app/core app/auth app/api app/gateway
 cd brain && uv run pytest -q -m scenario     # scenario suite (§4)
 cd brain && uv run pytest -q -m chaos        # chaos suite (§5, from R1)
 # body (spark-body sidecar)
 cd body && pytest -q
 cd body && python -m spark_body.fitness --bench   # real hardware benchmark (manual / nightly)
 # desktop
-cd electron && npm run lint && npx tsc -b && npm test   # unit + component tests
-cd electron && npm run e2e                               # Playwright-for-Electron against fake brain
+cd electron && npm run lint && npm run typecheck   # what CI runs
+cd electron && npm test && npm run e2e             # unit/component + Playwright vs fake brain (not built yet)
 # evals (live free providers, never in PR CI)
 cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 ```

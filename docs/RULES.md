@@ -89,7 +89,7 @@ no raw errors, no robotic narration.
 ## 10. Definition of done (every task)
 
 1. ☐ Every scenario touched has a `TESTING.md` §4 row and a passing test
-2. ☐ `pytest` (brain, body) and `npm run lint && npx tsc -b` (electron) pass; chaos suite passes if the hot path was touched
+2. ☐ `pytest` (brain, body) and `npm run lint && npm run typecheck` (electron) pass; chaos suite passes if the hot path was touched
 3. ☐ Latency bench is unchanged or better for hot-path changes
 4. ☐ `API.md` / `DATABASE.md` / `FOLDER_STRUCTURE.md` updated in the same commit when contracts change
 5. ☐ New env vars in `.env.example` + `ENVIRONMENT.md`

@@ -14,11 +14,16 @@ v1 setup (server/, voice_daemon/, llms/) stays in the root `README.md` until tho
 ## 2. Local dev
 
 ```bash
-cp deploy/.env.example deploy/.env           # fill keys (section 3)
+cp deploy/.env.example deploy/.env           # fill keys (section 3); the brain reads this file
+# A) whole stack in Docker (the brain container runs migrations on start)
+docker compose -f deploy/docker-compose.yml up -d --build
+# B) or infra in Docker, brain with hot reload
 docker compose -f deploy/docker-compose.yml up -d postgres redis searxng
-cd brain && uv sync && uv run alembic upgrade head && uv run uvicorn app.main:app --reload --port 8080
-cd body && uv sync                            # Electron spawns the sidecar in dev
+cd brain && uv sync && uv run alembic upgrade head
+cd brain && uv run uvicorn app.main:create_app --factory --reload --port 8080
+# desktop
 cd electron && npm ci && npm run dev
+curl http://127.0.0.1:8080/health           # then sign in from the app (TESTING.md §8a)
 ```
 
 Brain: `http://127.0.0.1:8080`. Renderer (Vite): `http://localhost:5123`.
