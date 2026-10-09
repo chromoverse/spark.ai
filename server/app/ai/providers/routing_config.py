@@ -20,6 +20,7 @@ USE_CASE_EXTRACT = "entity_extract"     # Structured entity extraction from web 
 # Order = priority. First available provider wins.
 ROUTING_TABLE: Dict[str, List[Tuple[str, str]]] = {
     USE_CASE_STREAMING: [
+        ("anthropic", "claude-opus-5-5"),
         ("cerebras", "gpt-oss-120b"),
         ("groq", "llama-3.3-70b-versatile"),
         ("gemini", "gemini-2.5-flash"),

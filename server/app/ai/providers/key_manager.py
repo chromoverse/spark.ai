@@ -35,6 +35,7 @@ PROVIDER_ENV_MAP: Dict[str, str] = {
     "sambanova": "SAMBANOVA_API_KEY",
     "mistral": "MISTRAL_API_KEY",
     "cohere": "COHERE_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
 }
 
 

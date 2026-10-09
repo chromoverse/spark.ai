@@ -56,6 +56,7 @@ class _ProviderRegistry:
         from app.ai.providers.cerebras_client import CerebrasClient
         from app.ai.providers.sambanova_client import SambaNovaClient
         from app.ai.providers.mistral_client import MistralClient
+        from app.ai.providers.anthropic_client import AnthropicClient
 
         cls._instances = {
             "groq": GroqClient(),
@@ -64,6 +65,7 @@ class _ProviderRegistry:
             "cerebras": CerebrasClient(),
             "sambanova": SambaNovaClient(),
             "mistral": MistralClient(),
+            "anthropic": AnthropicClient(),
         }
         cls._initialized = True
         available = [n for n, p in cls._instances.items() if p.is_available]

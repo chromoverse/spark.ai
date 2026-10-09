@@ -86,6 +86,7 @@ export default function SettingsPage() {
     { id: "cerebras",   label: "Cerebras",   keys: (user as any)?.apiKeys?.cerebras   || [] },
     { id: "sambanova",  label: "SambaNova",  keys: (user as any)?.apiKeys?.sambanova  || [] },
     { id: "mistral",    label: "Mistral",    keys: (user as any)?.apiKeys?.mistral    || [] },
+    { id: "anthropic",  label: "Anthropic",  keys: (user as any)?.apiKeys?.anthropic  || [] },
   ];
 
   return (

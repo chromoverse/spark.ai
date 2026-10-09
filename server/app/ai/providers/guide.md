@@ -48,6 +48,7 @@ Single key = plain string. Multiple keys = JSON array.
 | cerebras | `CEREBRAS_API_KEY` | `siddthecoder:CEREBRAS_API_KEY` |
 | sambanova | `SAMBANOVA_API_KEY` | `siddthecoder:SAMBANOVA_API_KEY` |
 | mistral | `MISTRAL_API_KEY` | `siddthecoder:MISTRAL_API_KEY` |
+| anthropic | `ANTHROPIC_API_KEY` | `siddthecoder:ANTHROPIC_API_KEY` |
 
 ## The ONE Function to Store Keys
 
