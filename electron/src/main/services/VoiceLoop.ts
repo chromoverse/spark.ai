@@ -64,7 +64,11 @@ class VoiceLoop {
     if (this.started) return;
     this.started = true;
     bodyBridge.onNotify((method, params) => void this.fromBody(method, params));
-    bodyBridge.onStatus((status) => broadcast("bodyStatus", status));
+    bodyBridge.onStatus((status) => {
+      broadcast("bodyStatus", status);
+      // The body (re)started after the socket was up: give it the brain link and send its plan.
+      if (status === "ready" && brainSocket.getStatus() === "connected") void this.fromBrain("$connected", {});
+    });
     brainSocket.onEvent((event, data) => void this.fromBrain(event, data as Record<string, unknown>));
     brainSocket.setHelloInfo(async () => {
       const hello = await bodyBridge.call<BodyHello>("hello");
