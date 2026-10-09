@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import statistics
 import time
 from dataclasses import dataclass, field
@@ -60,8 +61,32 @@ def args_match(want: dict[str, Any], got: dict[str, Any]) -> bool:
     return True
 
 
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_UNSPEAKABLE = re.compile(r"[*#`]|^\s*(?:[-•]|\d+\.)\s|https?://|[\U0001F300-\U0001FAFF]", re.M)
+
+
+def persona_misses(text: str) -> list[str]:
+    """PERSONA.md §2 spoken-style rules a reply breaks (empty list = passes)."""
+    _, body = persona.split_tone(text.strip())
+    sentences = [s for s in _SENTENCE_END.split(body) if s.strip()]
+    misses = []
+    if not sentences:
+        misses.append("silent")
+    if len(sentences) > 3:
+        misses.append(f"{len(sentences)} sentences")
+    if any(len(s.split()) > 25 for s in sentences):
+        misses.append("long sentence")
+    if persona.has_banned(body):
+        misses.append("banned phrase")
+    if _UNSPEAKABLE.search(body):
+        misses.append("markdown/list/link/emoji")
+    return misses
+
+
 def grade(row: dict[str, Any], text: str, uses: list[ToolUse]) -> bool:
     names = [u.name for u in uses]
+    if row["expect"] == "persona":
+        return not uses and not persona_misses(text)
     if row["expect"] == "answer":
         return bool(text.strip()) and not uses
     if row["expect"] == "delegate":
@@ -126,16 +151,14 @@ async def run_entry(
 
 
 def report(results: list[EntryResult]) -> None:
-    print(
-        "\n| entry | TTFT p50 | p95 | reflex-grade | answers | tools | delegate | errors | banned |"
-    )
-    print("|---|---|---|---|---|---|---|---|---|")
+    kinds = ("answer", "tool", "delegate", "persona")
+    print("\n| entry | TTFT p50 | p95 | reflex-grade | answers | tools | delegate | persona "
+          "| errors | banned |")  # fmt: skip
+    print("|---|---|---|---|---|---|---|---|---|---|")
     for r in results:
         p50, p95 = r.pct(0.5), r.pct(0.95)
         grade_ok = p95 is not None and p95 <= TTFT_GATE_MS
-        cells = [
-            f"{r.passed.get(k, 0)}/{r.total.get(k, 0)}" for k in ("answer", "tool", "delegate")
-        ]
+        cells = [f"{r.passed.get(k, 0)}/{r.total.get(k, 0)}" for k in kinds]
         print(
             f"| {r.label} | {p50 or 0:.0f} ms | {p95 or 0:.0f} ms | {'yes' if grade_ok else 'no'} "
             f"| {' | '.join(cells)} | {r.errors} | {r.banned} |"
@@ -149,7 +172,7 @@ def report(results: list[EntryResult]) -> None:
 
 async def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--suite", choices=["reflex"], default="reflex")
+    ap.add_argument("--suite", choices=["reflex", "persona"], default="reflex")
     ap.add_argument("--entry", help="only this provider/model, e.g. groq/openai/gpt-oss-20b")
     ap.add_argument("--limit", type=int, default=0, help="first N rows only")
     ap.add_argument(
@@ -159,7 +182,11 @@ async def main() -> None:
     args = ap.parse_args()
 
     settings = Settings()
-    rows = [json.loads(line) for line in (EVALS / "reflex.jsonl").read_text().splitlines() if line]
+    rows = [
+        json.loads(line)
+        for line in (EVALS / f"{args.suite}.jsonl").read_text().splitlines()
+        if line
+    ]
     if args.limit:
         rows = rows[: args.limit]
     table = providers(settings)

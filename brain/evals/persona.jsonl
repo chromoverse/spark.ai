@@ -1,0 +1,58 @@
+{"text": "thanks!", "expect": "persona"}
+{"text": "thank you so much", "expect": "persona"}
+{"text": "good morning", "expect": "persona"}
+{"text": "good night spark", "expect": "persona"}
+{"text": "hey", "expect": "persona"}
+{"text": "you're awesome", "expect": "persona"}
+{"text": "how's your day going", "expect": "persona"}
+{"text": "did you have coffee today", "expect": "persona"}
+{"text": "what did you eat for lunch", "expect": "persona"}
+{"text": "are you human", "expect": "persona"}
+{"text": "tell me about yourself", "expect": "persona"}
+{"text": "what's your favorite movie", "expect": "persona"}
+{"text": "I'm bored", "expect": "persona"}
+{"text": "say something funny", "expect": "persona"}
+{"text": "I'm so stressed about my exam tomorrow", "expect": "persona"}
+{"text": "I just got the job!!", "expect": "persona"}
+{"text": "ugh my laptop is so slow today", "expect": "persona"}
+{"text": "quick, what's 15 percent of 80", "expect": "persona"}
+{"text": "I'm in a hurry, what's the capital of canada", "expect": "persona"}
+{"text": "I can't sleep", "expect": "persona"}
+{"text": "my code won't compile and I'm losing my mind", "expect": "persona"}
+{"text": "I'm feeling a bit down today", "expect": "persona"}
+{"text": "can you do my taxes for me", "expect": "persona"}
+{"text": "can you drive my car", "expect": "persona"}
+{"text": "what's my bank balance", "expect": "persona"}
+{"text": "read my mind", "expect": "persona"}
+{"text": "what will the stock market do tomorrow", "expect": "persona"}
+{"text": "who will win the next world cup", "expect": "persona"}
+{"text": "what am I thinking right now", "expect": "persona"}
+{"text": "can you call my mom", "expect": "persona"}
+{"text": "send a text to rahul", "expect": "persona"}
+{"text": "what's the weather right now in kathmandu", "expect": "persona"}
+{"text": "give me three tips for a good presentation", "expect": "persona"}
+{"text": "what are the planets in order", "expect": "persona"}
+{"text": "name some good productivity apps", "expect": "persona"}
+{"text": "what should I pack for a weekend trip", "expect": "persona"}
+{"text": "list the days of the week", "expect": "persona"}
+{"text": "what are the primary colors", "expect": "persona"}
+{"text": "how much is 4200 rupees in dollars roughly", "expect": "persona"}
+{"text": "what's 2.5 hours in minutes", "expect": "persona"}
+{"text": "how many seconds in a day", "expect": "persona"}
+{"text": "what's 1234 times 3", "expect": "persona"}
+{"text": "explain how the internet works", "expect": "persona"}
+{"text": "what is machine learning", "expect": "persona"}
+{"text": "why is the sky blue", "expect": "persona"}
+{"text": "how do vaccines work", "expect": "persona"}
+{"text": "what's the meaning of life", "expect": "persona"}
+{"text": "explain blockchain like I'm five", "expect": "persona"}
+{"text": "that's wrong, try again", "expect": "persona"}
+{"text": "you didn't understand me", "expect": "persona"}
+{"text": "you're useless", "expect": "persona"}
+{"text": "that's not what I asked", "expect": "persona"}
+{"text": "should I buy a mac or a windows laptop", "expect": "persona"}
+{"text": "is it worth learning to code in 2026", "expect": "persona"}
+{"text": "what should I name my startup", "expect": "persona"}
+{"text": "give me a pep talk", "expect": "persona"}
+{"text": "how do I ask for a raise", "expect": "persona"}
+{"text": "is coffee bad for you", "expect": "persona"}

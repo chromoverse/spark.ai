@@ -198,7 +198,7 @@ the desktop app until a scripted audio driver exists.
 | `agent` | ~30 multi-step tasks, stubbed tools | task success, tool-call validity, steps, tokens | agent chain order |
 | `reflex_arc` ✅ | 338 (`body/evals/reflex_arc.jsonl`) | false-accept, slot accuracy | tier-0 thresholds; offline, so it runs in CI |
 | `research` | ~20 questions | citation correctness, answer accuracy | research pipeline |
-| `persona` | ~60 moments (acks, wrap-ups, failures, approvals) | naturalness, brevity, honesty, banned-phrase count (`PERSONA.md`) | every reflex/agent chain entry |
+| `persona` ✅ (R1 part) | 58 moments (`brain/evals/persona.jsonl`: small talk, stress, can't-do, lists, numbers, failures, advice) | auto-checked PERSONA §2 rules: ≤ 3 sentences, ≤ 25 words each, no banned phrase, no markdown/lists/links/emoji, no tool call; naturalness and honesty need a human or LLM judge (later) | every reflex/agent chain entry: `uv run python -m evals.run --suite persona` |
 
 Re-run monthly and whenever a free provider changes its offer.
 

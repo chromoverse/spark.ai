@@ -37,3 +37,15 @@ def test_latency_report_reads_device_and_brain_spans() -> None:
     assert spans["device.first_audio"] == [700, 800, 900, 1400]
     assert spans["brain.ttft"] == [300] and "brain.tool:app_open" not in spans
     assert pct(spans["device.first_audio"], 0.5) == 900
+
+
+def test_persona_rules() -> None:
+    from evals.run import persona_misses
+
+    assert (
+        persona_misses("[cheerful] Congrats! That's huge. Want to celebrate with a playlist?") == []
+    )
+    assert "banned phrase" in persona_misses("Certainly! Here you go.")
+    assert "markdown/list/link/emoji" in persona_misses("Sure:\n- one\n- two")
+    assert "5 sentences" in persona_misses("One. Two. Three. Four. Five.")
+    assert "silent" in persona_misses("")
