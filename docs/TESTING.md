@@ -21,21 +21,27 @@ without a test isn't done. Each test names the section it proves (e.g. `# proves
 
 | Component | What it is | Lives in |
 |---|---|---|
-| `FakeProvider` | OpenAI-compatible fake LLM: scripted text/tool-call streams, configurable time-to-first-token, gaps, 429s, 5xx, empty output, malformed tool calls | `brain/tests/fakes/llm.py` |
-| `FakeDevice` | in-process Socket.IO client speaking protocol v2: `device.hello`, wake claims, signals, tool execution with scripted results/delays, offline/online toggling | `brain/tests/fakes/device.py` |
+| ✅ `FakeProvider` | OpenAI-compatible fake LLM: scripted text/tool-call streams, configurable time-to-first-token, gaps, 429s, 5xx, empty output, malformed tool calls | `brain/tests/fakes/llm.py` |
+| ✅ `FakeDevice` | in-process Socket.IO client speaking protocol v2: `device.hello`, wake claims, signals, tool execution with scripted results/delays, offline/online toggling | `brain/tests/fakes/device.py` |
 | `FakeEngines` | STT/TTS fakes with scripted latency, empty audio, errors (used by body tests) | `body/tests/fakes/engines.py` |
-| `FakeOAuth` / `FakeGoogle` | Gmail/Calendar/Drive fakes with fixtures; expired/revoked token modes | `brain/tests/fakes/google.py` |
-| `Clock` | controllable time for deadlines, hedging, cooldowns | `brain/tests/fakes/clock.py` |
+| `FakeOAuth` / `FakeGoogle` | ✅ R0: Google sign-in (authorize + token endpoint). Later: Gmail/Calendar/Drive fakes with fixtures; expired/revoked token modes | `brain/tests/fakes/google.py` |
+| ✅ `Clock` (`FakeClock`) | controllable time for deadlines, hedging, cooldowns | `brain/tests/fakes/clock.py` |
 | `Chaos` | injects provider failures, latency spikes, device drops, empty outputs at a set rate | `brain/tests/chaos.py` |
-| Test DB | Postgres + pgvector + Redis via `docker compose -f deploy/docker-compose.test.yml` | CI service containers |
+| ✅ Test DB | Postgres + pgvector + Redis via `docker compose -f deploy/docker-compose.test.yml` | CI service containers |
+| ✅ `FakeResend` / `FakeHttp` | OTP mail capture + outage mode; `FakeHttp` routes the brain's shared httpx client to fakes by host and fails on any unexpected outbound call | `brain/tests/fakes/resend.py`, `brain/tests/conftest.py` |
+
+The `brain` fixture runs the real app under uvicorn on a random port (HTTP + Socket.IO), drops the
+test schema and runs `alembic upgrade head` once per session, and truncates tables + flushes Redis
+before each test. Tests that need it fail (they don't skip) when the test stack isn't up.
 
 ## 3. Commands
 
 ```bash
 # brain
-cd brain && pytest -q                        # unit + integration (fakes, test DB)
-cd brain && pytest -q -m scenario            # scenario suite (§4)
-cd brain && pytest -q -m chaos               # chaos suite (§5)
+docker compose -f deploy/docker-compose.test.yml up -d   # Postgres :55432 + Redis :56379
+cd brain && uv run pytest -q                 # unit + integration (fakes, test DB)
+cd brain && uv run pytest -q -m scenario     # scenario suite (§4)
+cd brain && uv run pytest -q -m chaos        # chaos suite (§5, from R1)
 # body (spark-body sidecar)
 cd body && pytest -q
 cd body && python -m spark_body.fitness --bench   # real hardware benchmark (manual / nightly)
@@ -120,11 +126,20 @@ cd brain && python -m evals.run --suite reflex|agent|reflex_arc
 ### 4.7 Identity, security, sync (§12, §10)
 | ID | Scenario | Assertions |
 |---|---|---|
-| X1 | every HTTP route and socket event | rejects client-supplied `user_id`; user A can't read user B (generated sweep over the route table) |
-| X2 | OTP | hashed at rest; locked after 5 wrong tries |
-| X3 | refresh-token reuse | session revoked |
+| X1 ✅ | every HTTP route and socket event | rejects client-supplied `user_id`; user A can't read user B (generated sweep over the route table). `brain/tests/scenario/test_x1_isolation.py`: OpenAPI + gateway event table, private routes need a real access token, B's ids → 404 for A |
+| X2 ✅ | OTP | hashed at rest; locked after 5 wrong tries. `test_x2_otp.py` (+ cooldown, expiry, single use, mail outage) |
+| X3 ✅ | refresh-token reuse | session revoked. `test_x3_refresh.py` (+ 15-min access expiry, logout) |
 | X4 | reconnect with `last_event_id` | missed events replayed in order, no duplicates |
 | X5 | BYOK / OAuth tokens | never present in any response, log line, or socket payload (scan) |
+
+### 4.7a R0 acceptance (`PHASES.md` R0)
+| Acceptance test | Proven by |
+|---|---|
+| No route or socket event accepts a client `user_id` | X1 |
+| Refresh reuse → session revoked; a refresh token can't open a socket | X3; `test_r0_gateway.py::test_r0_refresh_token_cannot_open_a_socket` |
+| 6th wrong OTP → locked; OTP stored only as a hash | X2 |
+| Two devices of one user both receive `settings.changed` | `test_r0_gateway.py::test_r0_two_devices_both_receive_settings_changed` |
+| `docker compose up` → `/health` green; desktop signs in to the local brain | manual smoke (§8a) + `test_core.py::test_health_and_ready` |
 
 ### 4.8 Persona (`PERSONA.md`)
 | ID | Scenario | Assertions |
@@ -180,6 +195,11 @@ Re-run monthly and whenever a free provider changes its offer.
 3. "Open YouTube on my phone" with the phone on USB → plays.
 4. "Summarize my unread mail" with Gmail disconnected → connect → summary arrives without re-asking.
 5. Pull the network → local fallback announced → "volume down" still works → reconnect syncs.
+
+## 8a. R0 Smoke (dev laptop)
+1. `docker compose -f deploy/docker-compose.yml up -d --build` → `curl http://127.0.0.1:8080/health` and `/ready` are green.
+2. `cd electron && npm run dev` → sign in with an email code (or Google) → the status pill reads "Connected".
+3. Stop the brain container → the pill shows the reconnecting state; start it → it reconnects on its own.
 
 ## 9. v1 Baseline (for reference)
 2026-10-09: `server/` unittest suite, 10 tests, 1 error (circular import in `app.socket`). v1 tests
