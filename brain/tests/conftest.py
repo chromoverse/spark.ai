@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from app.db import models  # noqa: F401  (registers tables for TRUNCATE)
 from app.db.base import Base
 from app.main import create_app
 from tests.fakes.clock import FakeClock
+from tests.fakes.resend import FakeResend
 
 TEST_DB = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://spark:spark@127.0.0.1:55432/spark_test"
@@ -74,6 +75,25 @@ class Brain:
     clock: FakeClock
     fake_http: FakeHttp
     client: httpx.AsyncClient
+    resend: FakeResend = field(default_factory=FakeResend)
+
+    async def sign_in(
+        self, email: str = "asha@example.com", device: str = "Laptop"
+    ) -> dict[str, Any]:
+        """Full OTP sign-in; returns the token payload. Moves the clock past the cooldown."""
+        r = await self.client.post("/v2/auth/otp/start", json={"email": email})
+        assert r.status_code == 200, r.text
+        r = await self.client.post(
+            "/v2/auth/otp/verify",
+            json={"email": email, "code": self.resend.last_code(email), "device": {"name": device}},
+        )
+        assert r.status_code == 200, r.text
+        self.clock.advance(61)
+        data: dict[str, Any] = r.json()["data"]
+        return data
+
+    def auth(self, tokens: dict[str, Any]) -> dict[str, str]:
+        return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
 BRAIN_DIR = Path(__file__).resolve().parents[1]
@@ -130,5 +150,6 @@ async def brain(brain_server: Brain) -> AsyncIterator[Brain]:
     async with brain_server.rt.engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_TABLES} RESTART IDENTITY CASCADE"))
     await brain_server.rt.redis.flushdb()
-    brain_server.fake_http.hosts.clear()
+    brain_server.resend = FakeResend()
+    brain_server.fake_http.hosts = {"api.resend.com": brain_server.resend.handle}
     yield brain_server

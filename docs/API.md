@@ -39,6 +39,21 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 | PATCH | `/v2/devices/{id}` | `{ name, is_default_for }` | rename; default phone/laptop |
 | DELETE | `/v2/devices/{id}` | — | sign out that device |
 
+**Auth payloads (✅ built in R0).** Bodies reject unknown fields (`422 invalid_input`).
+- `otp/start` → `{ sent: true, cooldown_s: 60 }`. Per-IP cap 10 / 10 min. The code lives 10 min and
+  is stored only as a keyed hash. A send failure returns `503 provider_unavailable` and starts no cooldown.
+- `otp/verify` body: `{ email, code: "6 digits", device: { name, kind?: desktop|mobile, platform?, app_version?, id? } }`.
+  `device.id` re-uses a device you already own (its old sessions are revoked); otherwise a new device
+  is registered. Wrong code → `401` with tries left; after 5 wrong tries the code is locked (`429`)
+  even for the right code. Per-IP cap 30 / 10 min.
+- Sign-in response (OTP, Google exchange): `{ access_token, access_expires_in: 900, refresh_token, device_id, user: { id, email, name } }`.
+- `refresh` → `{ access_token, access_expires_in, refresh_token, device_id }`. The refresh token is
+  `<session_id>.<secret>`; every refresh returns a new one. Presenting an old one revokes the whole
+  session (`401`). Clients must refresh one call at a time.
+- Every authenticated request also checks the session isn't revoked, so logout and reuse-revocation
+  apply immediately, not after the 15-minute access token runs out.
+- `GET /v2/me` → `{ user: { id, email, name, nickname, plan }, device_id, settings: {…§2.2} }`.
+
 ### 2.2 Settings, memory, usage
 | Method | Path | Notes |
 |---|---|---|
