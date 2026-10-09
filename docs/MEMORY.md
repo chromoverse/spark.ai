@@ -174,8 +174,10 @@ happens.
 - The Google OAuth client must list `http://localhost:8080/v2/auth/google/callback` as a redirect URI.
 - v1 desktop chat (via `server/`) is offline in the v2 app until R1/R2 wires chat to the brain.
 - Rate limits are fixed-window per IP; per-user limits come later.
-- **edge-tts first audio is often 300–700 ms** from home networks, over the 250 ms budget: expect the
-  plan to be "degraded" (late speech) until a local engine or Orpheus fits.
+- **edge-tts misses the budget badly here:** measured on this laptop 2026-10-10 (5 runs × 2):
+  first audio p50 ~740 ms, p95 ~1.6–1.8 s vs the 250 ms budget. With edge-tts alone the 1 s goal
+  can't hold; Groq Orpheus (needs a key) or a local engine (Kokoro/Piper, needs a model download)
+  has to lead the plan. Until then the plan runs "degraded" and the heard cue covers the gap.
 - The tier-0 eval set was written alongside the grammar (0 false accepts is partly self-graded);
   add real transcripts from use before trusting the < 0.5% number.
 - In-process maps (`Voice.calls`, `prefetch`, supervisor watches) assume the device's socket lives

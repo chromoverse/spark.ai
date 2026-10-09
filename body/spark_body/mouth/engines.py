@@ -68,10 +68,15 @@ class EdgeTts:
     async def synth(self, text: str, tone: str | None) -> AsyncGenerator[bytes, None]:
         import edge_tts
 
-        communicate = edge_tts.Communicate(text, self.voice)
-        async for chunk in communicate.stream():
-            if chunk.get("type") == "audio" and chunk.get("data"):
-                yield chunk["data"]
+        stream = edge_tts.Communicate(text, self.voice).stream()
+        try:
+            async for chunk in stream:
+                if chunk.get("type") == "audio" and chunk.get("data"):
+                    yield chunk["data"]
+        finally:
+            # Probes and barge-in stop early: close edge-tts's generator so its aiohttp session
+            # closes too (otherwise "Unclosed client session" and a pending task leak).
+            await stream.aclose()
 
 
 @dataclass
