@@ -9,17 +9,16 @@ happens.
 
 - **Direction:** v2: a cloud **Brain** + device **Bodies** (desktop now, mobile later). Full design
   in `REDESIGN.md`, one-page map in `ARCHITECTURE.md`, roadmap in `PHASES.md` (R0–R7).
-- **Phase:** R0, Brain foundations: code + docs complete on branch `r0/brain-foundations` (not
-  pushed yet). `brain/` (FastAPI + Socket.IO /v2, uv + `uv.lock`), `deploy/` compose stacks,
-  10-table migration, email OTP + Google (loopback + PKCE), rotating refresh tokens with reuse
-  revoke, devices/presence/settings fan-out, test harness (FakeProvider/FakeDevice/FakeClock,
+- **Phase:** R0 Brain foundations **done** (2026-10-10) on branch `r0/brain-foundations`: every
+  `PHASES.md` R0 box ticked. `brain/` (FastAPI + Socket.IO /v2, uv + `uv.lock`), `deploy/` compose
+  stacks, 10-table migration, email OTP + Google (loopback + PKCE), rotating refresh tokens with
+  reuse revoke, devices/presence/settings fan-out, test harness (FakeProvider/FakeDevice/FakeClock,
   X1–X3), Electron v2 sign-in + socket + status, whole-app Electron lint/typecheck green, GitHub
-  Actions CI. Brain: 40 tests green, ruff + mypy strict clean. R0 ticked in `PHASES.md` except the
-  last acceptance row.
-- **Next:** owner runs the R0 desktop smoke (`TESTING.md` §8a); if green, tick the last R0
-  acceptance row, then push + open the PR (ask first). Then R1. Deferred past R0: per-user rate
-  limits, `sync.resume`/X4, retention jobs, real Caddy config, body sidecar (R1), 15
-  exhaustive-deps lint warnings.
+  Actions CI. Brain: 40 tests green, ruff + mypy strict clean. Owner's desktop smoke (§8a) passed
+  2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
+- **Next:** push + open the R0 PR (owner approves first), then R1 (voice loop < 1 s). Deferred
+  past R0: per-user rate limits, `sync.resume`/X4, retention jobs, real Caddy config, body
+  sidecar (R1), Electron lint warnings (react-hooks exhaustive-deps).
 - **Run locally:** `docker compose -f deploy/docker-compose.yml up -d` (brain on :8080; secrets in
   git-ignored `deploy/.env`). Tests: `docker compose -f deploy/docker-compose.test.yml up -d`, then
   `cd brain && uv run pytest`. Desktop: `cd electron && npm run dev`. uv lives in

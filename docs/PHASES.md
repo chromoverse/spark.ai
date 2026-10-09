@@ -67,7 +67,7 @@ hop reflects your home network. The real-region numbers come from the R7 benchma
 - ☑ Refresh token reuse → session revoked; refresh token can't open a socket
 - ☑ 6th wrong OTP → locked; OTP stored only as a hash
 - ☑ Two devices of one user both receive a `settings.changed` event
-- ☐ `docker compose up` on the dev laptop → `/health` green; the desktop app signs in to the local brain
+- ☑ `docker compose up` on the dev laptop → `/health` green; the desktop app signs in to the local brain
 
 ---
 
