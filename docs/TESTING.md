@@ -217,6 +217,8 @@ Re-run monthly and whenever a free provider changes its offer.
 ## 8b. R1 Smoke (dev laptop)
 1. `cd body && uv sync` (add `--extra tts` for edge-tts, `--extra hands` for exact volume via pycaw).
 2. Brain up (§8a) with `GROQ_API_KEYS` in `deploy/.env`; accept the Orpheus terms in the Groq console.
+   R1 adds a migration (`incidents`): the brain container runs it on start; a host-run brain needs
+   `cd brain && uv sync && uv run alembic upgrade head`.
 3. `cd electron && npm run dev` → sign in → sidebar **Engines**: the voice engine reads "running";
    **Run benchmark** fills the table (edge-tts / groq-orpheus scores, which one is #1).
 4. **Try it**: "what time is it" → answered on the device (tier 0, spoken, no brain call); "tell me
