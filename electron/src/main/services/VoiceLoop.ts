@@ -44,9 +44,21 @@ function broadcast(channel: "enginePlan" | "bodyStatus", payload: unknown): void
   }
 }
 
+interface Trace {
+  startedAt: number; // ms epoch: speech end (voice) or send (text)
+  endpointMs?: number;
+  sttMs?: number;
+  sttEngine?: string;
+  ttsEngine?: string;
+  reported?: boolean;
+}
+
+const ENDPOINT_MS = 250; // the ear's VAD redemption window (useVoiceEar)
+
 class VoiceLoop {
   private started = false;
   private sentenceSeq = new Map<string, number>();
+  private traces = new Map<string, Trace>();
 
   start(): void {
     if (this.started) return;
@@ -79,9 +91,44 @@ class VoiceLoop {
     bodyBridge.stop();
   }
 
+  /** One endpointed utterance from the ear: transcribe on the body's STT plan, then send. */
+  async hear(pcm16: string, endedAt: number): Promise<IVoiceSendResult & { heard: string }> {
+    const stt = await bodyBridge.call<{ text: string; engine: string; stt_ms: number }>(
+      "stt.transcribe",
+      { pcm16, sample_rate: 16_000 },
+      20_000,
+    );
+    if (!stt.text.trim()) return { signalId: "", tier: null, handled: false, heard: "" };
+    const trace: Trace = {
+      startedAt: endedAt - ENDPOINT_MS,
+      endpointMs: ENDPOINT_MS,
+      sttMs: stt.stt_ms,
+      sttEngine: stt.engine,
+    };
+    return { ...(await this.send(stt.text, "voice", trace)), heard: stt.text };
+  }
+
+  /** The voice window started playing a signal's first sentence: report the trace (§13). */
+  async firstAudio(signalId: string, at: number): Promise<void> {
+    const t = this.traces.get(signalId);
+    if (!t || t.reported) return;
+    t.reported = true;
+    const spans: Record<string, number> = { first_audio: Math.max(0, at - t.startedAt) };
+    if (t.endpointMs != null) spans.endpoint = t.endpointMs;
+    if (t.sttMs != null) spans.stt_final = t.sttMs;
+    await brainSocket.emit("signal.trace", {
+      signal_id: signalId,
+      spans,
+      stt_engine: t.sttEngine ?? null,
+      tts_engine: t.ttsEngine ?? null,
+    });
+  }
+
   /** A typed or transcribed utterance. Tier 0 on the device first; the brain only if unsure. */
-  async send(text: string, source: "text" | "voice" = "text"): Promise<IVoiceSendResult> {
+  async send(text: string, source: "text" | "voice" = "text", trace?: Trace): Promise<IVoiceSendResult> {
     const signalId = crypto.randomUUID().replaceAll("-", "");
+    this.traces.set(signalId, trace ?? { startedAt: Date.now() });
+    if (this.traces.size > 50) this.traces.delete(this.traces.keys().next().value as string);
     const utcOffsetMin = -new Date().getTimezoneOffset();
     let local: ReflexResult = { handled: false };
     try {
@@ -184,6 +231,11 @@ class VoiceLoop {
       case "mouth.audio":
         toVoiceWindow({ kind: "audio", uttId: String(params.utt_id), seq: Number(params.seq), mime: String(params.mime), data: String(params.data) });
         return;
+      case "mouth.started": {
+        const t = this.traces.get(String(params.utt_id).split(":")[0]);
+        if (t && !t.ttsEngine) t.ttsEngine = String(params.engine);
+        return;
+      }
       case "mouth.done":
         toVoiceWindow({ kind: "done", uttId: String(params.utt_id), ok: Boolean(params.ok) });
         return;

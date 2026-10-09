@@ -27,6 +27,21 @@ export function registerVoiceHandlers(): void {
       return voiceLoop.send(text.trim());
     }),
   );
+  ipcMainHandle("voiceHear", (_event, payload) =>
+    result(async () => {
+      const { pcm16, endedAt } = (payload ?? {}) as { pcm16?: unknown; endedAt?: unknown };
+      // ≤ ~60 s of 16 kHz PCM16, base64
+      if (typeof pcm16 !== "string" || !pcm16 || pcm16.length > 2_600_000 || typeof endedAt !== "number") {
+        throw new BodyError("invalid_input", "That clip didn't come through. Try again.");
+      }
+      return voiceLoop.hear(pcm16, endedAt);
+    }),
+  );
+  ipcMainHandle("voiceFirstAudio", (_event, payload) => {
+    const { signalId, at } = (payload ?? {}) as { signalId?: unknown; at?: unknown };
+    if (typeof signalId === "string" && typeof at === "number") void voiceLoop.firstAudio(signalId, at);
+    return { ok: true };
+  });
   ipcMainHandle("voiceStop", () => result(() => voiceLoop.stop().then(() => ({ stopped: true }))));
   ipcMainHandle("enginesGet", () => result(() => voiceLoop.engines()));
   ipcMainHandle("enginesBenchmark", () => result(() => voiceLoop.benchmark()));

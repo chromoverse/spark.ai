@@ -186,13 +186,14 @@ channel and the brain socket. ✅ = built in R1.
 | ✅ `hello` | `{}` → `{ version, hardware, capabilities[], engine_plan }` | `hardware` = cpu, cores, ram_gb, power `{ plugged, battery_pct, saver }`; feeds `device.hello` |
 | ✅ `reflex.handle` | `{ text, verbosity? }` → `{ handled: false }` or `{ handled: true, intent, slots, result: { ok, said?, output?, error? }, chime? }` | tier 0 (§27): decides, runs the hand, speaks the phrase. Electron then sends `signal.handled_locally` (or `signal.final` when not handled). `stop` → `{ intent: "stop", interrupt: true }` (Electron sends `signal.interrupt`); `repeat` → `{ record: false }` (nothing to send) |
 | ✅ `tool.run` | `{ tool, input }` → `{ ok, output }` or `{ ok: false, error: { code, message } }` | answers a brain `tool.call`; codes `unknown_tool`, `not_installed`, `unsupported` |
+| ✅ `stt.transcribe` | `{ pcm16 (base64, mono), sample_rate? (16000) }` → `{ text, lang, engine, stt_ms }` | one endpointed utterance on the STT plan (on-device first, then `groq-whisper` via `/v2/proxy/stt`); a failing engine → `watchdog.incident` + next engine; none ready → error `-32000`. R1 ear: mic + Silero VAD in the renderer (`vad-web`, Chromium echo cancellation), endpoint after 250 ms of silence |
 | ✅ `tts.speak` | `{ utt_id, text, tone? }` → `{ queued: true }` | one `reply.delta` sentence; spoken in order on the engine plan |
 | ✅ `tts.stop` | `{}` → `{ stopped: true }` | barge-in: drops the queue and cancels the sentence being synthesized |
 | ✅ `fitness.run` / `fitness.quick` | `{}` → engine plan | full suite / start-up quick check (§18.1) |
 | ✅ `engine.plan` | `{}` → plan + `reasons` (per engine) + `history` (benchmark runs) | the Engines page readout |
 | ✅ `apps.refresh` | `{}` → `{ apps }` | rescans the Start Menu app index tier 0 resolves against |
 | ✅ `auth.set` | `{ brain_url, access_token }` → `{ ok }` | lets cloud voice engines (Groq Orpheus via `/v2/proxy/tts`) reach the brain. Memory only; Electron main re-sends it every 10 min. The first link triggers a benchmark so the cloud engine can join the plan |
-| `stt.start`, `stt.stop`, `local_brain.chat`, `models.search`, `models.download` | | later in R1 (ear) and R5 |
+| `stt.start`, `stt.stop` (streaming partials), `local_brain.chat`, `models.search`, `models.download` | | with on-device STT engines and R5 |
 
 | Notification (body → Electron) | Params | Notes |
 |---|---|---|

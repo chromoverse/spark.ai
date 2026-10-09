@@ -165,3 +165,36 @@ def test_endpointer_speculative_end_resume_and_echo_guard() -> None:
     ep = Endpointer(speaking=True)  # Spark is talking: its own echo (moderate prob) is ignored
     assert [e for p in [0.7] * 20 for e in ep.feed(p)] == []
     assert [e for p in [0.95] * 7 for e in ep.feed(p)] == ["barge_in"]
+
+
+class FakeStt:
+    def __init__(self, name: str, text: str | None) -> None:
+        self.name, self.text, self.on_device = name, text, True
+        self.heard: list[int] = []
+
+    def available(self) -> bool:
+        return True
+
+    async def transcribe(self, pcm16: bytes, sample_rate: int) -> Any:
+        from spark_body.ear.stt import Transcript
+
+        self.heard.append(len(pcm16))
+        if self.text is None:
+            raise ConnectionError("engine down")
+        return Transcript(self.text)
+
+
+async def test_stt_switches_engines_and_reports_the_incident(wire: Wire, body: Body) -> None:
+    import base64
+
+    broken, good = FakeStt("local", None), FakeStt("groq-whisper", "what time is it")
+    body.ears = {"local": broken, "groq-whisper": good}  # type: ignore[dict-item]
+    pcm = base64.b64encode(b"\x00\x01" * 1600).decode()
+    r = await wire.call("stt.transcribe", {"pcm16": pcm, "sample_rate": 16000})
+    assert r["result"]["text"] == "what time is it" and r["result"]["engine"] == "groq-whisper"
+    assert broken.heard == good.heard == [3200]
+    [inc] = wire.notes("watchdog.incident")
+    assert (inc["role"], inc["engine"], inc["remedy"]) == ("stt", "local", "switch")
+    body.ears = {}
+    r = await wire.call("stt.transcribe", {"pcm16": pcm}, req_id=2)
+    assert r["error"]["code"] == -32000 and "Sign in" in r["error"]["message"]

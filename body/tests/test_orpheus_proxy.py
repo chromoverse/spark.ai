@@ -62,3 +62,36 @@ async def test_proxy_outage_raises_with_the_status(brain: str) -> None:
     with pytest.raises(ProxyError) as err:
         [c async for c in engine.synth("Hi.", None)]
     assert err.value.status == 503
+
+
+async def test_whisper_proxy_posts_a_wav_and_returns_text(brain: str) -> None:
+    import io
+    import wave
+
+    from spark_body.ear.stt import WhisperProxy
+
+    class Stt(BaseHTTPRequestHandler):
+        clip = b""
+
+        def do_POST(self) -> None:
+            Stt.clip = self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(
+                json.dumps({"ok": True, "data": {"text": " hi there ", "lang": "en"}}).encode()
+            )
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Stt)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        engine = WhisperProxy(BrainLink(f"http://127.0.0.1:{server.server_address[1]}", "t"))
+        heard = await engine.transcribe(b"\x00\x00" * 160, 16000)
+        assert heard.text == "hi there"
+        with wave.open(io.BytesIO(Stt.clip)) as w:
+            assert (w.getframerate(), w.getnchannels(), w.getnframes()) == (16000, 1, 160)
+    finally:
+        server.shutdown()

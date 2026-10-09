@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import sys
@@ -13,12 +14,15 @@ from typing import Any
 
 from spark_body import hands
 from spark_body.clock import Clock
+from spark_body.ear.stt import SttEngine, WhisperProxy
 from spark_body.fitness import Fitness, Plan, hardware
 from spark_body.hands.apps import INDEX, AppIndex
 from spark_body.mouth.engines import BrainLink, EdgeTts, OrpheusProxy, TtsEngine
 from spark_body.mouth.speaker import Mouth, Utterance
 from spark_body.reflex_arc import Phrases, decide
 from spark_body.rpc import INVALID_PARAMS, Rpc, RpcError
+
+UNAVAILABLE = -32000  # JSON-RPC server error: no engine could do it
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +54,7 @@ class Body:
     phrases: Phrases = field(default_factory=Phrases)
     last_said: list[str] = field(default_factory=list)
     link: BrainLink = field(default_factory=BrainLink)
+    ears: dict[str, SttEngine] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.fitness = Fitness(self.engines, self.clock, self.db_path, self._plan_changed)
@@ -170,6 +175,35 @@ class Body:
                 "history": self.fitness.history(),
             }
 
+        @r.method("stt.transcribe")
+        async def stt_transcribe(p: dict[str, Any]) -> dict[str, Any]:
+            """One endpointed utterance (16-bit mono PCM, base64) → text, on the first STT
+            engine in the plan that answers. An empty transcript is a result, not an error."""
+            pcm = base64.b64decode(_need(p, "pcm16", str))
+            rate = int(p.get("sample_rate", 16000))
+            plan = [n for n, e in self.ears.items() if e.available()]
+            if not plan:
+                raise RpcError(UNAVAILABLE, "No speech engine is ready. Sign in or install one.")
+            for name in plan:
+                t0 = self.clock.monotonic()
+                try:
+                    heard = await self.ears[name].transcribe(pcm, rate)
+                except Exception as exc:
+                    self.rpc.notify(
+                        "watchdog.incident",
+                        {
+                            "role": "stt",
+                            "engine": name,
+                            "error": type(exc).__name__,
+                            "remedy": "switch",
+                            "outcome": "recovered",
+                        },
+                    )
+                    continue
+                ms = round((self.clock.monotonic() - t0) * 1000)
+                return {"text": heard.text, "lang": heard.lang, "engine": name, "stt_ms": ms}
+            raise RpcError(UNAVAILABLE, "I couldn't make that out. Try again?")
+
         @r.method("auth.set")
         async def auth_set(p: dict[str, Any]) -> dict[str, Any]:
             """Brain URL + access token for cloud voice engines (memory only, never logged)."""
@@ -196,7 +230,13 @@ async def main() -> None:
     rpc = Rpc()
     link = BrainLink()
     engines: dict[str, TtsEngine] = {"groq-orpheus": OrpheusProxy(link), "edge-tts": EdgeTts()}
-    body = Body(rpc, engines, db_path=data_dir() / "fitness.db", link=link)
+    body = Body(
+        rpc,
+        engines,
+        db_path=data_dir() / "fitness.db",
+        link=link,
+        ears={"groq-whisper": WhisperProxy(link)},
+    )
     body.mouth.start()
     INDEX.entries = (await asyncio.to_thread(AppIndex.scan)).entries
     background = [

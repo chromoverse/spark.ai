@@ -204,6 +204,8 @@ export type IEventPayloadMapping = {
   // Voice loop (R1)
   voiceSend: IBrainResult<IVoiceSendResult>;
   voiceStop: IBrainResult<{ stopped: boolean }>;
+  voiceHear: IBrainResult<IVoiceSendResult & { heard: string }>;
+  voiceFirstAudio: { ok: boolean };
   enginesGet: IBrainResult<IEnginesInfo>;
   enginesBenchmark: IBrainResult<IEnginesInfo>;
   voiceEvent: IVoiceEvent;
@@ -303,6 +305,8 @@ declare global {
       voice: {
         send: (text: string) => Promise<IBrainResult<IVoiceSendResult>>;
         stop: () => Promise<IBrainResult<{ stopped: boolean }>>;
+        hear: (pcm16: string, endedAt: number) => Promise<IBrainResult<IVoiceSendResult & { heard: string }>>;
+        firstAudio: (signalId: string, at: number) => Promise<{ ok: boolean }>;
         onEvent: (callback: (event: IVoiceEvent) => void) => () => void;
       };
       engines: {

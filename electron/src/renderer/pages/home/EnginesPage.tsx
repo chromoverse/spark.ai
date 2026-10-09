@@ -1,6 +1,7 @@
-import { Cpu, Gauge, Play, RefreshCw, Send, Square } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Cpu, Gauge, Mic, MicOff, Play, RefreshCw, Send, Square } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import type { IBodyStatus, IBrainEvent, IEnginesInfo } from "@root/types";
+import { useVoiceEar, type Heard } from "@/hooks/useVoiceEar";
 
 // Engines (docs/REDESIGN.md §24): this device's voice engines with their measured scores, why an
 // engine was switched off, and a "Run benchmark" button. "Try it" sends a line through the whole
@@ -31,6 +32,10 @@ export default function EnginesPage() {
   const [benchmarking, setBenchmarking] = useState(false);
   const [text, setText] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
+  const onHeard = useCallback((h: Heard) => {
+    setTurns((all) => [...all.slice(-9), { signalId: h.signalId, you: h.text, tier: h.tier, spark: "", done: false }]);
+  }, []);
+  const ear = useVoiceEar(onHeard);
 
   useEffect(() => {
     const load = (): void => {
@@ -184,6 +189,15 @@ export default function EnginesPage() {
           </button>
           <button
             type="button"
+            onClick={ear.toggle}
+            className={`inline-flex items-center gap-1 rounded-md border px-3 text-sm ${ear.listening ? "text-red-500" : ""}`}
+            aria-label={ear.listening ? "Stop listening" : "Talk"}
+            aria-pressed={ear.listening}
+          >
+            {ear.listening ? <Mic size={14} /> : <MicOff size={14} />}
+          </button>
+          <button
+            type="button"
             onClick={() => void window.electronApi.voice.stop()}
             className="inline-flex items-center gap-1 rounded-md border px-3 text-sm"
             aria-label="Stop speaking"
@@ -191,6 +205,12 @@ export default function EnginesPage() {
             <Square size={14} />
           </button>
         </form>
+        {ear.listening && <p className="text-xs opacity-60">Listening. Just talk; I'll pick up when you pause.</p>}
+        {ear.error && (
+          <p role="alert" className="text-xs text-red-500">
+            {ear.error}
+          </p>
+        )}
         {turns.length === 0 ? (
           <p className="text-sm opacity-60">Nothing yet. Simple things run right here; the rest goes to the brain.</p>
         ) : (
