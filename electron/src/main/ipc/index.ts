@@ -6,6 +6,7 @@ import { registerTaskHandlers } from "./taskHandlers.js";
 import { registerSecondaryWindowHandlers } from "./secondaryWindowHandlers.js";
 import { registerSocketHandlers } from "./socketHandlers.js";
 import { registerBrainHandlers } from "./brainHandlers.js";
+import { registerVoiceHandlers } from "./voiceHandlers.js";
 
 export function registerAllHandlers(mainWindow: MainWindow) {
   const browserWindow = mainWindow.getBrowserWindow();
@@ -17,4 +18,5 @@ export function registerAllHandlers(mainWindow: MainWindow) {
   registerSecondaryWindowHandlers();
   registerSocketHandlers();
   registerBrainHandlers();
+  registerVoiceHandlers();
 }

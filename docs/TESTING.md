@@ -208,6 +208,16 @@ Re-run monthly and whenever a free provider changes its offer.
 2. `cd electron && npm run dev` → sign in with an email code (or Google) → the status pill reads "Connected".
 3. Stop the brain container → the pill shows the reconnecting state; start it → it reconnects on its own.
 
+## 8b. R1 Smoke (dev laptop)
+1. `cd body && uv sync` (add `--extra tts` for edge-tts, `--extra hands` for exact volume via pycaw).
+2. Brain up (§8a) with `GROQ_API_KEYS` in `deploy/.env`; accept the Orpheus terms in the Groq console.
+3. `cd electron && npm run dev` → sign in → sidebar **Engines**: the voice engine reads "running";
+   **Run benchmark** fills the table (edge-tts / groq-orpheus scores, which one is #1).
+4. **Try it**: "what time is it" → answered on the device (tier 0, spoken, no brain call); "tell me
+   a joke" → tier 2, reply streams in and is spoken sentence by sentence; "open notepad" → opens
+   (tier 0) with a short ack; the stop button cuts speech at once.
+5. Stop the brain → "tell me a joke" → spoken "I can't reach my brain right now".
+
 ## 9. v1 Baseline (for reference)
 2026-10-09: `server/` unittest suite, 10 tests, 1 error (circular import in `app.socket`). v1 tests
 are not carried into v2. The v1 bugs become v2 regression tests (D1, S5, T9).

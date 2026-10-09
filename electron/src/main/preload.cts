@@ -9,6 +9,9 @@ import type {
   ISocketEventForwardPayload,
   IBrainEvent,
   IBrainStatus,
+  IBodyStatus,
+  IEnginePlan,
+  IVoiceEvent,
 } from "@root/types";
 import type { TaskRecord } from "@shared/socket.types.js";
 
@@ -80,6 +83,18 @@ contextBridge.exposeInMainWorld("electronApi", {
     getStatus: () => ipcInvoke("brainGetStatus"),
     onStatus: (callback: (status: IBrainStatus) => void) => ipcOn("brainStatus", callback),
     onEvent: (callback: (event: IBrainEvent) => void) => ipcOn("brainEvent", callback),
+  },
+
+  voice: {
+    send: (text: string) => ipcInvoke("voiceSend", { text }),
+    stop: () => ipcInvoke("voiceStop"),
+    onEvent: (callback: (event: IVoiceEvent) => void) => ipcOn("voiceEvent", callback),
+  },
+  engines: {
+    get: () => ipcInvoke("enginesGet"),
+    runBenchmark: () => ipcInvoke("enginesBenchmark"),
+    onPlan: (callback: (plan: IEnginePlan) => void) => ipcOn("enginePlan", callback),
+    onBodyStatus: (callback: (status: IBodyStatus) => void) => ipcOn("bodyStatus", callback),
   },
 
   // File dialog

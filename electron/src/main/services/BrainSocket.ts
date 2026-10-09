@@ -10,6 +10,17 @@ import { BRAIN_URL, BrainError, brainAuth } from "./BrainAuth.js";
 
 const RETRY_AFTER_OFFLINE_MS = 5_000;
 
+type BrainListener = (event: string, data: unknown) => void;
+export interface IHelloInfo {
+  capabilities: string[];
+  hardware: Record<string, unknown>;
+}
+export interface IBrainAck {
+  ok: boolean;
+  data?: unknown;
+  error?: { code: string; message: string };
+}
+
 function broadcast<K extends "brainStatus" | "brainEvent">(key: K, payload: IEventPayloadMapping[K]): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send(key, payload);
@@ -23,6 +34,30 @@ function envelope(payload: Record<string, unknown>): Record<string, unknown> {
 class BrainSocket {
   private socket: Socket | null = null;
   private status: IBrainStatus = "signed_out";
+  private listeners = new Set<BrainListener>();
+  private helloInfo: (() => Promise<IHelloInfo | null>) | null = null;
+
+  /** Main-process consumers (the voice loop). "$connected" fires after every device.hello. */
+  onEvent(fn: BrainListener): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** What the body reports about this device; merged into device.hello on every connect. */
+  setHelloInfo(fn: () => Promise<IHelloInfo | null>): void {
+    this.helloInfo = fn;
+  }
+
+  /** Sends a device → brain event; null when offline or the brain didn't ack in time. */
+  async emit(event: string, payload: Record<string, unknown>, timeoutMs = 5_000): Promise<IBrainAck | null> {
+    const socket = this.socket;
+    if (!socket?.connected) return null;
+    try {
+      return (await socket.timeout(timeoutMs).emitWithAck(event, envelope(payload))) as IBrainAck;
+    } catch {
+      return null;
+    }
+  }
 
   getStatus(): IBrainStatus {
     return this.status;
@@ -78,7 +113,10 @@ class BrainSocket {
         },
       );
     });
-    socket.onAny((event: string, data: unknown) => broadcast("brainEvent", { event, data }));
+    socket.onAny((event: string, data: unknown) => {
+      broadcast("brainEvent", { event, data });
+      for (const fn of this.listeners) fn(event, data);
+    });
   }
 
   disconnect(status: IBrainStatus = "signed_out"): void {
@@ -97,21 +135,27 @@ class BrainSocket {
   }
 
   private async hello(socket: Socket): Promise<void> {
+    const body = await this.helloInfo?.().catch(() => null);
     try {
       const ack = await socket.timeout(5_000).emitWithAck(
         "device.hello",
         envelope({
           platform: process.platform,
           app_version: app.getVersion(),
-          capabilities: [], // the body sidecar fills these in from R1
+          capabilities: body?.capabilities ?? [],
           tool_versions: {},
-          hardware: { arch: process.arch, cpus: os.cpus().length, ram_gb: Math.round(os.totalmem() / 2 ** 30) },
+          hardware: body?.hardware ?? {
+            arch: process.arch,
+            cpus: os.cpus().length,
+            ram_gb: Math.round(os.totalmem() / 2 ** 30),
+          },
         }),
       );
       if (!ack?.ok) console.warn("[brain] device.hello rejected", ack?.error?.code);
     } catch {
       console.warn("[brain] device.hello timed out");
     }
+    for (const fn of this.listeners) fn("$connected", null);
   }
 
   private setStatus(status: IBrainStatus): void {

@@ -98,8 +98,8 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 ### 2.5 Voice proxy (platform keys stay server-side)
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/v2/proxy/tts` | `{ text, voice, tone? }` → streamed audio (Groq Orpheus); ≤ 200 chars per call, sentence-sized |
-| POST | `/v2/proxy/stt` | audio chunk upload → transcript (Groq Whisper); used only when the engine plan picks cloud STT |
+| POST | `/v2/proxy/tts` | ✅ `{ text ≤ 200, voice?: autumn\|diana\|hannah\|austin\|daniel\|troy (default daniel), tone? }` → `audio/wav` (Groq Orpheus `canopylabs/orpheus-v1-english`). A tone in cheerful/calm/serious/excited/whisper becomes the `[direction]` prefix. Keys rotate on 429 with health circuits; none left → `503 provider_unavailable`. 120 calls/user/hour |
+| POST | `/v2/proxy/stt` | ✅ raw audio body (`audio/wav`, `webm`, `ogg`, `mpeg`, `flac`; ≤ 4 MB) + `?lang=en` → `{ text, lang }` (Groq `whisper-large-v3-turbo`); used only when the engine plan picks cloud STT. 300 calls/user/hour |
 
 ### 2.6 Engines & health
 | Method | Path | Notes |
@@ -130,7 +130,7 @@ where noted.
 |---|---|---|
 | `device.hello` | `{ platform, app_version, capabilities[], tool_versions, hardware }` | ✅ on connect; ack `{ device_id, server_time }`; stored on the device row |
 | `device.state` | `{ battery, power_mode, active_app, locale, mic, speaker }` | on change |
-| `device.engine_plan` | `{ stt[], tts[], local_llm[], scores }` | after fitness runs (§18) |
+| `device.engine_plan` | `{ stt[], tts[], local_llm[], scores, degraded? }` | ✅ after fitness runs (§18); stored as `devices.engine_plan`, ack `{ stored: true }` |
 | `wake.claim` | `{ score, loudness, foreground }` | wake-word arbitration (§26.2) |
 | `signal.partial` | `{ signal_id, text }` | ✅ prefetches the turn context (thread, recent turns, settings); ack `{ signal_id }` |
 | `signal.final` | `{ signal_id, text, lang?, confidence?, source?: voice\|text\|schedule, utc_offset_min? }` | ✅ the Socket.IO ack is the `signal.ack` payload `{ signal_id, tier }`; a repeated `signal_id` (5 min) acks `{ signal_id, duplicate: true }` and runs nothing. `utc_offset_min` = the device's current UTC offset, so "what time is it" is local |
@@ -191,6 +191,7 @@ channel and the brain socket. ✅ = built in R1.
 | ✅ `fitness.run` / `fitness.quick` | `{}` → engine plan | full suite / start-up quick check (§18.1) |
 | ✅ `engine.plan` | `{}` → plan + `reasons` (per engine) + `history` (benchmark runs) | the Engines page readout |
 | ✅ `apps.refresh` | `{}` → `{ apps }` | rescans the Start Menu app index tier 0 resolves against |
+| ✅ `auth.set` | `{ brain_url, access_token }` → `{ ok }` | lets cloud voice engines (Groq Orpheus via `/v2/proxy/tts`) reach the brain. Memory only; Electron main re-sends it every 10 min. The first link triggers a benchmark so the cloud engine can join the plan |
 | `stt.start`, `stt.stop`, `local_brain.chat`, `models.search`, `models.download` | | later in R1 (ear) and R5 |
 
 | Notification (body → Electron) | Params | Notes |

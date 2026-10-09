@@ -98,6 +98,46 @@ export interface IBrainEvent {
   data: unknown;
 }
 
+// Voice loop (R1): the body sidecar and what plays in the voice window.
+export type IBodyStatus = "starting" | "ready" | "down" | "missing";
+
+export type IVoiceEvent =
+  | { kind: "audio"; uttId: string; seq: number; mime: string; data: string }
+  | { kind: "done"; uttId: string; ok: boolean }
+  | { kind: "cue"; cue: "heard" | "done" | "error"; signalId: string }
+  | { kind: "stop" };
+
+export interface IVoiceSendResult {
+  signalId: string;
+  tier: number | null;
+  handled: boolean;
+  error?: string;
+}
+
+export interface IEngineScore {
+  engine: string;
+  role: string;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  success: number;
+  expressive: boolean;
+  ewma_ms: number | null;
+}
+
+export interface IEnginePlan {
+  stt: string[];
+  tts: string[];
+  local_llm: string[];
+  scores: Record<string, IEngineScore>;
+  reasons?: Record<string, string>;
+  history?: { ts: number; trigger: string; role: string; engine: string; p50_ms: number | null; p95_ms: number | null; success: number }[];
+}
+
+export interface IEnginesInfo {
+  bodyStatus: IBodyStatus;
+  plan: IEnginePlan | null;
+}
+
 export interface IMicControlPayload {
   action: "mute" | "unmute" | "toggle";
   source?: string;
@@ -160,6 +200,15 @@ export type IEventPayloadMapping = {
   brainGetStatus: IBrainStatus;
   brainStatus: IBrainStatus;
   brainEvent: IBrainEvent;
+
+  // Voice loop (R1)
+  voiceSend: IBrainResult<IVoiceSendResult>;
+  voiceStop: IBrainResult<{ stopped: boolean }>;
+  enginesGet: IBrainResult<IEnginesInfo>;
+  enginesBenchmark: IBrainResult<IEnginesInfo>;
+  voiceEvent: IVoiceEvent;
+  bodyStatus: IBodyStatus;
+  enginePlan: IEnginePlan;
 
   // Socket IPC Bridge
   socketEmit: { success: boolean; error?: string };
@@ -249,6 +298,18 @@ declare global {
         getStatus: () => Promise<IBrainStatus>;
         onStatus: (callback: (status: IBrainStatus) => void) => () => void;
         onEvent: (callback: (event: IBrainEvent) => void) => () => void;
+      };
+      // Voice loop (R1): tier 0 on the device, then the brain; audio plays in one window
+      voice: {
+        send: (text: string) => Promise<IBrainResult<IVoiceSendResult>>;
+        stop: () => Promise<IBrainResult<{ stopped: boolean }>>;
+        onEvent: (callback: (event: IVoiceEvent) => void) => () => void;
+      };
+      engines: {
+        get: () => Promise<IBrainResult<IEnginesInfo>>;
+        runBenchmark: () => Promise<IBrainResult<IEnginesInfo>>;
+        onPlan: (callback: (plan: IEnginePlan) => void) => () => void;
+        onBodyStatus: (callback: (status: IBodyStatus) => void) => () => void;
       };
 
       // Socket IPC Bridge

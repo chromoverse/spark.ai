@@ -1,7 +1,7 @@
 import {
   Activity, Clock, Settings, Globe, Bot, CalendarDays,
   Shield, MessageSquare, MoreHorizontal, Sparkles,
-  PanelLeftClose, PanelLeftOpen, ChevronDown, Plus, Trash2, Pin, PinOff,
+  PanelLeftClose, PanelLeftOpen, ChevronDown, Plus, Trash2, Pin, PinOff, Cpu,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -13,7 +13,7 @@ import {
 
 export type SidebarItem =
   | "home" | "history" | "spark-logs" | "tools" | "plugins"
-  | "skills" | "permissions" | "settings" | "connectors" | "automation" | "bookings";
+  | "skills" | "permissions" | "settings" | "connectors" | "automation" | "bookings" | "engines";
 
 interface SidebarProps {
   active: SidebarItem;
@@ -46,6 +46,7 @@ const navGroups: NavGroup[] = [
     label: "System",
     items: [
       { id: "tools",       label: "Capabilities", icon: Sparkles },
+      { id: "engines",     label: "Engines",      icon: Cpu },
       { id: "permissions", label: "Permissions",  icon: Shield },
       { id: "settings",    label: "Settings",     icon: Settings },
     ],

@@ -17,6 +17,7 @@ const ToolsPage = lazy(() => import("./home/ToolsPage"));
 const PluginsPage = lazy(() => import("./home/PluginsPage"));
 const SkillsPage = lazy(() => import("./home/SkillsPage"));
 const PermissionsPage = lazy(() => import("./home/PermissionsPage"));
+const EnginesPage = lazy(() => import("./home/EnginesPage"));
 const HomeLive = lazy(() => import("./home/HomeLive"));
 
 function PageLoader() {
@@ -86,6 +87,7 @@ function Home() {
       case "connectors": return <Connectors />;
       case "automation": return <Automation />;
       case "bookings": return <Bookings />;
+      case "engines": return <EnginesPage />;
     }
   };
 

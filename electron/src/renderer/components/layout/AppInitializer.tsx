@@ -17,6 +17,7 @@ import {
 import Welcome from "@/pages/Welcome";
 import { useAuthRouting } from "@/hooks/useAuthRouting";
 import { useBrainBridge } from "@/hooks/useBrainBridge";
+import { useVoicePlayback } from "@/hooks/useVoicePlayback";
 
 export default function AppInitializer({
   children,
@@ -28,6 +29,7 @@ export default function AppInitializer({
 
   const { isLoading, isAuthenticated } = useAuthRouting();
   useBrainBridge();
+  useVoicePlayback();
   const {
     isDevicesAlreadyFetched,
     audioInputDevices,
