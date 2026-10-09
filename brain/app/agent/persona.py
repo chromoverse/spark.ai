@@ -76,6 +76,11 @@ _TAG = re.compile(r"^\s*\[(\w+)\]\s*")
 TONES = frozenset({"chill", "cheerful", "calm", "serious", "excited", "whisper"})
 
 
+def has_banned(text: str) -> bool:
+    """For the persona eval: did the model say something PERSONA.md bans?"""
+    return any(p.search(text) for p, _ in _BANNED)
+
+
 def lint(sentence: str) -> str:
     """Rewrites banned phrases and strips what can't be spoken. May return ''."""
     out = sentence

@@ -1,0 +1,95 @@
+{"text": "what's a good name for a coffee shop in kathmandu", "expect": "answer"}
+{"text": "tell me a joke", "expect": "answer"}
+{"text": "how are you doing today", "expect": "answer"}
+{"text": "what's the capital of australia", "expect": "answer"}
+{"text": "explain what a black hole is in one sentence", "expect": "answer"}
+{"text": "how many days are in a leap year", "expect": "answer"}
+{"text": "what's 17 times 23", "expect": "answer"}
+{"text": "give me a quick tip for sleeping better", "expect": "answer"}
+{"text": "what does RSVP stand for", "expect": "answer"}
+{"text": "who wrote pride and prejudice", "expect": "answer"}
+{"text": "say something nice", "expect": "answer"}
+{"text": "what's the difference between weather and climate", "expect": "answer"}
+{"text": "how do you say thank you in nepali", "expect": "answer"}
+{"text": "is a tomato a fruit", "expect": "answer"}
+{"text": "what rhymes with orange", "expect": "answer"}
+{"text": "suggest a name for my cat", "expect": "answer"}
+{"text": "what's a haiku", "expect": "answer"}
+{"text": "how far is the moon", "expect": "answer"}
+{"text": "what time is it", "expect": "answer"}
+{"text": "what's today's date", "expect": "answer"}
+{"text": "what's the boiling point of water in fahrenheit", "expect": "answer"}
+{"text": "recommend a good sci-fi book", "expect": "answer"}
+{"text": "give me a fun fact", "expect": "answer"}
+{"text": "what's the tallest mountain in the world", "expect": "answer"}
+{"text": "how do I boil an egg", "expect": "answer"}
+{"text": "what should I have for dinner", "expect": "answer"}
+{"text": "can you motivate me", "expect": "answer"}
+{"text": "what's the square root of 144", "expect": "answer"}
+{"text": "what is photosynthesis", "expect": "answer"}
+{"text": "how many continents are there", "expect": "answer"}
+{"text": "translate good morning to spanish", "expect": "answer"}
+{"text": "who painted the mona lisa", "expect": "answer"}
+{"text": "what's an easy stretch for my back", "expect": "answer"}
+{"text": "convert 5 miles to kilometers", "expect": "answer"}
+{"text": "what's the opposite of generous", "expect": "answer"}
+{"text": "spell necessary", "expect": "answer"}
+{"text": "how long should I nap", "expect": "answer"}
+{"text": "what's a synonym for happy", "expect": "answer"}
+{"text": "are you a robot", "expect": "answer"}
+{"text": "what can you do", "expect": "answer"}
+{"text": "thank you", "expect": "answer"}
+{"text": "good night", "expect": "answer"}
+{"text": "what day of the week is it", "expect": "answer"}
+{"text": "how do I say hello in japanese", "expect": "answer"}
+{"text": "what's the speed of light", "expect": "answer"}
+{"text": "describe the color blue to me", "expect": "answer"}
+{"text": "is it rude to text during dinner", "expect": "answer"}
+{"text": "should I learn python or javascript first", "expect": "answer"}
+{"text": "what's a good way to start a speech", "expect": "answer"}
+{"text": "summarize the plot of the lion king in two sentences", "expect": "answer"}
+{"text": "set the volume to thirty percent please", "expect": "tool", "tool": "volume_set", "args": {"level": 30}}
+{"text": "make the volume 30", "expect": "tool", "tool": "volume_set", "args": {"level": 30}}
+{"text": "volume at 80", "expect": "tool", "tool": "volume_set", "args": {"level": 80}}
+{"text": "it's too quiet, turn it up", "expect": "tool", "tool": "volume_change", "args": {"direction": "up"}}
+{"text": "I can barely hear this", "expect": "tool", "tool": "volume_change", "args": {"direction": "up"}}
+{"text": "make it louder", "expect": "tool", "tool": "volume_change", "args": {"direction": "up"}}
+{"text": "that's way too loud", "expect": "tool", "tool": "volume_change", "args": {"direction": "down"}}
+{"text": "lower the sound a bit", "expect": "tool", "tool": "volume_change", "args": {"direction": "down"}}
+{"text": "bring the volume down a notch", "expect": "tool", "tool": "volume_change", "args": {"direction": "down"}}
+{"text": "mute everything for now", "expect": "tool", "tool": "volume_mute", "args": {"mute": true}}
+{"text": "silence the computer", "expect": "tool", "tool": "volume_mute", "args": {"mute": true}}
+{"text": "unmute the computer", "expect": "tool", "tool": "volume_mute", "args": {"mute": false}}
+{"text": "pause whatever is playing", "expect": "tool", "tool": "media_control", "args": {"action": "pause"}}
+{"text": "hold the song for a sec", "expect": "tool", "tool": "media_control", "args": {"action": "pause"}}
+{"text": "skip to the next track", "expect": "tool", "tool": "media_control", "args": {"action": "next"}}
+{"text": "I don't like this song, next", "expect": "tool", "tool": "media_control", "args": {"action": "next"}}
+{"text": "go back to the last song", "expect": "tool", "tool": "media_control", "args": {"action": "previous"}}
+{"text": "resume my music", "expect": "tool", "tool": "media_control", "args": {"action": "play"}}
+{"text": "open spotify and play something calm", "expect": "tool", "tool": "media_play", "args": {"app": "spotify"}}
+{"text": "play some lo-fi on spotify", "expect": "tool", "tool": "media_play", "args": {"app": "spotify"}}
+{"text": "put on taylor swift on spotify", "expect": "tool", "tool": "media_play", "args": {"app": "spotify"}}
+{"text": "play some relaxing piano music", "expect": "tool", "tool": "media_play", "args": {}}
+{"text": "play a song that fits a rainy day", "expect": "tool", "tool": "media_play", "args": {}}
+{"text": "play the latest mkbhd video", "expect": "tool", "tool": "media_play", "args": {}}
+{"text": "can you open spotify for me", "expect": "tool", "tool": "app_open", "args": {"app": "spotify"}}
+{"text": "launch google chrome", "expect": "tool", "tool": "app_open", "args": {"app": "chrome"}}
+{"text": "open my browser", "expect": "tool", "tool": "app_open", "args": {"app": "chrome"}}
+{"text": "open notepad", "expect": "tool", "tool": "app_open", "args": {"app": "notepad"}}
+{"text": "I need the calculator", "expect": "tool", "tool": "app_open", "args": {"app": "calculator"}}
+{"text": "open vs code", "expect": "tool", "tool": "app_open", "args": {"app": "vs code"}}
+{"text": "set the brightness to 40", "expect": "tool", "tool": "brightness_set", "args": {"level": 40}}
+{"text": "dim the screen to forty percent", "expect": "tool", "tool": "brightness_set", "args": {"level": 40}}
+{"text": "max out the screen brightness", "expect": "tool", "tool": "brightness_set", "args": {"level": 100}}
+{"text": "find my last invoice email and save the pdf to downloads", "expect": "delegate"}
+{"text": "research the best laptops under 1000 dollars and compare them", "expect": "delegate"}
+{"text": "organize my downloads folder by file type", "expect": "delegate"}
+{"text": "summarize my unread emails", "expect": "delegate"}
+{"text": "plan a three day trip to pokhara with a budget", "expect": "delegate"}
+{"text": "create a folder on my desktop called projects and put a todo file in it", "expect": "delegate"}
+{"text": "delete everything in my downloads folder", "expect": "delegate"}
+{"text": "send an email to my boss saying I'll be late", "expect": "delegate"}
+{"text": "book a table for two at a nepali restaurant tonight", "expect": "delegate"}
+{"text": "find the cheapest flight to delhi next friday and add it to my calendar", "expect": "delegate"}
+{"text": "write a cover letter for a frontend job and save it", "expect": "delegate"}
+{"text": "check my calendar for tomorrow and tell me if I'm free at 3", "expect": "delegate"}

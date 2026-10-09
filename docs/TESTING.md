@@ -50,7 +50,9 @@ cd body && python -m spark_body.fitness --bench   # real hardware benchmark (man
 cd electron && npm run lint && npm run typecheck   # what CI runs
 cd electron && npm test && npm run e2e             # unit/component + Playwright vs fake brain (not built yet)
 # evals (live free providers, never in PR CI)
-cd brain && python -m evals.run --suite reflex|agent|reflex_arc
+cd brain && uv run python -m evals.run --suite reflex   # ✅ R1: 95 utterances, every keyed reflex entry
+cd brain && uv run python -m evals.latency < brain.log  # ✅ R1: p50/p95 first audio from signal traces
+cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (offline, in CI)
 ```
 
 ## 4. Scenario Matrix (every row is an automated test)
@@ -181,6 +183,10 @@ chaos joins with the body.
 - Runs on every PR touching `agent/`, `supervisor/`, `gateway/`, `llm/`, or `body/`.
 
 ## 6. Latency Bench (real providers, nightly + before release)
+✅ R1 tooling: every signal logs a `signal trace` (device spans: endpoint, stt_final, first_audio)
+and a `signal done` line (brain spans: ack, ttft, first_delta, tool calls, end); `evals/latency.py`
+turns a log into p50/p95 per span and applies the gate. The 50 scripted utterances are spoken from
+the desktop app until a scripted audio driver exists.
 - 50 scripted utterances through a real `spark-body` + brain in the chosen region, using free providers.
 - Report p50/p95 per stage: endpoint, uplink, TTFT per provider, first sentence, TTS first audio.
 - **Gate:** p50 end-of-speech → first audio < 1000 ms; p95 < 1500 ms. A regression > 10% blocks release.
@@ -188,9 +194,9 @@ chaos joins with the body.
 ## 7. Evals (live, free providers)
 | Suite | Size | Measures | Used for |
 |---|---|---|---|
-| `reflex` | ~100 | answer quality, quick-tool validity, TTFT | reflex chain order (§5.5) |
+| `reflex` ✅ | 95 (`brain/evals/reflex.jsonl`: 50 answers, 33 quick tools, 12 delegations) | answer rate, quick-tool validity (name + args), delegation, TTFT p50/p95 vs the 400 ms gate, banned phrases | reflex chain order (§5.5) |
 | `agent` | ~30 multi-step tasks, stubbed tools | task success, tool-call validity, steps, tokens | agent chain order |
-| `reflex_arc` | ~300 | false-accept, slot accuracy | tier-0 thresholds |
+| `reflex_arc` ✅ | 338 (`body/evals/reflex_arc.jsonl`) | false-accept, slot accuracy | tier-0 thresholds; offline, so it runs in CI |
 | `research` | ~20 questions | citation correctness, answer accuracy | research pipeline |
 | `persona` | ~60 moments (acks, wrap-ups, failures, approvals) | naturalness, brevity, honesty, banned-phrase count (`PERSONA.md`) | every reflex/agent chain entry |
 
