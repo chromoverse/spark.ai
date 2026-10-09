@@ -61,7 +61,7 @@ cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (o
 | ID | Scenario | Assertions |
 |---|---|---|
 | A1 | "volume to 30" (tier-0 reflex arc) | no LLM call made; device tool ran; `signal.handled_locally` stored in the thread; chime event; ≤ 300 ms simulated. ✅ brain half `test_a1_tier0_result_is_recorded_without_an_llm`, device half `body/tests/test_body.py::test_a1_device_half_volume_runs_locally_with_a_chime` (latency is real-time on the device: measured by the bench) |
-| A2 | near-miss "play a song that fits my mood" | reflex arc does **not** accept; goes to the reflex LLM |
+| A2 ✅ | near-miss "play a song that fits my mood" | reflex arc does **not** accept; goes to the reflex LLM. `body/tests/test_body.py::test_not_sure_goes_to_the_brain` + 80 near-miss rows in RA1; the brain side is B1 |
 | A3 ✅ | tier-0 action fails (app not installed) | escalates to the reflex LLM with the error; spoken alternative offered. `test_a3_tier0_failure_escalates_to_the_reflex` |
 | B1 ✅ | normal conversation | reflex LLM called once; `reply.delta` streamed per sentence; first delta within budget given fake TTFT 300 ms. `test_b1_*` (+ recent turns carried into the follow-up) |
 | B2 ✅ | first provider slow (TTFT 600 ms) | hedge fires at 350 ms; second provider's stream used; first cancelled. `brain/tests/test_llm_chains.py::test_b2_hedge_at_350ms_second_stream_wins` |

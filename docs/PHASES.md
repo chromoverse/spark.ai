@@ -74,26 +74,37 @@ hop reflects your home network. The real-region numbers come from the R7 benchma
 ## R1 — Voice Loop Under 1 Second
 
 ### Deliverables
-- ☐ `body/` sidecar: stdio JSON-RPC with Electron main; packaged with its own venv in dev
+- ☑ `body/` sidecar: stdio JSON-RPC with Electron main; packaged with its own venv in dev
 - ☐ Ear: wake word (port v1 `voice_daemon` + `hey_spark.onnx`), VAD, STT engines: on-device
-  (Parakeet / Moonshine candidates) + Groq Whisper free
+  (Parakeet / Moonshine candidates) + Groq Whisper free. *Done:* mic + Silero VAD (renderer `vad-web`,
+  echo cancellation), endpointer, STT plan with switching, Groq Whisper via the brain proxy. *Left:*
+  wake word (the `.onnx` files aren't in the repo), on-device STT engines
 - ☐ Mouth: TTS engines Groq Orpheus (free quota), edge-tts (from the device), Pocket TTS / Kokoro /
-  Chatterbox-Nano / Piper; sentence streaming; tone tags mapped or stripped; barge-in; echo suppression
-- ☐ **Device fitness** (`REDESIGN.md` §18): hardware scan, per-engine benchmarks, engine plan,
+  Chatterbox-Nano / Piper; sentence streaming; tone tags mapped or stripped; barge-in; echo suppression.
+  *Done:* Orpheus (brain proxy), edge-tts, sentence streaming, tone tags, live switching, barge-in,
+  echo via Chromium AEC. *Left:* the local engines (model downloads)
+- ☑ **Device fitness** (`REDESIGN.md` §18): hardware scan, per-engine benchmarks, engine plan,
   quick check on every start, re-probe on power change, live EWMA updates, Engines page readout
-- ☐ **Supervisor + device watchdog** core (§19): signal deadlines, hedging, engine switching,
+  (TTS role; STT and local-LLM probes join with their on-device engines)
+- ☑ **Supervisor + device watchdog** core (§19): signal deadlines, hedging, engine switching,
   heard-you earcon, terminal-state invariant, `incidents` table
-- ☐ Speak-act-confirm acknowledgements (§4.4)
-- ☐ Persona (`PERSONA.md`): persona block in prompts, phrase bank with rotation, banned-phrase post-hook, persona eval
-- ☐ **Reflex arc** tier 0 on the device + tier-1 brain router (§27); `signal.handled_locally`
-- ☐ More free reflex providers behind the latency gate (p95 TTFT ≤ 400 ms) + hedging at 350 ms
-- ☐ Signal protocol: `signal.partial` / `signal.final` / `signal.interrupt` / `signal.ack` /
+- ☑ Speak-act-confirm acknowledgements (§4.4)
+- ☑ Persona (`PERSONA.md`): persona block in prompts, phrase bank with rotation, banned-phrase post-hook, persona eval
+  (rule checks; a judge for naturalness later)
+- ☑ **Reflex arc** tier 0 on the device + tier-1 brain router (§27); `signal.handled_locally`
+  (tier 1 = stop + language now; job status and approvals arrive with jobs in R2)
+- ☐ More free reflex providers behind the latency gate (p95 TTFT ≤ 400 ms) + hedging at 350 ms.
+  *Done:* hedging, five free entries configured, the gate in `evals/run.py`. *Left:* run it with keys
+- ☑ Signal protocol: `signal.partial` / `signal.final` / `signal.interrupt` / `signal.ack` /
   `reply.delta`
-- ☐ OpenAI-compatible adapter + Anthropic adapter; chain runner with health and circuit breaker
-- ☐ Reflex with quick tools (time, volume, media, open app, brightness) and `delegate` stub
-- ☐ Reflex eval set (~100 utterances) and latency benchmark; set the reflex chain order free first
-- ☐ Speculative start on endpoint candidate; context prefetch on partials
-- ☐ Per-signal trace: endpoint, reflex TTFT, first sentence, first audio (device-reported)
+- ☑ OpenAI-compatible adapter + Anthropic adapter; chain runner with health and circuit breaker
+- ☑ Reflex with quick tools (time, volume, media, open app, brightness) and `delegate` stub
+- ☐ Reflex eval set (~100 utterances) and latency benchmark; set the reflex chain order free first.
+  *Done:* 95-utterance set, runner, latency report. *Left:* run with keys, then order the chain
+- ☐ Speculative start on endpoint candidate; context prefetch on partials. *Done:* prefetch on
+  `signal.partial`, brain cancels on `signal.interrupt`, body endpointer emits end/resume. *Left:*
+  the live ear (vad-web) only gives a final endpoint, so wire speculative start with the body ear
+- ☑ Per-signal trace: endpoint, reflex TTFT, first sentence, first audio (device-reported)
 
 ### Acceptance Tests
 - ☐ `TESTING.md` rows A1–A3, B1–B2, C1, FT1–FT6, S1/S6/S8, RA1–RA4, PS1–PS4 pass
@@ -101,9 +112,9 @@ hop reflects your home network. The real-region numbers come from the R7 benchma
 - ☐ "Turn the volume up" → spoken ack and the volume changes, no paid model used when free tiers are healthy
 - ☐ Kill the free provider → the next chain entry answers, still under the p95 budget
 - ☐ Barge-in stops TTS within 150 ms
-- ☐ Force the selected TTS engine to return nothing → the next engine speaks the same sentence; an incident is logged
+- ☑ Force the selected TTS engine to return nothing → the next engine speaks the same sentence; an incident is logged (FT4)
 - ☐ Throttle the CPU → the fitness check demotes the local engine and the plan changes on the next start
-- ☐ Chaos test: 100 signals with random provider failures → every one ends answered or explained, none silent
+- ☑ Chaos test: 100 signals with random provider failures → every one ends answered or explained, none silent
 
 ---
 

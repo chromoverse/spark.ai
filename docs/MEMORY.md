@@ -16,12 +16,33 @@ happens.
   X1–X3), Electron v2 sign-in + socket + status, whole-app Electron lint/typecheck green, GitHub
   Actions CI. Brain: 40 tests green, ruff + mypy strict clean. Owner's desktop smoke (§8a) passed
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
-- **R1 in progress** (branch `r1/voice-loop`, from `main` after R0 was pushed 2026-10-10):
-  brain LLM chains + hedging + health, the signal protocol, reflex with quick tools, tier-1 router,
-  supervisor + incidents, persona lint, chaos suite; `body/` sidecar (stdio NDJSON JSON-RPC, tier-0
-  reflex arc + 338-row eval, mouth with live engine switching, fitness, hands, endpointer). See the
-  R1 checklist in `PHASES.md` for what's left (real STT/wake/VAD engines, Electron BodyBridge, evals
-  against live providers, latency bench).
+- **R0 pushed to `origin/main`** 2026-10-10 (fast-forward `ec23e38..ffd8142`; CI green on GitHub).
+- **R1 in progress** on local branch `r1/voice-loop` (not pushed). Built and green (2026-10-10,
+  overnight session): brain 83 tests (incl. 100-signal chaos), body 37 tests (Windows CI job added),
+  Electron typecheck + lint (0 errors). What exists:
+  - brain: free-first reflex chain (Groq ×2, Cloudflare, Gemini opt-in, Mistral; Claude Haiku 5.5
+    paid/off) with 350 ms hedging, fallthrough, Redis health circuits, stall → `Restart`; the signal
+    protocol (`signal.*`, `tool.result`, `engine.incident`, `device.engine_plan`, `reply.*`,
+    `tool.call`); reflex with 7 quick device tools + `delegate` stub; tier-1 stop/language; persona
+    block + banned-phrase lint + tone tags; supervisor watches, heard cue, 5 s deadline sweep,
+    `incidents` table + `GET /v2/incidents`; voice proxy `/v2/proxy/tts|stt` (Groq Orpheus/Whisper).
+  - body (`python -m spark_body`): tier-0 grammar (338-row eval, 0 false accepts), hands (volume,
+    media keys, brightness, Start Menu apps), mouth (edge-tts, Orpheus via proxy, live switching,
+    circuits, text-only degrade), fitness (hardware scan, benchmarks, plan, power re-probe, EWMA,
+    SQLite history), STT plan (Groq Whisper via proxy), endpointer.
+  - Electron: BodyBridge (spawn + restart), VoiceLoop relay (tier 0 first, tool calls, incidents,
+    plans, trace), audio + earcons in one window, mic + VAD ear with barge-in, **Engines** page
+    (plan, scores, reasons, Run benchmark, Try it with mic).
+  - evals: `brain/evals` reflex (95) + persona (58) runners, latency report from logs.
+- **R1 left** (see `PHASES.md` R1 notes): run the evals and latency bench with real keys and order
+  the chain; local TTS engines (Kokoro/Piper/Pocket/Chatterbox) and on-device STT (need model
+  downloads); wake word (`hey_spark.onnx`/`spark.onnx` aren't in the repo or on disk); speculative
+  start in the live ear; RA3/RA4/PS3 need jobs/approvals (R2 machinery).
+- **Owner to-do for R1:** put `GROQ_API_KEYS` (and any other free keys) in `deploy/.env`; accept
+  Orpheus terms in the Groq console; `cd body && uv sync --extra tts --extra hands`; run the R1 smoke
+  (`TESTING.md` §8b), then `cd brain && uv run python -m evals.run --suite reflex` and `--suite persona`.
+  Decide: move RA3/RA4/PS3 to R2 (they need jobs), and whether to download local voice models now.
+- **This laptop:** 8 cores, 7.4 GB RAM, AMD (no CUDA): local LLMs must be small (R5 Models page).
 - **Deferred past R0:** per-user rate limits, `sync.resume`/X4, retention jobs, real Caddy config,
   Electron lint warnings (react-hooks exhaustive-deps).
 - **Run locally:** `docker compose -f deploy/docker-compose.yml up -d` (brain on :8080; secrets in
@@ -88,6 +109,21 @@ happens.
   Windows) + `screen-brightness-control` (brightness beyond laptop panels). Without `hands`, volume
   falls back to volume keys and brightness to WMI.
 
+**R1 implementation choices (2026-10-10, agent; owner can overrule)**
+- Body ↔ Electron framing is NDJSON (one JSON-RPC object per line), not Content-Length frames.
+- Audio is synthesized in the body and played in the renderer (Chromium decodes MP3/WAV; no Python
+  audio decoder). Whole-sentence blobs for now; MediaSource streaming if first audio needs it.
+- The R1 ear runs mic + Silero VAD in the renderer (`vad-web`, already a v1 dependency) with
+  Chromium echo cancellation; STT engine choice stays in the body. A body-side ear (sounddevice +
+  wake word) replaces it once the wake models exist.
+- Live events (`reply.delta`, `reply.cue`, `tool.call`, `tool.cancel`) go only to the origin device
+  and skip the sync log; the thread history holds the outcome. A turn is stored before its final
+  marker, so a follow-up always sees it.
+- If no TTS engine fits the 250 ms budget, the working ones stay in the plan (fastest first) instead
+  of going mute; the heard cue covers the gap.
+- Tier 0 is grammar-only (full match + every slot resolved + app in the installed index); the
+  embedding classifier waits for its ONNX model.
+
 ## Completed Work
 
 - **2026-10-09** — Full v2 doc set: REDESIGN, RESEARCH, PERSONA, ARCHITECTURE, API, DATABASE,
@@ -138,6 +174,12 @@ happens.
 - The Google OAuth client must list `http://localhost:8080/v2/auth/google/callback` as a redirect URI.
 - v1 desktop chat (via `server/`) is offline in the v2 app until R1/R2 wires chat to the brain.
 - Rate limits are fixed-window per IP; per-user limits come later.
+- **edge-tts first audio is often 300–700 ms** from home networks, over the 250 ms budget: expect the
+  plan to be "degraded" (late speech) until a local engine or Orpheus fits.
+- The tier-0 eval set was written alongside the grammar (0 false accepts is partly self-graded);
+  add real transcripts from use before trusting the < 0.5% number.
+- In-process maps (`Voice.calls`, `prefetch`, supervisor watches) assume the device's socket lives
+  on the brain process that got the signal; cross-device tool calls (R2) need Redis pub/sub.
 
 ## Context for Future Sessions
 
@@ -154,4 +196,6 @@ happens.
 | 2026-10-09 | X1 sweep passed vacuously: FastAPI 0.143 `app.routes` holds lazy `_IncludedRouter` | Route table from OpenAPI + non-empty guard; mutation-tested |
 | 2026-10-09 | v1 `waitForSpeechComplete` always waited 30 s (stale `isSpeaking` closure) | Polls a ref |
 | 2026-10-10 | Desktop main process died at start (`0x80000003`): on Electron 39.2 touching Node's lazy WebSocket (`globalThis.WebSocket` via socket.io-client, `import http`) before `ready` crashes | `main.ts` imports only `electron` statically, app modules after `whenReady()`; ESLint rule blocks static imports there |
+| 2026-10-10 | A quick follow-up didn't see the previous turn (stored after the final marker) | Store the turn, then send the final marker |
+| 2026-10-10 | A body that started after the socket connected waited 10 min for its brain link | Relink on every body `ready` |
 | 2026-10-10 | Vite `EACCES` on :5123 after Docker started | Windows dynamic port range started at 1024, so Hyper-V reserved 5041–5140; reset to 49152+ (`netsh int ipv4/ipv6 set dynamic tcp start=49152 num=16384`) + restart `winnat` |
