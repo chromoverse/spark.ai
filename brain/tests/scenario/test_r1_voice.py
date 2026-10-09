@@ -409,3 +409,25 @@ async def test_tool_result_for_someone_elses_call_is_ignored(
         await laptop.reply(sid)
     finally:
         await other.close()
+
+
+async def test_reflex_only_offers_tools_the_device_can_run(brain: Brain) -> None:
+    assert brain.groq is not None
+    d = FakeDevice(brain.url, await brain.sign_in("asha@example.com", "Desktop PC"))
+    await d.connect()
+    try:
+        await d.hello(capabilities=["volume", "media"])  # no brightness control, no app index
+        brain.groq.queue(Turn(text=["Sure."]))
+        sid, _ = await d.say("make the screen brighter")
+        await d.reply(sid)
+    finally:
+        await d.close()
+    offered = {t["function"]["name"] for t in brain.groq.requests[0]["tools"]}
+    assert offered == {
+        "volume_set",
+        "volume_change",
+        "volume_mute",
+        "media_control",
+        "media_play",
+        "delegate",
+    }

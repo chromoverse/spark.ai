@@ -24,6 +24,7 @@ class Context:
     thread_id: uuid.UUID | None
     history: list[LlmMessage]
     device_name: str
+    capabilities: frozenset[str] = frozenset()  # from device.hello: what the origin can run
     allow_training: bool = False
     verbosity: str = "normal"
     address_as: str | None = None
@@ -77,6 +78,7 @@ async def load(rt: Runtime, user_id: uuid.UUID, device_id: uuid.UUID) -> Context
         thread_id=thread.id if thread else None,
         history=history,
         device_name=device.name if device else "this device",
+        capabilities=frozenset(device.capabilities) if device else frozenset(),
     )
     if settings is not None:
         ctx.allow_training = settings.allow_training_providers

@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.agent import persona
 from app.agent.context import Context
 from app.agent.speech import Splitter
-from app.llm.types import ChainExhausted, Done, Restart, TextDelta, ToolUse
+from app.llm.types import ChainExhausted, Done, Restart, TextDelta, ToolDef, ToolUse
 from app.llm.types import Message as LlmMessage
 from app.supervisor.watch import State, Watch
 from app.tools.device_specs import QUICK_TOOLS
@@ -41,6 +41,14 @@ DELEGATE = ToolSpec(
 )
 TOOLS: tuple[ToolSpec, ...] = (*QUICK_TOOLS, DELEGATE)
 TOOL_DEFS = [t.to_def() for t in TOOLS]
+
+
+def tool_defs(capabilities: frozenset[str]) -> list[ToolDef]:
+    """Only tools the origin device can run (its device.hello capabilities), in catalog order so
+    the prompt prefix stays cacheable for a given device. delegate is always offered."""
+    return [d for t, d in zip(TOOLS, TOOL_DEFS, strict=True) if t.requires <= capabilities]
+
+
 BY_NAME = {t.name: t for t in TOOLS}
 
 SYSTEM = (
@@ -133,7 +141,7 @@ async def run(
         "reflex",
         system=SYSTEM,
         messages=messages,
-        tools=() if after else TOOL_DEFS,
+        tools=() if after else tool_defs(ctx.capabilities),
         allow_training=ctx.allow_training,
     )
     try:

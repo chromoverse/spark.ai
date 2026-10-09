@@ -73,7 +73,7 @@ class FakeDevice:
         payload = {
             "platform": "win32",
             "app_version": "2.0.0-test",
-            "capabilities": ["apps", "volume", "files"],
+            "capabilities": ["apps", "volume", "media", "brightness", "files"],
             "tool_versions": {"app_open": "1"},
             "hardware": {"cpu": "fake", "ram_gb": 16},
         } | overrides
