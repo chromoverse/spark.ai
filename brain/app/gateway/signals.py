@@ -76,3 +76,13 @@ class EngineIncident(Envelope):
     error: str = Field(max_length=500)
     remedy: str = Field(max_length=40)
     outcome: Literal["recovered", "failed_explained", "degraded"] = "recovered"
+
+
+class EnginePlan(Envelope):
+    """§18.3: the device's ordered engines per role after fitness runs."""
+
+    stt: list[str] = Field(default_factory=list, max_length=20)
+    tts: list[str] = Field(default_factory=list, max_length=20)
+    local_llm: list[str] = Field(default_factory=list, max_length=20)
+    scores: dict[str, Any] = Field(default_factory=dict)
+    degraded: bool = False

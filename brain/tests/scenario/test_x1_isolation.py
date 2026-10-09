@@ -72,9 +72,9 @@ async def test_x1_no_route_or_event_declares_user_id(brain: Brain) -> None:
         for method, op in ops.items():
             for param in op.get("parameters", []):
                 assert "user_id" not in param["name"].lower(), f"{method} {path} ?{param['name']}"
-            if body := op.get("requestBody"):
-                schema = body["content"]["application/json"]["schema"]
-                _walk(schema, comps, f"{method.upper()} {path}", set())
+            for content in op.get("requestBody", {}).get("content", {}).values():
+                # JSON bodies are walked for user_id; raw uploads (audio) are binary strings
+                _walk(content["schema"], comps, f"{method.upper()} {path}", set())
 
     for event, model in EVENT_MODELS.items() | {("connect", ConnectAuth)}:
         schema = model.model_json_schema()

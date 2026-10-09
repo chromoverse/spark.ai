@@ -27,6 +27,7 @@ from app.gateway.envelope import Envelope
 from app.gateway.push import NAMESPACE, user_room
 from app.gateway.signals import (
     EngineIncident,
+    EnginePlan,
     SignalFinal,
     SignalHandledLocally,
     SignalInterrupt,
@@ -62,6 +63,7 @@ EVENT_MODELS: dict[str, type[Envelope]] = {
     "signal.trace": SignalTrace,
     "tool.result": ToolResult,
     "engine.incident": EngineIncident,
+    "device.engine_plan": EnginePlan,
 }
 
 
@@ -163,6 +165,18 @@ def register(rt: Runtime) -> Voice:
         await presence.touch(rt, p.user_id, p.device_id)
         return {"device_id": str(p.device_id), "server_time": rt.clock.epoch_ms()}
 
+    async def engine_plan(p: Principal, msg: EnginePlan) -> dict[str, Any]:
+        """Stored on the device row; the Engines page and reply length use it (§18.3)."""
+        async with rt.db() as db:
+            device = await db.scalar(
+                select(Device).where(Device.id == p.device_id, Device.user_id == p.user_id)
+            )
+            if device is None:
+                raise ApiError("unauthorized", SIGN_IN_AGAIN)
+            device.engine_plan = msg.model_dump(exclude={"v", "id", "ts", "trace_id"})
+            await db.commit()
+        return {"stored": True}
+
     sio.on("connect", connect, namespace=NAMESPACE)
     sio.on("disconnect", disconnect, namespace=NAMESPACE)
     on("device.hello", device_hello)
@@ -173,4 +187,5 @@ def register(rt: Runtime) -> Voice:
     on("signal.trace", voice.trace)
     on("tool.result", voice.tool_result)
     on("engine.incident", voice.engine_incident)
+    on("device.engine_plan", engine_plan)
     return voice

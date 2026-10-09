@@ -12,7 +12,7 @@ import socketio
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, devices, health, incidents, me
+from app.api import auth, devices, health, incidents, me, proxy
 from app.core import errors
 from app.core.clock import Clock
 from app.core.config import Settings
@@ -70,6 +70,13 @@ def create_app(
         response.headers["X-Trace-Id"] = trace_id
         return response
 
-    for router in (health.router, auth.router, me.router, devices.router, incidents.router):
+    for router in (
+        health.router,
+        auth.router,
+        me.router,
+        devices.router,
+        incidents.router,
+        proxy.router,
+    ):
         api.include_router(router)
     return socketio.ASGIApp(rt.sio, other_asgi_app=api, socketio_path="socket.io")
