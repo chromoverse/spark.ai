@@ -196,3 +196,14 @@ async def test_barge_in_stops_speech_within_150ms() -> None:
 
 def test_budget_is_the_design_number() -> None:
     assert BUDGET_MS["tts"] == 250
+
+
+async def test_quick_check_benchmarks_an_engine_installed_since_last_run(tmp_path: Any) -> None:
+    clock = FakeClock()
+    es = engines(clock, kokoro={"latency_s": 0.1, "installed": False}, piper={"latency_s": 0.2})
+    await drive(clock, Fitness(es, clock, db_path=tmp_path / "f.db").full())
+    es["kokoro"].installed = True  # `uv sync --extra ...` between runs
+    fit = Fitness(es, clock, db_path=tmp_path / "f.db")
+    assert fit.plan.tts == ["piper"]
+    plan = await drive(clock, fit.quick())
+    assert plan.tts == ["kokoro", "piper"]

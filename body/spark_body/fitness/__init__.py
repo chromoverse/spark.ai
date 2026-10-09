@@ -177,9 +177,15 @@ class Fitness:
 
     async def quick(self) -> Plan:
         """Every app start (FT2): one probe per selected engine. A selected engine that now
-        fails or misses the budget is re-benchmarked fully; stable scores leave the plan alone."""
+        fails or misses the budget is re-benchmarked fully; stable scores leave the plan alone.
+        Engines never measured, or that weren't usable last time but are now (an extra got
+        installed, the brain link arrived), get their full benchmark."""
         if not self.plan.scores:
             return await self.full()
+        for name, engine in self.engines.items():
+            score = self.plan.scores.get(name)
+            if (score is None or score.success == 0) and engine.available():
+                self.plan.scores[name] = await self._bench(name, FULL_RUNS, "newly_available")
         for name in list(self.plan.tts):
             ms = await probe_tts(self.engines[name], self.clock)
             if ms is None or ms > BUDGET_MS["tts"]:
