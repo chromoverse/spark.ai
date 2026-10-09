@@ -1,8 +1,10 @@
 import { app, globalShortcut, BrowserWindow } from "electron";
-import { trayManager } from "./windows/TrayManager.js";
-import { windowManager } from "./services/WindowManager.js";
-import { registerAllHandlers } from "./ipc/index.js";
-import { ipcWebContentSend } from "./utils/ipcUtils.js";
+
+// Only `electron` loads before `ready`. On Electron 39.2, touching Node's lazy WebSocket
+// (`globalThis.WebSocket`, `http.WebSocket`; socket.io-client and `import http` both do) before
+// `ready` kills the main process with EXCEPTION_BREAKPOINT. App modules are imported after `ready`.
+type WindowManager = typeof import("./services/WindowManager.js").windowManager;
+type IpcWebContentSend = typeof import("./utils/ipcUtils.js").ipcWebContentSend;
 
 const SAFE_GPU_MODE_ARG = "--safe-gpu-mode";
 const safeGpuModeEnabled =
@@ -52,7 +54,11 @@ function setupGpuRecovery() {
   });
 }
 
-function registerGlobalShortcuts(mainWindow: BrowserWindow) {
+function registerGlobalShortcuts(
+  mainWindow: BrowserWindow,
+  windowManager: WindowManager,
+  ipcWebContentSend: IpcWebContentSend,
+) {
   // Register Ctrl/Cmd + Shift + M for mic mute/unmute toggle
   const shortcut =
     process.platform === "darwin" ? "CommandOrControl+Shift+M" : "Ctrl+Shift+M";
@@ -81,8 +87,15 @@ function registerGlobalShortcuts(mainWindow: BrowserWindow) {
 
 setupGpuRecovery();
 
+// No top-level await here: Electron fires `ready` only after this entry module finishes evaluating.
 void app.whenReady().then(async () => {
   console.log("App Ready - Initializing Application");
+
+  // 1. Load app modules (in the old static-import order)
+  const { trayManager } = await import("./windows/TrayManager.js");
+  const { windowManager } = await import("./services/WindowManager.js");
+  const { registerAllHandlers } = await import("./ipc/index.js");
+  const { ipcWebContentSend } = await import("./utils/ipcUtils.js");
 
   // 2. Create Main Window via WindowManager
   const mainWindow = windowManager.createMainWindow();
@@ -95,7 +108,11 @@ void app.whenReady().then(async () => {
   trayManager.init(browserWindow);
 
   // 5. Register Global Shortcuts
-  registerGlobalShortcuts(browserWindow);
+  registerGlobalShortcuts(browserWindow, windowManager, ipcWebContentSend);
 
   // Socket connection is initialized lazily from onAuthSuccess.
+}).catch((err: unknown) => {
+  // Never silent: a startup failure must not leave a windowless app running.
+  console.error("[startup] failed", err);
+  app.exit(1);
 });

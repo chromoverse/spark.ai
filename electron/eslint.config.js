@@ -27,4 +27,14 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // Electron 39.2 crashes if anything touches Node's WebSocket before `ready` (see main.ts).
+    files: ['src/main/main.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['*', '!electron'], message: 'main.ts imports only electron statically; load the rest after app.whenReady() (see top of main.ts).' }] },
+      ],
+    },
+  },
 ])
