@@ -61,6 +61,41 @@ export interface ISocketEventForwardPayload {
   data: unknown;
 }
 
+// Brain v2 (docs/API.md). Tokens stay in the main process; the renderer only sees these.
+export type IBrainStatus = "signed_out" | "connecting" | "connected" | "offline";
+
+export interface IBrainUser {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+export interface IBrainSettings {
+  language: string;
+  auto_detect_language: boolean;
+  voice: string | null;
+  verbosity: "brief" | "normal" | "detailed";
+  address_as: string | null;
+  permission_mode: "default" | "ask" | "trust";
+  allow_training_providers: boolean;
+  models: Record<string, unknown>;
+}
+
+export interface IBrainSession {
+  user: IBrainUser & { nickname: string | null; plan: string };
+  device_id: string;
+  settings: IBrainSettings;
+}
+
+export type IBrainResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: { code: string; message: string } };
+
+export interface IBrainEvent {
+  event: string;
+  data: unknown;
+}
+
 export interface IMicControlPayload {
   action: "mute" | "unmute" | "toggle";
   source?: string;
@@ -82,11 +117,6 @@ export type IEventPayloadMapping = {
   checkSystemPermissions: IMediaPermissions;
   startMediaStream: IMediaStream;
   stopMediaStream: void;
-
-  // Token Management
-  saveToken: void;
-  getToken: string | null;
-  deleteToken: void;
 
   // Device Usage Status
   getDeviceUsageStatus: IDeviceUsageStatusManager;
@@ -119,6 +149,16 @@ export type IEventPayloadMapping = {
   onAuthSuccess: { success: boolean };
   onAuthFailure: { success: boolean };
 
+  // Brain v2
+  brainOtpStart: IBrainResult<{ sent: boolean }>;
+  brainOtpVerify: IBrainResult<IBrainUser>;
+  brainGoogleSignIn: IBrainResult<IBrainUser>;
+  brainGetSession: IBrainResult<IBrainSession | null>;
+  brainSignOut: IBrainResult<{ signedOut: boolean }>;
+  brainGetStatus: IBrainStatus;
+  brainStatus: IBrainStatus;
+  brainEvent: IBrainEvent;
+
   // Socket IPC Bridge
   socketEmit: { success: boolean; error?: string };
   getSocketConnectionState: ISocketConnectionState;
@@ -149,11 +189,6 @@ declare global {
       checkMediaPermission: () => Promise<IMediaPermissions>;
       requestMediaPermissions: () => Promise<IMediaPermissions>;
       checkSystemPermissions: () => Promise<IMediaPermissions>;
-
-      // token management APIs
-      saveToken: (ACCOUNT_NAME: string, token: string) => Promise<void>;
-      getToken: (ACCOUNT_NAME: string) => Promise<string | null>;
-      deleteToken: (ACCOUNT_NAME: string) => Promise<void>;
 
       // Device Usage Status APIs
       getDeviceUsageStatus: () => Promise<IDeviceUsageStatusManager>;
@@ -199,6 +234,18 @@ declare global {
       // Authentication API
       onAuthSuccess: () => Promise<{ success: boolean }>;
       onAuthFailure: () => Promise<{ success: boolean }>;
+
+      // Brain v2: sign-in, session, live connection
+      brain: {
+        otpStart: (email: string) => Promise<IBrainResult<{ sent: boolean }>>;
+        otpVerify: (email: string, code: string) => Promise<IBrainResult<IBrainUser>>;
+        googleSignIn: () => Promise<IBrainResult<IBrainUser>>;
+        getSession: () => Promise<IBrainResult<IBrainSession | null>>;
+        signOut: () => Promise<IBrainResult<{ signedOut: boolean }>>;
+        getStatus: () => Promise<IBrainStatus>;
+        onStatus: (callback: (status: IBrainStatus) => void) => () => void;
+        onEvent: (callback: (event: IBrainEvent) => void) => () => void;
+      };
 
       // Socket IPC Bridge
       socketEmit: (

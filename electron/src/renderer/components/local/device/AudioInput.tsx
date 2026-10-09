@@ -746,7 +746,7 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
           )}
           {!isConnected && (
             <span className="text-[12px] text-yellow-400 flex gap-1 items-center">
-              <MessageSquareWarning size={10} /> Socket disconnected
+              <MessageSquareWarning size={10} /> Voice is offline for now
             </span>
           )}
         </div>

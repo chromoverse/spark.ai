@@ -36,10 +36,9 @@ export default function ProfileDropdown() {
     const navigate = useNavigate()
     const dispatch = useAppDispatch()
     const logout = async() => {
-        await window.electronApi.deleteToken("access_token")
-        await window.electronApi.deleteToken("refresh_token")
+        await window.electronApi.brain.signOut()
         dispatch(resetUser())
-        navigate("/auth/lander")
+        navigate("/welcome")
     }
   return (
     <DropdownMenu>

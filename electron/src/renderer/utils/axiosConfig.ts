@@ -1,9 +1,8 @@
 // lib/axios/axiosConfig.ts
 
 import axios, { AxiosError} from "axios";
-import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
+import type { AxiosResponse } from "axios";
 import { toast } from "sonner";
-import { tokenRefreshManager } from "@/lib/auth/tokenRefreshManager";
 
 // Standardized response format
 export interface ApiResponse<T = any> {
@@ -29,75 +28,11 @@ const axiosInstance = axios.create({
   },
 });
 
-// Request interceptor
-axiosInstance.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
-    try {
-      const token = await tokenRefreshManager.getValidAccessToken();
-      if (token) {
-        config.headers["Authorization"] = `Bearer ${token}`;
-      }
-      return config;
-    } catch (error) {
-      console.error("Failed to attach token:", error);
-      return config;
-    }
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor - transform responses
+// v1 server client. v2 tokens never reach the renderer, so these calls go out unauthenticated
+// and the v1 pages show their error states until the R2 UI moves them to the brain.
 axiosInstance.interceptors.response.use(
-  async (response: AxiosResponse) => {
-    // Extract and store tokens if present (for Electron)
-    const responseData = response.data;
-    
-    if (responseData.access_token) {
-      await window.electronApi.saveToken("access_token", responseData.access_token)
-    }
-    
-    if (responseData.refresh_token) {
-      await window.electronApi.saveToken("refresh_token", responseData.refresh_token)
-    }
-    
-    // Return the entire response data (including tokens if present)
-    return response.data as any;
-  },
-  async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
-
-    // Handle 401 errors - token refresh logic
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      
-      // If already refreshing, wait in queue
-      if (tokenRefreshManager.isCurrentlyRefreshing) {
-        try {
-          const newToken = await tokenRefreshManager.addToQueue();
-          if (originalRequest.headers) {
-            originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
-          }
-          return axiosInstance(originalRequest);
-        } catch (refreshError) {
-          return Promise.reject(handleErrorResponse(refreshError as AxiosError));
-        }
-      }
-
-      originalRequest._retry = true;
-
-      try {
-        const newToken = await tokenRefreshManager.refreshAccessToken();
-        if (originalRequest.headers) {
-          originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
-        }
-        return axiosInstance(originalRequest);
-      } catch (refreshError) {
-        return Promise.reject(handleErrorResponse(refreshError as AxiosError));
-      }
-    }
-
-    // Handle all other errors
-    return Promise.reject(handleErrorResponse(error));
-  }
+  (response: AxiosResponse) => response.data,
+  (error: AxiosError) => Promise.reject(handleErrorResponse(error)),
 );
 
 // Centralized error handler

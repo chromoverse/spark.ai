@@ -16,6 +16,7 @@ import {
 } from "@/store/features/localState/localSlice";
 import Welcome from "@/pages/Welcome";
 import { useAuthRouting } from "@/hooks/useAuthRouting";
+import { useBrainBridge } from "@/hooks/useBrainBridge";
 
 export default function AppInitializer({
   children,
@@ -26,6 +27,7 @@ export default function AppInitializer({
   const location = useLocation();
 
   const { isLoading, isAuthenticated } = useAuthRouting();
+  useBrainBridge();
   const {
     isDevicesAlreadyFetched,
     audioInputDevices,

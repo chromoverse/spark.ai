@@ -279,6 +279,8 @@ export interface SocketEvents {
   // PQH responses
   "query-result": (data: QueryResultPayload) => void;
   "query-error": (data: any) => void;
+  "agent:state": (data: unknown) => void;
+  "agent:clarify": (data: unknown) => void;
   
   // Task orchestration (SQH) - both events use same payload format
   "task:execute": (data: TaskExecuteBatchPayload) => void;

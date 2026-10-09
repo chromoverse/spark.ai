@@ -90,7 +90,7 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 | `queue.db` (SQLite) | outbound events while offline; local-brain turns to upload |
 | `models/` | local LLM GGUF files, STT/TTS models, wake word models |
 | `cache/` | phrase-bank audio (earcons, fillers), app index |
-| keychain | refresh token (via Electron keytar) |
+| keychain | ✅ service `SparkAI`: `brain-refresh-token`, `brain-device-id` (via keytar, main process only). The access token lives only in main-process memory |
 
 ## 8. Retention
 

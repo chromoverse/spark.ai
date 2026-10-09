@@ -2,12 +2,14 @@ import { configureStore } from "@reduxjs/toolkit";
 import deviceReducer from "./features/device/deviceSlice"
 import localStateReducer from "./features/localState/localSlice";
 import authReducer from "./features/auth/authSlice"
+import brainReducer from "./features/brain/brainSlice"
 
 export const store = configureStore({
   reducer: {
     device: deviceReducer,
     localState: localStateReducer,
-    auth: authReducer
+    auth: authReducer,
+    brain: brainReducer,
   },
 });
 

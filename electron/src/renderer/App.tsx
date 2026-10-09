@@ -7,7 +7,6 @@ import PublicGuard from "@/components/guards/PublicGuard";
 // Pages
 import Home from './pages/Home'
 import Welcome from "./pages/Welcome";
-import SignUp from "./pages/SignUp";
 import SignInPage from "./pages/SignInPage";
 import AiPanel from "./pages/AiPanel/AiPanel";
 import Onboarding from "./pages/Onboarding";
@@ -23,7 +22,8 @@ export default function App() {
           {/* Public Routes */}
           <Route element={<PublicGuard />}>
             <Route path="/welcome" element={<Welcome />} />
-            <Route path="/auth/sign-up" element={<SignUp />} />
+            {/* One email-code flow signs in and signs up. */}
+            <Route path="/auth/sign-up" element={<SignInPage />} />
             <Route path="/auth/sign-in" element={<SignInPage />} />
             <Route path="/auth/onboarding" element={<Onboarding />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />

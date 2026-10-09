@@ -71,7 +71,7 @@ settings. Google OAuth works with `http://localhost` redirects in testing mode, 
 
 | Variable | Notes |
 |---|---|
-| `VITE_BRAIN_URL` | e.g. `http://127.0.0.1:8080` (public value, no secrets) |
+| `VITE_BRAIN_URL` | read by the main process; defaults to `http://127.0.0.1:8080` (public value, no secrets) |
 | `SPARK_BODY_PYTHON` | dev only: interpreter for the sidecar (defaults to `body/.venv`) |
 | `ELECTRON_SAFE_GPU_MODE` | `1` disables GPU acceleration |
 

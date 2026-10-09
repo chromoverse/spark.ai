@@ -1,7 +1,7 @@
 import {
   Globe, FolderOpen, Mail, Monitor, MapPin, Sparkles,
   Search, FileText, Terminal, Camera, Cloud, Wand2,
-  Wrench, Battery, Clipboard, Package,
+  Wrench, Battery, Clipboard, Package, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import axiosInstance from "@/utils/axiosConfig";
@@ -17,7 +17,7 @@ const BASE = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1
 
 // ── Friendly metadata ─────────────────────────────────────────────────────────
 
-const TOOL_META: Record<string, { label: string; description: string; icon: React.ComponentType<{ size?: number }> }> = {
+const TOOL_META: Record<string, { label: string; description: string; icon: LucideIcon }> = {
   web_research:       { label: "Web Research",      icon: Globe,      description: "Deep research on any topic — finds, reads, and summarises information from multiple sources." },
   web_search:         { label: "Web Search",        icon: Search,     description: "Quick search to find links, facts, and current information from the web." },
   web_scrape:         { label: "Web Scrape",        icon: Globe,      description: "Reads and extracts content from any webpage URL." },
@@ -48,7 +48,7 @@ interface CategoryDef {
   id: string;
   label: string;
   description: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: LucideIcon;
   color: string;
   bg: string;
   border: string;
@@ -172,7 +172,7 @@ export default function ToolsPage() {
             <h1 className="sp-serif" style={{ margin: "0 0 10px", fontSize: 26, color: "var(--sp-ink)", fontWeight: 400, letterSpacing: "-0.01em" }}>
               What can Spark do?
             </h1>
-            <p style={{ margin: 0, fontSize: 14, color: "var(--sp-ink-3)", lineHeight: 1.65, maxWidth: 480, margin: "0 auto" }}>
+            <p style={{ fontSize: 14, color: "var(--sp-ink-3)", lineHeight: 1.65, maxWidth: 480, margin: "0 auto" }}>
               Just ask naturally — Spark figures out which tools to use and chains them together to get things done.
             </p>
           </div>

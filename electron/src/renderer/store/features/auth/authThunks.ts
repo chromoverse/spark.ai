@@ -1,68 +1,26 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import { setUser,resetUser,setLoading,setErrorMessage, setSuccess } from "./authSlice";
-import { axiosInstance, type ApiResponse } from "@/utils/axiosConfig";
-import type { IVerifyOTP } from "@shared/auth.types";
-import { useNavigate } from "react-router-dom";
+import type { IBrainSession } from "@root/types";
+import { resetUser, setUser, type AuthUser } from "./authSlice";
+import { setBrainSettings } from "../brain/brainSlice";
 
+export function toAuthUser(user: IBrainSession["user"] | { id: string; email: string; name: string | null }): AuthUser {
+  return { _id: user.id, email: user.email, fullName: user.name ?? undefined };
+}
 
-export const getCurrentUser = createAsyncThunk(
-    "user/getCurrentUser",
-    async (_, {dispatch}) => {
-        try {
-            setLoading(true)
-            const response : ApiResponse = await axiosInstance.get("/auth/get-me")
-            dispatch(setUser(response.data))
-            console.log("user data from thunk", response)
-        } catch (error ) {
-            const apiError = error as ApiResponse
-            console.log("errror", apiError)
-            console.log("Error occured while getting current user from authThunk", apiError.message)
-        } finally {
-            setLoading(false)
-        }
+/** Loads the signed-in user + settings from the brain. Resolves null when signed out;
+ * rejects with the brain's persona-voiced error when it can't be reached. */
+export const getCurrentUser = createAsyncThunk<IBrainSession | null, void, { rejectValue: string }>(
+  "auth/getCurrentUser",
+  async (_, { dispatch, rejectWithValue }) => {
+    const res = await window.electronApi.brain.getSession();
+    if (!res.ok) return rejectWithValue(res.error.message);
+    if (!res.data) {
+      dispatch(resetUser());
+      dispatch(setBrainSettings(null));
+      return null;
     }
-)
-
-export const signInUser = createAsyncThunk(
-    "auth/signInUser",
-    async({email}: {email:string}, {dispatch}) => {
-        dispatch(setSuccess(false))
-        try {
-            setLoading(true)
-            const response : ApiResponse = await axiosInstance.post("/auth/sign-in", {email})
-            console.log("Signin data from thunk", response)
-            dispatch(setSuccess(true))
-            return true
-        } catch (error ) {
-            const apiError = error as ApiResponse
-            console.log("errror", apiError)
-        } finally {
-            setLoading(false)
-        }
-    }
-)
-
-export const verifyOtp = createAsyncThunk(
-    "auth/verifyOtp",
-    async({otp, email}:IVerifyOTP,{dispatch}) => {
-        const navigate = useNavigate()
-        dispatch(setSuccess(false))
-        try {
-            setLoading(true);
-            if (!otp || otp.length !== 6) {
-                return;
-            }
-            const response: ApiResponse = await axiosInstance.post("auth/verify-otp", {
-               email,
-               otp,
-            });
-            dispatch(setSuccess(true))
-            console.log("OTP verification response:", response);
-        } catch (error) {
-             const apiError = error as ApiResponse
-             console.error("Error verifying OTP:", apiError);
-        } finally {
-             setLoading(false);
-        }
-    }
-)
+    dispatch(setUser(toAuthUser(res.data.user)));
+    dispatch(setBrainSettings(res.data.settings));
+    return res.data;
+  },
+);

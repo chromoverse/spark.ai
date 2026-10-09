@@ -7,6 +7,8 @@ import type {
   IMicControlPayload,
   ISocketConnectionState,
   ISocketEventForwardPayload,
+  IBrainEvent,
+  IBrainStatus,
 } from "@root/types";
 import type { TaskRecord } from "@shared/socket.types.js";
 
@@ -32,13 +34,6 @@ contextBridge.exposeInMainWorld("electronApi", {
   checkMediaPermission: () => ipcInvoke("checkMediaPermission"),
   requestMediaPermissions: () => ipcInvoke("requestMediaPermissions"),
   checkSystemPermissions: () => ipcInvoke("checkSystemPermissions"),
-
-  //token Management APIs
-  saveToken: (ACCOUNT_NAME: string, token: string) =>
-    ipcInvoke("saveToken", { ACCOUNT_NAME, token }),
-  getToken: (ACCOUNT_NAME: string) => ipcInvoke("getToken", { ACCOUNT_NAME }),
-  deleteToken: (ACCOUNT_NAME: string) =>
-    ipcInvoke("deleteToken", { ACCOUNT_NAME }),
 
   //Device Usage Status APIs
   getDeviceUsageStatus: () => ipcInvoke("getDeviceUsageStatus"),
@@ -75,6 +70,17 @@ contextBridge.exposeInMainWorld("electronApi", {
   //Authentication API
   onAuthSuccess: () => ipcInvoke("onAuthSuccess"),
   onAuthFailure: () => ipcInvoke("onAuthFailure"),
+
+  brain: {
+    otpStart: (email: string) => ipcInvoke("brainOtpStart", { email }),
+    otpVerify: (email: string, code: string) => ipcInvoke("brainOtpVerify", { email, code }),
+    googleSignIn: () => ipcInvoke("brainGoogleSignIn"),
+    getSession: () => ipcInvoke("brainGetSession"),
+    signOut: () => ipcInvoke("brainSignOut"),
+    getStatus: () => ipcInvoke("brainGetStatus"),
+    onStatus: (callback: (status: IBrainStatus) => void) => ipcOn("brainStatus", callback),
+    onEvent: (callback: (event: IBrainEvent) => void) => ipcOn("brainEvent", callback),
+  },
 
   // File dialog
   showOpenFileDialog: () => ipcInvoke("showOpenFileDialog"),

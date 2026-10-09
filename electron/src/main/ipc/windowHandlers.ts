@@ -3,6 +3,7 @@ import { ipcMainHandle, ipcMainOn } from "../utils/ipcUtils.js";
 import { MainWindow } from "../windows/MainWindow.js";
 import { windowManager } from "../services/WindowManager.js";
 import { socketService } from "../services/SocketService.js";
+import { brainSocket } from "../services/BrainSocket.js";
 import type { IMediaDevice } from "@root/types";
 
 export function registerWindowHandlers(mainWindow: MainWindow) {
@@ -50,8 +51,8 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   ipcMainHandle("onAuthSuccess", async () => {
     console.log("Authentication successful - switching to AI Panel window");
 
-    // Initialize shared socket (single connection in main process).
-    void socketService.connect();
+    // The v2 brain socket replaces the v1 server socket (R0).
+    void brainSocket.connect();
 
     // Close the main window
     mainWindow.close();
@@ -66,6 +67,7 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   ipcMainHandle("onAuthFailure", async () => {
     console.log("Authentication failed/missing - showing Main window for login");
     socketService.disconnect("unauthenticated");
+    brainSocket.disconnect("signed_out");
     mainWindow.getBrowserWindow().show();
     return { success: true };
   });

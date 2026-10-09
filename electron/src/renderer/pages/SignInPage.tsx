@@ -1,58 +1,79 @@
 import { useState } from "react";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import axiosInstance, { type ApiResponse } from "@/utils/axiosConfig";
-import type { AuthResponse } from "@shared/auth.types";
-import { toast } from "sonner";
 import { useAppDispatch } from "@/store/hooks";
 import { getCurrentUser } from "@/store/features/auth/authThunks";
 import MinimalHeader from "@/components/local/MinimalHeader";
 
+// Signs in (or up) against the v2 brain: an email code or Google. Tokens stay in the main
+// process; this page only sees the brain's persona-voiced messages.
+
+type Busy = "idle" | "sending" | "verifying" | "google";
+
+const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
 function SignInPage() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
-  const [emailError, setEmailError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState<Busy>("idle");
 
-  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
-  const handleEmailSubmit = async () => {
-    setEmailError("");
-    if (!email) { setEmailError("Email is required"); return; }
-    if (!validateEmail(email)) { setEmailError("Invalid email"); return; }
-
-    setIsLoading(true);
-    try {
-      const response: ApiResponse = await axiosInstance.post("/auth/sign-in", { email });
-      if (response.success) setStep(2);
-      if (response.data) toast.success(response.data.message || response.message);
-    } catch (error) {
-      console.error("Sign in error:", error);
-    } finally {
-      setIsLoading(false);
-    }
+  const finish = async () => {
+    await dispatch(getCurrentUser());
+    await window.electronApi.onAuthSuccess();
+    navigate("/home", { replace: true });
   };
 
-  const handleOtpSubmit = async () => {
-    if (!otp || otp.length !== 6) return;
-    setIsLoading(true);
-    try {
-      const data: AuthResponse = await axiosInstance.post("/auth/verify-otp", { email, otp });
-      if (data.access_token && data.refresh_token) {
-        await window.electronApi.saveToken("access_token", data.access_token);
-        await window.electronApi.saveToken("refresh_token", data.refresh_token);
-        await dispatch(getCurrentUser());
-        await window.electronApi.onAuthSuccess();
-        navigate("/home", { replace: true });
-      }
-    } catch (error: any) {
-      toast.error(error?.error?.message || "Verification failed");
-    } finally {
-      setIsLoading(false);
+  const sendCode = async () => {
+    setError("");
+    setNotice("");
+    if (!email.trim()) return setError("Pop your email in first.");
+    if (!isEmail(email.trim())) return setError("That email doesn't look right. Mind checking it?");
+    setBusy("sending");
+    const res = await window.electronApi.brain.otpStart(email.trim());
+    setBusy("idle");
+    if (!res.ok) return setError(res.error.message);
+    setStep("code");
+    setNotice("Code's on its way. It works for 10 minutes.");
+  };
+
+  const verify = async () => {
+    if (code.length !== 6) return;
+    setError("");
+    setBusy("verifying");
+    const res = await window.electronApi.brain.otpVerify(email.trim(), code);
+    if (!res.ok) {
+      setBusy("idle");
+      setCode("");
+      return setError(res.error.message);
     }
+    await finish();
+  };
+
+  const google = async () => {
+    setError("");
+    setNotice("Finish signing in in your browser, then come back here.");
+    setBusy("google");
+    const res = await window.electronApi.brain.googleSignIn();
+    if (!res.ok) {
+      setBusy("idle");
+      setNotice("");
+      return setError(res.error.message);
+    }
+    await finish();
+  };
+
+  const isBusy = busy !== "idle";
+  const back = () => {
+    if (step === "email") return navigate("/welcome");
+    setStep("email");
+    setCode("");
+    setError("");
+    setNotice("");
   };
 
   return (
@@ -60,43 +81,61 @@ function SignInPage() {
       <MinimalHeader />
       <div className="flex-1 flex items-center justify-center">
         <div className="w-full max-w-sm px-6">
-          {/* Back */}
           <button
-            onClick={() => step === 1 ? navigate("/welcome") : (setStep(1), setOtp(""))}
-            className="mb-6 text-white/40 hover:text-white flex items-center gap-2 text-sm transition-colors"
+            onClick={back}
+            disabled={isBusy}
+            className="mb-6 text-white/40 hover:text-white flex items-center gap-2 text-sm transition-colors disabled:opacity-50"
           >
             <ArrowLeft size={16} /> Back
           </button>
 
           <h1 className="text-2xl font-semibold mb-2">
-            {step === 1 ? "Sign In" : "Verify Email"}
+            {step === "email" ? "Sign in to Spark" : "Check your email"}
           </h1>
           <p className="text-white/40 text-sm mb-8">
-            {step === 1
-              ? "Enter your email to continue"
-              : <>Code sent to <span className="text-white">{email}</span></>}
+            {step === "email" ? (
+              "New here? Same steps, and we'll set you up."
+            ) : (
+              <>
+                Enter the 6-digit code we sent to <span className="text-white">{email.trim()}</span>
+              </>
+            )}
           </p>
 
-          {step === 1 ? (
+          {step === "email" ? (
             <div className="space-y-4">
-              <div>
+              <label className="block">
+                <span className="sr-only">Email</span>
                 <input
                   type="email"
+                  autoFocus
                   value={email}
-                  onChange={(e) => { setEmail(e.target.value); setEmailError(""); }}
-                  onKeyDown={(e) => e.key === "Enter" && handleEmailSubmit()}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError("");
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && !isBusy && sendCode()}
                   className="w-full px-4 py-3 bg-[#0f0f16] border border-white/10 rounded-lg text-white placeholder-white/25 focus:outline-none focus:border-[#d97757] transition-colors"
                   placeholder="you@example.com"
-                  disabled={isLoading}
+                  disabled={isBusy}
                 />
-                {emailError && <p className="mt-1.5 text-xs text-red-400">{emailError}</p>}
-              </div>
+              </label>
               <button
-                onClick={handleEmailSubmit}
-                disabled={isLoading}
+                onClick={sendCode}
+                disabled={isBusy}
                 className="w-full py-3 bg-[#d97757] hover:bg-[#c96847] disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
               >
-                {isLoading ? "Sending..." : "Continue"}
+                {busy === "sending" ? "Sending…" : "Email me a code"}
+              </button>
+              <div className="flex items-center gap-3 text-white/25 text-xs">
+                <span className="h-px flex-1 bg-white/10" /> or <span className="h-px flex-1 bg-white/10" />
+              </div>
+              <button
+                onClick={google}
+                disabled={isBusy}
+                className="w-full py-3 border border-white/15 hover:border-white/30 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+              >
+                {busy === "google" ? "Waiting for Google…" : "Continue with Google"}
               </button>
             </div>
           ) : (
@@ -104,34 +143,45 @@ function SignInPage() {
               <div className="relative">
                 <input
                   type="text"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  onKeyDown={(e) => e.key === "Enter" && otp.length === 6 && handleOtpSubmit()}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  aria-label="6-digit code"
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    setError("");
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && code.length === 6 && !isBusy && verify()}
                   className="w-full px-4 py-3 bg-[#0f0f16] border border-white/10 rounded-lg text-white text-center text-2xl tracking-[0.4em] font-mono placeholder-white/25 focus:outline-none focus:border-[#d97757] transition-colors"
                   placeholder="000000"
                   maxLength={6}
-                  disabled={isLoading}
+                  disabled={isBusy}
                 />
-                {otp.length === 6 && (
+                {code.length === 6 && (
                   <CheckCircle2 size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-green-400" />
                 )}
               </div>
               <button
-                onClick={handleOtpSubmit}
-                disabled={isLoading || otp.length !== 6}
+                onClick={verify}
+                disabled={isBusy || code.length !== 6}
                 className="w-full py-3 bg-[#d97757] hover:bg-[#c96847] disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
               >
-                {isLoading ? "Verifying..." : "Verify"}
+                {busy === "verifying" ? "Checking…" : "Sign in"}
               </button>
               <button
-                onClick={handleEmailSubmit}
-                className="w-full text-xs text-white/30 hover:text-white/60 transition-colors"
-                disabled={isLoading}
+                onClick={sendCode}
+                className="w-full text-xs text-white/30 hover:text-white/60 transition-colors disabled:opacity-50"
+                disabled={isBusy}
               >
-                Resend code
+                {busy === "sending" ? "Sending…" : "Send a new code"}
               </button>
             </div>
           )}
+
+          <div className="mt-4 min-h-5 text-xs" aria-live="polite">
+            {error ? <p className="text-red-400">{error}</p> : notice && <p className="text-white/50">{notice}</p>}
+          </div>
         </div>
       </div>
     </div>

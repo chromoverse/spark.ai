@@ -12,6 +12,7 @@
     "dev:electron": "npm run transpile:electron && cross-env NODE_ENV=development electron .",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "typecheck": "tsc -b && tsc -p src/main/tsconfig.json --noEmit",
     "preview": "vite preview",
     "transpile:electron": "tsc --project src/main/tsconfig.json",
     "dist:mac": "npm run transpile:electron && npm run build && electron-builder --mac --arm64",

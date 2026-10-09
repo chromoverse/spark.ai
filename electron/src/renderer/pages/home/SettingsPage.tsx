@@ -1,7 +1,7 @@
 import { Settings as SettingsIcon, Pencil, Trash2, Plus, X } from "lucide-react";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
 import { useState } from "react";
-import axiosInstance from "@/utils/axiosConfig";
+import axiosInstance, { type ApiResponse } from "@/utils/axiosConfig";
 import { toast } from "sonner";
 import { getCurrentUser } from "@/store/features/auth/authThunks";
 
@@ -36,8 +36,8 @@ export default function SettingsPage() {
 
   const handleAddKey = async () => {
     if (!newKey.trim() || !addKeyProvider || !user?._id) return;
-    const existing = (user as any)?.apiKeys?.[addKeyProvider] || [];
-    await save("api_keys", { ...((user as any)?.apiKeys || {}), [addKeyProvider]: [...existing, newKey.trim()] });
+    const existing = user?.apiKeys?.[addKeyProvider] || [];
+    await save("api_keys", { ...(user?.apiKeys || {}), [addKeyProvider]: [...existing, newKey.trim()] });
     setNewKey("");
     setAddKeyProvider(null);
   };
@@ -65,11 +65,12 @@ export default function SettingsPage() {
     if (!otp || otp.length !== 6 || !user?._id) return;
     setVerifying(true);
     try {
-      const res = await axiosInstance.post("/auth/verify-otp", { email: user.email, otp });
+      // The response interceptor unwraps to the body.
+      const res = (await axiosInstance.post("/auth/verify-otp", { email: user.email, otp })) as unknown as ApiResponse;
       if (!res.success && !res.access_token) { toast.error("Invalid code"); setVerifying(false); return; }
-      const existing: string[] = (user as any)?.apiKeys?.[selectedKeys.provider] || [];
+      const existing: string[] = user?.apiKeys?.[selectedKeys.provider] || [];
       const filtered = existing.filter((_, i) => !selectedKeys.indices.includes(i));
-      await axiosInstance.patch(`/auth/update-user-details?userId=${user._id}`, { api_keys: { ...((user as any)?.apiKeys || {}), [selectedKeys.provider]: filtered } });
+      await axiosInstance.patch(`/auth/update-user-details?userId=${user._id}`, { api_keys: { ...(user?.apiKeys || {}), [selectedKeys.provider]: filtered } });
       await dispatch(getCurrentUser());
       toast.success("Keys removed");
       setVerifyStep("idle"); setOtp(""); setSelectedKeys({ provider: "", indices: [] });
@@ -80,13 +81,13 @@ export default function SettingsPage() {
   const cancelFlow = () => { setVerifyStep("idle"); setOtp(""); setSelectedKeys({ provider: "", indices: [] }); };
 
   const keyProviders = [
-    { id: "gemini",     label: "Gemini",     keys: (user as any)?.apiKeys?.gemini     || [] },
-    { id: "groq",       label: "Groq",       keys: (user as any)?.apiKeys?.groq       || [] },
-    { id: "openrouter", label: "OpenRouter", keys: (user as any)?.apiKeys?.openrouter || [] },
-    { id: "cerebras",   label: "Cerebras",   keys: (user as any)?.apiKeys?.cerebras   || [] },
-    { id: "sambanova",  label: "SambaNova",  keys: (user as any)?.apiKeys?.sambanova  || [] },
-    { id: "mistral",    label: "Mistral",    keys: (user as any)?.apiKeys?.mistral    || [] },
-    { id: "anthropic",  label: "Anthropic",  keys: (user as any)?.apiKeys?.anthropic  || [] },
+    { id: "gemini",     label: "Gemini",     keys: user?.apiKeys?.gemini     || [] },
+    { id: "groq",       label: "Groq",       keys: user?.apiKeys?.groq       || [] },
+    { id: "openrouter", label: "OpenRouter", keys: user?.apiKeys?.openrouter || [] },
+    { id: "cerebras",   label: "Cerebras",   keys: user?.apiKeys?.cerebras   || [] },
+    { id: "sambanova",  label: "SambaNova",  keys: user?.apiKeys?.sambanova  || [] },
+    { id: "mistral",    label: "Mistral",    keys: user?.apiKeys?.mistral    || [] },
+    { id: "anthropic",  label: "Anthropic",  keys: user?.apiKeys?.anthropic  || [] },
   ];
 
   return (

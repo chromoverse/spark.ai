@@ -1,6 +1,6 @@
 import MinimalHeader from "@/components/local/MinimalHeader";
 import { useAppSelector } from "@/store/hooks";
-import type { IUser } from "@shared/user.types";
+import type { AuthUser } from "@/store/features/auth/authSlice";
 import axiosInstance from "@/utils/axiosConfig";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import {
@@ -70,7 +70,7 @@ function stopAudio(audioRef: MutableRefObject<HTMLAudioElement | null>) {
   audioRef.current = null;
 }
 
-function resolveName(user: IUser | null | undefined, draft?: Partial<OnboardingDraft>) {
+function resolveName(user: AuthUser | null | undefined, draft?: Partial<OnboardingDraft>) {
   return draft?.preferredName ?? draft?.fullName ?? user?.fullName ?? user?.username ?? "";
 }
 
@@ -89,7 +89,7 @@ function deriveHeardAboutState(source: unknown) {
   return { heardAboutSpark: "other", heardAboutSparkCustom: normalized };
 }
 
-function buildInitialDraft(incomingDraft: OnboardingDraft | undefined, user: IUser | null | undefined) {
+function buildInitialDraft(incomingDraft: OnboardingDraft | undefined, user: AuthUser | null | undefined) {
   const resolvedName = resolveName(user, incomingDraft);
   const heardAbout = deriveHeardAboutState(user?.customAttributes?.heard_about_spark);
 
@@ -103,9 +103,9 @@ function buildInitialDraft(incomingDraft: OnboardingDraft | undefined, user: IUs
     language: normalizeOnboardingLanguage(incomingDraft?.language),
     aiGender: isVoiceGender(incomingDraft?.aiGender) ? incomingDraft.aiGender : isVoiceGender(user?.aiGender) ? user.aiGender : "",
     aiVoiceName: incomingDraft?.aiVoiceName ?? user?.aiVoiceName ?? "",
-    geminiApiKeys: incomingDraft?.geminiApiKeys ?? ensureMinimumTokenRows(user?.geminiApiKeys),
-    groqApiKeys: incomingDraft?.groqApiKeys ?? ensureMinimumTokenRows(user?.groqApiKeys),
-    openrouterApiKeys: incomingDraft?.openrouterApiKeys ?? ensureMinimumTokenRows(user?.openrouterApiKeys),
+    geminiApiKeys: incomingDraft?.geminiApiKeys ?? ensureMinimumTokenRows(user?.apiKeys?.gemini),
+    groqApiKeys: incomingDraft?.groqApiKeys ?? ensureMinimumTokenRows(user?.apiKeys?.groq),
+    openrouterApiKeys: incomingDraft?.openrouterApiKeys ?? ensureMinimumTokenRows(user?.apiKeys?.openrouter),
   });
 }
 
@@ -179,9 +179,9 @@ function Onboarding() {
       language: normalizeOnboardingLanguage(d.language),
       aiGender: d.aiGender || (isVoiceGender(user.aiGender) ? user.aiGender : ""),
       aiVoiceName: d.aiVoiceName || user.aiVoiceName || "",
-      geminiApiKeys: hasFilledTokens(d.geminiApiKeys) ? d.geminiApiKeys : ensureMinimumTokenRows(user.geminiApiKeys),
-      groqApiKeys: hasFilledTokens(d.groqApiKeys) ? d.groqApiKeys : ensureMinimumTokenRows(user.groqApiKeys),
-      openrouterApiKeys: hasFilledTokens(d.openrouterApiKeys) ? d.openrouterApiKeys : ensureMinimumTokenRows(user.openrouterApiKeys),
+      geminiApiKeys: hasFilledTokens(d.geminiApiKeys) ? d.geminiApiKeys : ensureMinimumTokenRows(user.apiKeys?.gemini),
+      groqApiKeys: hasFilledTokens(d.groqApiKeys) ? d.groqApiKeys : ensureMinimumTokenRows(user.apiKeys?.groq),
+      openrouterApiKeys: hasFilledTokens(d.openrouterApiKeys) ? d.openrouterApiKeys : ensureMinimumTokenRows(user.apiKeys?.openrouter),
     }));
   }, [user]);
 

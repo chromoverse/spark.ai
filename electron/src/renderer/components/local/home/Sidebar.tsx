@@ -353,9 +353,9 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
   };
 
   const userInitial = useMemo(() =>
-    (user?.full_name?.[0] || user?.username?.[0] || "U").toUpperCase()
+    (user?.fullName?.[0] || user?.username?.[0] || "U").toUpperCase()
   , [user]);
-  const userName = user?.full_name || user?.username || "User";
+  const userName = user?.fullName || user?.username || "User";
 
   return (
     <aside

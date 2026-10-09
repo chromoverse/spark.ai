@@ -32,7 +32,8 @@
     "ignoreDeprecations": "5.0",
     "paths": {
       "@/*": ["./src/renderer/*"],
-      "@shared/*": ["./src/types/*"]
+      "@shared/*": ["./src/types/*"],
+      "@root/types": ["./types.d.ts"]
     }
   },
   "include": ["src"],

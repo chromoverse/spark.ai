@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { File, FileText, FolderOpen, Image as ImageIcon, X } from "lucide-react";
+import { File, FileText, FolderOpen, Image as ImageIcon, X, type LucideIcon } from "lucide-react";
 import DriveFileModal from "./DriveFileModal";
 
 export interface DriveFile {
@@ -18,7 +18,7 @@ interface DriveFileCardsProps {
   onDismiss?: () => void;
 }
 
-type FileStyle = { Icon: React.ComponentType<{ size?: number }>; color: string; bg: string };
+type FileStyle = { Icon: LucideIcon; color: string; bg: string };
 
 function getFileStyle(mimeType: string, fileType: string): FileStyle {
   if (fileType === "folder")

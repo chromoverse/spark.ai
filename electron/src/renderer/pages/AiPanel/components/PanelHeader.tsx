@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { VoiceBubble } from "./VoiceBubble";
 import AudioInput from "@/components/local/device/AudioInput"
+import BrainStatus from "@/components/spark/BrainStatus"
 
 export const PanelHeader = memo(
   () => {
@@ -13,9 +14,7 @@ export const PanelHeader = memo(
             <span className="text-indigo-100 font-semibold text-[13px] leading-none">
               Spark
             </span>
-            <span className="text-indigo-200/60 text-[11px] leading-none">
-              AI Assistant
-            </span>
+            <BrainStatus className="text-indigo-200/60 text-[11px] leading-none" />
           </div>
         </div>
         {/* Visualizer */}

@@ -5,7 +5,6 @@ import axios from "axios"
 import { useSparkTTS } from '@/context/sparkTTSContext'
 import ServerStatusShower from '../terminals/ServerStatusTerminal'
 
-import { tokenRefreshManager } from "@/lib/auth/tokenRefreshManager";
 import type { TaskRecord } from "@shared/socket.types";
 
 
@@ -90,21 +89,6 @@ export default function CenterPanel() {
     }
   }
 
-  // ✅ FIX: Prevent page refresh
-const handleRefreshToken = async (e: React.MouseEvent<HTMLButtonElement>) => {
-  e.preventDefault(); // Prevent any default behavior
-  try {
-    console.log("hitting api now")
-    const res = await tokenRefreshManager.refreshAccessToken();
-    console.log(
-      "after hitting res"
-    )
-  } catch (error) {
-    console.error("Token refresh failed:", error);
-  }
-  }
-
-
   function testWebSocket() {
     emit("request-tts", {
       text: "Sir everything ready now. How was your day tough. I am here to help you with your work.  ",
@@ -117,13 +101,6 @@ const handleRefreshToken = async (e: React.MouseEvent<HTMLButtonElement>) => {
     <div>
       <Button onClick={() => getAudio("हो गया सर, देख सकते हैं। कुछ और चाहिए?")}>get Audio Http</Button>
       <Button onClick={() => play()}>play ws sound</Button>
-      <Button
-        type="button"
-        className="webkit-drag-nodrag"
-        onClick={handleRefreshToken}
-        >
-        Refresh Token
-      </Button>
       <Button
         type="button"
         className="webkit-drag-nodrag"

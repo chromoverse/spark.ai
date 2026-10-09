@@ -13,6 +13,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setClientOffline, setClientOnline } from "@/store/features/localState/localSlice";
 import Profile from "./Profile"
 import Setting from "./Settings"
+import BrainStatus from "@/components/spark/BrainStatus"
 
 // Main Bottom Bar Component
 export default function BottomBar() {
@@ -23,7 +24,7 @@ export default function BottomBar() {
     storageData: { total: 0, free: 0, usage: 0 },
   });
 
-  const { isServerOnline, isClientOnline } = useAppSelector(
+  const { isClientOnline } = useAppSelector(
     (state) => state.localState
   );
 
@@ -96,57 +97,8 @@ export default function BottomBar() {
             </TooltipContent>
           </Tooltip>
 
-          {/* Server Connection Status */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 cursor-default">
-                {isServerOnline ? (
-                  <>
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-px" />
-                    <span className="text-neutral-500">Server</span>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-px" />
-                    <span className="text-neutral-500">Server</span>
-                  </>
-                )}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p>
-                Status : Server is {isServerOnline ? "connected" : "disconnected"}.{" "}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 cursor-default">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  className="text-blue-400"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
-                  />
-                </svg>
-                <span className="text-neutral-500">
-                  {(deviceStatus.cpuUsage * 100).toFixed(1)}%
-                </span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p>Spark CPU Usage</p>
-            </TooltipContent>
-          </Tooltip>
+          {/* Brain connection (v2 socket, owned by the main process) */}
+          <BrainStatus className="text-neutral-500 cursor-default" />
 
           <Tooltip>
             <TooltipTrigger asChild>
