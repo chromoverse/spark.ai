@@ -71,7 +71,7 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 
 | Key | Value | TTL |
 |---|---|---|
-| `presence:{user}` | hash device_id → last ping | 60 s refresh |
+| `presence:{user}` | ✅ hash device_id → last ping (epoch ms), written on connect/hello and every 30 s; an entry older than 60 s counts as offline | 60 s |
 | `hot:{user}:turns` | last N messages | 1 h |
 | `hot:{user}:profile` | profile summary + settings | 1 h |
 | `prefetch:{signal}` | retrieved memories for an in-flight signal | 30 s |

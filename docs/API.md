@@ -36,9 +36,9 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 | POST | `/v2/auth/refresh` | `{ refresh_token }` | rotates; reuse → session revoked |
 | POST | `/v2/auth/logout` | — | revokes this device's session |
 | GET | `/v2/me` | — | profile + settings |
-| GET | `/v2/devices` | — | user's devices, presence, engine plans |
-| PATCH | `/v2/devices/{id}` | `{ name, is_default_for }` | rename; default phone/laptop |
-| DELETE | `/v2/devices/{id}` | — | sign out that device |
+| GET | `/v2/devices` | — | ✅ `{ items: [{ id, name, kind, platform, app_version, parent_device_id, capabilities, engine_plan, is_default_for, last_seen_at, online, current }], next_cursor }` |
+| PATCH | `/v2/devices/{id}` | `{ name?, is_default_for?: (phone\|laptop\|desktop\|tablet)[] }` | ✅ rename; default for "my phone"/"the laptop". A word moves off any other device that had it |
+| DELETE | `/v2/devices/{id}` | — | ✅ revokes the device's sessions and forgets it; its socket drops within 30 s. Another user's id → `404` |
 
 **Auth payloads (✅ built in R0).** Bodies reject unknown fields (`422 invalid_input`).
 - `otp/start` → `{ sent: true, cooldown_s: 60 }`. Per-IP cap 10 / 10 min. The code lives 10 min and
@@ -64,7 +64,7 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 ### 2.2 Settings, memory, usage
 | Method | Path | Notes |
 |---|---|---|
-| GET / PATCH | `/v2/settings` | language, auto-detect, voice, verbosity, nickname, permission mode, allow-training-providers |
+| GET / PATCH | `/v2/settings` | ✅ `{ language, auto_detect_language, voice, verbosity: brief\|normal\|detailed, address_as, permission_mode: default\|ask\|trust, allow_training_providers, models }`. PATCH sends only changed fields (`models` is read-only until R6); `voice`/`address_as` clear with `null`. `language` other than `en` → `422` "English is all I speak for now…". A real change pushes `settings.changed` to every device |
 | GET | `/v2/memories` | list/search (`?q=`) |
 | PATCH / DELETE | `/v2/memories/{id}` | edit / forget (removes the embedding) |
 | GET | `/v2/usage` | today's usage per role/provider, quota left |
@@ -111,14 +111,23 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 
 ## 3. Device Gateway Protocol (Socket.IO `/v2`)
 
-Connect: `io(url + "/v2", { auth: { token: <access JWT>, device_id } })`. Each event carries
+Connect: `io(url + "/v2", { auth: { token: <access JWT>, device_id } })`. ✅ The auth object
+must hold exactly those two fields; `device_id` must match the token, the session must be live, and a
+refresh token is refused. Refusal → `connect_error` with `{ code: "unauthorized", message }`. The brain
+re-checks the session every 30 s and drops the socket once it ends (logout, device removed, refresh
+reuse). Presence lives in Redis while connected (`DATABASE.md` §6).
+
+**Envelope:** `v` is `2`; `id` is unique per event (brain events use the `events.seq` sync id);
+`ts` is epoch milliseconds; `trace_id` is optional. Device payloads reject unknown fields, so a
+client `user_id` is refused. Acks use the HTTP envelope: `{ ok: true, data }` or
+`{ ok: false, error: { code, message } }`. Each event carries
 `{ v: 2, id, ts, trace_id }` plus the payload below. Events are acknowledged with Socket.IO acks
 where noted.
 
 ### 3.1 Device → Brain
 | Event | Payload | Notes |
 |---|---|---|
-| `device.hello` | `{ platform, app_version, capabilities[], tool_versions, hardware }` | on connect |
+| `device.hello` | `{ platform, app_version, capabilities[], tool_versions, hardware }` | ✅ on connect; ack `{ device_id, server_time }`; stored on the device row |
 | `device.state` | `{ battery, power_mode, active_app, locale, mic, speaker }` | on change |
 | `device.engine_plan` | `{ stt[], tts[], local_llm[], scores }` | after fitness runs (§18) |
 | `wake.claim` | `{ score, loudness, foreground }` | wake-word arbitration (§26.2) |
@@ -147,7 +156,7 @@ where noted.
 | `connect.request` | `{ service, scopes, reason, resume_job_id }` | just-in-time connect card (§23) |
 | `job.update` | `{ job_id, status, todo[], step?, note?, eta_s? }` | |
 | `artifact.new` | `{ artifact_id, kind, preview, thread_id }` | |
-| `settings.changed` | `{ changed: {...} }` | pushed to every device |
+| `settings.changed` | `{ changed: {...} }` | ✅ pushed to every device of the user, including the one that changed it |
 | `notice` | `{ text, from_device?, level }` | e.g. "Spark opened YouTube, asked from Laptop" |
 | `fallback.notice` | `{ reason }` | brain degraded; the device switches to the local brain |
 
