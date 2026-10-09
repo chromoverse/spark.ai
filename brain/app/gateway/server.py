@@ -11,6 +11,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
+import socketio
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 
@@ -54,8 +55,12 @@ class DeviceHello(Envelope):
 EVENT_MODELS: dict[str, type[Envelope]] = {"device.hello": DeviceHello}
 
 
-def _refuse() -> ConnectionRefusedError:
-    return ConnectionRefusedError({"code": "unauthorized", "message": SIGN_IN_AGAIN})
+def _refuse() -> socketio.exceptions.ConnectionRefusedError:
+    # socketio's own exception: (message, data) reaches the client as err.message / err.data.
+    # The builtin ConnectionRefusedError would be flattened to a generic message.
+    return socketio.exceptions.ConnectionRefusedError(
+        "unauthorized", {"code": "unauthorized", "message": SIGN_IN_AGAIN}
+    )
 
 
 def register(rt: Runtime) -> None:

@@ -113,7 +113,8 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 
 Connect: `io(url + "/v2", { auth: { token: <access JWT>, device_id } })`. ✅ The auth object
 must hold exactly those two fields; `device_id` must match the token, the session must be live, and a
-refresh token is refused. Refusal → `connect_error` with `{ code: "unauthorized", message }`. The brain
+refresh token is refused. Refusal → `connect_error` with `err.message = "unauthorized"` and
+`err.data = { code: "unauthorized", message }` (the desktop refreshes once, then shows signed out). The brain
 re-checks the session every 30 s and drops the socket once it ends (logout, device removed, refresh
 reuse). Presence lives in Redis while connected (`DATABASE.md` §6).
 

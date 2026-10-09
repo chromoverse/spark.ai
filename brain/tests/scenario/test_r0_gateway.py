@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 import pytest
 import socketio
 
+from app.core.errors import SIGN_IN_AGAIN
 from tests.conftest import Brain
 from tests.fakes.device import FakeDevice
 
@@ -70,6 +71,10 @@ async def test_r0_refresh_token_cannot_open_a_socket(
     for auth in bad_auths:
         with pytest.raises(socketio.exceptions.ConnectionError):
             await d.connect(auth=auth)
+    # The desktop decides "refresh vs signed out" from this code, so it must arrive intact.
+    assert len(d.refusals) == len(bad_auths)
+    wire = {"message": "unauthorized", "data": {"code": "unauthorized", "message": SIGN_IN_AGAIN}}
+    assert all(r == wire for r in d.refusals)
     await d.connect()
     assert d.sio.connected
 

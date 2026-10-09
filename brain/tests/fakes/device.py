@@ -18,15 +18,20 @@ class FakeDevice:
         self.device_id: str = tokens["device_id"]
         self.inbox: list[tuple[str, dict[str, Any]]] = []
         self.disconnected = asyncio.Event()
+        self.refusals: list[Any] = []  # connect_error payloads from the brain
         self._arrived = asyncio.Condition()
         self.sio = socketio.AsyncClient(reconnection=False)
         self.sio.on("*", self._any, namespace=NS)
         self.sio.on("disconnect", self._gone, namespace=NS)
+        self.sio.on("connect_error", self._refused, namespace=NS)
 
     async def _any(self, event: str, data: dict[str, Any]) -> None:
         async with self._arrived:
             self.inbox.append((event, data))
             self._arrived.notify_all()
+
+    async def _refused(self, data: Any) -> None:
+        self.refusals.append(data)
 
     async def _gone(self, *_: Any) -> None:
         self.disconnected.set()
