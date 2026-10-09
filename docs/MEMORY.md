@@ -9,7 +9,23 @@ happens.
 
 - **Direction:** v2: a cloud **Brain** + device **Bodies** (desktop now, mobile later). Full design
   in `REDESIGN.md`, one-page map in `ARCHITECTURE.md`, roadmap in `PHASES.md` (R0–R7).
-- **Phase:** R0, Brain foundations. Not started; waiting for the owner's final review of the docs.
+- **Phase:** R0, Brain foundations. Built on branch `r0/brain-foundations` (not pushed yet).
+  Done: `brain/` (FastAPI + Socket.IO /v2, uv + `uv.lock`), `deploy/` compose stacks, 10-table
+  migration, email OTP + Google (loopback + PKCE), rotating refresh tokens with reuse revoke,
+  devices/presence/settings fan-out, test harness (FakeProvider/FakeDevice/FakeClock, X1–X3),
+  Electron v2 sign-in + socket + status, whole-app Electron lint/typecheck green, GitHub Actions CI.
+  Brain: 40 tests green, ruff + mypy strict clean.
+- **Next session (R0 wrap-up):** CHANGELOG R0 entry; tick R0 in `PHASES.md`; Electron command
+  `npm run lint && npm run typecheck` in `RULES.md` §10.2 + `TESTING.md` §3; run steps in
+  `ENVIRONMENT.md` §2; dep reasons under Decisions; owner's manual desktop sign-in smoke; then ask
+  before pushing / opening the PR. Deferred past R0: per-user rate limits, `sync.resume`/X4,
+  retention jobs, real Caddy config, body sidecar (R1), 15 exhaustive-deps lint warnings.
+- **Run locally:** `docker compose -f deploy/docker-compose.yml up -d` (brain on :8080; secrets in
+  git-ignored `deploy/.env`). Tests: `docker compose -f deploy/docker-compose.test.yml up -d`, then
+  `cd brain && uv run pytest`. Desktop: `cd electron && npm run dev`. uv lives in
+  `%APPDATA%/Python/Python311/Scripts` (not on PATH).
+- **Working tree:** the owner's uncommitted v1 edits (`server/*`, `README.md`, parts of
+  `HomeLive.tsx` and `ActionExecutorService.ts`, `scripts/`, `*.env.example`) are theirs. Never stage them.
 - **v1 state:** feature-rich prototype (`server/`, `voice_daemon/`, `llms/`, `electron/`). Runs in
   dev; no CI; 10 server unit tests (1 error). Reference material for porting only; never deployed.
 
@@ -94,6 +110,12 @@ happens.
   non-commercial. Re-check before production.
 - Root working tree has deleted v1 planning docs (`BROWSER_AGENT_*.md`, `HACKATHON_PITCH.md`,
   `AGENTS.md`). The owner decides whether to commit those deletions.
+- **Refresh rotation is strict:** any client must refresh single-flight or it revokes its own session.
+- Sockets of a revoked session drop on the next heartbeat (≤ 30 s), not instantly.
+- **Resend free tier** only delivers to the account owner's email until a domain is verified.
+- The Google OAuth client must list `http://localhost:8080/v2/auth/google/callback` as a redirect URI.
+- v1 desktop chat (via `server/`) is offline in the v2 app until R1/R2 wires chat to the brain.
+- Rate limits are fixed-window per IP; per-user limits come later.
 
 ## Context for Future Sessions
 
@@ -106,4 +128,6 @@ happens.
 
 | Date | Bug | Fix |
 |---|---|---|
-| — | — | — |
+| 2026-10-09 | Socket refusals lost the `unauthorized` code (builtin `ConnectionRefusedError`) | `socketio.exceptions.ConnectionRefusedError("unauthorized", {...})`; wire shape asserted |
+| 2026-10-09 | X1 sweep passed vacuously: FastAPI 0.143 `app.routes` holds lazy `_IncludedRouter` | Route table from OpenAPI + non-empty guard; mutation-tested |
+| 2026-10-09 | v1 `waitForSpeechComplete` always waited 30 s (stale `isSpeaking` closure) | Polls a ref |
