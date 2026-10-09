@@ -1,3 +1,12 @@
+## docs/ — project source of truth
+
+Spark is being rebuilt as v2 (cloud Brain + device Bodies). Before any task, read
+`docs/MEMORY.md` (state, decisions, risks), `docs/ARCHITECTURE.md` (map), then the parts of
+`docs/REDESIGN.md`, `docs/PHASES.md` (current phase), and `docs/RULES.md` (binding) you need.
+Every scenario needs a test in `docs/TESTING.md`; replies follow `docs/PERSONA.md`. Update
+`docs/MEMORY.md` after meaningful work, and `docs/API.md` / `docs/DATABASE.md` in the same commit
+as contract changes. v1 docs live in `docs/legacy/`.
+
 ## graphify — READ THIS FIRST
 
 This project has a unified knowledge graph at `graphify-out/` covering all code folders:
