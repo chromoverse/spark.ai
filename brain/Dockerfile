@@ -8,4 +8,4 @@ RUN uv sync --frozen --no-dev
 COPY . .
 
 EXPOSE 8080
-CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8080 --proxy-headers"]

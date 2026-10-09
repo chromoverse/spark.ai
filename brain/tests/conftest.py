@@ -8,15 +8,22 @@ import asyncio
 import os
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 import socketio
 import uvicorn
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import Settings
 from app.core.runtime import Runtime
+from app.db import models  # noqa: F401  (registers tables for TRUNCATE)
+from app.db.base import Base
 from app.main import create_app
 from tests.fakes.clock import FakeClock
 
@@ -69,8 +76,31 @@ class Brain:
     client: httpx.AsyncClient
 
 
+BRAIN_DIR = Path(__file__).resolve().parents[1]
+
+
+async def _migrate_fresh_schema() -> None:
+    """Every run proves the real migration: drop everything, then `alembic upgrade head`."""
+    engine = create_async_engine(TEST_DB, connect_args={"timeout": 5})
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+    except OSError as exc:
+        pytest.fail(
+            f"test stack not reachable ({exc}); run "
+            "`docker compose -f deploy/docker-compose.test.yml up -d`"
+        )
+    finally:
+        await engine.dispose()
+    cfg = Config(str(BRAIN_DIR / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", TEST_DB)
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+
+
 @pytest.fixture(scope="session")
 async def brain_server() -> AsyncIterator[Brain]:
+    await _migrate_fresh_schema()
     clock = FakeClock()
     fake_http = FakeHttp()
     http = httpx.AsyncClient(transport=httpx.MockTransport(fake_http.handle))
@@ -91,6 +121,14 @@ async def brain_server() -> AsyncIterator[Brain]:
     await task
 
 
+_TABLES = ", ".join(t.name for t in Base.metadata.sorted_tables)
+
+
 @pytest.fixture
 async def brain(brain_server: Brain) -> AsyncIterator[Brain]:
+    """The shared server with empty tables, empty Redis, and fresh fakes."""
+    async with brain_server.rt.engine.begin() as conn:
+        await conn.execute(text(f"TRUNCATE {_TABLES} RESTART IDENTITY CASCADE"))
+    await brain_server.rt.redis.flushdb()
+    brain_server.fake_http.hosts.clear()
     yield brain_server

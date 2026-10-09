@@ -7,7 +7,10 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 
 - Postgres 16 + `pgvector`. SQLAlchemy 2.0 async models in `brain/app/db/`, Alembic migrations.
 - Primary keys: UUIDv7 (`id uuid`), time-sortable.
-- Timestamps: `timestamptz`, UTC, `created_at` / `updated_at` on every table.
+- Timestamps: `timestamptz`, UTC, `created_at` / `updated_at` on every table, except the
+  append-only `events` and `audit_log`, which carry a single `ts`.
+- Status: ✅ = created by a migration (`brain/app/db/alembic/versions/`). Everything else is planned.
+- Deleting a user cascades to every row that references it (account deletion is a hard delete).
 - Every user-owned row has `user_id` and every query filters by it (resolved from the token).
 - Secrets are encrypted with AES-GCM under the master key (`ENCRYPTION_MASTER_KEY`); only
   ciphertext and `last4` are stored.
@@ -17,19 +20,19 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 
 | Table | Columns | Indexes |
 |---|---|---|
-| `users` | id, email (citext, unique), name, nickname, plan, created_at | `email` unique |
-| `auth_identities` | id, user_id, provider (`email`/`google`), subject, created_at | unique (provider, subject) |
-| `otp_codes` | id, email, code_hash, attempts, expires_at, consumed_at | (email, expires_at) |
-| `sessions` | id, user_id, device_id, refresh_hash, expires_at, revoked_at, last_used_at | (user_id), unique refresh_hash |
-| `devices` | id, user_id, kind (`desktop`/`mobile`/`adb_phone`), name, platform, parent_device_id (ADB phones), capabilities jsonb, hardware jsonb, engine_plan jsonb, is_default_for text[], last_seen_at | (user_id) |
-| `user_settings` | user_id (pk), language, auto_detect_language, voice, verbosity, address_as, permission_mode, allow_training_providers, models jsonb | — |
+| ✅ `users` | id, email (citext, unique), name, nickname, plan (`free`), created_at, updated_at | `email` unique |
+| ✅ `auth_identities` | id, user_id, provider (`email`/`google`), subject (email address or Google `sub`), created_at, updated_at | unique (provider, subject), (user_id) |
+| ✅ `otp_codes` | id, email (citext), code_hash (HMAC-SHA256, peppered; never the code), attempts, expires_at, consumed_at, created_at, updated_at | (email, expires_at) |
+| ✅ `sessions` | id, user_id, device_id, refresh_hash (SHA-256 of the current refresh secret), expires_at, revoked_at, last_used_at, created_at, updated_at | (user_id), (device_id), unique refresh_hash |
+| ✅ `devices` | id, user_id, kind (`desktop`/`mobile`/`adb_phone`), name, platform, parent_device_id (ADB phones), capabilities jsonb (list), hardware jsonb, engine_plan jsonb, is_default_for text[], app_version, last_seen_at, created_at, updated_at | (user_id) |
+| ✅ `user_settings` | user_id (pk), language (`en`), auto_detect_language, voice, verbosity (`brief`/`normal`/`detailed`), address_as, permission_mode (`default`/`ask`/`trust`, REDESIGN §7.2), allow_training_providers, models jsonb, created_at, updated_at | — |
 
 ## 2. Conversation & work
 
 | Table | Columns | Indexes |
 |---|---|---|
-| `threads` | id, user_id, title, created_at, last_message_at | (user_id, last_message_at desc) |
-| `messages` | id, thread_id, user_id, role, content jsonb (content blocks), tier (0–3), device_id, signal_id, created_at | (thread_id, created_at) |
+| ✅ `threads` | id, user_id, title, last_message_at, created_at, updated_at | (user_id, last_message_at desc) |
+| ✅ `messages` | id, thread_id, user_id, role, content jsonb (content blocks), tier (0–3), device_id (set null on device delete), signal_id, created_at, updated_at | (thread_id, created_at), (user_id) |
 | `jobs` | id, user_id, thread_id, status, effort, todo jsonb, eta_s, provider_used, usage jsonb, created_at, finished_at | (user_id, created_at desc), partial on active status |
 | `job_steps` | id, job_id, tool, input jsonb, output_ref, status, device_id, started_at, finished_at, error | (job_id) |
 | `approvals` | id, user_id, job_id, tool, inputs_preview jsonb, decision, decided_by_device, created_at | (user_id, created_at) |
@@ -61,8 +64,8 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 |---|---|---|
 | `usage_events` | id, user_id, role, provider, model, input_tokens, output_tokens, cache_tokens, audio_s, cost_micros, paid bool, ts | (user_id, ts); monthly partitions |
 | `incidents` | id, user_id, device_id, stage, engine_or_provider, error, remedy, outcome, ts | (user_id, ts) |
-| `events` | user_id, seq bigserial, type, payload jsonb, ts | sync log, 7-day retention, (user_id, seq) |
-| `audit_log` | id, user_id, actor, action, target, meta, ts | append-only |
+| ✅ `events` | seq (bigint identity, pk; sent to devices as the event `id`), user_id, type, payload jsonb, ts | sync log, 7-day retention, (user_id, seq) |
+| ✅ `audit_log` | id, user_id, actor (`user`/`device:<id>`/`system`), action, target, meta jsonb, ts | append-only, (user_id, ts) |
 
 ## 6. Redis keys
 
