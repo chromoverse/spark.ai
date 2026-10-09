@@ -1,0 +1,4 @@
+# Stub for R7 production. Caddy gets a certificate for BRAIN_DOMAIN and proxies HTTP + Socket.IO.
+{$BRAIN_DOMAIN} {
+	reverse_proxy brain:8080
+}
