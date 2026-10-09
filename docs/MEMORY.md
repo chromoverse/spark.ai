@@ -18,7 +18,7 @@ happens.
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
 - **R0 pushed to `origin/main`** 2026-10-10 (fast-forward `ec23e38..ffd8142`; CI green on GitHub).
 - **R1 in progress** on local branch `r1/voice-loop` (not pushed). Built and green (2026-10-10,
-  overnight session): brain 83 tests (incl. 100-signal chaos), body 37 tests (Windows CI job added),
+  overnight session): brain 85 tests (incl. 100-signal chaos), body 38 tests (Windows CI job added),
   Electron typecheck + lint (0 errors). What exists:
   - brain: free-first reflex chain (Groq ×2, Cloudflare, Gemini opt-in, Mistral; Claude Haiku 5.5
     paid/off) with 350 ms hedging, fallthrough, Redis health circuits, stall → `Restart`; the signal
