@@ -29,12 +29,13 @@ class Wire:
         self.rpc.handle_line(
             json.dumps({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
         )
-        for _ in range(200):
-            await asyncio.sleep(0)
+        # real time, not loop passes: hands run in a worker thread, slower on a busy machine
+        for _ in range(500):
             for msg in self.out:
                 if msg.get("id") == req_id:
                     self.out.remove(msg)
                     return msg
+            await asyncio.sleep(0.004)
         raise AssertionError(f"no reply to {method}")
 
     def notes(self, method: str) -> list[dict[str, Any]]:
@@ -139,10 +140,10 @@ async def test_tts_speak_streams_audio_notifications(wire: Wire, body: Body) -> 
     body.mouth.start()
     r = await wire.call("tts.speak", {"utt_id": "u9", "text": "Hello there.", "tone": None})
     assert r["result"] == {"queued": True}
-    for _ in range(200):
-        await asyncio.sleep(0)
+    for _ in range(500):
         if wire.notes("mouth.done"):
             break
+        await asyncio.sleep(0.004)
     assert wire.notes("mouth.done")[0]["ok"] is True
     assert len(wire.notes("mouth.audio")) == 2
     await body.mouth.close()
