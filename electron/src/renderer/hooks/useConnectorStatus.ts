@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import axiosInstance from "@/utils/axiosConfig";
+import axiosInstance, { getJson } from "@/utils/axiosConfig";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1").replace("/api/v1", "");
 
@@ -22,11 +22,13 @@ export function useConnectorStatus(userId: string | undefined) {
   const fetchAll = useCallback(async () => {
     if (!userId) return;
     try {
-      const res = await axiosInstance.get(`/connectors/list?user_id=${userId}`, { baseURL: BASE });
-      const data = Array.isArray(res) ? res : (res as any)?.data ?? [];
+      const res = await getJson<ConnectorStatus[] | { data?: ConnectorStatus[] }>(
+        `/connectors/list?user_id=${userId}`, { baseURL: BASE },
+      );
+      const data = Array.isArray(res) ? res : res?.data ?? [];
       setConnectors(data);
       setError(null);
-    } catch (e: any) {
+    } catch {
       setError("Could not reach server");
     } finally {
       setLoading(false);
@@ -62,11 +64,11 @@ export function useConnectorStatus(userId: string | undefined) {
         const tick = async () => {
           if (signal?.aborted || Date.now() > deadline) { done(false); return; }
           try {
-            const res = await axiosInstance.get(
+            const res = await getJson<{ connected?: boolean; data?: { connected?: boolean } }>(
               `/connectors/${connectorId}/status?user_id=${userId}`,
               { baseURL: BASE }
             );
-            const status = (res as any)?.connected ?? (res as any)?.data?.connected ?? false;
+            const status = res?.connected ?? res?.data?.connected ?? false;
             if (status) {
               await fetchAll();
               done(true);

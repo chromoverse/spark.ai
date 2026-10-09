@@ -33,18 +33,18 @@ export interface IUser {
   // --- Likes / Habits ---
   likedItems: string[];
   dislikedItems: string[];
-  activityHabits: Record<string, any>;
+  activityHabits: Record<string, unknown>;
   behavioralTags: string[];
 
   // --- Memories ---
-  personalMemories: Record<string, any>[];
-  reminders: Record<string, any>[];
+  personalMemories: Record<string, unknown>[];
+  reminders: Record<string, unknown>[];
 
   // --- Metrics ---
-  preferencesHistory: Record<string, any>[];
+  preferencesHistory: Record<string, unknown>[];
 
   // --- Misc ---
-  customAttributes: Record<string, any>;
+  customAttributes: Record<string, unknown>;
 }
 
 export interface ThemePreferences {

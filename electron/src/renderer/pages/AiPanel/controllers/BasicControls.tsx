@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Volume2, VolumeOff, Video, VideoOff, MessageCircle, Gamepad2 } from 'lucide-react';
+import { Volume2, VolumeOff, Video, VideoOff, MessageCircle } from 'lucide-react';
 import type { ControllerProps } from '../types';
 import { OpenAppsButton } from '../components/OpenAppsButton';
 
@@ -68,12 +68,3 @@ export function BasicControls({ isActive }: ControllerProps) {
     </div>
   );
 }
-
-// Plugin config
-export const basicControlsPlugin = {
-  id: 'basic-controls',
-  name: 'Controls',
-  icon: <Gamepad2 className="w-4 h-4" />,
-  component: BasicControls,
-  order: 1,
-};

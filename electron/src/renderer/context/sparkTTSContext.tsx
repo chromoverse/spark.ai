@@ -1,22 +1,12 @@
 import React, {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
   useCallback,
 } from "react";
-import { useSocket } from "@/context/socketContextProvider";
+import { useSocket } from "@/context/socketContext";
+import { SparkTTSContext } from "./sparkTTS";
 
-interface SparkTTSContextProps {
-  speak: (text: string) => void;
-  stop: () => void;
-  isSpeaking: boolean;
-  queueLength: number;
-  audioLevel: number;
-}
-
-const SparkTTSContext = createContext<SparkTTSContextProps | null>(null);
 
 /**
  * Converts a raw Socket.IO binary payload into a Uint8Array backed by ArrayBuffer.
@@ -90,7 +80,7 @@ export const SparkTTSProvider = ({
       if (!audioContextRef.current) {
         try {
           const AudioContextClass =
-            window.AudioContext || (window as any).webkitAudioContext;
+            window.AudioContext || window.webkitAudioContext;
           if (AudioContextClass) {
             audioContextRef.current = new AudioContextClass();
           }
@@ -117,6 +107,8 @@ export const SparkTTSProvider = ({
   }, []);
 
   // ── Move to next pending stream ──
+  // startNextStream and playNextChunk call each other; the first reaches the second via this ref.
+  const playNextChunkRef = useRef<() => void>(() => {});
   const moveToNextStream = useCallback(() => {
     console.log(
       `🔄 moveToNextStream: pending count = ${pendingStreamsRef.current.length}`
@@ -155,13 +147,13 @@ export const SparkTTSProvider = ({
       console.log(`⏳ Micro-delay ${delay}ms to prevent overlap`);
       setTimeout(() => {
         if (!isPlayingChunkRef.current && !stoppedRef.current) {
-          playNextChunk();
+          playNextChunkRef.current();
         }
       }, delay);
     } else {
       // Natural timing - start immediately
       if (!isPlayingChunkRef.current) {
-        playNextChunk();
+        playNextChunkRef.current();
       }
     }
   }, []);
@@ -265,7 +257,7 @@ export const SparkTTSProvider = ({
         // NO DELAY - immediately continue
         // The natural audio ending is the timing we want
         if (!stoppedRef.current) {
-          playNextChunk();
+          playNextChunkRef.current();
         }
       };
 
@@ -275,7 +267,7 @@ export const SparkTTSProvider = ({
         lastAudioEndTimeRef.current = Date.now();
         URL.revokeObjectURL(url);
         if (!stoppedRef.current) {
-          playNextChunk();
+          playNextChunkRef.current();
         }
       };
 
@@ -285,7 +277,7 @@ export const SparkTTSProvider = ({
         lastAudioEndTimeRef.current = Date.now();
         URL.revokeObjectURL(url);
         if (!stoppedRef.current) {
-          playNextChunk();
+          playNextChunkRef.current();
         }
       });
       return;
@@ -304,6 +296,9 @@ export const SparkTTSProvider = ({
       // Wait for more chunks or tts-end
     }
   }, [moveToNextStream]);
+  useEffect(() => {
+    playNextChunkRef.current = playNextChunk;
+  }, [playNextChunk]);
 
   // ── PUBLIC: speak ──
   const speak = useCallback((_text: string) => {
@@ -535,10 +530,4 @@ export const SparkTTSProvider = ({
       {children}
     </SparkTTSContext.Provider>
   );
-};
-
-export const useSparkTTS = () => {
-  const ctx = useContext(SparkTTSContext);
-  if (!ctx) throw new Error("useSparkTTS must be used inside SparkTTSProvider");
-  return ctx;
 };

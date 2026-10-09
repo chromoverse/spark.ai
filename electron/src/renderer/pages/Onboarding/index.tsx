@@ -2,7 +2,7 @@ import MinimalHeader from "@/components/local/MinimalHeader";
 import { useAppSelector } from "@/store/hooks";
 import type { AuthUser } from "@/store/features/auth/authSlice";
 import axiosInstance from "@/utils/axiosConfig";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import {
   type MutableRefObject,
   startTransition,
@@ -32,15 +32,7 @@ import type {
   VoiceCatalogEntry,
   VoiceGender,
 } from "./types";
-import {
-  countFilledTokens,
-  ensureMinimumTokenRows,
-  normalizeOnboardingLanguage,
-  normalizeOnboardingDraft,
-  prettifyValue,
-  resolveHeardAboutSparkValue,
-  trimTokens,
-} from "./utils";
+import { countFilledTokens, ensureMinimumTokenRows, normalizeOnboardingLanguage, normalizeOnboardingDraft, resolveHeardAboutSparkValue, trimTokens } from "./utils";
 import {
   getVoicesForLanguageAndGender,
   loadVoiceCatalog,
@@ -224,7 +216,7 @@ function Onboarding() {
 
   async function startPreviewVisualizer(audio: HTMLAudioElement) {
     clearPreviewVisualizer();
-    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     try {
       const ctx = new AC();

@@ -1,3 +1,5 @@
+import type { TaskRecord } from "./src/types/socket.types";
+
 // types.d.ts
 
 // FrameWindowAction
@@ -34,7 +36,7 @@ export interface IMediaStream {
 interface IActionExecutorResponseResults {
   taskId: string;
   success: boolean;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   error?: string;
   durationMs?: number;
 }
@@ -171,6 +173,8 @@ export type IEventPayloadMapping = {
 
 declare global {
   interface Window {
+    // Older Chromium name, kept as a fallback for AudioContext.
+    webkitAudioContext?: typeof AudioContext;
     electronApi: {
       sendFrameAction: (payload: IFrameWindowAction) => void;
       getFrameState: () => Promise<IFrameWindowAction>;
@@ -197,7 +201,7 @@ declare global {
       ) => () => void;
 
       // Python Automation API -  as SQH Listener
-      executeTasks: (tasks: any[]) => Promise<IActionExecutorResponse>;
+      executeTasks: (tasks: TaskRecord[]) => Promise<IActionExecutorResponse>;
 
       // Secondary Window API
       openSecondaryWindow: () => Promise<void>;

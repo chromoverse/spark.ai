@@ -1,8 +1,8 @@
 import { Button } from '@/components/ui/button'
-import { useSocket } from '@/context/socketContextProvider'
+import { useSocket } from "@/context/socketContext"
 import React from 'react'
 import axios from "axios"
-import { useSparkTTS } from '@/context/sparkTTSContext'
+import { useSparkTTS } from "@/context/sparkTTS"
 import ServerStatusShower from '../terminals/ServerStatusTerminal'
 
 import type { TaskRecord } from "@shared/socket.types";
@@ -10,8 +10,8 @@ import type { TaskRecord } from "@shared/socket.types";
 
 
 export default function CenterPanel() {
-  const { socket, isConnected, on, emit, off } = useSocket()
-  const { speak, stop, isSpeaking } = useSparkTTS();
+  const { emit } = useSocket()
+  const { speak } = useSparkTTS();
    const [status, setStatus] = React.useState<string>("Not started");
 
   const getAudio = async(text:string | undefined) => {

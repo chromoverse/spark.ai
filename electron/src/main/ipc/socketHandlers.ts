@@ -7,7 +7,8 @@ interface SocketEmitPayload {
 }
 
 export function registerSocketHandlers() {
-  ipcMainHandle("socketEmit", async (_event, payload: SocketEmitPayload) => {
+  ipcMainHandle("socketEmit", async (_event, raw) => {
+    const payload = raw as Partial<SocketEmitPayload> | null | undefined;
     if (!payload || typeof payload.event !== "string" || payload.event.length === 0) {
       return { success: false, error: "invalid_socket_event" };
     }

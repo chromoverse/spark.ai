@@ -146,7 +146,7 @@ export interface ErrorPayload {
   code: string;
   message: string;
   timestamp: number;
-  details?: any;
+  details?: unknown;
 }
 
 export type ServerStatusFlag = "INFO" | "WARN" | "ERROR";
@@ -216,6 +216,27 @@ export interface SparkControlPayload {
   tab?: string;
 }
 
+/** Fields the v1 server puts on spark:log payloads (read by the Home activity feed). */
+export interface SparkLogFields {
+  task_id?: string;
+  tool_name?: string;
+  message?: string;
+  query?: string;
+  text?: string;
+  job_id?: string;
+  thread_id?: string;
+  threadId?: string;
+  result_summary?: string;
+  stage?: string;
+  error?: string;
+  urls?: { url: string; domain: string }[];
+  tools?: string[];
+  success?: boolean;
+  entity_key?: string;
+  duration_ms?: number;
+  latency_ms?: number;
+}
+
 export interface SparkLogPayload {
   event_type: string;
   user_id: string;
@@ -225,7 +246,7 @@ export interface SparkLogPayload {
   tool_name?: string;
   status?: string;
   job_id?: string;
-  payload?: Record<string, any>;
+  payload?: SparkLogFields;
   timestamp: string;
 }
 
@@ -248,7 +269,8 @@ export interface ApprovalResponsePayload {
 // card under the originating query in the UI.
 export interface EntityCardActionPayload {
   action: string;
-  entity: Record<string, unknown>;
+  // The full entity card, passed through to the server as-is.
+  entity: object;
   thread_id: string;
   intent?: string;
   query?: string;
@@ -267,7 +289,7 @@ export interface SocketEvents {
   "user-interrupt": (data: UserInterruptPayload) => void;
   "user-speech-started": (data: UserSpeechStartedPayload) => void;
   "request-tts": (data: TTSPayload) => void;
-  "test-ws": (data?: any) => void;
+  "test-ws": (data?: unknown) => void;
   
   // Task execution results (client → server)
   "task:result": (data: TaskResultPayload) => void;
@@ -278,8 +300,13 @@ export interface SocketEvents {
   
   // PQH responses
   "query-result": (data: QueryResultPayload) => void;
-  "query-error": (data: any) => void;
+  "query-error": (data: unknown) => void;
   "agent:state": (data: unknown) => void;
+  "job:completed": (data: { job_id: string }) => void;
+  "job:failed": (data: { job_id: string }) => void;
+  "job:queued": (data: { job_id: string; goal: string; position: number }) => void;
+  "job:replanning": (data: { job_id: string }) => void;
+  "job:resumed": (data: { job_id: string }) => void;
   "agent:clarify": (data: unknown) => void;
   
   // Task orchestration (SQH) - both events use same payload format
@@ -314,7 +341,7 @@ export interface SocketEvents {
   "task:approval:response": (data: ApprovalResponsePayload) => void;
   "job:started": (data: { job_id: string; goal: string }) => void;
   "tool:output": (data: { success?: boolean; output?: { data?: Record<string, unknown>; tool?: string; task_id?: string; job_id?: string } }) => void;
-  processing: (data: any) => void;
+  processing: (data: unknown) => void;
   
   // Generic events
   error: (error: ErrorPayload) => void;

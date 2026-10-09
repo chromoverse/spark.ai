@@ -24,42 +24,45 @@ export default function LiquidGradientBackground() {
 
   // ── Spring-physics parallax loop ─────────────────────────────────────────
   const animate = useCallback(() => {
-    const ax = (txRef.current - cxRef.current) * SPRING_STIFFNESS;
-    const ay = (tyRef.current - cyRef.current) * SPRING_STIFFNESS;
+    const step = () => {
+      const ax = (txRef.current - cxRef.current) * SPRING_STIFFNESS;
+      const ay = (tyRef.current - cyRef.current) * SPRING_STIFFNESS;
 
-    vxRef.current = vxRef.current * SPRING_DAMPING + ax;
-    vyRef.current = vyRef.current * SPRING_DAMPING + ay;
+      vxRef.current = vxRef.current * SPRING_DAMPING + ax;
+      vyRef.current = vyRef.current * SPRING_DAMPING + ay;
 
-    cxRef.current += vxRef.current;
-    cyRef.current += vyRef.current;
+      cxRef.current += vxRef.current;
+      cyRef.current += vyRef.current;
 
-    const dx = cxRef.current - 0.5;
-    const dy = cyRef.current - 0.5;
+      const dx = cxRef.current - 0.5;
+      const dy = cyRef.current - 0.5;
 
-    const tiltX = vyRef.current * VELOCITY_ROT;
-    const tiltY = -vxRef.current * VELOCITY_ROT;
+      const tiltX = vyRef.current * VELOCITY_ROT;
+      const tiltY = -vxRef.current * VELOCITY_ROT;
 
-    if (slowLayerRef.current) {
-      slowLayerRef.current.style.transform = `translate(${dx * 30}px, ${dy * 22}px) rotate(${tiltX * 0.4}deg)`;
-    }
-    if (midLayerRef.current) {
-      midLayerRef.current.style.transform = `translate(${dx * 55}px, ${dy * 40}px) rotate(${tiltY * 0.6}deg)`;
-    }
-    if (fastLayerRef.current) {
-      fastLayerRef.current.style.transform = `translate(${dx * 85}px, ${dy * 62}px) rotate(${tiltX * 0.9}deg)`;
-    }
+      if (slowLayerRef.current) {
+        slowLayerRef.current.style.transform = `translate(${dx * 30}px, ${dy * 22}px) rotate(${tiltX * 0.4}deg)`;
+      }
+      if (midLayerRef.current) {
+        midLayerRef.current.style.transform = `translate(${dx * 55}px, ${dy * 40}px) rotate(${tiltY * 0.6}deg)`;
+      }
+      if (fastLayerRef.current) {
+        fastLayerRef.current.style.transform = `translate(${dx * 85}px, ${dy * 62}px) rotate(${tiltX * 0.9}deg)`;
+      }
 
-    const settling =
-      Math.abs(vxRef.current) < 0.0002 &&
-      Math.abs(vyRef.current) < 0.0002 &&
-      Math.abs(txRef.current - cxRef.current) < 0.0003 &&
-      Math.abs(tyRef.current - cyRef.current) < 0.0003;
+      const settling =
+        Math.abs(vxRef.current) < 0.0002 &&
+        Math.abs(vyRef.current) < 0.0002 &&
+        Math.abs(txRef.current - cxRef.current) < 0.0003 &&
+        Math.abs(tyRef.current - cyRef.current) < 0.0003;
 
-    if (settling) {
-      rafRef.current = null;
-      return;
-    }
-    rafRef.current = requestAnimationFrame(animate);
+      if (settling) {
+        rafRef.current = null;
+        return;
+      }
+      rafRef.current = requestAnimationFrame(step);
+    };
+    step();
   }, []);
 
   // ── Event listeners ───────────────────────────────────────────────────────

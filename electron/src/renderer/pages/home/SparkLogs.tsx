@@ -41,7 +41,7 @@ function heatColor(count: number, max: number): string {
 }
 
 export default function SparkLogs() {
-  const dayMap = useMemo(buildActivityMap, []);
+  const dayMap = useMemo(() => buildActivityMap(), []);
 
   // ── Stats ──────────────────────────────────────────────────────────────
   const totalQueries = useMemo(() => Object.values(dayMap).reduce((s, d) => s + d.queries, 0), [dayMap]);

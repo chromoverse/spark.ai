@@ -169,8 +169,11 @@ function TextViewer({ text, mimeType }: { text: string; mimeType: string }) {
 export default function DriveFileModal({ file, onClose }: DriveFileModalProps) {
   const { user } = useAppSelector((s) => s.auth);
   const [data, setData] = useState<FileData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const missingIds = !user?._id || !file.id;
+  const loading = !missingIds && fetching;
+  const error = missingIds ? "Missing user or file ID" : fetchError;
 
   // Close on Escape
   useEffect(() => {
@@ -181,16 +184,10 @@ export default function DriveFileModal({ file, onClose }: DriveFileModalProps) {
 
   // Fetch file content
   useEffect(() => {
-    if (!user?._id || !file.id) {
-      setError("Missing user or file ID");
-      setLoading(false);
-      return;
-    }
+    // The parent keys this modal by file id, so state starts fresh for every file.
+    if (!user?._id || !file.id) return;
     const apiBase = getApiBase();
     const url = `${apiBase}/drive/read?user_id=${encodeURIComponent(user._id)}&file_id=${encodeURIComponent(file.id)}`;
-
-    setLoading(true);
-    setError(null);
 
     fetch(url)
       .then(r => r.json())
@@ -198,8 +195,8 @@ export default function DriveFileModal({ file, onClose }: DriveFileModalProps) {
         if (!d.success && d.error) throw new Error(d.error);
         setData(d);
       })
-      .catch(e => setError(e?.message || "Failed to load file"))
-      .finally(() => setLoading(false));
+      .catch(e => setFetchError(e?.message || "Failed to load file"))
+      .finally(() => setFetching(false));
   }, [file.id, user?._id]);
 
   const FileIcon = file.type === "folder" ? FolderOpen

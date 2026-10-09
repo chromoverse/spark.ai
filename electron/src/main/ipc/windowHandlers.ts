@@ -27,11 +27,15 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   );
 
   ipcMainHandle("setOnboardingWindowMode", (_event, payload) => {
+    if (payload !== "IMMERSIVE" && payload !== "MAXIMIZED" && payload !== "DEFAULT") {
+      throw new Error("Unknown onboarding window mode");
+    }
     mainWindow.setOnboardingWindowMode(payload);
     return { success: true };
   });
 
   ipcMainHandle("openExternalUrl", async (_event, url) => {
+    if (typeof url !== "string") throw new Error("openExternalUrl expects a URL string");
     const parsed = new URL(url);
     if (!["http:", "https:"].includes(parsed.protocol)) {
       throw new Error("Unsupported URL protocol");
@@ -83,14 +87,16 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   });
 
   // Media state sync from Renderer to Tray
-  ipcMainHandle("updateMediaState", async (_event, payload: { 
-    micOn?: boolean; 
-    cameraOn?: boolean;
-    audioInputs?: IMediaDevice[];
-    videoInputs?: IMediaDevice[];
-    selectedInputDeviceId?: string | null;
-    selectedCameraDeviceId?: string | null;
-  }) => {
+  ipcMainHandle("updateMediaState", async (_event, raw) => {
+    if (typeof raw !== "object" || raw === null) throw new Error("updateMediaState expects an object");
+    const payload = raw as {
+      micOn?: boolean;
+      cameraOn?: boolean;
+      audioInputs?: IMediaDevice[];
+      videoInputs?: IMediaDevice[];
+      selectedInputDeviceId?: string | null;
+      selectedCameraDeviceId?: string | null;
+    };
     const { trayManager } = await import("../windows/TrayManager.js");
     trayManager.updateMediaState(payload);
     return payload;

@@ -1,4 +1,4 @@
-import { useSparkTTS } from '@/context/sparkTTSContext';
+import { useSparkTTS } from "@/context/sparkTTS";
 import { useState, useEffect, useMemo } from 'react';
 
 export function VoiceBubble() {
@@ -12,18 +12,30 @@ export function VoiceBubble() {
     return () => clearInterval(interval);
   }, []);
 
+  // Animation time is state so render stays pure; it only ticks while there's audio.
+  const [now, setNow] = useState(() => Date.now());
+  const speaking = audioLevel > 0;
+  useEffect(() => {
+    if (!speaking) return;
+    let raf = requestAnimationFrame(function tick() {
+      setNow(Date.now());
+      raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [speaking]);
+
   const wavePoints = 28;
   const waves = useMemo(() => {
     return Array.from({ length: wavePoints }, (_, i) => {
       const angle = (i / wavePoints) * Math.PI * 2;
-      const intensity = Math.sin(Date.now() / 180 + i * 0.5) * (audioLevel / 100);
+      const intensity = Math.sin(now / 180 + i * 0.5) * (audioLevel / 100);
       const radius = 18 + intensity * 14;
       return {
         x: 50 + Math.cos(angle) * radius,
         y: 50 + Math.sin(angle) * radius,
       };
     });
-  }, [audioLevel]);
+  }, [audioLevel, now]);
 
   const wavePath = useMemo(() => {
     let d = `M ${waves[0].x} ${waves[0].y}`;
@@ -33,8 +45,8 @@ export function VoiceBubble() {
     return d + ' Z';
   }, [waves]);
 
-  const gradientX = 40 + Math.sin(Date.now() / 900) * 12;
-  const gradientY = 40 + Math.cos(Date.now() / 1000) * 12;
+  const gradientX = 40 + Math.sin(now / 900) * 12;
+  const gradientY = 40 + Math.cos(now / 1000) * 12;
 
   return (
     <div className="relative w-9 h-9 select-none">

@@ -1,5 +1,5 @@
 import React from 'react'
-import { AudioInput } from "@/components/local/device/AudioInput";
+
 import { VideoInputComponent } from "@/components/local/device/VideoInput";
 
 export default function RightPanel() {

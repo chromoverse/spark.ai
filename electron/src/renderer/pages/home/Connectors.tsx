@@ -266,7 +266,7 @@ function ServiceCard({ connector, userId, onPollUntilConnected, onDisconnect }: 
 
 export default function Connectors() {
   const { user } = useAppSelector((state) => state.auth);
-  const userId = (user as any)?._id as string | undefined;
+  const userId = user?._id;
 
   const { connectors, loading, error, refetch, pollUntilConnected, disconnect } =
     useConnectorStatus(userId);

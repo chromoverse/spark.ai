@@ -1,23 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-interface Position {
-  x: number;
-  y: number;
-}
-
-interface Size {
-  width: number;
-  height: number;
-}
-
-
-interface DragState {
-  x: number;
-  y: number;
-}
-
-type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | null;
-
 interface ParsedLogLine {
   timestamp: string;
   module: string;

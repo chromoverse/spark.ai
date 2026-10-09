@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
     User,
     Bell,
@@ -26,8 +26,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { setClientOffline, setClientOnline } from "@/store/features/localState/localSlice";
+import { useAppDispatch } from "@/store/hooks";
+
 import { useNavigate } from "react-router-dom";
 import { resetUser } from "@/store/features/auth/authSlice";
 

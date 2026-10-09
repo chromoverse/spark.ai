@@ -136,7 +136,7 @@ export async function getMediaPermissions(
 export async function checkSystemPermissions(): Promise<IMediaPermissions> {
   let camera = false;
   let microphone = false;
-  let speaker = true; // Speakers don't need permissions
+  const speaker = true; // Speakers don't need permissions
 
   if (process.platform === "darwin") {
     // macOS

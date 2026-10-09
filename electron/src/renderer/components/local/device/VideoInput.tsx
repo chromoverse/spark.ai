@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { Button } from "@/components/ui/button";
-import { Settings, Video, VideoOff } from "lucide-react";
+import { Settings } from "lucide-react";
 import type { IMediaDevice } from "types";
 import { setSelectedCameraDeviceId } from "@/store/features/device/deviceSlice";
 import { toggleCameraOn } from "@/store/features/localState/localSlice";
@@ -32,21 +32,6 @@ export function VideoInputComponent() {
   }, [hasPermissions, videoInputDevices]);
 
   // React to Redux state changes
-  useEffect(() => {
-    if (isCameraOn) {
-      startStream();
-    } else {
-      stopStream();
-    }
-  }, [isCameraOn]);
-
-  // Auto-restart stream when selected device changes (only if camera is on)
-  useEffect(() => {
-    if (isCameraOn && selectedCameraDeviceId) {
-      startStream();
-    }
-  }, [selectedCameraDeviceId]);
-
   const startStream = async () => {
     try {
       if (!videoRef.current) return;
@@ -98,6 +83,23 @@ export function VideoInputComponent() {
     }
   };
 
+  useEffect(() => {
+    if (isCameraOn) {
+      startStream();
+    } else {
+      stopStream();
+    }
+  }, [isCameraOn]);
+
+  // Auto-restart stream when selected device changes (only if camera is on)
+  useEffect(() => {
+    if (isCameraOn && selectedCameraDeviceId) {
+      startStream();
+    }
+  }, [selectedCameraDeviceId]);
+
+
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -107,10 +109,6 @@ export function VideoInputComponent() {
 
   const handleDeviceChange = (deviceId: string) => {
     dispatch(setSelectedCameraDeviceId(deviceId));
-  };
-
-  const handleToggleCamera = () => {
-    dispatch(toggleCameraOn());
   };
 
   if (!hasPermissions) {

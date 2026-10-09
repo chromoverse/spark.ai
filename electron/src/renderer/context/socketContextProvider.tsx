@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -9,46 +7,22 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import type { SocketEvents } from "@shared/socket.types";
+import {
+  SocketContext,
+  type SocketBridgeHandle,
+  type SocketContextType,
+  type TypedEmit,
+  type TypedOff,
+  type TypedOn,
+  type TypedOnce,
+} from "./socketContext";
 import { useAppDispatch } from "../store/hooks";
 import {
   setServerOffline,
   setServerOnline,
 } from "@/store/features/localState/localSlice";
 
-type TypedEmit = <K extends keyof SocketEvents>(
-  event: K,
-  ...args: Parameters<SocketEvents[K]>
-) => void;
-
-type TypedOn = <K extends keyof SocketEvents>(
-  event: K,
-  callback: SocketEvents[K],
-) => void;
-
-type TypedOff = <K extends keyof SocketEvents>(
-  event: K,
-  callback?: SocketEvents[K],
-) => void;
-
-type TypedOnce = <K extends keyof SocketEvents>(
-  event: K,
-  callback: SocketEvents[K],
-) => void;
-
 type InternalListener = (...args: unknown[]) => void;
-
-interface SocketBridgeHandle {
-  id?: string;
-}
-
-interface SocketContextType {
-  socket: SocketBridgeHandle | null;
-  isConnected: boolean;
-  emit: TypedEmit;
-  on: TypedOn;
-  off: TypedOff;
-  once: TypedOnce;
-}
 
 interface SocketProviderProps {
   children: ReactNode;
@@ -59,8 +33,6 @@ interface SocketConnectionStatePayload {
   socketId?: string;
   reason?: string;
 }
-
-const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 export const SocketProvider = ({ children }: SocketProviderProps) => {
   const dispatch = useAppDispatch();
@@ -206,12 +178,4 @@ export const SocketProvider = ({ children }: SocketProviderProps) => {
       {children}
     </SocketContext.Provider>
   );
-};
-
-export const useSocket = (): SocketContextType => {
-  const context = useContext(SocketContext);
-  if (context === undefined) {
-    throw new Error("useSocket must be used within a SocketProvider");
-  }
-  return context;
 };

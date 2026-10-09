@@ -1,11 +1,11 @@
 // lib/axios/axiosConfig.ts
 
 import axios, { AxiosError} from "axios";
-import type { AxiosResponse } from "axios";
-import { toast } from "sonner";
+import type { AxiosRequestConfig, AxiosResponse } from "axios";
+
 
 // Standardized response format
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   access_token?: string;  // ✅ Added for Electron responses
@@ -14,7 +14,7 @@ export interface ApiResponse<T = any> {
     message: string;
     code?: string;
     status?: number;
-    details?: any;
+    details?: unknown;
   };
   status: number;
   message?: string;
@@ -35,11 +35,19 @@ axiosInstance.interceptors.response.use(
   (error: AxiosError) => Promise.reject(handleErrorResponse(error)),
 );
 
+/** GET that returns the body. The response interceptor already unwraps it, which axios's own
+ * types don't know, so callers name the body shape they expect here. */
+export async function getJson<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  return (await axiosInstance.get(url, config)) as unknown as T;
+}
+
 // Centralized error handler
 function handleErrorResponse(error: AxiosError): ApiResponse {
   const response = error.response;
   // console.log("response fo error from axosConfig", response)
-  const errorData: any = response?.data;
+  const errorData = response?.data as
+    | { message?: string; code?: string; error_code?: string; details?: unknown; errors?: unknown }
+    | undefined;
 
   // Build standardized error response
   const standardizedError: ApiResponse = {

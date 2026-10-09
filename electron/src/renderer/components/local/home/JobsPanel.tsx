@@ -1,6 +1,6 @@
 import { BriefcaseBusiness, Loader2, Check, X, Clock, AlertTriangle } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
-import { useSocket } from "@/context/socketContextProvider";
+import { useSocket } from "@/context/socketContext";
 
 interface JobInfo {
   job_id: string;
@@ -49,20 +49,20 @@ export default function JobsPanel({ show = true }: { show?: boolean }) {
       updateJob(data.job_id, { status: "running" });
     };
 
-    on("job:started" as any, onStarted as any);
-    on("job:completed" as any, onCompleted as any);
-    on("job:failed" as any, onFailed as any);
-    on("job:queued" as any, onQueued as any);
-    on("job:replanning" as any, onReplanning as any);
-    on("job:resumed" as any, onResumed as any);
+    on("job:started", onStarted);
+    on("job:completed", onCompleted);
+    on("job:failed", onFailed);
+    on("job:queued", onQueued);
+    on("job:replanning", onReplanning);
+    on("job:resumed", onResumed);
 
     return () => {
-      off("job:started" as any, onStarted as any);
-      off("job:completed" as any, onCompleted as any);
-      off("job:failed" as any, onFailed as any);
-      off("job:queued" as any, onQueued as any);
-      off("job:replanning" as any, onReplanning as any);
-      off("job:resumed" as any, onResumed as any);
+      off("job:started", onStarted);
+      off("job:completed", onCompleted);
+      off("job:failed", onFailed);
+      off("job:queued", onQueued);
+      off("job:replanning", onReplanning);
+      off("job:resumed", onResumed);
     };
   }, [on, off, updateJob]);
 
@@ -173,14 +173,15 @@ export default function JobsPanel({ show = true }: { show?: boolean }) {
 }
 
 function JobCard({ job }: { job: JobInfo }) {
-  const [, forceUpdate] = useState(0);
+  // The clock ticks in state so render stays pure; it only moves while the job is live.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (job.status !== "running" && job.status !== "replanning") return;
-    const t = setInterval(() => forceUpdate(n => n + 1), 1000);
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [job.status]);
 
-  const elapsed = Math.floor((Date.now() - job.started_at) / 1000);
+  const elapsed = Math.max(0, Math.floor((now - job.started_at) / 1000));
   const elapsedStr = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 
   type StatusKey = JobInfo["status"];

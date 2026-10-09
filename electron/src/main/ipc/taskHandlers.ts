@@ -17,7 +17,11 @@ export function registerTaskHandlers() {
    * Input: TaskRecord[]
    * Output: { status, results, message }
    */
-  ipcMainHandle("executeTasks", async (_event, tasks: TaskRecord[]) => {
+  ipcMainHandle("executeTasks", async (_event, raw) => {
+    if (!Array.isArray(raw)) {
+      return { status: "error" as const, results: [], message: "executeTasks expects a list of tasks" };
+    }
+    const tasks = raw as TaskRecord[];
     console.log(`🔵 IPC: executeTasks called with ${tasks.length} tasks`);
 
     try {
@@ -49,12 +53,12 @@ export function registerTaskHandlers() {
       console.log(`🔵 Executor response:`, result);
 
       return result;
-    } catch (err: any) {
+    } catch (err) {
       console.error("❌ Error in executeTasks:", err);
       return {
         status: "error" as const,
         results: [],
-        message: err.message || "Unknown error executing tasks",
+        message: err instanceof Error ? err.message : "Unknown error executing tasks",
       };
     }
   });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Music } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import type { ControllerProps } from '../types';
 
 interface MusicState {
@@ -89,12 +89,3 @@ export function MusicPlayer({ isActive }: ControllerProps) {
     </div>
   );
 }
-
-// Plugin config
-export const musicPlayerPlugin = {
-  id: 'music-player',
-  name: 'Music',
-  icon: <Music className="w-4 h-4" />,
-  component: MusicPlayer,
-  order: 2,
-};

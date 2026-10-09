@@ -747,8 +747,13 @@ function FeaturedPanel({
   const [bgIdx, setBgIdx]   = useState(0);
   const [imgErrors, setImgErrors] = useState<Set<number>>(new Set());
 
-  // Reset to first image when entity changes
-  useEffect(() => { setBgIdx(0); setImgErrors(new Set()); }, [entity.name]);
+  // Reset to the first image when the entity changes (adjusting state during render).
+  const [shownEntity, setShownEntity] = useState(entity.name);
+  if (shownEntity !== entity.name) {
+    setShownEntity(entity.name);
+    setBgIdx(0);
+    setImgErrors(new Set());
+  }
 
   const bgSrc  = images[bgIdx] && !imgErrors.has(bgIdx) ? images[bgIdx] : null;
   const hasImg = !!bgSrc;

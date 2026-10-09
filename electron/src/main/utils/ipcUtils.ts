@@ -4,7 +4,7 @@ import { isDevMode } from "./isDevMode.js";
 
 export function ipcMainHandle<Key extends keyof IEventPayloadMapping>(
   key: Key,
-  handler: (event: IpcMainInvokeEvent, payload?: any) => IEventPayloadMapping[Key] | Promise<IEventPayloadMapping[Key]>
+  handler: (event: IpcMainInvokeEvent, payload?: unknown) => IEventPayloadMapping[Key] | Promise<IEventPayloadMapping[Key]>
 ) {
   ipcMain.handle(key, async (event, payload) => {
     validateEventFrame(event.senderFrame);

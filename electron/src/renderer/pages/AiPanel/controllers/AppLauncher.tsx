@@ -1,4 +1,4 @@
-import { Grid3X3, LayoutGrid } from 'lucide-react';
+import { Grid3X3 } from 'lucide-react';
 import type { ControllerProps, ExpansionProps, AppItem } from '../types';
 
 // Default apps list
@@ -63,13 +63,3 @@ export function AppLauncherExpansion({ isExpanded }: ExpansionProps) {
     </div>
   );
 }
-
-// Plugin config
-export const appLauncherPlugin = {
-  id: 'app-launcher',
-  name: 'Apps',
-  icon: <LayoutGrid className="w-4 h-4" />,
-  component: AppLauncher,
-  expansionComponent: AppLauncherExpansion,
-  order: 3,
-};

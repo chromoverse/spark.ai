@@ -1,7 +1,7 @@
 // src/renderer/hooks/useAiResponseHandler.ts
 import { useEffect, useCallback, useRef, useState } from "react";
-import { useSocket } from "@/context/socketContextProvider";
-import { useSparkTTS } from "@/context/sparkTTSContext";
+import { useSocket } from "@/context/socketContext";
+import { useSparkTTS } from "@/context/sparkTTS";
 import type {
   QueryResultPayload,
   TaskRecord,
@@ -104,6 +104,31 @@ export function useAiResponseHandler(
   // ============================================
   // PQH HANDLER (Primary Query Handler)
   // ============================================
+  // Resolves once speech ends (or after 30 s). Polls a ref: state captured in this closure never
+  // changes, so the old version always waited out the full 30 s.
+  const isSpeakingRef = useRef(isSpeaking);
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+  const waitForSpeechComplete = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!isSpeakingRef.current) {
+        resolve();
+        return;
+      }
+      const checkInterval = setInterval(() => {
+        if (!isSpeakingRef.current) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 100);
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        resolve();
+      }, 30000);
+    });
+  }, []);
+
   const handlePQHResponse = useCallback(
     async (payload: QueryResultPayload) => {
       setLoading(true);
@@ -142,7 +167,7 @@ export function useAiResponseHandler(
         onPQHError?.(message, payload);
       }
     },
-    [speak, onPQHSuccess, onPQHError],
+    [speak, waitForSpeechComplete, onPQHSuccess, onPQHError],
   );
 
   // ============================================
@@ -224,6 +249,7 @@ export function useAiResponseHandler(
     },
     [
       speak,
+      waitForSpeechComplete,
       onTaskBatchReceived,
       onTaskBatchComplete,
       reportTaskFailure,
@@ -234,26 +260,7 @@ export function useAiResponseHandler(
   // ============================================
   // HELPERS
   // ============================================
-  const waitForSpeechComplete = useCallback((): Promise<void> => {
-    return new Promise((resolve) => {
-      if (!isSpeaking) {
-        resolve();
-        return;
-      }
 
-      const checkInterval = setInterval(() => {
-        if (!isSpeaking) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        resolve();
-      }, 30000);
-    });
-  }, [isSpeaking]);
 
   // ============================================
   // SERVER-SIDE TOOL OUTPUT HANDLER
@@ -306,7 +313,7 @@ export function useAiResponseHandler(
     on("task:execute_batch", handleTaskExecuteBatchPayload);
     on("task:progress", handleTaskSummary);
     on("task:summary", handleTaskSummary);
-    on("job:completed" as any, handleJobCompleted as any);
+    on("job:completed", handleJobCompleted);
 
     return () => {
       // console.log("👋 Cleaning up AI response listeners");
@@ -315,7 +322,7 @@ export function useAiResponseHandler(
       off("task:execute_batch", handleTaskExecuteBatchPayload);
       off("task:progress", handleTaskSummary);
       off("task:summary", handleTaskSummary);
-      off("job:completed" as any, handleJobCompleted as any);
+      off("job:completed", handleJobCompleted);
     };
   }, [
     socket,

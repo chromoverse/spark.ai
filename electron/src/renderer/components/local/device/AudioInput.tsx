@@ -4,8 +4,8 @@ import { MessageSquareWarning, Mic, MicOff, Settings } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setSelectedInputDeviceId } from "@/store/features/device/deviceSlice";
 import { toggleMicrophoneListening } from "@/store/features/localState/localSlice";
-import { useSocket } from "@/context/socketContextProvider";
-import { useSparkTTS } from "@/context/sparkTTSContext";
+import { useSocket } from "@/context/socketContext";
+import { useSparkTTS } from "@/context/sparkTTS";
 import AudioLevelProgress from "./AudioLevelProgress";
 
 // ─── VAD Thresholds (tightened to reduce room noise false positives) ──────────
@@ -18,7 +18,6 @@ const VAD_PRE_SPEECH_PAD_MS = 120;
 const PROCESSING_TIMEOUT_MS = 30_000;
 const PCM_MIME_TYPE = "audio/pcm;rate=16000";
 const MIN_PCM_SAMPLES = 1600; // ~100ms at 16kHz
-const STREAM_CHUNK_SAMPLES = 32000; // ~2s at 16kHz — send a chunk every ~2s during speech
 
 const VAD_BASE_ASSET_PATH = import.meta.env.DEV
   ? "/node_modules/@ricky0123/vad-web/dist/"
@@ -250,7 +249,7 @@ export function AudioInput({ isAiPanel }: { isAiPanel?: boolean }) {
   }, [emit, isConnected, socket]);
 
   const handleSpeechEnd = useCallback(
-    (audioFloat32Array: Float32Array) => {
+    (_audioFloat32Array: Float32Array) => {
       setIsSpeaking(false);
       setIsRecording(false);
 

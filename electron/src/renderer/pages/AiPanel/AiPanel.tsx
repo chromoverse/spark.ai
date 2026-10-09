@@ -7,7 +7,13 @@ import { ControllerDots } from "./components/ControllerDots";
 import { ExpansionArea } from "./components/ExpansionArea";
 import type { SwipeDirection, ControllerPlugin } from "./types";
 import { useAiResponseHandler } from "@/hooks/useAiResponseHandler";
-import { useSparkTTS } from "@/context/sparkTTSContext";
+
+// Electron's frameless-window drag regions; not in React's CSS types.
+type AppRegionStyle = React.CSSProperties & {
+  WebkitAppRegion?: "drag" | "no-drag";
+  appRegion?: "drag" | "no-drag";
+};
+
 
 // Panel size constants
 const COLLAPSED_SIZE = { width: 200, height: 60 };
@@ -331,12 +337,10 @@ export default function AiPanel() {
     [controllers, activeController],
   );
 
-  // Turn off drag mode when minimized or expanded
-  useEffect(() => {
-    if (!isHovered || expansionVisible) {
-      setIsDragMode(false);
-    }
-  }, [isHovered, expansionVisible]);
+  // Turn off drag mode when minimized or expanded (adjusting state during render).
+  if (isDragMode && (!isHovered || expansionVisible)) {
+    setIsDragMode(false);
+  }
 
   return (
     <div className="fixed top-0 left-1/2 -translate-x-1/2 z-1000 flex flex-col items-center">
@@ -354,7 +358,7 @@ export default function AiPanel() {
         className={`${panelClassName} ${isDragMode ? "drag-active cursor-move" : ""}`}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        style={{ WebkitAppRegion: isDragMode ? "drag" : "no-drag" } as any}
+        style={{ WebkitAppRegion: isDragMode ? "drag" : "no-drag" } as AppRegionStyle}
       >
         {/* Header - Draggable only when expanded/hovered */}
         <div
@@ -364,7 +368,7 @@ export default function AiPanel() {
               WebkitAppRegion:
                 isHovered || expansionVisible ? "drag" : "no-drag",
               appRegion: isHovered || expansionVisible ? "drag" : "no-drag",
-            } as any
+            } as AppRegionStyle
           }
         >
           <PanelHeader />

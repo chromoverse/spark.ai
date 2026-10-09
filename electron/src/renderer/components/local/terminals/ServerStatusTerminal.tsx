@@ -1,86 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { useSocket } from "@/context/socketContextProvider";
+import { useSocket } from "@/context/socketContext";
 import type { ServerStatus } from "@shared/socket.types";
 import { formatDate, formatTime } from "@/utils/date";
 import { Info } from "lucide-react";
-
-export const dummyServerStatus: ServerStatus[] = [
-  {
-    flag: "INFO",
-    status: "Backend Fired Up",
-    timestamp: "2025-12-14T14:13:02.114392+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "Analyzing your data",
-    timestamp: "2025-12-14T14:13:02.241901+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "TTS Request Received",
-    timestamp: "2025-12-14T14:15:11.441209+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "Loaded user preferences as gender=female, language=hi",
-    timestamp: "2025-12-14T14:15:11.672113+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "TTS generation completed successfully",
-    timestamp: "2025-12-14T14:15:12.889342+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "Analyzing your data",
-    timestamp: "2025-12-14T14:13:02.241901+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "TTS Request Received",
-    timestamp: "2025-12-14T14:15:11.441209+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "Loaded user preferences as gender=female, language=hi",
-    timestamp: "2025-12-14T14:15:11.672113+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "TTS generation completed successfully",
-    timestamp: "2025-12-14T14:15:12.889342+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "Analyzing your data",
-    timestamp: "2025-12-14T14:13:02.241901+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "TTS Request Received",
-    timestamp: "2025-12-14T14:15:11.441209+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "Loaded user preferences as gender=female, language=hi",
-    timestamp: "2025-12-14T14:15:11.672113+00:00",
-  },
-  {
-    flag: "INFO",
-    status: "TTS generation completed successfully",
-    timestamp: "2025-12-14T14:15:12.889342+00:00",
-  },
-  {
-    flag: "WARN",
-    status: "High response latency detected",
-    timestamp: "2025-12-14T14:18:45.932118+00:00",
-  },
-  {
-    flag: "ERROR",
-    status: "TTS worker crashed unexpectedly",
-    timestamp: "2025-12-14T14:21:09.001883+00:00",
-  },
-];
 
 const flagStyles = {
   INFO: "text-blue-400",

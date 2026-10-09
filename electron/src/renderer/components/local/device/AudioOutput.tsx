@@ -26,19 +26,6 @@ export function AudioOutput() {
   const animationRef = useRef<number | null>(null);
 
   // Auto-start monitoring when component mounts and has permissions
-  useEffect(() => {
-    if (hasPermissions && audioOutputDevices.length > 0 && !isPlaying) {
-      startMonitoring();
-    }
-  }, [hasPermissions, audioOutputDevices]);
-
-  // Restart when device changes
-  useEffect(() => {
-    if (isPlaying && selectedOutputDeviceId) {
-      startMonitoring();
-    }
-  }, [selectedOutputDeviceId]);
-
   const setupAudioVisualization = (audioContext: AudioContext) => {
     try {
       const analyser = audioContext.createAnalyser();
@@ -59,7 +46,6 @@ export function AudioOutput() {
       const updateAudioLevel = () => {
         if (analyserRef.current) {
           analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
           // Simulate varying levels for demonstration
           // In a real app, this would monitor actual audio output
           setAudioLevel(Math.random() * 50 + 10);
@@ -67,7 +53,7 @@ export function AudioOutput() {
         }
       };
 
-      updateAudioLevel();
+      animationRef.current = requestAnimationFrame(updateAudioLevel);
     } catch (error) {
       console.error("Error setting up audio visualization:", error);
     }
@@ -85,24 +71,42 @@ export function AudioOutput() {
 
       const audioContext = new AudioContext();
       audioContextRef.current = audioContext;
+      // isPlaying follows the context itself (running / suspended / closed).
+      audioContext.onstatechange = () => setIsPlaying(audioContext.state === "running");
 
       // Note: Setting output device requires setSinkId which is not available on all AudioContext
       // This works in Chrome but may need polyfill for other browsers
       if (selectedOutputDeviceId && "setSinkId" in audioContext) {
         try {
-          await (audioContext as any).setSinkId(selectedOutputDeviceId);
+          // setSinkId is newer than TypeScript's DOM lib.
+          await (audioContext as AudioContext & { setSinkId(id: string): Promise<void> }).setSinkId(selectedOutputDeviceId);
         } catch (err) {
           console.warn("Could not set output device:", err);
         }
       }
 
       setupAudioVisualization(audioContext);
-      setIsPlaying(true);
+      await audioContext.resume(); // contexts can start suspended
     } catch (error) {
       console.error("Error starting audio monitoring:", error);
-      setIsPlaying(false);
+      void audioContextRef.current?.close(); // reports "closed" through onstatechange
     }
   };
+
+  useEffect(() => {
+    if (hasPermissions && audioOutputDevices.length > 0 && !isPlaying) {
+      startMonitoring();
+    }
+  }, [hasPermissions, audioOutputDevices]);
+
+  // Restart when device changes
+  useEffect(() => {
+    if (isPlaying && selectedOutputDeviceId) {
+      startMonitoring();
+    }
+  }, [selectedOutputDeviceId]);
+
+
 
   const stopMonitoring = () => {
     if (animationRef.current) {

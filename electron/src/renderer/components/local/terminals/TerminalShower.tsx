@@ -1,5 +1,5 @@
 import React, { useState, } from 'react';
-import { Info, Maximize2, Minimize2, RotateCcw, Terminal, FileText } from 'lucide-react';
+import { Terminal, FileText } from 'lucide-react';
 import { DraggableTerminal } from './DraggableTerminal';
 import ServerStatusShower from './ServerStatusTerminal';
 import { PythonLogTerminal } from './PythonLogTerminal';

@@ -45,12 +45,6 @@ interface DraggableTerminalProps {
   onFocus?: () => void;
 }
 
-interface ResizeHandleProps {
-  direction: ResizeDirection;
-  className: string;
-  style?: React.CSSProperties;
-}
-
 interface ServerLog {
   timestamp: string;
   flag: 'INFO' | 'WARN' | 'ERROR';
@@ -68,8 +62,16 @@ interface ParsedLogLine {
 // DRAGGABLE TERMINAL COMPONENT
 // ============================================================================
 
+function getResizeCursor(direction: ResizeDirection): string {
+  if (!direction) return '';
+  if (direction === 'e' || direction === 'w') return 'ew-resize';
+  if (direction === 'n' || direction === 's') return 'ns-resize';
+  if (direction === 'ne' || direction === 'sw') return 'nesw-resize';
+  if (direction === 'nw' || direction === 'se') return 'nwse-resize';
+  return '';
+}
+
 export const DraggableTerminal: React.FC<DraggableTerminalProps> = ({ 
-  id,
   title, 
   icon: Icon, 
   children, 
@@ -198,15 +200,6 @@ export const DraggableTerminal: React.FC<DraggableTerminalProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, [size]);
 
-  const getResizeCursor = (direction: ResizeDirection): string => {
-    if (!direction) return '';
-    if (direction === 'e' || direction === 'w') return 'ew-resize';
-    if (direction === 'n' || direction === 's') return 'ns-resize';
-    if (direction === 'ne' || direction === 'sw') return 'nesw-resize';
-    if (direction === 'nw' || direction === 'se') return 'nwse-resize';
-    return '';
-  };
-
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>): void => {
     const target = e.target as HTMLElement;
     if (target.closest('.terminal-header') && !target.closest('button')) {
@@ -252,11 +245,12 @@ export const DraggableTerminal: React.FC<DraggableTerminalProps> = ({
     setSize(originalState.current.size);
   };
 
-  const ResizeHandle: React.FC<ResizeHandleProps & { direction: ResizeDirection }> = ({ 
-    direction, 
-    className, 
-    style 
-  }) => (
+  // A render helper, not a component: a component declared in here would remount every render.
+  const resizeHandle = (
+    direction: ResizeDirection,
+    className: string,
+    style?: React.CSSProperties,
+  ) => (
     <div
       onMouseDown={(e) => handleResizeStart(e, direction)}
       onMouseEnter={() => handleMouseEnter(direction)}
@@ -308,14 +302,14 @@ export const DraggableTerminal: React.FC<DraggableTerminalProps> = ({
 
       {!isMinimized && (
         <>
-          <ResizeHandle direction="n" className="top-0 left-0 right-0 h-1" />
-          <ResizeHandle direction="s" className="bottom-0 left-0 right-0 h-1" />
-          <ResizeHandle direction="e" className="top-0 bottom-0 right-0 w-1" />
-          <ResizeHandle direction="w" className="top-0 bottom-0 left-0 w-1" />
-          <ResizeHandle direction="nw" className="top-0 left-0 w-3 h-3" style={{ cursor: 'nwse-resize' }} />
-          <ResizeHandle direction="ne" className="top-0 right-0 w-3 h-3" style={{ cursor: 'nesw-resize' }} />
-          <ResizeHandle direction="sw" className="bottom-0 left-0 w-3 h-3" style={{ cursor: 'nesw-resize' }} />
-          <ResizeHandle direction="se" className="bottom-0 right-0 w-3 h-3" style={{ cursor: 'nwse-resize' }} />
+          {resizeHandle("n", "top-0 left-0 right-0 h-1")}
+          {resizeHandle("s", "bottom-0 left-0 right-0 h-1")}
+          {resizeHandle("e", "top-0 bottom-0 right-0 w-1")}
+          {resizeHandle("w", "top-0 bottom-0 left-0 w-1")}
+          {resizeHandle("nw", "top-0 left-0 w-3 h-3", { cursor: 'nwse-resize' })}
+          {resizeHandle("ne", "top-0 right-0 w-3 h-3", { cursor: 'nesw-resize' })}
+          {resizeHandle("sw", "bottom-0 left-0 w-3 h-3", { cursor: 'nesw-resize' })}
+          {resizeHandle("se", "bottom-0 right-0 w-3 h-3", { cursor: 'nwse-resize' })}
         </>
       )}
 
@@ -376,7 +370,7 @@ export const DraggableTerminal: React.FC<DraggableTerminalProps> = ({
 };
 
 const ServerStatusTerminal: React.FC = () => {
-  const [statusArr, setStatusArr] = useState<ServerLog[]>([
+  const [statusArr] = useState<ServerLog[]>(() => [
     { timestamp: new Date().toISOString(), flag: 'INFO', status: 'Server logs will appear here...' },
     { timestamp: new Date(Date.now() - 5000).toISOString(), flag: 'WARN', status: 'Waiting for socket connection' },
     { timestamp: new Date(Date.now() - 10000).toISOString(), flag: 'INFO', status: 'System initialized' }

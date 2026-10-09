@@ -1,6 +1,6 @@
 import { Puzzle } from "lucide-react";
 import { useEffect, useState } from "react";
-import axiosInstance from "@/utils/axiosConfig";
+import { getJson } from "@/utils/axiosConfig";
 
 interface PluginEntry {
   name: string;
@@ -19,8 +19,8 @@ export default function PluginsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await axiosInstance.get("/kernel/plugins", { baseURL: BASE });
-        setPlugins(res?.data?.plugins || (res as any)?.plugins || []);
+        const res = await getJson<{ data?: { plugins?: PluginEntry[] }; plugins?: PluginEntry[] }>("/kernel/plugins", { baseURL: BASE });
+        setPlugins(res?.data?.plugins || res?.plugins || []);
       } catch { /* silent */ }
       finally { setLoading(false); }
     })();

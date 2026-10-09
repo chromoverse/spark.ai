@@ -6,7 +6,6 @@ export * from './types';
 
 // Components
 export { VoiceBubble } from './components/VoiceBubble';
-export { AudioVisualizer } from './components/AudioVisualizer';
 export { PanelHeader } from './components/PanelHeader';
 export { SwipeContainer } from './components/SwipeContainer';
 export { ControllerDots } from './components/ControllerDots';

@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const [addKeyProvider, setAddKeyProvider] = useState<string | null>(null);
   const [newKey, setNewKey] = useState("");
 
-  const save = async (field: string, value: any) => {
+  const save = async (field: string, value: unknown) => {
     if (!user?._id) return;
     setSaving(true);
     try {
@@ -227,7 +227,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function EditableRow({ label, value, field, editField, editValue, saving, onEdit, onSave, onChange, onCancel }: {
   label: string; value: string; field: string; editField: string | null; editValue: string; saving: boolean;
-  onEdit: (f: string, v: string) => void; onSave: (f: string, v: any) => void; onChange: (v: string) => void; onCancel: () => void;
+  onEdit: (f: string, v: string) => void; onSave: (f: string, v: unknown) => void; onChange: (v: string) => void; onCancel: () => void;
 }) {
   const isEditing = editField === field;
   return (

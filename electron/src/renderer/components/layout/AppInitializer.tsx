@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useMediaDevices } from "@/hooks/useMediaDevices";
 import {

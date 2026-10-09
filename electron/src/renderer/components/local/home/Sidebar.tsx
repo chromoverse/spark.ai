@@ -285,9 +285,13 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
     setActiveSessionId(getActiveSessionId());
   }, []);
 
-  useEffect(() => {
-    refreshSessions();
-  }, [active, refreshSessions]);
+  // Re-read sessions whenever the page changes (adjusting state during render).
+  const [sessionsFor, setSessionsFor] = useState(active);
+  if (sessionsFor !== active) {
+    setSessionsFor(active);
+    setSessions(loadSessions());
+    setActiveSessionId(getActiveSessionId());
+  }
 
   // Listen for session changes from HomeLive
   useEffect(() => {
@@ -343,9 +347,11 @@ export default function Sidebar({ active, onChange, collapsed = false, onToggleC
     () => new Set(activeGroupId ? [activeGroupId] : [])
   );
 
-  useEffect(() => {
+  const [openedFor, setOpenedFor] = useState(activeGroupId);
+  if (openedFor !== activeGroupId) {
+    setOpenedFor(activeGroupId);
     if (activeGroupId) setOpenGroups(new Set([activeGroupId]));
-  }, [activeGroupId]);
+  }
 
   // Only one group open at a time
   const toggleGroup = (id: string) => {

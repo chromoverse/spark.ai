@@ -1,7 +1,7 @@
 import { Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppSelector } from "@/store/hooks";
-import axiosInstance from "@/utils/axiosConfig";
+import { getJson } from "@/utils/axiosConfig";
 
 interface TaskEntry {
   id: string;
@@ -23,8 +23,8 @@ export default function History() {
     if (!user?._id) return;
     (async () => {
       try {
-        const res = await axiosInstance.get(`/kernel/user-history?user_id=${user._id}&limit=50`, { baseURL: BASE });
-        setTasks((res as any)?.items || []);
+        const res = await getJson<{ items?: TaskEntry[] }>(`/kernel/user-history?user_id=${user._id}&limit=50`, { baseURL: BASE });
+        setTasks(res?.items || []);
       } catch { /* silent */ }
       finally { setLoading(false); }
     })();

@@ -4,7 +4,7 @@ import {
   Wrench, Battery, Clipboard, Package, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import axiosInstance from "@/utils/axiosConfig";
+import { getJson } from "@/utils/axiosConfig";
 
 interface ToolEntry {
   name: string;
@@ -127,8 +127,8 @@ export default function ToolsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await axiosInstance.get("/kernel/tools", { baseURL: BASE });
-        setTools(res?.data?.tools || (res as any)?.tools || []);
+        const res = await getJson<{ data?: { tools?: ToolEntry[] }; tools?: ToolEntry[] }>("/kernel/tools", { baseURL: BASE });
+        setTools(res?.data?.tools || res?.tools || []);
       } catch { /* silent — fall back to static metadata */ }
       finally { setLoading(false); }
     })();

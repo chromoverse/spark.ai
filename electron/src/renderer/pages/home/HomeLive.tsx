@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppSelector } from "@/store/hooks";
-import { useSocket } from "@/context/socketContextProvider";
+import { useSocket } from "@/context/socketContext";
 import type { SparkLogPayload, ApprovalRequestPayload } from "@shared/socket.types";
 import EntityCards, { type EntityCardData } from "@/components/local/home/EntityCards";
 import DriveFileCards, { type DriveFile } from "@/components/local/home/DriveFileCards";

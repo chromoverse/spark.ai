@@ -207,7 +207,7 @@ export default function DriveFileCards({ files, label, onDismiss }: DriveFileCar
 
       {/* Inline file viewer modal */}
       {openFile && (
-        <DriveFileModal file={openFile} onClose={() => setOpenFile(null)} />
+        <DriveFileModal key={openFile.id} file={openFile} onClose={() => setOpenFile(null)} />
       )}
     </>
   );

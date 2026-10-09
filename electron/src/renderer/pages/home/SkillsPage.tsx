@@ -1,6 +1,6 @@
 import { Zap } from "lucide-react";
 import { useEffect, useState } from "react";
-import axiosInstance from "@/utils/axiosConfig";
+import { getJson } from "@/utils/axiosConfig";
 
 interface SkillEntry {
   name: string;
@@ -19,8 +19,8 @@ export default function SkillsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await axiosInstance.get("/kernel/skills", { baseURL: BASE });
-        setSkills(res?.data?.skills || (res as any)?.skills || []);
+        const res = await getJson<{ data?: { skills?: SkillEntry[] }; skills?: SkillEntry[] }>("/kernel/skills", { baseURL: BASE });
+        setSkills(res?.data?.skills || res?.skills || []);
       } catch { /* silent */ }
       finally { setLoading(false); }
     })();

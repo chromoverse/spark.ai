@@ -40,7 +40,7 @@ export interface Task {
 
   dependsOn: string[];
 
-  inputs: Record<string, any>;
+  inputs: Record<string, unknown>;
 
   inputBindings: Record<string, string>;
 
@@ -52,7 +52,7 @@ export interface Task {
 
 export interface TaskOutput {
   success: boolean;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   error?: string;
 }
 
@@ -64,7 +64,7 @@ export interface TaskRecord {
 
   // Execution state
   status: TaskStatus;
-  resolvedInputs: Record<string, any>;
+  resolvedInputs: Record<string, unknown>;
   output?: TaskOutput;
   error?: string;
 

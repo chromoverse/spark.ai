@@ -66,10 +66,6 @@ export interface VoiceBubbleProps {
   audioLevel: number;
 }
 
-export interface AudioVisualizerProps {
-  audioLevel: number;
-}
-
 export interface PanelHeaderProps {
   audioLevel: number;
 }

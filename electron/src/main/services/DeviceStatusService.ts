@@ -12,9 +12,9 @@ let previousTime = Date.now();
 
 export function poolDeviceStatus(mainWindow: BrowserWindow) {
   setInterval(async () => {
-    let cpuUsage = await getCpuUsage();
-    let ramUsage = getRamUsage();
-    let storageData = getStorageData();
+    const cpuUsage = await getCpuUsage();
+    const ramUsage = getRamUsage();
+    const storageData = getStorageData();
 
     ipcWebContentSend("getDeviceUsageStatus", mainWindow.webContents, {
       cpuUsage,

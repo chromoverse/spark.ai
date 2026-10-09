@@ -52,7 +52,7 @@ function Home() {
       ) {
         setEntityResult({
           entities: result.data.entities as EntityCardData[],
-          intent: result.data.intent ?? "results",
+          intent: typeof result.data.intent === "string" ? result.data.intent : "results",
         });
         break;
       }

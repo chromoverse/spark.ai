@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Search, Globe, ArrowRight, ExternalLink, Loader2 } from 'lucide-react';
-import type { ControllerProps, ExpansionProps, WebSearchData, SearchResult } from '../types';
+import { useState } from 'react';
+import { Search, ExternalLink, Loader2 } from 'lucide-react';
+import type { ControllerProps, ExpansionProps, WebSearchData } from '../types';
 
 // Panel component (search input)
 export function WebSearch({ isActive, setExpansionVisible, setExpansionData }: ControllerProps) {
@@ -111,13 +111,3 @@ export function WebSearchExpansion({ isExpanded, data }: ExpansionProps) {
     </div>
   );
 }
-
-// Plugin config
-export const webSearchPlugin = {
-  id: 'web-search',
-  name: 'Search',
-  icon: <Globe className="w-4 h-4" />,
-  component: WebSearch,
-  expansionComponent: WebSearchExpansion,
-  order: 4,
-};

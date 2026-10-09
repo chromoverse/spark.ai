@@ -2,6 +2,7 @@
 import { ChildProcess, spawn } from "node:child_process";
 import { app } from "electron";
 import type { TaskRecord } from "@shared/socket.types.js";
+import type { IActionExecutorResponse } from "@root/types";
 
 let executorProcess: ChildProcess | null = null;
 
@@ -99,7 +100,7 @@ export function isActionExecutorRunning(): boolean {
  * @param tasks - Array of TaskRecord objects to execute
  * @returns Promise with execution results
  */
-export async function executeTaskBatch(tasks: TaskRecord[]): Promise<any> {
+export async function executeTaskBatch(tasks: TaskRecord[]): Promise<IActionExecutorResponse> {
   console.log(`📤 executeTaskBatch called with ${tasks.length} tasks`);
 
   if (!executorProcess) {
@@ -143,7 +144,7 @@ export async function executeTaskBatch(tasks: TaskRecord[]): Promise<any> {
         console.log("✅ Parsed executor response:", parsed);
         resolve(parsed);
         buffer = "";
-      } catch (e) {
+      } catch {
         // Incomplete JSON, continue waiting
       }
     };
