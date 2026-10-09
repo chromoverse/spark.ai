@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
+from typing import TypeVar
 
 from app.core.clock import Clock
+
+T = TypeVar("T")
 
 
 class FakeClock(Clock):
@@ -40,3 +44,16 @@ class FakeClock(Clock):
     @property
     def sleepers(self) -> int:
         return sum(1 for _, f in self._sleepers if not f.done())
+
+
+async def drive(clock: FakeClock, aw: Awaitable[T], step: float = 0.01, limit_s: float = 30) -> T:
+    """Awaits `aw` while simulated time moves `step` per 5 ms of real time. The real pause lets
+    Redis/Postgres round trips finish, so simulated time only outruns them by one step."""
+    task = asyncio.ensure_future(aw)
+    for _ in range(int(limit_s / step)):
+        await asyncio.wait({task}, timeout=0.005)
+        if task.done():
+            return task.result()
+        clock.advance(step)
+    task.cancel()
+    raise AssertionError(f"still running after {limit_s}s of simulated time")

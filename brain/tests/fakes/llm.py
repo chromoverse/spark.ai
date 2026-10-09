@@ -31,6 +31,7 @@ class FakeProvider:
         self.model = model
         self.script: deque[Turn] = deque()
         self.requests: list[dict[str, Any]] = []
+        self.request_times: list[float] = []  # clock.monotonic() when each request arrived
 
     def queue(self, *turns: Turn) -> None:
         self.script.extend(turns)
@@ -39,6 +40,7 @@ class FakeProvider:
         assert request.url.path.endswith("/chat/completions"), request.url
         body = json.loads(request.content)
         self.requests.append(body)
+        self.request_times.append(self.clock.monotonic())
         turn = self.script.popleft() if self.script else Turn(text=["Sure."])
         if turn.status != 200:
             headers = {"retry-after": str(turn.retry_after_s)} if turn.retry_after_s else {}

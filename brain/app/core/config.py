@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: SecretStr = SecretStr("")
 
+    # LLM provider keys, comma-separated (several keys per provider rotate on rate limits).
+    groq_api_keys: SecretStr = SecretStr("")
+    nvidia_api_keys: SecretStr = SecretStr("")
+    cloudflare_account_id: str = ""
+    cloudflare_api_tokens: SecretStr = SecretStr("")
+    mistral_api_keys: SecretStr = SecretStr("")
+    gemini_api_keys: SecretStr = SecretStr("")
+    openrouter_api_keys: SecretStr = SecretStr("")
+    anthropic_api_key: SecretStr = SecretStr("")  # read only when paid_providers_enabled
+
     log_level: str = "INFO"
 
     @field_validator("jwt_secret")
