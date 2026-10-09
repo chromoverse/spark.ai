@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  brain:
+    name: brain (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: brain
+    # Same images and ports as deploy/docker-compose.test.yml, so tests run unchanged.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: spark
+          POSTGRES_PASSWORD: spark
+          POSTGRES_DB: spark_test
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U spark -d spark_test"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["56379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    env:
+      PAID_PROVIDERS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.24"
+          enable-cache: true
+          cache-dependency-glob: brain/uv.lock
+      - run: uv sync --frozen --python 3.11
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy app/core app/auth app/api app/gateway
+      - run: uv run pytest -q
+
+  electron:
+    name: electron (lint, typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: electron
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      # No install scripts: lint and typecheck need neither keytar's native build nor the Electron binary.
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
