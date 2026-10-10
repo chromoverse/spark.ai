@@ -35,7 +35,7 @@ export default function EnginesPage() {
   const onHeard = useCallback((h: Heard) => {
     setTurns((all) => [...all.slice(-9), { signalId: h.signalId, you: h.text, tier: h.tier, spark: "", done: false }]);
   }, []);
-  const ear = useVoiceEar(onHeard);
+  const ear = useVoiceEar(onHeard, Boolean(info?.plan?.wake));
 
   useEffect(() => {
     const load = (): void => {
@@ -93,6 +93,7 @@ export default function EnginesPage() {
 
   const plan = info?.plan;
   const scores = plan ? Object.values(plan.scores) : [];
+  const downloads = Object.entries(plan?.models ?? {}).filter(([, m]) => m.state !== "ready");
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-6" style={{ color: "var(--sp-ink)" }}>
@@ -134,7 +135,7 @@ export default function EnginesPage() {
               <tr>
                 <th className="py-1">Engine</th>
                 <th>In use</th>
-                <th>First audio p50</th>
+                <th>p50</th>
                 <th>p95</th>
                 <th>Live avg</th>
                 <th>Success</th>
@@ -142,12 +143,16 @@ export default function EnginesPage() {
             </thead>
             <tbody>
               {scores.map((s) => {
-                const rank = plan?.tts.indexOf(s.engine) ?? -1;
+                const rank = (s.role === "stt" ? plan?.stt : plan?.tts)?.indexOf(s.engine) ?? -1;
                 return (
                   <tr key={s.engine} className="border-t border-white/10">
                     <td className="py-1.5">
                       {s.engine}
-                      {s.expressive && <span className="ml-1 text-xs opacity-60">(expressive)</span>}
+                      <span className="ml-1 text-xs opacity-60">
+                        {s.role === "stt" ? "speech to text" : "voice"}
+                        {s.expressive && ", expressive"}
+                        {s.accuracy != null && `, ${Math.round(s.accuracy * 100)}% words right`}
+                      </span>
                       {plan?.reasons?.[s.engine] && (
                         <div className="text-xs text-amber-500">{plan.reasons[s.engine]}</div>
                       )}
@@ -166,6 +171,14 @@ export default function EnginesPage() {
         {plan && plan.tts.length === 0 && scores.length > 0 && (
           <p className="text-sm opacity-60">No voice passed on this device, so replies show as text.</p>
         )}
+        {downloads.map(([name, m]) => (
+          <p key={name} className={`text-sm ${m.state === "failed" ? "text-amber-500" : "opacity-60"}`}>
+            {m.state === "failed"
+              ? `Couldn't download ${name}. I'll try again next time the app starts.`
+              : `Downloading ${name} for this device (${m.mb} MB)… ${m.pct}%`}
+          </p>
+        ))}
+        {plan?.wake && <p className="text-sm opacity-60">Wake word ready: say “Hey Spark” with the mic on.</p>}
       </section>
 
       <section className="space-y-2">

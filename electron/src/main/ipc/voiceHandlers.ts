@@ -29,12 +29,12 @@ export function registerVoiceHandlers(): void {
   );
   ipcMainHandle("voiceHear", (_event, payload) =>
     result(async () => {
-      const { pcm16, endedAt } = (payload ?? {}) as { pcm16?: unknown; endedAt?: unknown };
+      const { pcm16, endedAt, wake } = (payload ?? {}) as { pcm16?: unknown; endedAt?: unknown; wake?: unknown };
       // ≤ ~60 s of 16 kHz PCM16, base64
       if (typeof pcm16 !== "string" || !pcm16 || pcm16.length > 2_600_000 || typeof endedAt !== "number") {
         throw new BodyError("invalid_input", "That clip didn't come through. Try again.");
       }
-      return voiceLoop.hear(pcm16, endedAt);
+      return voiceLoop.hear(pcm16, endedAt, wake === true);
     }),
   );
   ipcMainHandle("voiceFirstAudio", (_event, payload) => {

@@ -12,10 +12,35 @@ const CUES: Record<"heard" | "done" | "error", [number, number][]> = {
 };
 
 let speaking = false;
+let spokeAt = 0; // ms epoch when Spark last stopped talking
 
 /** True while Spark's voice is playing: the ear treats speech as a barge-in only then. */
 export function isSpeaking(): boolean {
   return speaking;
+}
+
+/** When Spark last finished talking: the ear skips the wake word for a follow-up after that. */
+export function lastSpokeAt(): number {
+  return speaking ? Date.now() : spokeAt;
+}
+
+let ctx: AudioContext | null = null;
+
+/** A short earcon (§4.4). Also used by the ear: "heard" when "Hey Spark" alone opens a command. */
+export function earcon(kind: "heard" | "done" | "error"): void {
+  ctx ??= new AudioContext();
+  let t = ctx.currentTime;
+  for (const [freq, dur] of CUES[kind]) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.08, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur);
+    t += dur;
+  }
 }
 
 function decode(b64: string): Uint8Array<ArrayBuffer> {
@@ -31,11 +56,11 @@ export function useVoicePlayback(): void {
     const queue: { url: string; uttId: string }[] = []; // in order
     const reported = new Set<string>();
     let current: HTMLAudioElement | null = null;
-    let ctx: AudioContext | null = null;
 
     const playNext = (): void => {
       if (current) return;
       const next = queue.shift();
+      if (speaking && !next) spokeAt = Date.now();
       speaking = next !== undefined;
       if (!next) return;
       const audio = new Audio(next.url);
@@ -63,23 +88,8 @@ export function useVoicePlayback(): void {
         current.pause();
         current = null;
       }
+      if (speaking) spokeAt = Date.now();
       speaking = false;
-    };
-
-    const cue = (kind: "heard" | "done" | "error"): void => {
-      ctx ??= new AudioContext();
-      let t = ctx.currentTime;
-      for (const [freq, dur] of CUES[kind]) {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.08, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(t);
-        osc.stop(t + dur);
-        t += dur;
-      }
     };
 
     const off = window.electronApi.voice.onEvent((event: IVoiceEvent) => {
@@ -102,7 +112,7 @@ export function useVoicePlayback(): void {
           return;
         }
         case "cue":
-          cue(event.cue);
+          earcon(event.cue);
           return;
         case "stop":
           stop();
@@ -113,6 +123,7 @@ export function useVoicePlayback(): void {
       off();
       stop();
       void ctx?.close();
+      ctx = null;
     };
   }, []);
 }

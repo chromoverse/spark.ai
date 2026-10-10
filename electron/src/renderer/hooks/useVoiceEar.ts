@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isSpeaking } from "./useVoicePlayback";
+import { earcon, isSpeaking, lastSpokeAt } from "./useVoicePlayback";
 
 // The ear's front half (R1): mic + Silero VAD in the renderer (vad-web, already used by v1),
 // with Chromium's echo cancellation removing Spark's own voice. Each endpointed utterance goes to
 // the body's STT plan, then into the voice loop. Speech while Spark talks is a barge-in.
+// Wake word: unless Spark is mid-conversation, the body only passes on utterances that hold
+// "Hey Spark" (spotted on the device; the rest is dropped there, never transcribed or sent).
+
+const FOLLOW_UP_MS = 8_000; // after Spark talks, or after a bare "Hey Spark": no wake word needed
 
 const ORT_WASM_BASE_PATH = import.meta.env.DEV
   ? "/node_modules/onnxruntime-web/dist/"
@@ -42,7 +46,10 @@ export interface Heard {
   tier: number | null;
 }
 
-export function useVoiceEar(onHeard: (heard: Heard) => void): {
+export function useVoiceEar(
+  onHeard: (heard: Heard) => void,
+  wakeWord = true,
+): {
   listening: boolean;
   toggle: () => void;
   error: string | null;
@@ -52,9 +59,12 @@ export function useVoiceEar(onHeard: (heard: Heard) => void): {
   const vadRef = useRef<MicVadLike | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onHeardRef = useRef(onHeard);
+  const wakeRef = useRef(wakeWord);
+  const armedUntil = useRef(0);
   useEffect(() => {
     onHeardRef.current = onHeard;
-  }, [onHeard]);
+    wakeRef.current = wakeWord;
+  }, [onHeard, wakeWord]);
 
   const stop = useCallback(() => {
     void vadRef.current?.destroy();
@@ -87,10 +97,16 @@ export function useVoiceEar(onHeard: (heard: Heard) => void): {
         },
         onSpeechEnd: (audio: Float32Array) => {
           const endedAt = Date.now();
-          void window.electronApi.voice.hear(pcm16Base64(audio), endedAt).then((r) => {
+          const followUp = endedAt - lastSpokeAt() < FOLLOW_UP_MS || endedAt < armedUntil.current;
+          const needWake = wakeRef.current && !followUp;
+          void window.electronApi.voice.hear(pcm16Base64(audio), endedAt, needWake).then((r) => {
             if (!r.ok) setError(r.error.message);
             else if (r.data.heard) {
+              armedUntil.current = 0;
               onHeardRef.current({ text: r.data.heard, signalId: r.data.signalId, tier: r.data.tier });
+            } else if (r.data.wake === true) {
+              armedUntil.current = Date.now() + FOLLOW_UP_MS; // just "Hey Spark": listening now
+              earcon("heard");
             }
           });
         },

@@ -122,6 +122,22 @@ export interface IEngineScore {
   success: number;
   expressive: boolean;
   ewma_ms: number | null;
+  accuracy?: number | null; // STT: 1 - word error rate on the probe clip
+}
+
+export interface IModelDownload {
+  role: "wake" | "stt" | "tts";
+  mb: number;
+  pct: number;
+  state: "downloading" | "ready" | "failed";
+  error?: string;
+}
+
+/** What the ear heard: `wake` false = no wake word (dropped on the device), true = the wake word
+ * was in it (`heard` "" = only the wake word), null = no wake check (follow-up or no model yet). */
+export interface IVoiceHeard extends IVoiceSendResult {
+  heard: string;
+  wake: boolean | null;
 }
 
 export interface IEnginePlan {
@@ -131,6 +147,9 @@ export interface IEnginePlan {
   scores: Record<string, IEngineScore>;
   reasons?: Record<string, string>;
   history?: { ts: number; trigger: string; role: string; engine: string; p50_ms: number | null; p95_ms: number | null; success: number }[];
+  budget_ms?: { tts: number; stt: number };
+  models?: Record<string, IModelDownload>;
+  wake?: boolean;
 }
 
 export interface IEnginesInfo {
@@ -204,7 +223,7 @@ export type IEventPayloadMapping = {
   // Voice loop (R1)
   voiceSend: IBrainResult<IVoiceSendResult>;
   voiceStop: IBrainResult<{ stopped: boolean }>;
-  voiceHear: IBrainResult<IVoiceSendResult & { heard: string }>;
+  voiceHear: IBrainResult<IVoiceHeard>;
   voiceFirstAudio: { ok: boolean };
   enginesGet: IBrainResult<IEnginesInfo>;
   enginesBenchmark: IBrainResult<IEnginesInfo>;
@@ -305,7 +324,7 @@ declare global {
       voice: {
         send: (text: string) => Promise<IBrainResult<IVoiceSendResult>>;
         stop: () => Promise<IBrainResult<{ stopped: boolean }>>;
-        hear: (pcm16: string, endedAt: number) => Promise<IBrainResult<IVoiceSendResult & { heard: string }>>;
+        hear: (pcm16: string, endedAt: number, wake: boolean) => Promise<IBrainResult<IVoiceHeard>>;
         firstAudio: (signalId: string, at: number) => Promise<{ ok: boolean }>;
         onEvent: (callback: (event: IVoiceEvent) => void) => () => void;
       };

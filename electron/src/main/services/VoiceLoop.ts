@@ -1,6 +1,6 @@
 import { BrowserWindow } from "electron";
 import crypto from "node:crypto";
-import type { IEnginesInfo, IVoiceEvent, IVoiceSendResult } from "@root/types";
+import type { IEnginesInfo, IVoiceEvent, IVoiceHeard, IVoiceSendResult } from "@root/types";
 import { bodyBridge } from "./BodyBridge.js";
 import { BRAIN_URL, brainAuth } from "./BrainAuth.js";
 import { brainSocket } from "./BrainSocket.js";
@@ -95,21 +95,23 @@ class VoiceLoop {
     bodyBridge.stop();
   }
 
-  /** One endpointed utterance from the ear: transcribe on the body's STT plan, then send. */
-  async hear(pcm16: string, endedAt: number): Promise<IVoiceSendResult & { heard: string }> {
-    const stt = await bodyBridge.call<{ text: string; engine: string; stt_ms: number }>(
+  /** One endpointed utterance from the ear: transcribe on the body's STT plan, then send. With
+   * `wake`, the body drops it unless it holds "Hey Spark" (and cuts the phrase off). */
+  async hear(pcm16: string, endedAt: number, wake: boolean): Promise<IVoiceHeard> {
+    const stt = await bodyBridge.call<{ text: string; engine?: string; stt_ms?: number; wake: boolean | null }>(
       "stt.transcribe",
-      { pcm16, sample_rate: 16_000 },
+      { pcm16, sample_rate: 16_000, wake },
       20_000,
     );
-    if (!stt.text.trim()) return { signalId: "", tier: null, handled: false, heard: "" };
+    const awake = stt.wake ?? null;
+    if (!stt.text.trim()) return { signalId: "", tier: null, handled: false, heard: "", wake: awake };
     const trace: Trace = {
       startedAt: endedAt - ENDPOINT_MS,
       endpointMs: ENDPOINT_MS,
       sttMs: stt.stt_ms,
       sttEngine: stt.engine,
     };
-    return { ...(await this.send(stt.text, "voice", trace)), heard: stt.text };
+    return { ...(await this.send(stt.text, "voice", trace)), heard: stt.text, wake: awake };
   }
 
   /** The voice window started playing a signal's first sentence: report the trace (§13). */
@@ -198,8 +200,8 @@ class VoiceLoop {
       await this.linkBody();
       const plan = await bodyBridge.call<Record<string, unknown>>("engine.plan").catch(() => null);
       if (plan) {
-        const { reasons: _r, history: _h, ...wire } = plan;
-        await brainSocket.emit("device.engine_plan", wire);
+        const { stt, tts, local_llm, scores } = plan; // the brain's contract; the rest is for the UI
+        await brainSocket.emit("device.engine_plan", { stt, tts, local_llm, scores });
       }
       return;
     }
@@ -251,6 +253,9 @@ class VoiceLoop {
       case "engine.plan":
         broadcast("enginePlan", params);
         await brainSocket.emit("device.engine_plan", params);
+        return;
+      case "models.progress": // a voice model downloading: the Engines page re-reads the plan
+        broadcast("enginePlan", params);
         return;
     }
   }
