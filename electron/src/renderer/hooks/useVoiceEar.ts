@@ -4,14 +4,16 @@ import { earcon, isSpeaking, lastAskedAt, lastSpokeAt } from "./useVoicePlayback
 
 // The ear's front half (R1): mic + Silero VAD in the renderer (vad-web, already used by v1),
 // with Chromium's echo cancellation removing Spark's own voice. Each endpointed utterance goes to
-// the body's STT plan, then into the voice loop. Speech while Spark talks is a barge-in.
+// the body's STT plan, then into the voice loop. Speech while Spark talks is a barge-in, always:
+// inside an exchange at the first frames, otherwise after 0.2 s of real speech (a cough or a click
+// doesn't cut Spark off), and what interrupted is heard without the wake word.
 // Wake word: unless Spark is mid-conversation, the body only passes on utterances that hold
 // "Hey Spark" (spotted on the device; the rest is dropped there, never transcribed or sent).
 // Mid-conversation is bounded: after a "Hey Spark" request, two follow-ups may skip the phrase,
 // each within 6 s of Spark finishing. Unbounded follow-ups let room voices keep a conversation
 // going on their own (owner's mic test, 2026-10-10: 6–8 strangers' lines in a row). When Spark
 // ends on a question, one answer needs no wake word either, cap or not: "yes, do it" was ignored
-// (owner's mic test, same day).
+// (owner's mic test, same day). Whatever the reason, at most 4 lines in a row skip the phrase.
 // Speculative start (REDESIGN §4.2): after 250 ms of silence the utterance is transcribed and the
 // brain starts on the reply; it plays only once the silence reaches 700 ms. Speech that resumes in
 // between cancels that turn and is merged and heard again, so a pause mid-sentence doesn't split
@@ -23,6 +25,7 @@ const FOLLOW_UP_MS = 6_000;
 const MAX_FOLLOW_UPS = 2;
 const ARMED_MS = 8_000; // after a bare "Hey Spark": the command may take a moment
 const ANSWER_MS = 8_000; // after Spark asks something: an answer may take a moment
+const MAX_UNADDRESSED = 4; // lines in a row without "Hey Spark": a room can't talk to it forever
 
 const ORT_WASM_BASE_PATH = import.meta.env.DEV
   ? "/node_modules/onnxruntime-web/dist/"
@@ -105,7 +108,10 @@ export function useVoiceEar(
   const followUps = useRef(0); // left in this exchange
   const pending = useRef<Pending | null>(null);
   const answered = useRef(0); // the question (lastAskedAt) already answered
+  const unaddressed = useRef(0); // lines since the last "Hey Spark"
+  const interrupted = useRef(false); // the speech now starting cut Spark off
   const inExchange = (): Pending["followUp"] => {
+    if (unaddressed.current >= MAX_UNADDRESSED) return null;
     const quiet = Date.now() - lastSpokeAt();
     const asked = lastAskedAt();
     if (asked > answered.current && quiet < ANSWER_MS) return "answer";
@@ -130,8 +136,13 @@ export function useVoiceEar(
     const { heard, signalId, wake } = r.data;
     if (heard) {
       // a "Hey Spark" request opens the exchange; each follow-up uses one turn of it
-      if (wake === true || p.armed) followUps.current = MAX_FOLLOW_UPS;
-      else if (p.followUp === "turn") followUps.current -= 1;
+      if (wake === true || p.armed) {
+        followUps.current = MAX_FOLLOW_UPS;
+        unaddressed.current = 0;
+      } else if (p.followUp) {
+        unaddressed.current += 1;
+        if (p.followUp === "turn") followUps.current -= 1;
+      }
       answered.current = Date.now(); // whatever they said answers Spark's question, if it asked
       armedUntil.current = 0;
       setStatus(null);
@@ -146,6 +157,12 @@ export function useVoiceEar(
       setStatus("Heard speech without “Hey Spark” first, so I ignored it.");
     }
   }, []);
+
+  const bargeIn = (): void => {
+    if (!isSpeaking()) return;
+    interrupted.current = true;
+    void window.electronApi.voice.stop();
+  };
 
   const stop = useCallback(() => {
     if (pending.current) {
@@ -179,14 +196,14 @@ export function useVoiceEar(
         onnxWASMBasePath: ORT_WASM_BASE_PATH,
         getStream: async () => stream,
         onSpeechStart: () => {
-          // barge-in only inside an exchange; otherwise "Hey Spark, stop" stops it (tier 0)
-          if (isSpeaking() && (!wakeRef.current || inExchange() !== null)) void window.electronApi.voice.stop();
+          if (!wakeRef.current || inExchange() !== null) bargeIn(); // mid-exchange: at once
           const p = pending.current;
           if (p?.timer != null) {
             window.clearTimeout(p.timer); // speech resumed: hold the commit
             p.timer = null;
           }
         },
+        onSpeechRealStart: () => bargeIn(), // 0.2 s of real speech: the owner talks, Spark stops
         onVADMisfire: () => {
           // what resumed was too short to be speech (a click, a breath): run what we had.
           // ponytail: a real short word after a pause ("…, now") is lost; vad-web gives no audio
@@ -197,7 +214,9 @@ export function useVoiceEar(
           const endedAt = Date.now();
           const prev = pending.current;
           const armed = prev?.armed ?? endedAt < armedUntil.current;
-          const followUp = prev ? prev.followUp : inExchange();
+          const cutIn = interrupted.current && unaddressed.current < MAX_UNADDRESSED;
+          interrupted.current = false;
+          const followUp = prev ? prev.followUp : cutIn ? "answer" : inExchange();
           const needWake = prev?.needWake ?? (wakeRef.current && !armed && !followUp);
           if (prev) drop(prev);
           const merged = prev ? concat(prev.audio, audio) : audio;
