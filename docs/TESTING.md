@@ -265,7 +265,9 @@ Re-run monthly and whenever a free provider changes its offer.
    numbers. Mic on → say "what time is it" (ignored: no wake word) → "Hey Spark, what time is it"
    → answered; then up to 2 follow-ups, each within 6 s of Spark finishing, need no wake word (a
    third is ignored). When Spark ends on a question ("Want me to…?"), one answer ("yes, do it")
-   needs no wake word, cap or not (8 s). "What's my battery" → answered on the device. "Hey Spark" alone → a chime, then
+   needs no wake word (8 s). At most 4 lines in a row skip "Hey Spark". Talking while Spark speaks
+   stops it (0.2 s of speech, or at once mid-exchange) and that line needs no wake word; "Hey
+   Spark, wait" stops it too. "What's my battery" → answered on the device. "Hey Spark" alone → a chime, then
    the command.
 
 ## 9. v1 Baseline (for reference)

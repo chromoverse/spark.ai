@@ -40,7 +40,7 @@ happens.
     plans, trace), audio + earcons in one window, mic + VAD ear with barge-in and the wake-word gate
     (8 s follow-up window after Spark talks or a bare "Hey Spark"), **Engines** page (TTS + STT
     plan, scores, accuracy, model downloads, wake status, Run benchmark, Try it with mic).
-  - evals: `brain/evals` reflex (101) + persona (58) runners (rotate keys), latency report from logs
+  - evals: `brain/evals` reflex (104) + persona (58) runners (rotate keys), latency report from logs
     (per tier, `--low-spec` gate). **Scripted ear:** `body/evals/clips.py` + `SPARK_VOICE_SCRIPT`
     plays 50 "Hey Spark, …" Piper clips through the real desktop loop (TESTING §6).
   - **Speculative start** (live ear): VAD candidate at 250 ms of silence → STT (+ wake check) → the
@@ -305,4 +305,7 @@ happens.
 | 2026-10-10 | Mic test: "yes, do it" after Spark asked a question was dropped ("no wake phrase") | One answer needs no wake word when Spark ended on a question (`asked` in `voiceSpeakingState`); VAD `minSpeechMs` 300 → 200 |
 | 2026-10-10 | Mic test: transcripts turned bad ("I'm sparked… the bossy is of"): one 1.2 s Whisper call of three put its p95 over budget, Moonshine led, and nothing re-probed Whisper | Warm-up call for cloud engines, a start-up probe for engines whose median fits, benchmarks behind one lock (FT12) |
 | 2026-10-10 | "Can you tell me the percentage of battery?" → "I can't run multi-step jobs yet" | Tier-0 `battery_status` (`GetSystemPowerStatus`) |
+| 2026-10-10 | Mic test: talking over Spark didn't stop it once the 2 follow-ups were used; "Hey Spark, wait" wasn't a stop word | Barge-in always (0.2 s of real speech outside an exchange, first frames inside), the interrupting line needs no wake word; "wait" / "hold on" are tier-0 stop |
+| 2026-10-10 | Mic test: first tries ignored: the spotter missed and Moonshine's second chance heard "I'm sparked" / "He sparked" | Second chance and the stripper accept he / his / I'm + spark(ed) |
+| 2026-10-10 | Mic test: "Okay, okay", "Nerd, nerd" → "I can't run multi-step jobs yet" five times; its question let the next fragment in without the wake word | Reflex: fragments get "didn't catch that", never delegate (eval rows); at most 4 lines in a row skip the wake word |
 | 2026-10-10 | Vite `EACCES` on :5123 after Docker started | Windows dynamic port range started at 1024, so Hyper-V reserved 5041–5140; reset to 49152+ (`netsh int ipv4/ipv6 set dynamic tcp start=49152 num=16384`) + restart `winnat` |
