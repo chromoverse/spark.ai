@@ -18,6 +18,12 @@ ALIASES = {
     "files": "file explorer",
     "calc": "calculator",
 }
+# Generic names → the first installed app that fits ("open my browser")
+GENERIC = {
+    "browser": ("google chrome", "microsoft edge", "firefox", "brave", "opera"),
+    "web browser": ("google chrome", "microsoft edge", "firefox", "brave", "opera"),
+    "music": ("spotify", "apple music", "media player"),
+}
 
 
 class NotInstalled(Exception):
@@ -55,6 +61,9 @@ class AppIndex:
         for alias, target in ALIASES.items():
             if target in entries:
                 entries.setdefault(alias, entries[target])
+        for alias, targets in GENERIC.items():
+            if found := next((t for t in targets if t in entries), None):
+                entries.setdefault(alias, entries[found])
         return cls(entries)
 
     def spoken(self) -> dict[str, str]:

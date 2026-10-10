@@ -92,3 +92,14 @@ def test_tier0_replies_chime_for_actions_and_speak_answers() -> None:
     )
     assert phrases.reply(Match("time_now"), {}, now) == "It's 2:05 PM."
     assert phrases.reply(Match("date_today"), {}, now) == "It's Saturday, October 10th."
+
+
+def test_generic_app_names_resolve_to_an_installed_app(tmp_path: Path) -> None:
+    from spark_body.hands.apps import AppIndex
+
+    for name in ("Microsoft Edge", "Spotify", "Calculator"):
+        (tmp_path / f"{name}.lnk").write_text("")
+    index = AppIndex.scan([tmp_path])
+    assert index.resolve("browser") == index.resolve("edge")
+    assert index.resolve("music") == index.resolve("spotify")
+    assert decide("open browser", index.spoken()) is not None  # tier 0 opens it locally
