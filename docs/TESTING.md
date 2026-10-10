@@ -52,6 +52,9 @@ cd electron && npm test && npm run e2e             # unit/component + Playwright
 # evals (live free providers, never in PR CI)
 cd brain && uv run python -m evals.run --suite reflex   # ✅ R1: 95 utterances, every keyed reflex entry
 cd brain && uv run python -m evals.latency < brain.log  # ✅ R1: p50/p95 first audio from signal traces
+cd brain && uv run python -m evals.latency --low-spec < brain.log  # low-spec gate: p95 < 2000 ms
+cd body && uv run python -m evals.clips                  # ✅ R1: the scripted ear's 50 clips (Piper)
+# then start the app with SPARK_VOICE_SCRIPT=%LOCALAPPDATA%/SparkAI/latency-clips/manifest.json
 cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (offline, in CI)
 ```
 
@@ -87,7 +90,7 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | ID | Scenario | Assertions |
 |---|---|---|
 | WK1 ✅ | speech without "Hey Spark" | dropped on the device: `{ text: "", wake: false }`, no STT engine called; a follow-up (no wake asked) is transcribed |
-| WK2 ✅ | "Hey Spark, what time is it" in one breath | STT hears only the audio after the phrase; text "what time is it?"; a bare "Hey Spark" → `{ text: "", wake: true }` (the renderer listens 8 s) |
+| WK2 ✅ | "Hey Spark, what time is it" in one breath | on-device STT hears only the audio after the phrase; text "what time is it?"; a bare "Hey Spark" → `{ text: "", wake: true }` (the renderer listens 8 s). Cloud STT hears the whole utterance and the phrase is stripped from the text, joined forms ("Hayspark") too: the cut can take the command's first word (`test_wk2_cloud_stt_hears_the_whole_utterance`) |
 | WK3 ✅ | spotter model not downloaded yet | open mic: transcribed with `wake: null` |
 
 ### 4.3 Reflex arc (§27)
@@ -110,7 +113,8 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | FT7 ✅ | low-spec device (tier 0) | TTS budget 700 ms (first audio ≤ 2 s): the expressive cloud voice (650 ms) leads, fast local Piper follows; on tier ≥ 1 (250 ms) Piper leads. Quick check folds good probes into the average and spends nothing on over-budget fallbacks |
 | FT8 ✅ | STT candidates | probe clip transcribed per engine: accuracy (1 − WER) then speed among those within 300 ms; slower working engines kept as fallbacks |
 | FT9 ✅ | on-device models | the hardware tier picks the catalog (`body/spark_body/models.py`); download → sha256 check → safe unpack (no `../`) → `.ok`; idempotent; a bad checksum or path is rejected; a failed download → incident, retried next start; progress in `engine.plan` |
-| FT10 ✅ | real models on the dev machine (skipped in CI) | Piper speaks a WAV and benchmarks; "Hey Spark, turn the volume up to thirty" → cut at the phrase → Moonshine ≥ 80% words right; near-miss "the park was sparkling" not spotted |
+| FT10 ✅ | real models on the dev machine (skipped in CI) | Piper speaks a WAV and benchmarks; "Hey Spark, turn the volume up to thirty" → cut at the phrase → Moonshine ≥ 80% words right; near-miss "the park was sparkling" not spotted. Flaky: Piper varies per run and the cut sometimes takes "turn the volume up" (~1 run in 6) |
+| FT11 ✅ | CPU throttled between starts | the start-up quick check re-benchmarks a local engine that now misses its budget; it drops behind the one that fits and the plan changes before the first reply (`test_ft11_throttled_cpu_demotes_the_local_engine_on_the_next_start`). Real hardware, 16 busy loops on 8 cores (2026-10-10): Piper p95 188 → 1250 ms, Moonshine 125 → 391 ms, both out of budget |
 
 ### 4.5 Supervisor — never silent (§19)
 | ID | Scenario | Assertions |
@@ -155,6 +159,18 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | Two devices of one user both receive `settings.changed` | `test_r0_gateway.py::test_r0_two_devices_both_receive_settings_changed` |
 | `docker compose up` → `/health` green; desktop signs in to the local brain | manual smoke (§8a) + `test_core.py::test_health_and_ready` |
 
+### 4.7b R1 acceptance (`PHASES.md` R1)
+| Acceptance test | Proven by |
+|---|---|
+| Rows A1–A3, B1–B2, C1, FT1–FT10, WK1–WK3, S1/S6/S8, RA1–RA2, PS1/PS2/PS4 | the rows above, all ✅ |
+| p50 < 1000 / p95 < 1500 ms over 50 scripted utterances (low-spec: p95 < 2000) | latency bench (§6), scripted ear, owner's low-spec laptop 2026-10-10: p50 1291 ms, p95 1621 ms → low-spec PASS. Tier 0 ("what time is it") p50 864 ms. The 1 s p50 needs a nearer provider region (R7) and faster STT |
+| "Turn the volume up" → ack and the volume changes, no paid model | A1 (tier 0: no LLM, the chime is the ack). The bench caught Whisper's "Hayspark turned the volume up" escaping tier 0 and the reflex saying "volume's up" without the tool: fixed (joined wake forms stripped, "turned …" read as "turn …"), RA1 rows added |
+| Kill the free provider → the next entry answers, under the p95 budget | S6, B2 and the all-down case on fakes; the next entry (gpt-oss-120b) measured live: TTFT p50 511 / p95 652 ms against gpt-oss-20b's 472 / 584 ms |
+| Barge-in stops TTS within 150 ms | `test_barge_in_stops_speech_within_150ms` (mouth); bench: the voice window went quiet 4–13 ms after the stop, plus the VAD onset (one or two 32 ms frames) |
+| Selected TTS returns nothing → the next engine | FT4 |
+| Throttle the CPU → the plan changes on the next start | FT11 |
+| Chaos: 100 signals, none silent | §5 |
+
 ### 4.8 Persona (`PERSONA.md`)
 | ID | Scenario | Assertions |
 |---|---|---|
@@ -196,8 +212,14 @@ chaos joins with the body.
 ## 6. Latency Bench (real providers, nightly + before release)
 ✅ R1 tooling: every signal logs a `signal trace` (device spans: endpoint, stt_final, first_audio)
 and a `signal done` line (brain spans: ack, ttft, first_delta, tool calls, end); `evals/latency.py`
-turns a log into p50/p95 per span and applies the gate. The 50 scripted utterances are spoken from
-the desktop app until a scripted audio driver exists.
+turns a log into p50/p95 per span (first audio also per tier) and applies the gate.
+✅ Scripted ear: `body/evals/clips.py` speaks the 50 lines of `body/evals/latency.jsonl` as "Hey
+Spark, …" in five Piper voices; started with `SPARK_VOICE_SCRIPT=<manifest>`, the desktop app feeds
+each clip through the live ear's timing (candidate, commit 450 ms later) and the real loop (wake
+check, STT plan, tier 0, brain, TTS, playback), stops two replies to time barge-in, and prints
+p50/p95. 2026-10-10 on the owner's low-spec laptop (Nepal → Groq): p50 1291 / p95 1621 ms (endpoint
+704, STT 313, wake check ~80, TTFT 449 at p50); the speculative brain start took p95 from 1732 to
+1621 ms. 3 of 50 clips missed the wake word ("He sparked …" on Piper voices).
 - 50 scripted utterances through a real `spark-body` + brain in the chosen region, using free providers.
 - Report p50/p95 per stage: endpoint, uplink, TTFT per provider, first sentence, TTS first audio.
 - **Gate:** p50 end-of-speech → first audio < 1000 ms; p95 < 1500 ms. A regression > 10% blocks release.
@@ -240,7 +262,8 @@ Re-run monthly and whenever a free provider changes its offer.
 5. Stop the brain → "tell me a joke" → spoken "I can't reach my brain right now".
 6. Engines page: "Wake word ready" shows; the table lists `piper` and `moonshine-tiny` with their
    numbers. Mic on → say "what time is it" (ignored: no wake word) → "Hey Spark, what time is it"
-   → answered; then a follow-up within 8 s needs no wake word. "Hey Spark" alone → a chime, then
+   → answered; then up to 2 follow-ups, each within 6 s of Spark finishing, need no wake word (a
+   third is ignored). "Hey Spark" alone → a chime, then
    the command.
 
 ## 9. v1 Baseline (for reference)

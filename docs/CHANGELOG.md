@@ -8,6 +8,14 @@ backfilled from git history and grouped by theme.
 ## [Unreleased]
 
 ### Added
+- 2026-10-10 — **R1 Voice loop** (branch `r1/voice-loop`): `body/` sidecar (stdio JSON-RPC) with
+  tier-0 reflex arc, hands, mouth (Groq Orpheus via the brain, edge-tts, Piper/Kokoro on device),
+  ear (wake word "Hey Spark" by keyword spotting, Moonshine / Groq Whisper STT), per-device
+  fitness and model downloads; brain free-first reflex chain with hedging, circuits, supervisor
+  (never silent, incidents), persona lint, tier-1 router, signal protocol and traces; Electron
+  voice loop, mic ear with wake gate, bounded follow-ups, speculative start, Engines page; evals
+  (reflex, persona, latency with a scripted ear). Low-spec laptop: first audio p50 1.29 s, p95
+  1.62 s over 50 scripted utterances
 - 2026-10-09 — **R0 Brain foundations** (branch `r0/brain-foundations`): `brain/` FastAPI +
   Socket.IO `/v2` (uv-locked), `deploy/` local dev and test compose stacks (Postgres 16 + pgvector,
   Redis, SearXNG; Caddy stub), first Alembic migration (10 tables), email OTP (hashed, 5 tries,

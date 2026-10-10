@@ -47,6 +47,7 @@ ai_local/
 │   │   ├── sandbox/          workflow-mode Python sandbox, document/media parsers
 │   │   ├── local_brain/      llama.cpp runner, model manager, fallback tool loop (§11)
 │   │   └── mcp_local/        stdio MCP servers hosted on the device
+│   ├── evals/                reflex_arc set; latency.jsonl + clips.py (the latency bench's scripted ear)
 │   └── tests/
 │
 ├── electron/                 desktop shell + UI

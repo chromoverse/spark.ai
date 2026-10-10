@@ -17,9 +17,10 @@ happens.
   Actions CI. Brain: 40 tests green, ruff + mypy strict clean. Owner's desktop smoke (§8a) passed
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
 - **R0 pushed to `origin/main`** 2026-10-10 (fast-forward `ec23e38..ffd8142`; CI green on GitHub).
-- **R1 in progress** on local branch `r1/voice-loop` (not pushed). Built and green (2026-10-10):
-  brain 85 tests (incl. 100-signal chaos), body 56 tests (Windows CI job; 2 real-model tests run
-  only where the models are downloaded), Electron typecheck + lint (0 errors). What exists:
+- **R1 built, every PHASES box ticked** (2026-10-10, evening) on local branch `r1/voice-loop` (not
+  pushed). Brain 86 tests (incl. 100-signal chaos), body 59 (Windows CI job; 2 real-model tests run
+  only where the models are downloaded), Electron typecheck + lint (0 errors). Acceptance map:
+  `TESTING.md` §4.7b. What exists:
   - brain: free-first reflex chain (Groq ×2, Cloudflare, Gemini opt-in, Mistral; Claude Haiku 5.5
     paid/off) with 350 ms hedging, fallthrough, Redis health circuits, stall → `Restart`; the signal
     protocol (`signal.*`, `tool.result`, `engine.incident`, `device.engine_plan`, `reply.*`,
@@ -39,12 +40,25 @@ happens.
     plans, trace), audio + earcons in one window, mic + VAD ear with barge-in and the wake-word gate
     (8 s follow-up window after Spark talks or a bare "Hey Spark"), **Engines** page (TTS + STT
     plan, scores, accuracy, model downloads, wake status, Run benchmark, Try it with mic).
-  - evals: `brain/evals` reflex (95) + persona (58) runners (rotate keys), latency report from logs.
+  - evals: `brain/evals` reflex (101) + persona (58) runners (rotate keys), latency report from logs
+    (per tier, `--low-spec` gate). **Scripted ear:** `body/evals/clips.py` + `SPARK_VOICE_SCRIPT`
+    plays 50 "Hey Spark, …" Piper clips through the real desktop loop (TESTING §6).
+  - **Speculative start** (live ear): VAD candidate at 250 ms of silence → STT (+ wake check) → the
+    brain starts the reply unless tier 0 will take it (`reflex.handle decide_only`); main holds its
+    live events until the 700 ms commit; resumed speech → `signal.interrupt` + merged audio heard
+    again. Tier-0 speech now carries the signal id, so "what time is it" has a first-audio trace.
 - **Measured on this laptop (2026-10-10):** reflex gpt-oss-20b TTFT p50 ~450–470 ms, p95
   540–820 ms across 6 runs (final: answers 50/50, tools 31/33, delegate 11/12, persona 45/56);
   Orpheus via Groq ~220 ms to first byte, ~600 ms whole sentence; Piper fp32 ~150 ms per sentence;
   edge-tts ~750 ms; Moonshine-tiny ~120 ms per command; wake check ~80 ms; real sidecar smoke:
   wake-gated command transcribed in 140–175 ms over RPC, near-misses dropped in ~85 ms.
+- **Latency bench, scripted ear (2026-10-10 evening, this laptop, Nepal → Groq):** first audio p50
+  1291 / p95 1621 ms over 46 utterances (low-spec gate p95 < 2000: PASS); tier 0 p50 864 ms. Spans
+  p50: endpoint 704, STT 313 (+ ~80 wake check), TTFT 449, then Piper + playback. Without the
+  speculative brain start: 1348 / 1732. Failover entry gpt-oss-120b TTFT 511 / 652 (20b 472 / 584).
+  Barge-in: playback quiet 4–13 ms after the stop. Throttled CPU (16 busy loops): Piper p95 188 →
+  1250 ms, Moonshine 125 → 391 ms, both demoted. Reflex eval after the prompt fix: answers 56/56,
+  tools 32/33, delegate 11/12, persona 44/56.
 - **Owner's live mic tests (2026-10-10 afternoon, Engines page, noisy room):** typed tier 0/2 work;
   "Hey Spark" is caught; after "Run benchmark" the plan is STT `groq-whisper` #1 (90% on the
   four-voice accuracy clip, ~300 ms) then `moonshine-tiny` (86%); TTS `piper` / `groq-orpheus` /
@@ -54,12 +68,12 @@ happens.
   "Hey Spark" request); follow-ups never worked because audio plays in the floating panel while the
   ear runs in the main window (speaking state now broadcast to every window); Whisper's "foreign"
   noise hallucination; "what time it is" delegated (tier 0 + prompt fix).
-- **NEXT (start here):** the owner re-tests follow-ups with the cross-window fix (commit `0f1bca8`):
-  "Hey Spark, tell me a joke" → "another one" → "one more" (no wake word) → a 4th without it is
-  ignored. If room voices still slip into follow-ups, add a loudness gate (accept a follow-up only
-  if it's about as loud as the "Hey Spark" utterance). Then finish R1: the 50-utterance latency run
-  (`brain/evals/latency.py` reads the traces), speculative start in the live ear, the CPU-throttle
-  check; then fast-forward `r1/voice-loop` onto `origin/main` (owner pushes phases straight to main).
+- **NEXT (start here):** the owner's mic smoke of the new ear (TESTING §8b step 6): "Hey Spark,
+  tell me a joke" → "another one" → "one more" (no wake word) → a 4th without it is ignored; a long
+  request with a short pause mid-sentence arrives whole. If room voices still slip into follow-ups,
+  add a loudness gate (a follow-up only if about as loud as the "Hey Spark" utterance). Then the
+  owner fast-forwards `r1/voice-loop` onto `origin/main` and R2 starts. Open owner calls: the hedge
+  delay (below) and whether low-spec p50 must also be < 1 s (read here as p95 < 2 s, as written).
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
   after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
   after body or main-process changes; renderer changes hot-reload). The body logs one line per
@@ -169,6 +183,13 @@ happens.
   of going mute; the heard cue covers the gap.
 - Tier 0 is grammar-only (full match + every slot resolved + app in the installed index); the
   embedding classifier waits for its ONNX model.
+- Speculative start lives in Electron main (`VoiceLoop.hear` / `commit` / `drop`), not the brain:
+  the brain only sees an early `signal.final` and, rarely, a `signal.interrupt`. Tier-0 commands
+  are never speculated (side effects); they run at commit.
+- Cloud STT hears the whole utterance; only on-device STT gets the wake cut (the cut is ±0.1 s and
+  took first words; Whisper copes with "Hey Spark" and `strip_wake` removes it).
+- The scripted ear is a dev env var in Electron main, not a separate driver: it measures the real
+  path including playback, and its traces land in the brain log like live ones.
 
 ## Completed Work
 
@@ -235,6 +256,15 @@ happens.
   to run by a few rows. Re-run both evals after prompt edits.
 - The tier-0 eval set was written alongside the grammar (0 false accepts is partly self-graded);
   add real transcripts from use before trusting the < 0.5% number.
+- **Hedging at 350 ms fires on ~95% of reflex calls** from Nepal (TTFT ~450–480 ms): every turn
+  costs 2 Groq requests. A hedge at ~600 ms (about p95) would halve that and still catch outliers;
+  owner's call (the 350 ms is a design decision). Key use is failover-only: key 1 leads, key 2
+  takes the hedge, keys 3–8 only after 429s.
+- Speculative start spends an LLM call (2 with the hedge) whenever speech resumes after a 250 ms
+  pause; add a minimum utterance length before speculating if daily limits bite.
+- Wake word on Piper voices: 47/50 caught (3 "He sparked …" missed by both the spotter and the
+  on-device second chance). FT10 (real models) is flaky ~1 run in 6 for the same cut reason.
+- gpt-oss-120b (the failover) once answered "I'll draft it and save it" without delegating.
 - In-process maps (`Voice.calls`, `prefetch`, supervisor watches) assume the device's socket lives
   on the brain process that got the signal; cross-device tool calls (R2) need Redis pub/sub.
 
@@ -265,4 +295,8 @@ happens.
 | 2026-10-10 | Mic test: strangers' lines answered 6–8 times in a row after one "Hey Spark" | Follow-ups capped at 2, each within 6 s of Spark finishing; barge-in only inside an exchange |
 | 2026-10-10 | Mic test: follow-ups always needed "Hey Spark" | Audio plays in the floating panel, the ear ran in the main window, speaking state was per window: broadcast via main (`voiceSpeakingState`) |
 | 2026-10-10 | Whisper turned room noise into "foreign" and Spark answered it | Drop whole-transcript Whisper hallucinations |
+| 2026-10-10 | Tier-0 answers ("what time is it") never reported first audio: spoken as `t0-<intent>`, not the signal id | `reflex.handle { utt_id: "<signal_id>:t0" }` |
+| 2026-10-10 | Bench: the wake cut took the command's first word ("what time is it" → "I miss it") | Cloud STT hears the whole utterance; only on-device STT gets the cut |
+| 2026-10-10 | Bench: Whisper's "Hayspark turned the volume up" escaped tier 0, and the reflex said "volume's up" without calling the tool | `strip_wake` / tier-0 filler take joined forms; a leading "turned" reads as "turn"; RA1 rows |
+| 2026-10-10 | Bench: the reflex delegated plain facts ("how far is the moon", "speed of light", "recommend a book") → "I can't run multi-step jobs yet" | Prompt: "just answer" first with examples, delegate only for what one reply can't know or do; 6 eval rows |
 | 2026-10-10 | Vite `EACCES` on :5123 after Docker started | Windows dynamic port range started at 1024, so Hyper-V reserved 5041–5140; reset to 49152+ (`netsh int ipv4/ipv6 set dynamic tcp start=49152 num=16384`) + restart `winnat` |

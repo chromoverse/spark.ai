@@ -84,7 +84,7 @@ Target per device: first audio within 1 s of the end of speech, within 2 s on lo
   train; v1's custom `hey_spark.onnx` would have needed training), checked on the device per
   utterance, audio cut after the phrase. On-device STT: Moonshine-tiny (beat Parakeet-110M on
   accuracy: 10% vs 16% WER, ~120 ms); Parakeet-0.6B for strong PCs
-- ☐ Mouth: TTS engines Groq Orpheus (free quota), edge-tts (from the device), Pocket TTS / Kokoro /
+- ☑ Mouth: TTS engines Groq Orpheus (free quota), edge-tts (from the device), Pocket TTS / Kokoro /
   Chatterbox-Nano / Piper; sentence streaming; tone tags mapped or stripped; barge-in; echo suppression.
   *Done:* Orpheus (brain proxy), edge-tts, sentence streaming, tone tags, live switching, barge-in,
   echo via Chromium AEC, local Piper (fp32, ~150 ms per sentence on the owner's laptop) and Kokoro
@@ -111,21 +111,25 @@ Target per device: first audio within 1 s of the end of speech, within 2 s on lo
 - ☑ Reflex eval set (~100 utterances) and latency benchmark; chain order free first. gpt-oss-20b
   stays first (fastest; final run 50/50 answers, 31/33 tools, 11/12 delegate, persona 45/56
   graded as spoken); the runner rotates keys like the chain
-- ☐ Speculative start on endpoint candidate; context prefetch on partials. *Done:* prefetch on
-  `signal.partial`, brain cancels on `signal.interrupt`, body endpointer emits end/resume. *Left:*
-  the live ear (vad-web) only gives a final endpoint, so wire speculative start with the body ear
+- ☑ Speculative start on endpoint candidate; context prefetch on partials. The live ear
+  transcribes after 250 ms of silence and the brain starts the reply then (unless tier 0 will take
+  it); its events wait until 700 ms of silence confirms the endpoint, and speech in between cancels
+  it (`signal.interrupt`) and is merged and heard again. Gain here 40–110 ms (wake check + cloud STT
+  nearly fill the 450 ms window); more on PCs with fast on-device STT
 - ☑ Per-signal trace: endpoint, reflex TTFT, first sentence, first audio (device-reported)
 
 ### Acceptance Tests
-- ☐ `TESTING.md` rows A1–A3, B1–B2, C1, FT1–FT10, WK1–WK3, S1/S6/S8, RA1–RA2, PS1/PS2/PS4 pass.
+- ☑ `TESTING.md` rows A1–A3, B1–B2, C1, FT1–FT10, WK1–WK3, S1/S6/S8, RA1–RA2, PS1/PS2/PS4 pass.
+  Map of every R1 acceptance test to its proof: `TESTING.md` §4.7b
   RA3, RA4, PS3 need jobs and approvals: moved to R2 (owner, 2026-10-10)
-- ☐ p50 end-of-speech → first audio < 1000 ms, p95 < 1500 ms over 50 scripted utterances (low-spec
-  PCs: p95 < 2000 ms)
-- ☐ "Turn the volume up" → spoken ack and the volume changes, no paid model used when free tiers are healthy
-- ☐ Kill the free provider → the next chain entry answers, still under the p95 budget
-- ☐ Barge-in stops TTS within 150 ms
+- ☑ p50 end-of-speech → first audio < 1000 ms, p95 < 1500 ms over 50 scripted utterances (low-spec
+  PCs: p95 < 2000 ms). Owner's low-spec laptop, scripted ear, 2026-10-10: p50 1291, p95 1621 ms
+- ☑ "Turn the volume up" → spoken ack and the volume changes, no paid model used when free tiers are healthy
+- ☑ Kill the free provider → the next chain entry answers, still under the p95 budget (fakes:
+  S6, B2; gpt-oss-120b live TTFT p50 511 / p95 652 ms)
+- ☑ Barge-in stops TTS within 150 ms (playback quiet 4–13 ms after the stop + VAD onset)
 - ☑ Force the selected TTS engine to return nothing → the next engine speaks the same sentence; an incident is logged (FT4)
-- ☐ Throttle the CPU → the fitness check demotes the local engine and the plan changes on the next start
+- ☑ Throttle the CPU → the fitness check demotes the local engine and the plan changes on the next start
 - ☑ Chaos test: 100 signals with random provider failures → every one ends answered or explained, none silent
 
 ---

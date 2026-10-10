@@ -79,6 +79,7 @@ settings. Google OAuth works with `http://localhost` redirects in testing mode, 
 | `VITE_BRAIN_URL` | read by the main process; defaults to `http://127.0.0.1:8080` (public value, no secrets) |
 | `SPARK_BODY_PYTHON` | dev only: interpreter for the sidecar (defaults to `body/.venv`) |
 | `ELECTRON_SAFE_GPU_MODE` | `1` disables GPU acceleration |
+| `SPARK_VOICE_SCRIPT` | dev only: the latency bench's scripted ear (`TESTING.md` §6). Path to the manifest `body/evals/clips.py` writes; 60 s after the brain connects, the app plays every clip through the voice loop (out loud) |
 
 ### 3.3 Body (`spark-body`)
 No secrets on disk. Configuration comes from the brain (`settings.changed`, engine plan) and the
