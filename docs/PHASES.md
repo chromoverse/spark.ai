@@ -126,7 +126,8 @@ Target per device: first audio within 1 s of the end of speech, within 2 s on lo
   PCs: p95 < 2000 ms). Owner's low-spec laptop, scripted ear, 2026-10-10: p50 1291, p95 1621 ms
 - ☑ "Turn the volume up" → spoken ack and the volume changes, no paid model used when free tiers are healthy
 - ☑ Kill the free provider → the next chain entry answers, still under the p95 budget (fakes:
-  S6, B2; gpt-oss-120b live TTFT p50 511 / p95 652 ms)
+  S6, B2; live: 20b's circuits open → 20/20 answered by gpt-oss-120b, first token p50 469 / p95
+  625 ms)
 - ☑ Barge-in stops TTS within 150 ms (playback quiet 4–13 ms after the stop + VAD onset)
 - ☑ Force the selected TTS engine to return nothing → the next engine speaks the same sentence; an incident is logged (FT4)
 - ☑ Throttle the CPU → the fitness check demotes the local engine and the plan changes on the next start

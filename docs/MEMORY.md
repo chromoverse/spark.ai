@@ -18,7 +18,7 @@ happens.
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
 - **R0 pushed to `origin/main`** 2026-10-10 (fast-forward `ec23e38..ffd8142`; CI green on GitHub).
 - **R1 built, every PHASES box ticked** (2026-10-10, evening) on local branch `r1/voice-loop` (not
-  pushed). Brain 86 tests (incl. 100-signal chaos), body 59 (Windows CI job; 2 real-model tests run
+  pushed). Brain 87 tests (incl. 100-signal chaos), body 60 (Windows CI job; 2 real-model tests run
   only where the models are downloaded), Electron typecheck + lint (0 errors). Acceptance map:
   `TESTING.md` §4.7b. What exists:
   - brain: free-first reflex chain (Groq ×2, Cloudflare, Gemini opt-in, Mistral; Claude Haiku 5.5
@@ -68,12 +68,14 @@ happens.
   "Hey Spark" request); follow-ups never worked because audio plays in the floating panel while the
   ear runs in the main window (speaking state now broadcast to every window); Whisper's "foreign"
   noise hallucination; "what time it is" delegated (tier 0 + prompt fix).
-- **NEXT (start here):** the owner's mic smoke of the new ear (TESTING §8b step 6): "Hey Spark,
-  tell me a joke" → "another one" → "one more" (no wake word) → a 4th without it is ignored; a long
-  request with a short pause mid-sentence arrives whole. If room voices still slip into follow-ups,
-  add a loudness gate (a follow-up only if about as loud as the "Hey Spark" utterance). Then the
-  owner fast-forwards `r1/voice-loop` onto `origin/main` and R2 starts. Open owner calls: the hedge
-  delay (below) and whether low-spec p50 must also be < 1 s (read here as p95 < 2 s, as written).
+- **NEXT (start here):** restart the app (`cd electron && npm run dev`; the brain container is
+  rebuilt) and the owner's mic smoke (TESTING §8b step 6): follow-ups, "yes, do it" after Spark asks
+  something, a pause mid-sentence arrives whole, "what's my battery". The Engines page should show
+  `groq-whisper` back at #1 after one start (FT12). If room voices still slip into follow-ups, add a
+  loudness gate. Then fast-forward `r1/voice-loop` onto `origin/main` and start **R2** (agent loop +
+  desktop hands, PHASES R2) in a new session. Owner said (2026-10-10): "do what is best" on the
+  hedge (now adaptive), the low-spec gate (p95 < 2 s; 1 s stays the target for normal PCs and the
+  R7 region), and the live failover run (done on the test Redis).
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
   after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
   after body or main-process changes; renderer changes hot-reload). The body logs one line per
@@ -256,10 +258,11 @@ happens.
   to run by a few rows. Re-run both evals after prompt edits.
 - The tier-0 eval set was written alongside the grammar (0 false accepts is partly self-graded);
   add real transcripts from use before trusting the < 0.5% number.
-- **Hedging at 350 ms fires on ~95% of reflex calls** from Nepal (TTFT ~450–480 ms): every turn
-  costs 2 Groq requests. A hedge at ~600 ms (about p95) would halve that and still catch outliers;
-  owner's call (the 350 ms is a design decision). Key use is failover-only: key 1 leads, key 2
+- Hedge is adaptive since 2026-10-10 (1.3 x the entry's usual TTFT, 350 ms floor): from Nepal it
+  waits ~600 ms instead of firing on ~95% of calls. Key use is failover-only: key 1 leads, key 2
   takes the hedge, keys 3–8 only after 429s.
+- httpx's 5 s keep-alive doesn't cost a handshake per turn: measured the same first-token times
+  with a 300 s keep-alive (Groq's edge is near).
 - Speculative start spends an LLM call (2 with the hedge) whenever speech resumes after a 250 ms
   pause; add a minimum utterance length before speculating if daily limits bite.
 - Wake word on Piper voices: 47/50 caught (3 "He sparked …" missed by both the spotter and the
@@ -299,4 +302,7 @@ happens.
 | 2026-10-10 | Bench: the wake cut took the command's first word ("what time is it" → "I miss it") | Cloud STT hears the whole utterance; only on-device STT gets the cut |
 | 2026-10-10 | Bench: Whisper's "Hayspark turned the volume up" escaped tier 0, and the reflex said "volume's up" without calling the tool | `strip_wake` / tier-0 filler take joined forms; a leading "turned" reads as "turn"; RA1 rows |
 | 2026-10-10 | Bench: the reflex delegated plain facts ("how far is the moon", "speed of light", "recommend a book") → "I can't run multi-step jobs yet" | Prompt: "just answer" first with examples, delegate only for what one reply can't know or do; 6 eval rows |
+| 2026-10-10 | Mic test: "yes, do it" after Spark asked a question was dropped ("no wake phrase") | One answer needs no wake word when Spark ended on a question (`asked` in `voiceSpeakingState`); VAD `minSpeechMs` 300 → 200 |
+| 2026-10-10 | Mic test: transcripts turned bad ("I'm sparked… the bossy is of"): one 1.2 s Whisper call of three put its p95 over budget, Moonshine led, and nothing re-probed Whisper | Warm-up call for cloud engines, a start-up probe for engines whose median fits, benchmarks behind one lock (FT12) |
+| 2026-10-10 | "Can you tell me the percentage of battery?" → "I can't run multi-step jobs yet" | Tier-0 `battery_status` (`GetSystemPowerStatus`) |
 | 2026-10-10 | Vite `EACCES` on :5123 after Docker started | Windows dynamic port range started at 1024, so Hyper-V reserved 5041–5140; reset to 49152+ (`netsh int ipv4/ipv6 set dynamic tcp start=49152 num=16384`) + restart `winnat` |

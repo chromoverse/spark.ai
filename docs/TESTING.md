@@ -67,7 +67,7 @@ cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (o
 | A2 ✅ | near-miss "play a song that fits my mood" | reflex arc does **not** accept; goes to the reflex LLM. `body/tests/test_body.py::test_not_sure_goes_to_the_brain` + 80 near-miss rows in RA1; the brain side is B1 |
 | A3 ✅ | tier-0 action fails (app not installed) | escalates to the reflex LLM with the error; spoken alternative offered. `test_a3_tier0_failure_escalates_to_the_reflex` |
 | B1 ✅ | normal conversation | reflex LLM called once; `reply.delta` streamed per sentence; first delta within budget given fake TTFT 300 ms. `test_b1_*` (+ recent turns carried into the follow-up) |
-| B2 ✅ | first provider slow (TTFT 600 ms) | hedge fires at 350 ms; second provider's stream used; first cancelled. `brain/tests/test_llm_chains.py::test_b2_hedge_at_350ms_second_stream_wins` |
+| B2 ✅ | first provider slow (TTFT 600 ms) | hedge fires at 350 ms; second provider's stream used; first cancelled. `brain/tests/test_llm_chains.py::test_b2_hedge_at_350ms_second_stream_wins`. The hedge waits for late *for that entry* (1.3 x its usual TTFT, 350 ms at least): from Nepal a fixed 350 ms doubled every call (`test_b2_hedge_waits_for_late_by_this_entrys_usual`) |
 | C1 ✅ | "open Spotify and play something calm" | speech delta and `tool.call` emitted in the same turn (parallel); done chime on success. `test_c1_*`: chime ≤ 1.5 s, spoken "Done." when slower, explained failure with a next step |
 | D1 | invoice email → save PDF | agent loop: gmail_search → get_attachment → file_write on the origin device; job steps persisted; summary contains only items from tool outputs |
 | D2 | D1 with Gmail not connected | connect card emitted; job paused; after fake OAuth completes, job resumes without a new signal |
@@ -114,6 +114,7 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | FT8 ✅ | STT candidates | probe clip transcribed per engine: accuracy (1 − WER) then speed among those within 300 ms; slower working engines kept as fallbacks |
 | FT9 ✅ | on-device models | the hardware tier picks the catalog (`body/spark_body/models.py`); download → sha256 check → safe unpack (no `../`) → `.ok`; idempotent; a bad checksum or path is rejected; a failed download → incident, retried next start; progress in `engine.plan` |
 | FT10 ✅ | real models on the dev machine (skipped in CI) | Piper speaks a WAV and benchmarks; "Hey Spark, turn the volume up to thirty" → cut at the phrase → Moonshine ≥ 80% words right; near-miss "the park was sparkling" not spotted. Flaky: Piper varies per run and the cut sometimes takes "turn the volume up" (~1 run in 6) |
+| FT12 ✅ | one slow call of three in a benchmark | a cloud engine gets an untimed warm-up call first; an engine whose median fits but p95 doesn't gets a probe on every start, and a good one brings it back (`test_ft12_one_slow_benchmark_call_doesnt_demote_for_good`). Owner's laptop: one 1.2 s Whisper call left Moonshine leading, and transcripts went bad. Benchmarks never overlap (one lock) |
 | FT11 ✅ | CPU throttled between starts | the start-up quick check re-benchmarks a local engine that now misses its budget; it drops behind the one that fits and the plan changes before the first reply (`test_ft11_throttled_cpu_demotes_the_local_engine_on_the_next_start`). Real hardware, 16 busy loops on 8 cores (2026-10-10): Piper p95 188 → 1250 ms, Moonshine 125 → 391 ms, both out of budget |
 
 ### 4.5 Supervisor — never silent (§19)
@@ -165,7 +166,7 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | Rows A1–A3, B1–B2, C1, FT1–FT10, WK1–WK3, S1/S6/S8, RA1–RA2, PS1/PS2/PS4 | the rows above, all ✅ |
 | p50 < 1000 / p95 < 1500 ms over 50 scripted utterances (low-spec: p95 < 2000) | latency bench (§6), scripted ear, owner's low-spec laptop 2026-10-10: p50 1291 ms, p95 1621 ms → low-spec PASS. Tier 0 ("what time is it") p50 864 ms. The 1 s p50 needs a nearer provider region (R7) and faster STT |
 | "Turn the volume up" → ack and the volume changes, no paid model | A1 (tier 0: no LLM, the chime is the ack). The bench caught Whisper's "Hayspark turned the volume up" escaping tier 0 and the reflex saying "volume's up" without the tool: fixed (joined wake forms stripped, "turned …" read as "turn …"), RA1 rows added |
-| Kill the free provider → the next entry answers, under the p95 budget | S6, B2 and the all-down case on fakes; the next entry (gpt-oss-120b) measured live: TTFT p50 511 / p95 652 ms against gpt-oss-20b's 472 / 584 ms |
+| Kill the free provider → the next entry answers, under the p95 budget | S6, B2 and the all-down case on fakes. Live (2026-10-10): gpt-oss-20b's circuits opened (in the test Redis), 20 reflex prompts through the real chain → all answered by gpt-oss-120b, first token p50 469 / p95 625 ms |
 | Barge-in stops TTS within 150 ms | `test_barge_in_stops_speech_within_150ms` (mouth); bench: the voice window went quiet 4–13 ms after the stop, plus the VAD onset (one or two 32 ms frames) |
 | Selected TTS returns nothing → the next engine | FT4 |
 | Throttle the CPU → the plan changes on the next start | FT11 |
@@ -263,7 +264,8 @@ Re-run monthly and whenever a free provider changes its offer.
 6. Engines page: "Wake word ready" shows; the table lists `piper` and `moonshine-tiny` with their
    numbers. Mic on → say "what time is it" (ignored: no wake word) → "Hey Spark, what time is it"
    → answered; then up to 2 follow-ups, each within 6 s of Spark finishing, need no wake word (a
-   third is ignored). "Hey Spark" alone → a chime, then
+   third is ignored). When Spark ends on a question ("Want me to…?"), one answer ("yes, do it")
+   needs no wake word, cap or not (8 s). "What's my battery" → answered on the device. "Hey Spark" alone → a chime, then
    the command.
 
 ## 9. v1 Baseline (for reference)
