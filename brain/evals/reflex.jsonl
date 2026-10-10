@@ -54,6 +54,9 @@
 {"text": "how do I make my coffee less bitter", "expect": "answer"}
 {"text": "who wrote romeo and juliet", "expect": "answer"}
 {"text": "why is the sky blue", "expect": "answer"}
+{"text": "okay okay", "expect": "answer"}
+{"text": "nerd nerd", "expect": "answer"}
+{"text": "can you tell me the, can you tell me the", "expect": "answer"}
 {"text": "set the volume to thirty percent please", "expect": "tool", "tool": "volume_set", "args": {"level": 30}}
 {"text": "make the volume 30", "expect": "tool", "tool": "volume_set", "args": {"level": 30}}
 {"text": "volume at 80", "expect": "tool", "tool": "volume_set", "args": {"level": 80}}
