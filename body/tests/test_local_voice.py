@@ -17,7 +17,7 @@ from spark_body import models
 from spark_body.app import Body, data_dir
 from spark_body.clock import Clock
 from spark_body.ear.stt import LocalStt, Transcript
-from spark_body.ear.wake import Wake, strip_wake
+from spark_body.ear.wake import Wake, said_wake, strip_wake
 from spark_body.fitness import (
     ACCURACY_TEXT,
     PROBE_TEXT,
@@ -146,6 +146,14 @@ def test_strip_wake_handles_what_stt_makes_of_it() -> None:
     assert strip_wake("Hayspark turned the volume up.") == "turned the volume up."
     assert strip_wake("Heyspark, tell me a joke") == "tell me a joke"
     assert strip_wake("Sparkling water please") == "Sparkling water please"
+    # how Moonshine hears it (second chance): woken, and the phrase is gone
+    for heard in (
+        "He sparked what should I cook",
+        "His spark, what should I cook",
+        "I'm sparked. what should I cook",
+    ):
+        assert said_wake(heard) and strip_wake(heard).lower() == "what should i cook", heard
+    assert not said_wake("a spark of genius") and not said_wake("the park was sparkling")
 
 
 def _archive(tmp: Path, members: dict[str, bytes]) -> tuple[str, str]:

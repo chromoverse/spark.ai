@@ -356,3 +356,9 @@
 {"text": "my battery died yesterday", "intent": null, "slots": {}, "kind": "near_miss"}
 {"text": "where can I buy a new laptop battery", "intent": null, "slots": {}, "kind": "near_miss"}
 {"text": "why is my battery draining so fast", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "Hey Spark, wait", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "Hey, hey, wait.", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "wait a second", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "hold on", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "wait for the download to finish", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "hold on to that thought and remind me later", "intent": null, "slots": {}, "kind": "near_miss"}

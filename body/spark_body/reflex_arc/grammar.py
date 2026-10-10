@@ -258,6 +258,9 @@ RULES: tuple[Rule, ...] = (
             r"enough",
             r"that(?:'s| is) enough",
             r"hush",
+            # "Hey Spark, wait": the owner's way of cutting in (mic test, 2026-10-10)
+            r"(?:(?:hey|no|ok(?:ay)?) )*wait(?: wait)*(?: a (?:sec|second|moment|minute))?",
+            r"hold on(?: a (?:sec|second|moment))?",
         ],
     ),
     _rule(
