@@ -142,6 +142,10 @@ def test_strip_wake_handles_what_stt_makes_of_it() -> None:
     assert strip_wake("Hey, Spark.") == ""
     assert strip_wake("Sparks what's the weather") == "what's the weather"
     assert strip_wake("Turn it up") == "Turn it up"
+    # Whisper on the whole utterance (latency bench): one word
+    assert strip_wake("Hayspark turned the volume up.") == "turned the volume up."
+    assert strip_wake("Heyspark, tell me a joke") == "tell me a joke"
+    assert strip_wake("Sparkling water please") == "Sparkling water please"
 
 
 def _archive(tmp: Path, members: dict[str, bytes]) -> tuple[str, str]:
@@ -237,6 +241,18 @@ async def test_wk2_wake_word_and_command_in_one_breath() -> None:
     wake.cut = 15000  # just "Hey Spark": the renderer opens a listening window
     r = await wire.call("stt.transcribe", {"pcm16": ONE_SECOND, "wake": True}, req_id=2)
     assert r["result"] == {"text": "", "wake": True} and len(ear.heard) == 1
+
+
+async def test_wk2_cloud_stt_hears_the_whole_utterance() -> None:
+    """A cut a little late takes the command's first word; Whisper copes with the phrase."""
+    wire = Wire()
+    clock = FakeClock()
+    cloud = FakeStt("groq-whisper", clock, latency_s=0, text="Hey Spark, what time is it?")
+    cloud.on_device = False
+    Body(wire.rpc, {}, clock, ears={"groq-whisper": cloud}, wake=FakeWake(6000))  # type: ignore[dict-item,arg-type]
+    r = await wire.call("stt.transcribe", {"pcm16": ONE_SECOND, "wake": True})
+    assert r["result"]["text"] == "what time is it?" and r["result"]["wake"] is True
+    assert cloud.heard == [16000 * 2]
 
 
 async def test_wk4_second_chance_catches_what_the_spotter_missed() -> None:

@@ -34,8 +34,9 @@ STEP_MS = 50
 LOOKBACK_S = 0.4
 MIN_COMMAND_S = 0.3  # less audio than this after the phrase: it was just "Hey Spark"
 
-# What STT makes of the wake phrase at the start of a transcript ("Hi Spark," → "I spark,").
-_LEADING = re.compile(r"^\W*(?:(?:hey|hi|hay|high|okay|ok|a|i)\W+)?s?parks?\b\W*", re.IGNORECASE)
+# What STT makes of the wake phrase at the start of a transcript ("Hi Spark," → "I spark,", and
+# Whisper's one-word "Hayspark").
+_LEADING = re.compile(r"^\W*(?:(?:hey|hi|hay|high|okay|ok|a|i)\W*)?s?parks?\b\W*", re.IGNORECASE)
 
 
 def strip_wake(text: str) -> str:
@@ -44,7 +45,7 @@ def strip_wake(text: str) -> str:
 
 # The second chance (the spotter missed, e.g. a bare "Spark, …"): an on-device transcript that
 # starts with the phrase. Stricter than _LEADING: "a spark of genius" must not wake Spark.
-_SAID = re.compile(r"^\W*(?:(?:hey|hi|hay|okay|ok)\W+)?sparks?\b", re.IGNORECASE)
+_SAID = re.compile(r"^\W*(?:(?:hey|hi|hay|okay|ok)\W*)?sparks?\b", re.IGNORECASE)
 
 
 def said_wake(text: str) -> bool:

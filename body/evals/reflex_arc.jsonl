@@ -342,3 +342,8 @@
 {"text": "sure", "intent": null, "slots": {}, "kind": "negative"}
 {"text": "what", "intent": null, "slots": {}, "kind": "negative"}
 {"text": "why", "intent": null, "slots": {}, "kind": "negative"}
+{"text": "Hayspark turned the volume up.", "intent": "volume_change", "slots": {"direction": "up"}, "kind": "positive"}
+{"text": "Heyspark, what time is it?", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "turned the volume down", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
+{"text": "I turned the volume up", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "she turned the music down", "intent": null, "slots": {}, "kind": "near_miss"}

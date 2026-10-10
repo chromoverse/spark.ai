@@ -12,7 +12,7 @@ from spark_body.reflex_arc.grammar import Match, match
 __all__ = ["Match", "Phrases", "decide", "normalize"]
 
 _FILLER = re.compile(
-    r"^(?:(?:hey |ok |okay |hi )?spark[, ]+)?"
+    r"^(?:(?:hey|ok|okay|hi|hay) ?spark[, ]+|spark[, ]+)?"
     r"(?:(?:can|could|would|will) you (?:please )?|please |just |i want you to |go ahead and )*"
 )
 _TRAIL = re.compile(r"(?: (?:please|thanks|thank you|for me|spark))+$")
@@ -23,6 +23,8 @@ def normalize(text: str) -> str:
     t = re.sub(r"[^\w\s'%-]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     t = _FILLER.sub("", t)
+    # "Spark, turn…" runs together: STT writes "turned the volume up" (latency bench, 2026-10-10)
+    t = re.sub(r"^turned ", "turn ", t)
     t = _TRAIL.sub("", t)
     return t.strip()
 
