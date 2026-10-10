@@ -70,7 +70,7 @@
 
 ### 4.1 Path of one spoken signal
 
-1. **Ear (device):** wake word (openWakeWord) or push-to-talk → VAD → streaming STT emits partial
+1. **Ear (device):** wake word (sherpa-onnx open-vocabulary keyword spotting: no custom model to train) or push-to-talk → VAD → streaming STT emits partial
    transcripts locally.
 2. **Filter (device):** drop non-speech, low-confidence, and self-echo (Spark's own TTS). Partial
    transcripts go to the brain as `signal.partial` so it can **prefetch** memory and context.
@@ -457,12 +457,20 @@ different CPUs (`RESEARCH.md` §6), so a fixed choice can't hold the 1 s target.
 
 ### 18.3 Selection
 For each role (`stt`, `tts`, `local_llm`, and `wake/vad`, which always runs locally):
-1. Drop candidates whose p95 misses the role budget (TTS first audio ≤ 250 ms, STT final ≤ 300 ms
-   after endpoint, local reflex first token ≤ 400 ms).
+1. Split candidates by the role budget (TTS first audio ≤ 250 ms, STT final ≤ 300 ms after
+   endpoint, local reflex first token ≤ 400 ms). Low-spec devices (hardware tier 0) get a 700 ms TTS
+   budget: their target is first audio within 2 s, not 1 s.
 2. Drop candidates outside the cost policy (paid off during build) or out of quota.
-3. Rank the rest: TTS by **expressiveness, then latency**; STT by **accuracy, then latency**.
+3. Rank what fits: TTS by **expressiveness, then latency**; STT by **accuracy, then latency**. The
+   working candidates that miss the budget follow, fastest first, as last-resort fallbacks (late
+   speech beats silence).
 4. Result: an **engine plan**, an ordered list per role, stored in `devices.engine_plan` and sent to
    the brain. The brain uses it too, for example to keep replies short on a slow-TTS device.
+
+On-device models are downloaded per hardware tier from a pinned catalog (`body/spark_body/models.py`,
+sherpa-onnx on CPU) and then benchmarked like any engine. Measured on a low-spec laptop: fp32
+models ran ~4× faster than int8 (no VNNI); Piper ~150 ms per sentence, Kokoro ~1.7 s; Moonshine-tiny
+~120 ms per command at ~10% WER.
 
 TTS candidate order before benchmarking: Groq Orpheus (expressive vocal directions, ~200 ms, free
 100 clips/day per account) → edge-tts from the device (free, fast, natural; unofficial, so

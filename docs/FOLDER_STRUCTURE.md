@@ -37,11 +37,12 @@ ai_local/
 │   ├── pyproject.toml
 │   ├── spark_body/
 │   │   ├── rpc.py            stdio JSON-RPC with Electron main (API.md §4)
-│   │   ├── ear/              wake word, VAD, STT engines
-│   │   ├── mouth/            TTS engines (Orpheus, edge-tts, Pocket/Kokoro/Chatterbox, Piper), playback, barge-in
+│   │   ├── ear/              wake word (keyword spotter), STT engines (Moonshine/Parakeet local, Groq Whisper), probe clip
+│   │   ├── mouth/            TTS engines (Orpheus, edge-tts, Piper, Kokoro), playback, barge-in
 │   │   ├── reflex_arc/       tier-0 grammar + classifier + phrase bank (§27)
 │   │   ├── hands/            system, apps, files, shell, input, screen, browser (CDP), adb
 │   │   ├── fitness/          hardware scan, engine benchmarks, engine plan (§18)
+│   │   ├── models.py         on-device model catalog per hardware tier, pinned download + unpack
 │   │   ├── watchdog.py       device-side supervisor (§19)
 │   │   ├── sandbox/          workflow-mode Python sandbox, document/media parsers
 │   │   ├── local_brain/      llama.cpp runner, model manager, fallback tool loop (§11)
@@ -70,7 +71,7 @@ ai_local/
 | A device tool | spec in `brain/app/tools/device_specs.py`, implementation in `body/spark_body/hands/` |
 | A tier-0 intent | `body/spark_body/reflex_arc/` (grammar + examples + negative examples + phrases) and an eval row |
 | An LLM provider | an entry in `brain/app/llm/chains.py` (OpenAI-compatible) and an eval run |
-| A TTS/STT engine | `body/spark_body/mouth/` or `ear/` implementing the engine interface + a fitness probe |
+| A TTS/STT engine | `body/spark_body/mouth/` or `ear/` implementing the engine interface + a fitness probe; a local model also gets a `models.py` catalog entry (sha256 from GitHub's asset digest) |
 | An HTTP route | `brain/app/api/` + `API.md` §2 |
 | A socket event | `brain/app/gateway/` + `API.md` §3 |
 | A table / column | `brain/app/db/` + Alembic migration + `DATABASE.md` |

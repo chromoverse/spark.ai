@@ -73,19 +73,26 @@ hop reflects your home network. The real-region numbers come from the R7 benchma
 
 ## R1 — Voice Loop Under 1 Second
 
+Target per device: first audio within 1 s of the end of speech, within 2 s on low-spec PCs
+(owner's call, 2026-10-10; `models.tier` 0, e.g. the owner's Ryzen 7 4700U / 8 GB laptop).
+
 ### Deliverables
 - ☑ `body/` sidecar: stdio JSON-RPC with Electron main; packaged with its own venv in dev
-- ☐ Ear: wake word (port v1 `voice_daemon` + `hey_spark.onnx`), VAD, STT engines: on-device
-  (Parakeet / Moonshine candidates) + Groq Whisper free. *Done:* mic + Silero VAD (renderer `vad-web`,
-  echo cancellation), endpointer, STT plan with switching, Groq Whisper via the brain proxy. *Left:*
-  wake word (the `.onnx` files aren't in the repo), on-device STT engines
+- ☑ Ear: wake word, VAD, STT engines on-device + Groq Whisper free. Mic + Silero VAD (renderer
+  `vad-web`, echo cancellation), endpointer, STT plan with switching, Groq Whisper via the brain
+  proxy. Wake word: sherpa-onnx open-vocabulary keyword spotting ("hey/hi/ok spark", no model to
+  train; v1's custom `hey_spark.onnx` would have needed training), checked on the device per
+  utterance, audio cut after the phrase. On-device STT: Moonshine-tiny (beat Parakeet-110M on
+  accuracy: 10% vs 16% WER, ~120 ms); Parakeet-0.6B for strong PCs
 - ☐ Mouth: TTS engines Groq Orpheus (free quota), edge-tts (from the device), Pocket TTS / Kokoro /
   Chatterbox-Nano / Piper; sentence streaming; tone tags mapped or stripped; barge-in; echo suppression.
   *Done:* Orpheus (brain proxy), edge-tts, sentence streaming, tone tags, live switching, barge-in,
-  echo via Chromium AEC. *Left:* the local engines (model downloads)
+  echo via Chromium AEC, local Piper (fp32, ~150 ms per sentence on the owner's laptop) and Kokoro
+  (strong PCs only: 1.7 s there). Models download per hardware tier (`body/spark_body/models.py`).
+  Pocket TTS / Kitten / Chatterbox measured or skipped: too slow on CPU or unclear license
 - ☑ **Device fitness** (`REDESIGN.md` §18): hardware scan, per-engine benchmarks, engine plan,
   quick check on every start, re-probe on power change, live EWMA updates, Engines page readout
-  (TTS role; STT and local-LLM probes join with their on-device engines)
+  (TTS and STT; local-LLM probes join in R5)
 - ☑ **Supervisor + device watchdog** core (§19): signal deadlines, hedging, engine switching,
   heard-you earcon, terminal-state invariant, `incidents` table
 - ☑ Speak-act-confirm acknowledgements (§4.4)
@@ -93,22 +100,27 @@ hop reflects your home network. The real-region numbers come from the R7 benchma
   (rule checks; a judge for naturalness later)
 - ☑ **Reflex arc** tier 0 on the device + tier-1 brain router (§27); `signal.handled_locally`
   (tier 1 = stop + language now; job status and approvals arrive with jobs in R2)
-- ☐ More free reflex providers behind the latency gate (p95 TTFT ≤ 400 ms) + hedging at 350 ms.
-  *Done:* hedging, five free entries configured, the gate in `evals/run.py`. *Left:* run it with keys
+- ☑ More free reflex providers behind the latency gate + hedging at 350 ms. Run 2026-10-10 from
+  the owner's laptop with 8 Groq keys: gpt-oss-20b TTFT p50 ~450–470 ms / p95 540–820 ms over
+  6 runs, 120b ~480 / ~585. Nothing meets the 400 ms p95 gate from Nepal (network RTT), accepted under the 2 s
+  low-spec target. Mistral's key is out of quota; Cloudflare has no key yet
 - ☑ Signal protocol: `signal.partial` / `signal.final` / `signal.interrupt` / `signal.ack` /
   `reply.delta`
 - ☑ OpenAI-compatible adapter + Anthropic adapter; chain runner with health and circuit breaker
 - ☑ Reflex with quick tools (time, volume, media, open app, brightness) and `delegate` stub
-- ☐ Reflex eval set (~100 utterances) and latency benchmark; set the reflex chain order free first.
-  *Done:* 95-utterance set, runner, latency report. *Left:* run with keys, then order the chain
+- ☑ Reflex eval set (~100 utterances) and latency benchmark; chain order free first. gpt-oss-20b
+  stays first (fastest; final run 50/50 answers, 31/33 tools, 11/12 delegate, persona 45/56
+  graded as spoken); the runner rotates keys like the chain
 - ☐ Speculative start on endpoint candidate; context prefetch on partials. *Done:* prefetch on
   `signal.partial`, brain cancels on `signal.interrupt`, body endpointer emits end/resume. *Left:*
   the live ear (vad-web) only gives a final endpoint, so wire speculative start with the body ear
 - ☑ Per-signal trace: endpoint, reflex TTFT, first sentence, first audio (device-reported)
 
 ### Acceptance Tests
-- ☐ `TESTING.md` rows A1–A3, B1–B2, C1, FT1–FT6, S1/S6/S8, RA1–RA4, PS1–PS4 pass
-- ☐ p50 end-of-speech → first audio < 1000 ms, p95 < 1500 ms over 50 scripted utterances
+- ☐ `TESTING.md` rows A1–A3, B1–B2, C1, FT1–FT10, WK1–WK3, S1/S6/S8, RA1–RA2, PS1/PS2/PS4 pass.
+  RA3, RA4, PS3 need jobs and approvals: moved to R2 (owner, 2026-10-10)
+- ☐ p50 end-of-speech → first audio < 1000 ms, p95 < 1500 ms over 50 scripted utterances (low-spec
+  PCs: p95 < 2000 ms)
 - ☐ "Turn the volume up" → spoken ack and the volume changes, no paid model used when free tiers are healthy
 - ☐ Kill the free provider → the next chain entry answers, still under the p95 budget
 - ☐ Barge-in stops TTS within 150 ms
@@ -138,7 +150,7 @@ hop reflects your home network. The real-region numbers come from the R7 benchma
 - ☐ Delete `electron/action_executor/` and `electron/python-service/`
 
 ### Acceptance Tests
-- ☐ `TESTING.md` rows D1, E1–E4 (phone as a FakeDevice; real ADB lands in R4), F1, G1–G2, W1–W3, T1–T5, S2–S5, S7 pass
+- ☐ `TESTING.md` rows D1, E1–E4 (phone as a FakeDevice; real ADB lands in R4), F1, G1–G2, W1–W3, T1–T5, S2–S5, S7, RA3, RA4, PS3 (moved from R1) pass
 - ☐ "Create notes.txt on the desktop, write my to-dos, open it" completes with progress shown
 - ☐ "Delete everything in Downloads" → approval required; deny → nothing deleted
 - ☐ "Stop" mid-job cancels within 500 ms; "use the D drive instead" steers the running job

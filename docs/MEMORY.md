@@ -17,9 +17,9 @@ happens.
   Actions CI. Brain: 40 tests green, ruff + mypy strict clean. Owner's desktop smoke (§8a) passed
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
 - **R0 pushed to `origin/main`** 2026-10-10 (fast-forward `ec23e38..ffd8142`; CI green on GitHub).
-- **R1 in progress** on local branch `r1/voice-loop` (not pushed). Built and green (2026-10-10,
-  overnight session): brain 85 tests (incl. 100-signal chaos), body 38 tests (Windows CI job added),
-  Electron typecheck + lint (0 errors). What exists:
+- **R1 in progress** on local branch `r1/voice-loop` (not pushed). Built and green (2026-10-10):
+  brain 85 tests (incl. 100-signal chaos), body 52 tests (Windows CI job; 2 real-model tests run
+  only where the models are downloaded), Electron typecheck + lint (0 errors). What exists:
   - brain: free-first reflex chain (Groq ×2, Cloudflare, Gemini opt-in, Mistral; Claude Haiku 5.5
     paid/off) with 350 ms hedging, fallthrough, Redis health circuits, stall → `Restart`; the signal
     protocol (`signal.*`, `tool.result`, `engine.incident`, `device.engine_plan`, `reply.*`,
@@ -28,27 +28,36 @@ happens.
     `incidents` table + `GET /v2/incidents`; voice proxy `/v2/proxy/tts|stt` (Groq Orpheus/Whisper).
   - body (`python -m spark_body`): tier-0 grammar (338-row eval, 0 false accepts), hands (volume,
     media keys, brightness, Start Menu apps), mouth (edge-tts, Orpheus via proxy, live switching,
-    circuits, text-only degrade), fitness (hardware scan, benchmarks, plan, power re-probe, EWMA,
-    SQLite history), STT plan (Groq Whisper via proxy), endpointer.
+    circuits, text-only degrade), fitness for TTS **and STT** (hardware scan, benchmarks with a
+    load-first warm-up, plan, power re-probe, EWMA, SQLite history), endpointer. **On-device voice**
+    (extra `local` = sherpa-onnx): a model catalog per hardware tier (`spark_body/models.py`,
+    sha256-pinned, downloads on first start with progress), wake word "hey/hi/ok spark" by
+    open-vocabulary keyword spotting (no training), Moonshine-tiny STT, Piper TTS; Kokoro and
+    Parakeet-0.6B only on strong PCs. Wake-gated `stt.transcribe`: audio without the phrase is
+    dropped on the device; with it, STT hears only the command.
   - Electron: BodyBridge (spawn + restart), VoiceLoop relay (tier 0 first, tool calls, incidents,
-    plans, trace), audio + earcons in one window, mic + VAD ear with barge-in, **Engines** page
-    (plan, scores, reasons, Run benchmark, Try it with mic).
-  - evals: `brain/evals` reflex (95) + persona (58) runners, latency report from logs.
-- **R1 left** (see `PHASES.md` R1 notes): run the evals and latency bench with real keys and order
-  the chain; local TTS engines (Kokoro/Piper/Pocket/Chatterbox) and on-device STT (need model
-  downloads); wake word (`hey_spark.onnx`/`spark.onnx` aren't in the repo or on disk); speculative
-  start in the live ear; RA3/RA4/PS3 need jobs/approvals (R2 machinery).
-- **Owner to-do for R1:** put `GROQ_API_KEYS` (and any other free keys) in `deploy/.env`; accept
-  Orpheus terms in the Groq console; `cd body && uv sync --extra tts --extra hands`; run the R1 smoke
-  (`TESTING.md` §8b), then `cd brain && uv run python -m evals.run --suite reflex` and `--suite persona`.
-  Decide: move RA3/RA4/PS3 to R2 (they need jobs), and whether to download local voice models now.
+    plans, trace), audio + earcons in one window, mic + VAD ear with barge-in and the wake-word gate
+    (8 s follow-up window after Spark talks or a bare "Hey Spark"), **Engines** page (TTS + STT
+    plan, scores, accuracy, model downloads, wake status, Run benchmark, Try it with mic).
+  - evals: `brain/evals` reflex (95) + persona (58) runners (rotate keys), latency report from logs.
+- **Measured on this laptop (2026-10-10):** reflex gpt-oss-20b TTFT p50 ~450–470 ms, p95
+  540–820 ms across 6 runs (final: answers 50/50, tools 31/33, delegate 11/12, persona 45/56);
+  Orpheus via Groq ~220 ms to first byte, ~600 ms whole sentence; Piper fp32 ~150 ms per sentence;
+  edge-tts ~750 ms; Moonshine-tiny ~120 ms per command; wake check ~80 ms; real sidecar smoke:
+  wake-gated command transcribed in 140–175 ms over RPC, near-misses dropped in ~85 ms.
+- **R1 left** (see `PHASES.md` R1): the owner's live smoke with the mic (§8b step 6); the 50-utterance
+  latency acceptance run; speculative start in the live ear; the CPU-throttle acceptance check.
+- **Owner to-do for R1:** `cd body && uv sync --extra tts --extra hands --extra local`; run the R1
+  smoke (`TESTING.md` §8b, incl. "Hey Spark"). Groq keys are in `deploy/.env` (copied from
+  `server/.env`, Orpheus terms accepted per owner).
 - **This laptop:** 8 cores, 7.4 GB RAM, AMD (no CUDA): local LLMs must be small (R5 Models page).
 - **Deferred past R0:** per-user rate limits, `sync.resume`/X4, retention jobs, real Caddy config,
   Electron lint warnings (react-hooks exhaustive-deps).
 - **Run locally:** `docker compose -f deploy/docker-compose.yml up -d` (brain on :8080; secrets in
   git-ignored `deploy/.env`). Tests: `docker compose -f deploy/docker-compose.test.yml up -d`, then
   `cd brain && uv run pytest`. Desktop: `cd electron && npm run dev`. uv lives in
-  `%APPDATA%/Python/Python311/Scripts` (not on PATH).
+  `%APPDATA%/Python/Python311/Scripts` (not on PATH, PowerShell included). Voice models live in
+  `%LOCALAPPDATA%/SparkAI/models` (v1's `embedding/`, `emotion/`, `whisper/` folders there are v1's).
 - **Working tree:** the owner's uncommitted v1 edits (`server/*`, `README.md`, parts of
   `HomeLive.tsx` and `ActionExecutorService.ts`, `scripts/`, `*.env.example`) are theirs. Never stage them.
 - **v1 state:** feature-rich prototype (`server/`, `voice_daemon/`, `llms/`, `electron/`). Runs in
@@ -109,13 +118,35 @@ happens.
   Windows) + `screen-brightness-control` (brightness beyond laptop panels). Without `hands`, volume
   falls back to volume keys and brightness to WMI.
 
+**Owner decisions (2026-10-10, morning)**
+- First-audio target: 1 s, or **2 s on low-spec devices** (this laptop). Implemented as a 700 ms TTS
+  budget on hardware tier 0 (250 ms elsewhere), so the expressive Orpheus voice can lead here.
+- Local models load **automatically per device** on the client side: the body picks by hardware
+  tier, downloads, benchmarks, and keeps what fits. No manual model choice.
+- No wake-word training: the wake word must be free and train-free (hence keyword spotting).
+- RA3, RA4, PS3 move to R2 (they need jobs and approvals).
+- The Groq keys from v1's `server/.env` are the ones to use (Orpheus terms accepted).
+- The agent owns the codebase decisions ("the codebase is yours").
+
 **R1 implementation choices (2026-10-10, agent; owner can overrule)**
 - Body ↔ Electron framing is NDJSON (one JSON-RPC object per line), not Content-Length frames.
 - Audio is synthesized in the body and played in the renderer (Chromium decodes MP3/WAV; no Python
   audio decoder). Whole-sentence blobs for now; MediaSource streaming if first audio needs it.
 - The R1 ear runs mic + Silero VAD in the renderer (`vad-web`, already a v1 dependency) with
-  Chromium echo cancellation; STT engine choice stays in the body. A body-side ear (sounddevice +
-  wake word) replaces it once the wake models exist.
+  Chromium echo cancellation; STT engine choice stays in the body. The wake word is checked in the
+  body per endpointed utterance (not on a continuous stream): no second mic capture, and "Hey Spark,
+  do X" in one breath works. A continuous body-side ear can replace it if latency demands.
+- Wake word = sherpa-onnx keyword spotter (gigaspeech 3.3M, fp32), phrases as BPE tokens in
+  `ear/wake.py`. Knobs to tune on real voices: `THRESHOLD` 0.25, `LOOKBACK_S` 0.4 (where the
+  command starts: the spotter fires ~0.4 s after the phrase ends).
+- Model catalog picks fp32 over int8 (4x faster on CPUs without VNNI, measured). Piper voice is
+  LibriTTS-R (CC-BY-4.0 data) over Ryan (CC BY-NC-SA data). Pocket TTS skipped (2 s here and its
+  README says non-commercial while the LICENSE says CC-BY-4.0), Kitten/Parakeet-110M lost on
+  speed/accuracy.
+- Engines that miss the budget stay in the plan after the ones that fit, as last-resort fallbacks;
+  the quick check doesn't spend probes (or Orpheus quota) on them.
+- Local engines serialize native calls with a thread lock taken on the worker thread (all local
+  voices share one: espeak-ng is global).
 - Live events (`reply.delta`, `reply.cue`, `tool.call`, `tool.cancel`) go only to the origin device
   and skip the sync log; the thread history holds the outcome. A turn is stored before its final
   marker, so a follow-up always sees it.
@@ -174,10 +205,19 @@ happens.
 - The Google OAuth client must list `http://localhost:8080/v2/auth/google/callback` as a redirect URI.
 - v1 desktop chat (via `server/`) is offline in the v2 app until R1/R2 wires chat to the brain.
 - Rate limits are fixed-window per IP; per-user limits come later.
-- **edge-tts misses the budget badly here:** measured on this laptop 2026-10-10 (5 runs × 2):
-  first audio p50 ~740 ms, p95 ~1.6–1.8 s vs the 250 ms budget. With edge-tts alone the 1 s goal
-  can't hold; Groq Orpheus (needs a key) or a local engine (Kokoro/Piper, needs a model download)
-  has to lead the plan. Until then the plan runs "degraded" and the heard cue covers the gap.
+- **edge-tts misses the budget here** (p50 ~740 ms, p95 up to ~1.8 s): it's a fallback only;
+  Orpheus (cloud) leads under the 700 ms low-spec budget, Piper (local, ~150 ms) follows.
+- **Wake word and its cut were tuned on synthetic voices** (Piper, 3 speakers): 11/12 caught, 0/15
+  false alarms. Real mics, accents, and noise may need `THRESHOLD` / `LOOKBACK_S` changes.
+- **Moonshine-tiny on accented English** is unmeasured (the probe clip is synthetic US English);
+  Groq Whisper stays as the STT fallback. Non-English speech needs Whisper (local models are English).
+- **Orpheus quota:** ~100 clips/day per key; a reply is 2–3 clips. 8 keys cover one heavy user.
+- **The Mistral key from v1 is out of quota** (429 on every call) and Cloudflare has no key: the
+  reflex chain is effectively Groq-only until more keys are added.
+- **Delegate vs answer is a prompt balance:** "never say you can't, delegate" sent "drive my car" to
+  delegate; the current wording keeps chit-chat local but still delegates some predictions ("stock
+  market tomorrow") and explains at length (> 3 sentences) on "how does X work". Results vary run
+  to run by a few rows. Re-run both evals after prompt edits.
 - The tier-0 eval set was written alongside the grammar (0 false accepts is partly self-graded);
   add real transcripts from use before trusting the < 0.5% number.
 - In-process maps (`Voice.calls`, `prefetch`, supervisor watches) assume the device's socket lives
@@ -200,4 +240,10 @@ happens.
 | 2026-10-10 | Desktop main process died at start (`0x80000003`): on Electron 39.2 touching Node's lazy WebSocket (`globalThis.WebSocket` via socket.io-client, `import http`) before `ready` crashes | `main.ts` imports only `electron` statically, app modules after `whenReady()`; ESLint rule blocks static imports there |
 | 2026-10-10 | A quick follow-up didn't see the previous turn (stored after the final marker) | Store the turn, then send the final marker |
 | 2026-10-10 | A body that started after the socket connected waited 10 min for its brain link | Relink on every body `ready` |
+| 2026-10-10 | Reflex eval: 45/95 rate-limited (one key, 8K tokens/min) | The runner rotates all keys like the chain runner |
+| 2026-10-10 | sherpa-onnx failed with "API version 28 not available, ORT 1.17.1": `uv.lock` dropped `sherpa-onnx-core` on Windows, so System32's old `onnxruntime.dll` loaded | List `sherpa-onnx-core` in the `local` extra, versions pinned equal |
+| 2026-10-10 | Kokoro download failed its checksum: upstream re-uploaded it and `checksum.txt` was stale | Pin GitHub's per-asset `digest` instead |
+| 2026-10-10 | Local engines benchmarked at ~1.5 s p95: the first call includes model load | `warm()` (load + one run) before timing; the ear warms at start |
+| 2026-10-10 | Sidecar stalled: a probe timed out while a model was loading, and a second load raced it in another thread | Thread lock taken on the worker thread (asyncio locks release on cancel while native work runs on) |
+| 2026-10-10 | Moonshine heard "Hey Spark, turn the volume…" as "He sparked her in the volume…" | Cut the audio where the spotter fired minus 0.4 s; STT hears only the command |
 | 2026-10-10 | Vite `EACCES` on :5123 after Docker started | Windows dynamic port range started at 1024, so Hyper-V reserved 5041–5140; reset to 49152+ (`netsh int ipv4/ipv6 set dynamic tcp start=49152 num=16384`) + restart `winnat` |
