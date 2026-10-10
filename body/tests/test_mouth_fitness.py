@@ -74,6 +74,23 @@ async def test_ft3_power_change_reprobes_and_updates_the_plan(tmp_path: Any) -> 
     assert again.plan.tts == ["piper", "kokoro"]
 
 
+async def test_ft11_throttled_cpu_demotes_the_local_engine_on_the_next_start(tmp_path: Any) -> None:
+    """R1 acceptance: the CPU got slower between runs (thermal limit, a busy machine): the
+    start-up quick check catches it and the plan changes before the first reply."""
+    clock = FakeClock()
+    es = engines(clock, piper={"latency_s": 0.1}, edge={"latency_s": 0.2})
+    await drive(clock, Fitness(es, clock, db_path=tmp_path / "fitness.db").full())
+    es["piper"].latency_s = 0.9  # the CPU-bound local voice, now 9x slower; the cloud one isn't
+    changes: list[list[str]] = []
+    restarted = Fitness(
+        es, clock, db_path=tmp_path / "fitness.db", on_change=lambda p: changes.append(p.tts)
+    )
+    assert restarted.plan.tts == ["piper", "edge"]  # last run's plan, before the check
+    plan = await drive(clock, restarted.quick())
+    assert plan.tts == ["edge", "piper"] and changes == [["edge", "piper"]]
+    assert not plan.scores["piper"].fits(plan.budget)  # kept only as a last-resort fallback
+
+
 def test_nothing_fits_keeps_working_engines_fastest_first() -> None:
     scores = {
         "edge-tts": Score("edge-tts", "tts", 400, 520, 1.0, False),

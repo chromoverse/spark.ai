@@ -91,19 +91,30 @@ async def test_a3_device_half_failure_is_handed_to_the_brain(wire: Wire, body: B
 
 
 async def test_open_app_speaks_a_short_ack(wire: Wire, body: Body) -> None:
-    r = (await wire.call("reflex.handle", {"text": "open spotify"}))["result"]
+    r = (await wire.call("reflex.handle", {"text": "open spotify", "utt_id": "s1:t0"}))["result"]
     assert r["result"]["said"] in {
         "Opening Spotify.",
         "Spotify, coming up.",
         "Here's Spotify.",
         "On it.",
     }
+    # spoken under the signal's id, so its first audio lands in the trace
+    assert [u.utt_id for u in list(body.mouth.queue._queue)] == ["s1:t0"]  # type: ignore[attr-defined]
 
 
 async def test_not_sure_goes_to_the_brain(wire: Wire, body: Body) -> None:
     r = await wire.call("reflex.handle", {"text": "play a song that fits my mood"})
     assert r["result"] == {"handled": False}
     assert wire.ran == []  # type: ignore[attr-defined]
+
+
+async def test_decide_only_runs_nothing(wire: Wire, body: Body) -> None:
+    """Speculative start asks before the endpoint is sure: nothing may run or speak yet."""
+    r = await wire.call("reflex.handle", {"text": "volume to 30", "decide_only": True})
+    assert r["result"] == {"handled": True}
+    r = await wire.call("reflex.handle", {"text": "tell me a joke", "decide_only": True}, 2)
+    assert r["result"] == {"handled": False}
+    assert wire.ran == [] and body.mouth.queue.empty()  # type: ignore[attr-defined]
 
 
 async def test_stop_and_repeat(wire: Wire, body: Body) -> None:

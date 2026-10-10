@@ -37,6 +37,20 @@ export function registerVoiceHandlers(): void {
       return voiceLoop.hear(pcm16, endedAt, wake === true);
     }),
   );
+  ipcMainHandle("voiceCommit", (_event, payload) =>
+    result(async () => {
+      const { signalId, text } = (payload ?? {}) as { signalId?: unknown; text?: unknown };
+      if (typeof signalId !== "string" || typeof text !== "string" || !text.trim() || text.length > 2000) {
+        throw new BodyError("invalid_input", "Say that again?");
+      }
+      return voiceLoop.commit(signalId, text.trim());
+    }),
+  );
+  ipcMainHandle("voiceDrop", (_event, payload) => {
+    const signalId = (payload as { signalId?: unknown } | null)?.signalId;
+    if (typeof signalId === "string") void voiceLoop.drop(signalId);
+    return { ok: true };
+  });
   ipcMainHandle("voiceFirstAudio", (_event, payload) => {
     const { signalId, at } = (payload ?? {}) as { signalId?: unknown; at?: unknown };
     if (typeof signalId === "string" && typeof at === "number") void voiceLoop.firstAudio(signalId, at);

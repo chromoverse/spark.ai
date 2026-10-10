@@ -89,6 +89,8 @@ contextBridge.exposeInMainWorld("electronApi", {
     send: (text: string) => ipcInvoke("voiceSend", { text }),
     stop: () => ipcInvoke("voiceStop"),
     hear: (pcm16: string, endedAt: number, wake: boolean) => ipcInvoke("voiceHear", { pcm16, endedAt, wake }),
+    commit: (signalId: string, text: string) => ipcInvoke("voiceCommit", { signalId, text }),
+    drop: (signalId: string) => ipcInvoke("voiceDrop", { signalId }),
     firstAudio: (signalId: string, at: number) => ipcInvoke("voiceFirstAudio", { signalId, at }),
     speaking: (speaking: boolean) => ipcInvoke("voiceSpeaking", { speaking }),
     onSpeaking: (callback: (state: { speaking: boolean; at: number }) => void) =>

@@ -133,9 +133,11 @@ export interface IModelDownload {
   error?: string;
 }
 
-/** What the ear heard: `wake` false = no wake word (dropped on the device), true = the wake word
- * was in it (`heard` "" = only the wake word), null = no wake check (follow-up or no model yet). */
-export interface IVoiceHeard extends IVoiceSendResult {
+/** What the ear heard at its endpoint candidate: `wake` false = no wake word (dropped on the
+ * device), true = the wake word was in it (`heard` "" = only the wake word), null = no wake check
+ * (follow-up or no model yet). Nothing runs until `voice.commit(signalId, heard)`. */
+export interface IVoiceHeard {
+  signalId: string;
   heard: string;
   wake: boolean | null;
 }
@@ -224,6 +226,8 @@ export type IEventPayloadMapping = {
   voiceSend: IBrainResult<IVoiceSendResult>;
   voiceStop: IBrainResult<{ stopped: boolean }>;
   voiceHear: IBrainResult<IVoiceHeard>;
+  voiceCommit: IBrainResult<IVoiceSendResult>;
+  voiceDrop: { ok: boolean };
   voiceFirstAudio: { ok: boolean };
   voiceSpeaking: { ok: boolean };
   voiceSpeakingState: { speaking: boolean; at: number };
@@ -327,6 +331,8 @@ declare global {
         send: (text: string) => Promise<IBrainResult<IVoiceSendResult>>;
         stop: () => Promise<IBrainResult<{ stopped: boolean }>>;
         hear: (pcm16: string, endedAt: number, wake: boolean) => Promise<IBrainResult<IVoiceHeard>>;
+        commit: (signalId: string, text: string) => Promise<IBrainResult<IVoiceSendResult>>;
+        drop: (signalId: string) => Promise<{ ok: boolean }>;
         firstAudio: (signalId: string, at: number) => Promise<{ ok: boolean }>;
         speaking: (speaking: boolean) => Promise<{ ok: boolean }>;
         onSpeaking: (callback: (state: { speaking: boolean; at: number }) => void) => () => void;

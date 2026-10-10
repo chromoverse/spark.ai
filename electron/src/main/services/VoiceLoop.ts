@@ -1,5 +1,7 @@
 import { BrowserWindow } from "electron";
 import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import type { IEnginesInfo, IVoiceEvent, IVoiceHeard, IVoiceSendResult } from "@root/types";
 import { bodyBridge } from "./BodyBridge.js";
 import { BRAIN_URL, brainAuth } from "./BrainAuth.js";
@@ -50,15 +52,29 @@ interface Trace {
   sttMs?: number;
   sttEngine?: string;
   ttsEngine?: string;
-  reported?: boolean;
+  firstAudioMs?: number; // set once: reported to the brain
 }
 
-const ENDPOINT_MS = 700; // the ear's VAD redemption window (useVoiceEar)
+// The ear's speculative start (useVoiceEar, REDESIGN §4.2): after 250 ms of silence it transcribes
+// and the brain starts on the reply; after 700 ms it commits and what the brain sent so far plays.
+// Speech that resumes in between drops the turn (signal.interrupt: not stored).
+const CANDIDATE_MS = 250;
+const ENDPOINT_MS = 700;
+
+/** A brain turn started on an endpoint candidate: its live events wait here until commit. */
+interface Speculative {
+  sent: Promise<IVoiceSendResult>;
+  held: [string, Record<string, unknown>][];
+}
 
 class VoiceLoop {
   private started = false;
   private sentenceSeq = new Map<string, number>();
   private traces = new Map<string, Trace>();
+  private spec = new Map<string, Speculative>();
+  private speaking = false;
+  private quietAt = 0;
+  private script = process.env.SPARK_VOICE_SCRIPT;
 
   start(): void {
     if (this.started) return;
@@ -92,14 +108,61 @@ class VoiceLoop {
   }
 
   speakingChanged(speaking: boolean): void {
+    this.speaking = speaking;
+    if (!speaking) this.quietAt = Date.now();
     broadcast("voiceSpeakingState", { speaking, at: Date.now() });
+  }
+
+  /** Dev only: the latency bench's scripted ear (TESTING.md §6). `SPARK_VOICE_SCRIPT` names the
+   * manifest `body/evals/clips.py` writes; each clip takes the live ear's path and timing
+   * (candidate → commit 450 ms later) through the real loop, so its trace lands in the brain log.
+   * Clips with `barge_in_ms` get stopped that long after their first audio. */
+  private async runScript(manifest: string): Promise<void> {
+    const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+    const until = async (done: () => boolean, ms: number): Promise<boolean> => {
+      for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if (done()) return true;
+      return done();
+    };
+    const clips = JSON.parse(await readFile(manifest, "utf8")) as { wav: string; wake: boolean; barge_in_ms?: number }[];
+    const firsts: number[] = [];
+    const stops: number[] = [];
+    console.info(`[script] ${clips.length} clips`);
+    for (const [i, clip] of clips.entries()) {
+      const pcm = (await readFile(path.join(path.dirname(manifest), clip.wav))).subarray(44).toString("base64");
+      const at = Date.now(); // the candidate: speech "ended" CANDIDATE_MS ago
+      const heard = await this.hear(pcm, at, clip.wake);
+      await sleep(at + ENDPOINT_MS - CANDIDATE_MS - Date.now());
+      if (!heard.heard) {
+        console.warn(`[script] ${clip.wav}: nothing to run (wake ${String(heard.wake)})`);
+        continue;
+      }
+      const sent = await this.commit(heard.signalId, heard.heard);
+      const t = this.traces.get(heard.signalId);
+      if (!(await until(() => t?.firstAudioMs != null, 10_000))) {
+        console.warn(`[script] ${clip.wav}: no audio (tier ${String(sent.tier)})`);
+      } else {
+        firsts.push(t?.firstAudioMs ?? 0);
+        console.info(`[script] ${i + 1}/${clips.length} ${clip.wav} tier ${String(sent.tier)}: first audio ${t?.firstAudioMs} ms`);
+      }
+      if (clip.barge_in_ms && this.speaking) {
+        await sleep(clip.barge_in_ms);
+        const s = Date.now();
+        await this.stop();
+        if (await until(() => !this.speaking, 2_000)) stops.push(this.quietAt - s);
+      }
+      await until(() => !this.speaking && Date.now() - this.quietAt > 1_500, 30_000);
+    }
+    const pct = (v: number[], q: number): number => [...v].sort((a, b) => a - b)[Math.round(q * (v.length - 1))] ?? NaN;
+    console.info(`[script] done: first audio n=${firsts.length} p50 ${pct(firsts, 0.5)} ms p95 ${pct(firsts, 0.95)} ms`);
+    if (stops.length) console.info(`[script] barge-in: audio stopped within ${Math.max(...stops)} ms of stop (n=${stops.length})`);
   }
 
   stopAll(): void {
     bodyBridge.stop();
   }
 
-  /** One endpointed utterance from the ear: transcribe on the body's STT plan, then send. With
+  /** The ear's endpoint candidate (§4.2 speculative start): transcribe on the body's STT plan, then
+   * start the brain's reply (held until commit()) unless tier 0 will take it at commit. With
    * `wake`, the body drops it unless it holds "Hey Spark" (and cuts the phrase off). */
   async hear(pcm16: string, endedAt: number, wake: boolean): Promise<IVoiceHeard> {
     const stt = await bodyBridge.call<{ text: string; engine?: string; stt_ms?: number; wake: boolean | null }>(
@@ -108,22 +171,50 @@ class VoiceLoop {
       20_000,
     );
     const awake = stt.wake ?? null;
-    if (!stt.text.trim()) return { signalId: "", tier: null, handled: false, heard: "", wake: awake };
-    const trace: Trace = {
-      startedAt: endedAt - ENDPOINT_MS,
-      endpointMs: ENDPOINT_MS,
-      sttMs: stt.stt_ms,
-      sttEngine: stt.engine,
-    };
-    return { ...(await this.send(stt.text, "voice", trace)), heard: stt.text, wake: awake };
+    if (!stt.text.trim()) return { signalId: "", heard: "", wake: awake };
+    const signalId = this.track({ startedAt: endedAt - CANDIDATE_MS, sttMs: stt.stt_ms, sttEngine: stt.engine });
+    const tier0 = await bodyBridge
+      .call<{ handled: boolean }>("reflex.handle", { text: stt.text, decide_only: true }, 2_000)
+      .catch(() => ({ handled: false }));
+    // ponytail: speech that resumes wastes the speculative LLM call (free quota); add a minimum
+    // utterance length before speculating if the daily limits start to bite
+    if (!tier0.handled) {
+      this.spec.set(signalId, { sent: this.toBrain(signalId, stt.text, "voice"), held: [] });
+      setTimeout(() => void this.drop(signalId), 10_000); // the ear went away mid-utterance
+    }
+    return { signalId, heard: stt.text, wake: awake };
+  }
+
+  /** The ear confirmed the endpoint (speech didn't resume): run what hear() transcribed, or let
+   * the speculative reply play. */
+  async commit(signalId: string, text: string): Promise<IVoiceSendResult> {
+    const t = this.traces.get(signalId);
+    if (t) t.endpointMs = Date.now() - t.startedAt;
+    const s = this.spec.get(signalId);
+    if (!s) return this.send(text, "voice", t ? signalId : undefined);
+    this.spec.delete(signalId);
+    for (const [event, data] of s.held) void this.fromBrain(event, data); // in order, like live events
+    return this.offline(await s.sent);
+  }
+
+  /** Speech resumed after the candidate: the ear merges it and hears it again. */
+  async drop(signalId: string): Promise<void> {
+    if (this.spec.delete(signalId)) await brainSocket.emit("signal.interrupt", { signal_id: signalId });
+  }
+
+  private track(trace: Trace): string {
+    const signalId = crypto.randomUUID().replaceAll("-", "");
+    this.traces.set(signalId, trace);
+    if (this.traces.size > 50) this.traces.delete(this.traces.keys().next().value as string);
+    return signalId;
   }
 
   /** The voice window started playing a signal's first sentence: report the trace (§13). */
   async firstAudio(signalId: string, at: number): Promise<void> {
     const t = this.traces.get(signalId);
-    if (!t || t.reported) return;
-    t.reported = true;
-    const spans: Record<string, number> = { first_audio: Math.max(0, at - t.startedAt) };
+    if (!t || t.firstAudioMs != null) return;
+    t.firstAudioMs = Math.max(0, at - t.startedAt);
+    const spans: Record<string, number> = { first_audio: t.firstAudioMs };
     if (t.endpointMs != null) spans.endpoint = t.endpointMs;
     if (t.sttMs != null) spans.stt_final = t.sttMs;
     await brainSocket.emit("signal.trace", {
@@ -135,14 +226,15 @@ class VoiceLoop {
   }
 
   /** A typed or transcribed utterance. Tier 0 on the device first; the brain only if unsure. */
-  async send(text: string, source: "text" | "voice" = "text", trace?: Trace): Promise<IVoiceSendResult> {
-    const signalId = crypto.randomUUID().replaceAll("-", "");
-    this.traces.set(signalId, trace ?? { startedAt: Date.now() });
-    if (this.traces.size > 50) this.traces.delete(this.traces.keys().next().value as string);
+  async send(
+    text: string,
+    source: "text" | "voice" = "text",
+    signalId = this.track({ startedAt: Date.now() }),
+  ): Promise<IVoiceSendResult> {
     const utcOffsetMin = -new Date().getTimezoneOffset();
     let local: ReflexResult = { handled: false };
     try {
-      local = await bodyBridge.call<ReflexResult>("reflex.handle", { text }, 5_000);
+      local = await bodyBridge.call<ReflexResult>("reflex.handle", { text, utt_id: `${signalId}:t0` }, 5_000);
     } catch (err) {
       console.warn("[voice] tier 0 unavailable, asking the brain", err);
     }
@@ -167,18 +259,24 @@ class VoiceLoop {
       }
       return { signalId, tier: 0, handled: true };
     }
+    return this.offline(await this.toBrain(signalId, text, source));
+  }
+
+  private async toBrain(signalId: string, text: string, source: "text" | "voice"): Promise<IVoiceSendResult> {
     const ack = await brainSocket.emit("signal.final", {
       signal_id: signalId,
       text,
       source,
-      utc_offset_min: utcOffsetMin,
+      utc_offset_min: -new Date().getTimezoneOffset(),
     });
-    if (!ack?.ok) {
-      // §19.2: say it out loud even without the brain
-      void bodyBridge.call("tts.speak", { utt_id: `${signalId}:offline`, text: NOT_CONNECTED }).catch(() => undefined);
-      return { signalId, tier: null, handled: false, error: NOT_CONNECTED };
-    }
+    if (!ack?.ok) return { signalId, tier: null, handled: false, error: NOT_CONNECTED };
     return { signalId, tier: (ack.data as { tier: number }).tier, handled: false };
+  }
+
+  /** §19.2: no brain → say so out loud. */
+  private offline(r: IVoiceSendResult): IVoiceSendResult {
+    if (r.error) void bodyBridge.call("tts.speak", { utt_id: `${r.signalId}:offline`, text: r.error }).catch(() => undefined);
+    return r;
   }
 
   /** Barge-in or the stop button: silence now, then tell the brain. */
@@ -207,6 +305,17 @@ class VoiceLoop {
         const { stt, tts, local_llm, scores } = plan; // the brain's contract; the rest is for the UI
         await brainSocket.emit("device.engine_plan", { stt, tts, local_llm, scores });
       }
+      if (this.script) {
+        const manifest = this.script;
+        this.script = undefined;
+        // ponytail: a fixed wait for the body's start-up benchmark (it competes for CPU)
+        setTimeout(() => void this.runScript(manifest).catch((err: unknown) => console.error("[script] failed", err)), 60_000);
+      }
+      return;
+    }
+    const pending = this.spec.get(String(data.signal_id));
+    if (pending) {
+      pending.held.push([event, data]); // speculative: the endpoint isn't sure yet
       return;
     }
     if (event === "reply.delta" && data.speak && typeof data.text === "string" && data.text) {

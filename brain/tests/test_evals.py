@@ -39,6 +39,19 @@ def test_latency_report_reads_device_and_brain_spans() -> None:
     assert pct(spans["device.first_audio"], 0.5) == 900
 
 
+def test_latency_report_splits_first_audio_by_tier() -> None:
+    trace = {"msg": "signal trace"}
+    lines = [
+        json.dumps(trace | {"signal_id": "a", "device_spans": {"first_audio": 850}}),
+        json.dumps(trace | {"signal_id": "b", "device_spans": {"first_audio": 1300}}),
+        json.dumps({"msg": "signal done", "signal_id": "a", "tier": 0, "spans": {"end": 9}}),
+        json.dumps({"msg": "signal done", "signal_id": "b", "tier": 2, "spans": {"ttft": 470}}),
+    ]
+    spans = collect(lines)
+    assert spans["device.first_audio.tier0"] == [850]
+    assert spans["device.first_audio.tier2"] == [1300]
+
+
 def test_persona_rules() -> None:
     from evals.run import persona_misses
 

@@ -84,8 +84,11 @@ class Body:
             self.last_said = [*self.last_said[-9:], text]
             self.mouth.speak(Utterance(utt_id, text, tone))
 
-    async def handle(self, text: str, verbosity: str = "normal") -> dict[str, Any]:
-        """Tier 0 (§26.4-A): decide, act, answer. `handled: false` → send it to the brain."""
+    async def handle(
+        self, text: str, verbosity: str = "normal", utt_id: str | None = None
+    ) -> dict[str, Any]:
+        """Tier 0 (§26.4-A): decide, act, answer. `handled: false` → send it to the brain.
+        `utt_id` (`<signal_id>:t0`) lets the spoken answer report its first audio (the trace)."""
         m = decide(text, INDEX.spoken())
         if m is None:
             return {"handled": False}
@@ -108,7 +111,7 @@ class Body:
                 return {"handled": True, "intent": m.intent, "slots": m.slots, "result": result}
         said = self.phrases.reply(m, output, datetime.now(), chatty=verbosity == "detailed")
         if said:
-            self.speak(f"t0-{m.intent}", said)
+            self.speak(utt_id or f"t0-{m.intent}", said)
         result = {"ok": True, "said": said or None, "output": output or None}
         return {
             "handled": True,
@@ -209,7 +212,14 @@ class Body:
 
         @r.method("reflex.handle")
         async def reflex_handle(p: dict[str, Any]) -> dict[str, Any]:
-            return await self.handle(_need(p, "text", str), str(p.get("verbosity", "normal")))
+            if p.get("decide_only") is True:  # speculative start: would tier 0 take it?
+                return {"handled": decide(_need(p, "text", str), INDEX.spoken()) is not None}
+            utt = p.get("utt_id")
+            return await self.handle(
+                _need(p, "text", str),
+                str(p.get("verbosity", "normal")),
+                utt if isinstance(utt, str) else None,
+            )
 
         @r.method("tool.run")
         async def tool_run(p: dict[str, Any]) -> dict[str, Any]:
@@ -265,6 +275,7 @@ class Body:
             pcm = base64.b64decode(_need(p, "pcm16", str))
             rate = int(p.get("sample_rate", 16000))
             secs = len(pcm) / 2 / rate
+            whole = pcm  # cloud STT hears it all (the phrase is stripped from its text)
             wake: bool | None = None
             if p.get("wake") is True and self.wake is not None and self.wake.available():
                 wake = True
@@ -294,9 +305,14 @@ class Body:
             # latency grows with audio length: score long utterances at the probe's length
             scale = min(1.0, (len(probe_pcm) / probe_rate) / max(1e-3, len(pcm) / 2 / rate))
             for name in plan:
+                ear = self.ears[name]
                 t0 = self.clock.monotonic()
                 try:
-                    heard = await self.ears[name].transcribe(pcm, rate)
+                    # The cut after the phrase lands within ~0.1 s, so it sometimes takes the
+                    # command's first word ("what time is it" → "I miss it" on Piper voices).
+                    # Only small on-device models need it (Moonshine garbles "Hey Spark, turn…");
+                    # Whisper copes with the phrase, and strip_wake removes it.
+                    heard = await ear.transcribe(pcm if ear.on_device else whole, rate)
                 except Exception as exc:
                     self.fitness.observe(name, None)
                     self.rpc.notify(
