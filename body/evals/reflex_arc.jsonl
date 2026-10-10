@@ -139,6 +139,10 @@
 {"text": "stop", "intent": "stop", "slots": {}, "kind": "positive"}
 {"text": "Stop!", "intent": "stop", "slots": {}, "kind": "positive"}
 {"text": "cancel", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "Okay, stop, stop.", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "Hey, stop, stop.", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "no no stop it", "intent": "stop", "slots": {}, "kind": "positive"}
+{"text": "that is enough", "intent": "stop", "slots": {}, "kind": "positive"}
 {"text": "never mind", "intent": "stop", "slots": {}, "kind": "positive"}
 {"text": "nevermind", "intent": "stop", "slots": {}, "kind": "positive"}
 {"text": "forget it", "intent": "stop", "slots": {}, "kind": "positive"}

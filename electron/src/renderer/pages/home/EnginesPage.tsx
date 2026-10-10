@@ -222,7 +222,7 @@ export default function EnginesPage() {
           <p className="text-xs opacity-60">
             {ear.status ??
               (plan?.wake
-                ? "Mic on. Start with “Hey Spark”; follow-ups within 8 s don't need it."
+                ? "Mic on. Start with “Hey Spark”; up to two quick follow-ups after a reply don't need it."
                 : "Listening. Just talk; I'll pick up when you pause.")}
           </p>
         )}

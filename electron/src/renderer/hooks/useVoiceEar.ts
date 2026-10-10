@@ -6,8 +6,13 @@ import { earcon, isSpeaking, lastSpokeAt } from "./useVoicePlayback";
 // the body's STT plan, then into the voice loop. Speech while Spark talks is a barge-in.
 // Wake word: unless Spark is mid-conversation, the body only passes on utterances that hold
 // "Hey Spark" (spotted on the device; the rest is dropped there, never transcribed or sent).
+// Mid-conversation is bounded: after a "Hey Spark" request, two follow-ups may skip the phrase,
+// each within 6 s of Spark finishing. Unbounded follow-ups let room voices keep a conversation
+// going on their own (owner's mic test, 2026-10-10: 6–8 strangers' lines in a row).
 
-const FOLLOW_UP_MS = 8_000; // after Spark talks, or after a bare "Hey Spark": no wake word needed
+const FOLLOW_UP_MS = 6_000;
+const MAX_FOLLOW_UPS = 2;
+const ARMED_MS = 8_000; // after a bare "Hey Spark": the command may take a moment
 
 const ORT_WASM_BASE_PATH = import.meta.env.DEV
   ? "/node_modules/onnxruntime-web/dist/"
@@ -63,6 +68,8 @@ export function useVoiceEar(
   const onHeardRef = useRef(onHeard);
   const wakeRef = useRef(wakeWord);
   const armedUntil = useRef(0);
+  const followUps = useRef(0); // left in this exchange
+  const inExchange = (): boolean => followUps.current > 0 && Date.now() - lastSpokeAt() < FOLLOW_UP_MS;
   useEffect(() => {
     onHeardRef.current = onHeard;
     wakeRef.current = wakeWord;
@@ -97,20 +104,25 @@ export function useVoiceEar(
         onnxWASMBasePath: ORT_WASM_BASE_PATH,
         getStream: async () => stream,
         onSpeechStart: () => {
-          if (isSpeaking()) void window.electronApi.voice.stop(); // barge-in
+          // barge-in only inside an exchange; otherwise "Hey Spark, stop" stops it (tier 0)
+          if (isSpeaking() && (!wakeRef.current || inExchange())) void window.electronApi.voice.stop();
         },
         onSpeechEnd: (audio: Float32Array) => {
           const endedAt = Date.now();
-          const followUp = endedAt - lastSpokeAt() < FOLLOW_UP_MS || endedAt < armedUntil.current;
-          const needWake = wakeRef.current && !followUp;
+          const armed = endedAt < armedUntil.current;
+          const followUp = inExchange();
+          const needWake = wakeRef.current && !armed && !followUp;
           void window.electronApi.voice.hear(pcm16Base64(audio), endedAt, needWake).then((r) => {
             if (!r.ok) setError(r.error.message);
             else if (r.data.heard) {
-              armedUntil.current = Date.now() + FOLLOW_UP_MS; // keep listening while they go on
+              // a "Hey Spark" request opens the exchange; each follow-up uses one turn of it
+              if (r.data.wake === true || armed) followUps.current = MAX_FOLLOW_UPS;
+              else if (followUp) followUps.current -= 1;
+              armedUntil.current = 0;
               setStatus(null);
               onHeardRef.current({ text: r.data.heard, signalId: r.data.signalId, tier: r.data.tier });
             } else if (r.data.wake === true) {
-              armedUntil.current = Date.now() + FOLLOW_UP_MS; // just "Hey Spark": listening now
+              armedUntil.current = Date.now() + ARMED_MS; // just "Hey Spark": listening now
               setStatus("Listening…");
               earcon("heard");
             } else if (r.data.wake === false) {

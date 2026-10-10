@@ -235,15 +235,15 @@ RULES: tuple[Rule, ...] = (
     _rule(
         "stop",
         [
-            r"stop(?: it| that| talking)?",
+            # "okay, stop, stop" / "hey stop" / "no no stop it": said in a hurry while Spark talks
+            r"(?:(?:ok(?:ay)?|hey|no|please) )*stop(?: stop)*(?: it| that| talking| now)?",
             r"cancel(?: it| that)?",
             r"never ?mind",
             r"forget (?:it|that)",
             r"(?:be )?quiet",
             r"shut up",
             r"enough",
-            r"that's enough",
-            r"ok(?:ay)? stop",
+            r"that(?:'s| is) enough",
             r"hush",
         ],
     ),
