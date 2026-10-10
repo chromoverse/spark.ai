@@ -80,6 +80,10 @@ CHAINS: dict[Role, list[Entry]] = {
 ROLES: dict[Role, RoleConfig] = {
     "reflex": RoleConfig(hedge_s=0.35, ttft_timeout_s=2.5, gap_s=1.5, max_tokens=300),
 }
+# The hedge is for a late first token, late for that entry: from Nepal Groq's usual TTFT is
+# ~450 ms, so a fixed 350 ms hedge fired on ~95% of calls and doubled every turn's free quota
+# (latency bench, 2026-10-10). Near the provider (R7 region) the 350 ms floor still applies.
+HEDGE_OVER_USUAL = 1.3
 
 
 def _keys(secret: Any) -> list[str]:
@@ -111,6 +115,7 @@ class Candidate:
     entry: Entry
     base_url: str
     api_key: str = field(repr=False)
+    ttft_ms: float | None = field(default=None, compare=False)  # usual, from health
 
     @property
     def hid(self) -> str:
@@ -157,8 +162,8 @@ class ChainRunner:
                 continue
             base_url, keys = table.get(entry.provider, ("", []))
             out.extend(Candidate(entry, base_url, k) for k in keys)
-        healthy = await self.health.closed([c.hid for c in out])
-        return [c for c, ok in zip(out, healthy, strict=True) if ok]
+        states = await self.health.states([c.hid for c in out])
+        return [replace(c, ttft_ms=ttft) for c, (ok, ttft) in zip(out, states, strict=True) if ok]
 
     def _open(
         self,
@@ -237,21 +242,22 @@ class ChainRunner:
         `pending` (they didn't fail); failed ones are recorded and dropped."""
         running: dict[asyncio.Future[StreamEvent | None], tuple[Candidate, Any, float]] = {}
 
-        def start() -> None:
+        def start() -> Candidate:
             c = pending.pop(0)
             agen = self._open(c, role, system, messages, tools)
             task = asyncio.ensure_future(
                 _within(self.clock, _next(agen), cfg.ttft_timeout_s, "timeout")
             )
             running[task] = (c, agen, self.clock.monotonic())
+            return c
 
-        def arm() -> asyncio.Future[None] | None:
+        def arm(c: Candidate) -> asyncio.Future[None] | None:
             if cfg.hedge_s is None or not pending:
                 return None
-            return asyncio.ensure_future(self.clock.sleep(cfg.hedge_s))
+            late_s = max(cfg.hedge_s, (c.ttft_ms or 0) / 1000 * HEDGE_OVER_USUAL)
+            return asyncio.ensure_future(self.clock.sleep(late_s))
 
-        start()
-        hedge = arm()
+        hedge = arm(start())
         try:
             while running:
                 waiting: set[asyncio.Future[Any]] = set(running)
@@ -260,8 +266,7 @@ class ChainRunner:
                 done, _ = await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
                 if hedge is not None and hedge in done:
                     logger.info("llm hedge", extra={"llm": pending[0].label})
-                    start()
-                    hedge = arm()
+                    hedge = arm(start())
                 for task in [t for t in done if t in running]:
                     c, agen, t0 = running.pop(task)
                     try:
@@ -275,10 +280,9 @@ class ChainRunner:
                         await self.health.fail(c.hid, exc)
                         await agen.aclose()
                         if not running and pending:
-                            start()
                             if hedge is not None:
                                 hedge.cancel()
-                            hedge = arm()
+                            hedge = arm(start())
                         continue
                     ttft_ms = (self.clock.monotonic() - t0) * 1000
                     await self.health.ok(c.hid, ttft_ms)

@@ -118,6 +118,26 @@ async def test_b2_hedge_at_350ms_second_stream_wins(redis: Redis, chain: list[En
     assert 0.35 <= hedge_at < 0.45
 
 
+async def test_b2_hedge_waits_for_late_by_this_entrys_usual(
+    redis: Redis, chain: list[Entry]
+) -> None:
+    """From Nepal Groq's first token usually takes ~450 ms: a 350 ms hedge doubled every call.
+    The hedge fires when the entry is late for itself (1.3 x its usual), 350 ms at the least."""
+    clock = FakeClock()
+    p = Providers(clock)
+    r = runner(redis, clock, p)
+    groq = (await r.candidates("reflex", allow_training=False))[0]
+    await r.health.ok(groq.hid, 450.0)  # its usual
+    p[GROQ].queue(Turn(text=["hi"], ttft_s=0.5))
+    assert text(await collect(r, clock)) == "hi"
+    assert len(p[MISTRAL].requests) == 0  # ~500 ms is normal for it: no hedge
+    p[GROQ].queue(Turn(text=["slow"], ttft_s=2.0))
+    p[MISTRAL].queue(Turn(text=["fast"], ttft_s=0.1))
+    assert text(await collect(r, clock)) == "fast"
+    hedge_at = p[MISTRAL].request_times[0] - p[GROQ].request_times[-1]
+    assert 0.58 <= hedge_at < 0.65  # 1.3 x 0.45 s
+
+
 async def test_s6_rate_limit_falls_through_and_cools_down(redis: Redis, chain: list[Entry]) -> None:
     clock = FakeClock()
     p = Providers(clock)

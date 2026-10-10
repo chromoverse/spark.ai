@@ -33,14 +33,21 @@ class Health:
 
     async def closed(self, hids: list[str]) -> list[bool]:
         """True where the circuit is closed (the entry may be tried)."""
+        return [ok for ok, _ in await self.states(hids)]
+
+    async def states(self, hids: list[str]) -> list[tuple[bool, float | None]]:
+        """(circuit closed, usual TTFT in ms or None) per entry."""
         if not hids:
             return []
         async with self.redis.pipeline(transaction=False) as pipe:
             for hid in hids:
-                pipe.hget(self._key(hid), "open_until")
-            values = cast(list[str | None], await pipe.execute())
+                pipe.hmget(self._key(hid), ["open_until", "ttft_ms"])
+            values = cast(list[list[str | None]], await pipe.execute())
         now = self.clock.now().timestamp()
-        return [v is None or float(v) <= now for v in values]
+        return [
+            (until is None or float(until) <= now, float(ttft) if ttft is not None else None)
+            for until, ttft in values
+        ]
 
     async def ok(self, hid: str, ttft_ms: float) -> None:
         key = self._key(hid)
