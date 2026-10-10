@@ -203,9 +203,10 @@ class Jobs:
             thread_id=job.ctx.thread_id,
             finished_at=rt.clock.now(),
         )
-        await self.push(job, summary=full, artifact_id=artifact_id)
+        # over before it's announced: whoever reacts to the event never sees it running
         self.voice.sup.finish(w, "failed_explained" if failed else "answered")
         self.active.pop(job.id, None)
+        await self.push(job, summary=full, artifact_id=artifact_id)
 
     async def cancel(self, job: Job) -> None:
         """Stops the job now: its task is cancelled (in-flight device calls get tool.cancel),
@@ -224,10 +225,10 @@ class Jobs:
         for ask_id in asked:
             await self._event(job.user_id, "ask.resolved", {"ask_id": ask_id, "answer": None})
         await self._save(job, status="cancelled", finished_at=self.rt.clock.now())
-        await self.push(job)
         if job.watch is not None:
             self.voice.sup.finish(job.watch, "cancelled")
         self.active.pop(job.id, None)
+        await self.push(job)
 
     async def _expired(self, job: Job) -> None:
         """The supervisor's deadline passed (§19.2 step 8): said, shown, recorded."""
@@ -239,8 +240,8 @@ class Jobs:
         await self.say(job, text, "serious")
         await self.voice.cue(job.watch, "error")
         await self._save(job, status="failed", summary=text, finished_at=self.rt.clock.now())
-        await self.push(job, summary=text)
         self.active.pop(job.id, None)
+        await self.push(job, summary=text)
 
     async def fail_stale(self) -> None:
         """Brain start: jobs that were running when it stopped end explained, never dropped."""

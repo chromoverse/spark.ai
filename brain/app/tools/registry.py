@@ -5,6 +5,7 @@ more. Catalog order is fixed so a given tool set always renders the same prompt 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 
 from app.tools.brain_specs import BRAIN_TOOLS
@@ -38,10 +39,22 @@ def _words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 2 and w not in _STOP}
 
 
+_NAMES = Counter(w for t in ALL for w in _words(t.name.replace("_", " ")))
+
+
 def _score(spec: ToolSpec, words: set[str]) -> int:
-    strong = _words(spec.name.replace("_", " ") + " " + spec.keywords)
+    """A word naming the tool beats a keyword beats the description: "clipboard" in the task
+    must outrank file tools that merely share "desktop"."""
+    named = _words(spec.name.replace("_", " "))
+    strong = _words(spec.keywords)
     weak = _words(spec.description)
-    return sum(2 if w in strong else 1 if w in weak else 0 for w in words)
+
+    def weight(w: str) -> int:
+        if w in named:
+            return 3 if _NAMES[w] <= 2 else 1  # "file" names eight tools: it picks none of them
+        return 2 if w in strong else 1 if w in weak else 0
+
+    return sum(weight(w) for w in words)
 
 
 def usable(capabilities: Iterable[str], hidden: Iterable[str] = ()) -> list[ToolSpec]:

@@ -23,19 +23,32 @@ _COMMON = frozenset(
     "i spark ok okay monday tuesday wednesday thursday friday saturday sunday january february "
     "march april may june july august september october november december desktop documents "
     "downloads pictures music videos home recycle bin windows powershell today tomorrow "
-    "english".split()
+    "english your my the this that a an".split()
 )
+# Models write non-breaking hyphens and spaces, soft hyphens, and curly quotes; tools don't.
+_UNICODE = str.maketrans(
+    {"\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-",
+     "\u00a0": " ", "\u202f": " ", "\u2009": " ", "\u00ad": None, "\u200b": None,
+     "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'}
+)  # fmt: skip
+
+
+def plain(text: str) -> str:
+    return text.translate(_UNICODE)
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"[^\w:.\-@ ]", " ", text.lower())).strip()
+    return re.sub(r"\s+", " ", re.sub(r"[^\w:.\-@ ]", " ", plain(text).lower())).strip()
 
 
 def claims(summary: str) -> set[str]:
     found: set[str] = set()
+    summary = plain(summary)
     for pattern in (_QUOTED, _FILE, _TIME, _CLOCK, _IDLIKE, _NAME):
         for m in pattern.finditer(summary):
-            text = next((g for g in m.groups() if g), m.group(0)).strip()
+            text = next((g for g in m.groups() if g), m.group(0)).strip().rstrip(".,!?;:")
+            if pattern is _NAME:  # "Your Pictures" → "Pictures" → common: not a claim
+                text = " ".join(w for w in text.split() if w.lower() not in _COMMON)
             if text and text.lower() not in _COMMON:
                 found.add(text)
     return found

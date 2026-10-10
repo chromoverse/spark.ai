@@ -271,7 +271,7 @@ DEVICE_TOOLS: tuple[ToolSpec, ...] = (
         requires=FILES,
         timeout_s=20,
         match="path",
-        keywords="find locate where search grep look for file",
+        keywords="find locate where search grep look for file spreadsheet document pdf",
     ),
     ToolSpec(
         "file_write",

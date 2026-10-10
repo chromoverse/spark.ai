@@ -4,10 +4,14 @@ decide chain order and release gates, so they're tested)."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from app.llm.types import ToolUse
+from app.tools import registry
 from evals.latency import collect, pct
 from evals.run import grade
+
+EVALS = Path(__file__).resolve().parents[1] / "evals"
 
 
 def test_reflex_grading() -> None:
@@ -62,3 +66,24 @@ def test_persona_rules() -> None:
     assert "markdown/list/link/emoji" in persona_misses("Sure:\n- one\n- two")
     assert "5 sentences" in persona_misses("One. Two. Three. Four. Five.")
     assert "silent" in persona_misses("")
+
+
+def test_agent_eval_rows_name_real_tools_and_grade_offline() -> None:
+    """The agent eval file can't drift from the catalog; grading works without a network."""
+    from evals.agent import Run, grade
+
+    rows = [json.loads(line) for line in (EVALS / "agent.jsonl").read_text().splitlines() if line]
+    assert len(rows) >= 30 and len({r["id"] for r in rows}) == len(rows)
+    for row in rows:
+        named = [*row.get("calls", []), *row.get("calls_any", []), *row.get("forbid", [])]
+        named += [*row.get("tools", {}), *row.get("deny", []), *row.get("forbid_args", {})]
+        unknown = [n for n in named if n not in registry.BY_NAME]
+        assert not unknown, (row["id"], unknown)
+    notes = next(r for r in rows if r["id"] == "notes")
+    good = Run(names=["file_write", "file_open"], final="Done. Your to-dos are in notes.txt.")
+    good.evidence = [notes["request"], '{"path": "Desktop/notes.txt"}']
+    assert grade(notes, good) is None
+    assert grade(notes, Run(names=["file_write"], final="Done.")) == "never called ['file_open']"
+    made_up = Run(names=["file_write", "file_open"], final="Saved notes.txt and todo.docx.")
+    made_up.evidence = good.evidence
+    assert grade(notes, made_up).startswith("ungrounded")  # type: ignore[union-attr]

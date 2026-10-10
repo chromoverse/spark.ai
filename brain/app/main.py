@@ -17,6 +17,7 @@ from app.api import (
     auth,
     capabilities,
     devices,
+    engines,
     health,
     incidents,
     jobs,
@@ -95,6 +96,7 @@ def create_app(
         capabilities.router,
         artifacts.router,
         threads.router,
+        engines.router,
     ):
         api.include_router(router)
     return socketio.ASGIApp(rt.sio, other_asgi_app=api, socketio_path="socket.io")

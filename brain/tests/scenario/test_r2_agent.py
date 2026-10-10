@@ -862,3 +862,17 @@ async def test_permission_rules_routes(brain: Brain, laptop: FakeDevice) -> None
     )
     assert by_name["file_read"]["permission"] == "allow"
     assert by_name["file_write"]["permission"] == "review"
+
+
+async def test_engines_chains_show_free_first_without_keys(
+    brain: Brain, laptop: FakeDevice
+) -> None:
+    auth = brain.auth({"access_token": laptop.access_token})
+    roles = (await brain.client.get("/v2/engines/chains", headers=auth)).json()["data"]["roles"]
+    agent = roles["agent"]
+    assert [(e["provider"], e["model"]) for e in agent] == [
+        ("groq", "agent"),
+        ("mistral", "agent-b"),
+    ]
+    assert agent[0] == agent[0] | {"keys": 1, "enabled": True, "healthy": True, "paid": False}
+    assert "gk-test" not in str(roles)  # keys never leave the brain
