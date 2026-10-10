@@ -17,8 +17,8 @@ happens.
   Actions CI. Brain: 40 tests green, ruff + mypy strict clean. Owner's desktop smoke (§8a) passed
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
 - **R0 pushed to `origin/main`** 2026-10-10 (fast-forward `ec23e38..ffd8142`; CI green on GitHub).
-- **R1 built, every PHASES box ticked** (2026-10-10, evening) on local branch `r1/voice-loop` (not
-  pushed). Brain 87 tests (incl. 100-signal chaos), body 60 (Windows CI job; 2 real-model tests run
+- **R1 done and pushed to `origin/main`** (2026-10-10, fast-forward from `r1/voice-loop`; the
+  owner's three mic tests passed after fixes). Every PHASES R1 box ticked. Brain 87 tests (incl. 100-signal chaos), body 60 (Windows CI job; 2 real-model tests run
   only where the models are downloaded), Electron typecheck + lint (0 errors). Acceptance map:
   `TESTING.md` §4.7b. What exists:
   - brain: free-first reflex chain (Groq ×2, Cloudflare, Gemini opt-in, Mistral; Claude Haiku 5.5
@@ -68,14 +68,16 @@ happens.
   "Hey Spark" request); follow-ups never worked because audio plays in the floating panel while the
   ear runs in the main window (speaking state now broadcast to every window); Whisper's "foreign"
   noise hallucination; "what time it is" delegated (tier 0 + prompt fix).
-- **NEXT (start here):** restart the app (`cd electron && npm run dev`; the brain container is
-  rebuilt) and the owner's mic smoke (TESTING §8b step 6): follow-ups, "yes, do it" after Spark asks
-  something, a pause mid-sentence arrives whole, "what's my battery". The Engines page should show
-  `groq-whisper` back at #1 after one start (FT12). If room voices still slip into follow-ups, add a
-  loudness gate. Then fast-forward `r1/voice-loop` onto `origin/main` and start **R2** (agent loop +
-  desktop hands, PHASES R2) in a new session. Owner said (2026-10-10): "do what is best" on the
-  hedge (now adaptive), the low-spec gate (p95 < 2 s; 1 s stays the target for normal PCs and the
-  R7 region), and the live failover run (done on the test Redis).
+- **NEXT (start here): R2 — Agent loop + desktop hands** (`PHASES.md` R2), on a new branch
+  `r2/agent-loop` from `main`. The reflex's `delegate` is a stub ("I can't run multi-step jobs
+  yet"); R2 replaces it with the agent loop (REDESIGN §5.2), the ToolSpec registry and device tool
+  round trip, permissions (deny → ask → allow) with approvals, jobs with progress and interrupt, and
+  the R1 leftovers moved here (RA3, RA4, PS3). Plan it against the R2 acceptance tests and the
+  TESTING matrix rows first. Owner decisions from R1 (2026-10-10): "do what is best" on the hedge
+  (now adaptive), the low-spec gate (p95 < 2 s; 1 s stays the target for normal PCs and the R7
+  region). Open voice items, only if they show up in use: a loudness gate for follow-ups in noisy
+  rooms, speaker-aware barge-in, the on-device wake cut (FT10 flaky). Cleanup for later:
+  `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
   after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
   after body or main-process changes; renderer changes hot-reload). The body logs one line per
