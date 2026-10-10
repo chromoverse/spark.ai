@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { IBrainResult, IVoiceHeard } from "@root/types";
-import { earcon, isSpeaking, lastSpokeAt } from "./useVoicePlayback";
+import { earcon, isSpeaking, lastAskedAt, lastSpokeAt } from "./useVoicePlayback";
 
 // The ear's front half (R1): mic + Silero VAD in the renderer (vad-web, already used by v1),
 // with Chromium's echo cancellation removing Spark's own voice. Each endpointed utterance goes to
@@ -9,7 +9,9 @@ import { earcon, isSpeaking, lastSpokeAt } from "./useVoicePlayback";
 // "Hey Spark" (spotted on the device; the rest is dropped there, never transcribed or sent).
 // Mid-conversation is bounded: after a "Hey Spark" request, two follow-ups may skip the phrase,
 // each within 6 s of Spark finishing. Unbounded follow-ups let room voices keep a conversation
-// going on their own (owner's mic test, 2026-10-10: 6–8 strangers' lines in a row).
+// going on their own (owner's mic test, 2026-10-10: 6–8 strangers' lines in a row). When Spark
+// ends on a question, one answer needs no wake word either, cap or not: "yes, do it" was ignored
+// (owner's mic test, same day).
 // Speculative start (REDESIGN §4.2): after 250 ms of silence the utterance is transcribed and the
 // brain starts on the reply; it plays only once the silence reaches 700 ms. Speech that resumes in
 // between cancels that turn and is merged and heard again, so a pause mid-sentence doesn't split
@@ -20,6 +22,7 @@ const ENDPOINT_MS = 700;
 const FOLLOW_UP_MS = 6_000;
 const MAX_FOLLOW_UPS = 2;
 const ARMED_MS = 8_000; // after a bare "Hey Spark": the command may take a moment
+const ANSWER_MS = 8_000; // after Spark asks something: an answer may take a moment
 
 const ORT_WASM_BASE_PATH = import.meta.env.DEV
   ? "/node_modules/onnxruntime-web/dist/"
@@ -56,7 +59,7 @@ function pcm16Base64(audio: Float32Array): string {
 interface Pending {
   audio: Float32Array;
   armed: boolean;
-  followUp: boolean;
+  followUp: "answer" | "turn" | null; // what lets it skip the wake word
   needWake: boolean;
   heard: Promise<IBrainResult<IVoiceHeard>>;
   timer: number | null; // commits at ENDPOINT_MS; cleared while speech resumes
@@ -101,7 +104,13 @@ export function useVoiceEar(
   const armedUntil = useRef(0);
   const followUps = useRef(0); // left in this exchange
   const pending = useRef<Pending | null>(null);
-  const inExchange = (): boolean => followUps.current > 0 && Date.now() - lastSpokeAt() < FOLLOW_UP_MS;
+  const answered = useRef(0); // the question (lastAskedAt) already answered
+  const inExchange = (): Pending["followUp"] => {
+    const quiet = Date.now() - lastSpokeAt();
+    const asked = lastAskedAt();
+    if (asked > answered.current && quiet < ANSWER_MS) return "answer";
+    return followUps.current > 0 && quiet < FOLLOW_UP_MS ? "turn" : null;
+  };
   useEffect(() => {
     onHeardRef.current = onHeard;
     wakeRef.current = wakeWord;
@@ -122,7 +131,8 @@ export function useVoiceEar(
     if (heard) {
       // a "Hey Spark" request opens the exchange; each follow-up uses one turn of it
       if (wake === true || p.armed) followUps.current = MAX_FOLLOW_UPS;
-      else if (p.followUp) followUps.current -= 1;
+      else if (p.followUp === "turn") followUps.current -= 1;
+      answered.current = Date.now(); // whatever they said answers Spark's question, if it asked
       armedUntil.current = 0;
       setStatus(null);
       const sent = await window.electronApi.voice.commit(signalId, heard);
@@ -162,7 +172,7 @@ export function useVoiceEar(
         startOnLoad: false,
         positiveSpeechThreshold: 0.75,
         negativeSpeechThreshold: 0.55,
-        minSpeechMs: 300,
+        minSpeechMs: 200, // "yes" and "do it" are ~250 ms
         redemptionMs: CANDIDATE_MS,
         preSpeechPadMs: 120,
         baseAssetPath: VAD_BASE_ASSET_PATH,
@@ -170,7 +180,7 @@ export function useVoiceEar(
         getStream: async () => stream,
         onSpeechStart: () => {
           // barge-in only inside an exchange; otherwise "Hey Spark, stop" stops it (tier 0)
-          if (isSpeaking() && (!wakeRef.current || inExchange())) void window.electronApi.voice.stop();
+          if (isSpeaking() && (!wakeRef.current || inExchange() !== null)) void window.electronApi.voice.stop();
           const p = pending.current;
           if (p?.timer != null) {
             window.clearTimeout(p.timer); // speech resumed: hold the commit
@@ -187,7 +197,7 @@ export function useVoiceEar(
           const endedAt = Date.now();
           const prev = pending.current;
           const armed = prev?.armed ?? endedAt < armedUntil.current;
-          const followUp = prev?.followUp ?? inExchange();
+          const followUp = prev ? prev.followUp : inExchange();
           const needWake = prev?.needWake ?? (wakeRef.current && !armed && !followUp);
           if (prev) drop(prev);
           const merged = prev ? concat(prev.audio, audio) : audio;

@@ -74,6 +74,7 @@ class VoiceLoop {
   private spec = new Map<string, Speculative>();
   private speaking = false;
   private quietAt = 0;
+  private asked = false; // Spark's last spoken sentence was a question: the ear takes the answer
   private script = process.env.SPARK_VOICE_SCRIPT;
 
   start(): void {
@@ -110,7 +111,7 @@ class VoiceLoop {
   speakingChanged(speaking: boolean): void {
     this.speaking = speaking;
     if (!speaking) this.quietAt = Date.now();
-    broadcast("voiceSpeakingState", { speaking, at: Date.now() });
+    broadcast("voiceSpeakingState", { speaking, at: Date.now(), asked: !speaking && this.asked });
   }
 
   /** Dev only: the latency bench's scripted ear (TESTING.md §6). `SPARK_VOICE_SCRIPT` names the
@@ -188,6 +189,7 @@ class VoiceLoop {
   /** The ear confirmed the endpoint (speech didn't resume): run what hear() transcribed, or let
    * the speculative reply play. */
   async commit(signalId: string, text: string): Promise<IVoiceSendResult> {
+    this.asked = false;
     const t = this.traces.get(signalId);
     if (t) t.endpointMs = Date.now() - t.startedAt;
     const s = this.spec.get(signalId);
@@ -231,6 +233,7 @@ class VoiceLoop {
     source: "text" | "voice" = "text",
     signalId = this.track({ startedAt: Date.now() }),
   ): Promise<IVoiceSendResult> {
+    this.asked = false;
     const utcOffsetMin = -new Date().getTimezoneOffset();
     let local: ReflexResult = { handled: false };
     try {
@@ -320,6 +323,7 @@ class VoiceLoop {
     }
     if (event === "reply.delta" && data.speak && typeof data.text === "string" && data.text) {
       const signalId = String(data.signal_id);
+      this.asked = data.text.trim().endsWith("?");
       const n = (this.sentenceSeq.get(signalId) ?? 0) + 1;
       this.sentenceSeq.set(signalId, n);
       if (this.sentenceSeq.size > 50) this.sentenceSeq.delete(this.sentenceSeq.keys().next().value as string);

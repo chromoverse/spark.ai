@@ -230,7 +230,7 @@ export type IEventPayloadMapping = {
   voiceDrop: { ok: boolean };
   voiceFirstAudio: { ok: boolean };
   voiceSpeaking: { ok: boolean };
-  voiceSpeakingState: { speaking: boolean; at: number };
+  voiceSpeakingState: { speaking: boolean; at: number; asked?: boolean };
   enginesGet: IBrainResult<IEnginesInfo>;
   enginesBenchmark: IBrainResult<IEnginesInfo>;
   voiceEvent: IVoiceEvent;
@@ -335,7 +335,7 @@ declare global {
         drop: (signalId: string) => Promise<{ ok: boolean }>;
         firstAudio: (signalId: string, at: number) => Promise<{ ok: boolean }>;
         speaking: (speaking: boolean) => Promise<{ ok: boolean }>;
-        onSpeaking: (callback: (state: { speaking: boolean; at: number }) => void) => () => void;
+        onSpeaking: (callback: (state: { speaking: boolean; at: number; asked?: boolean }) => void) => () => void;
         onEvent: (callback: (event: IVoiceEvent) => void) => () => void;
       };
       engines: {

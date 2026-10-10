@@ -13,6 +13,7 @@ const CUES: Record<"heard" | "done" | "error", [number, number][]> = {
 
 let speaking = false;
 let spokeAt = 0; // ms epoch when Spark last stopped talking
+let askedAt = 0; // ...if what it said last was a question
 
 /** True while Spark's voice is playing: the ear treats speech as a barge-in only then. */
 export function isSpeaking(): boolean {
@@ -22,6 +23,12 @@ export function isSpeaking(): boolean {
 /** When Spark last finished talking: the ear skips the wake word for a follow-up after that. */
 export function lastSpokeAt(): number {
   return speaking ? Date.now() : spokeAt;
+}
+
+/** When Spark last finished on a question ("Want me to…?"); 0 if it didn't. The ear takes the
+ * answer without the wake word: "yes, do it" must never need "Hey Spark". */
+export function lastAskedAt(): number {
+  return speaking ? 0 : askedAt;
 }
 
 /** Audio plays in one window (often the floating panel) and the ear may listen in another, so
@@ -129,6 +136,7 @@ export function useVoicePlayback(): void {
     const offSpeaking = window.electronApi.voice.onSpeaking((state) => {
       speaking = state.speaking;
       if (!state.speaking) spokeAt = state.at;
+      askedAt = state.asked ? state.at : 0;
     });
     return () => {
       off();
