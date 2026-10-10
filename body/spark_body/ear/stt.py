@@ -5,15 +5,16 @@ one passes on this device."""
 from __future__ import annotations
 
 import asyncio
-import io
 import json
+import threading
 import urllib.error
 import urllib.request
-import wave
 from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
+from typing import Any, Protocol
 
-from spark_body.mouth.engines import BrainLink, ProxyError
+from spark_body import models
+from spark_body.mouth.engines import BrainLink, ProxyError, threads, wav
 
 
 @dataclass(frozen=True)
@@ -32,14 +33,10 @@ class SttEngine(Protocol):
     async def transcribe(self, pcm16: bytes, sample_rate: int) -> Transcript: ...
 
 
-def wav(pcm16: bytes, sample_rate: int) -> bytes:
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(sample_rate)
-        w.writeframes(pcm16)
-    return buf.getvalue()
+def floats(pcm16: bytes) -> Any:
+    import numpy as np
+
+    return np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
 
 
 class WhisperProxy:
@@ -75,3 +72,61 @@ class WhisperProxy:
         data = body.get("data")
         text = str(data.get("text", "")) if isinstance(data, dict) else ""
         return Transcript(text.strip(), self.lang)
+
+
+class LocalStt:
+    """An on-device model from the catalog (spark_body/models.py) via sherpa-onnx: audio never
+    leaves the device. English only for now; other languages go to Groq Whisper."""
+
+    on_device = True
+
+    def __init__(self, model: models.Model, root: Path) -> None:
+        self.name = model.name
+        self.model = model
+        self.folder = root / model.name
+        self._rec: Any = None
+        self._lock = threading.Lock()
+
+    def available(self) -> bool:
+        return models.runtime() and models.installed(self.folder.parent, self.name) is not None
+
+    def _load(self) -> Any:
+        import sherpa_onnx as so
+
+        d, n = self.folder, threads()
+        if self.model.kind == "moonshine":
+            return so.OfflineRecognizer.from_moonshine(
+                preprocessor=models.one(d, "preprocess*.onnx"),
+                encoder=models.one(d, "encode*.onnx"),
+                uncached_decoder=models.one(d, "uncached_decode*.onnx"),
+                cached_decoder=models.one(d, "cached_decode*.onnx"),
+                tokens=str(d / "tokens.txt"),
+                num_threads=n,
+            )
+        if self.model.kind == "nemo_transducer":
+            return so.OfflineRecognizer.from_transducer(
+                encoder=models.one(d, "encoder*.onnx"),
+                decoder=models.one(d, "decoder*.onnx"),
+                joiner=models.one(d, "joiner*.onnx"),
+                tokens=str(d / "tokens.txt"),
+                num_threads=n,
+                model_type="nemo_transducer",
+            )
+        raise ValueError(f"{self.name}: not an STT model")
+
+    def _decode(self, pcm16: bytes, sample_rate: int) -> str:
+        with self._lock:  # on the worker thread: see mouth.engines._NATIVE
+            if self._rec is None:
+                self._rec = self._load()
+            stream = self._rec.create_stream()
+            stream.accept_waveform(sample_rate, floats(pcm16))
+            self._rec.decode_stream(stream)
+            return str(stream.result.text).strip()
+
+    async def warm(self) -> None:
+        """Load and run once on silence: the first call pays ~1.3 s of setup."""
+        await asyncio.to_thread(self._decode, b"\x00\x00" * 8000, 16000)
+
+    async def transcribe(self, pcm16: bytes, sample_rate: int) -> Transcript:
+        text = await asyncio.to_thread(self._decode, pcm16, sample_rate)
+        return Transcript(text, "en")

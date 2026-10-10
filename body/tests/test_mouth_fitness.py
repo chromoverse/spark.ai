@@ -40,11 +40,11 @@ async def test_ft1_full_benchmark_drops_slow_and_orders_by_expressiveness() -> N
     )
     fit = Fitness(es, clock)
     plan = await drive(clock, fit.full())
-    assert plan.tts == ["orpheus", "piper", "kokoro"]
+    assert plan.tts == ["orpheus", "piper", "kokoro", "chatterbox"]  # over budget: last resort
     assert plan.scores["chatterbox"].p95_ms is not None and plan.scores["chatterbox"].p95_ms > 250
     assert plan.scores["pocket"].success == 0
     wire = plan.wire()
-    assert wire["tts"] == ["orpheus", "piper", "kokoro"] and wire["stt"] == []
+    assert wire["tts"] == plan.tts and wire["stt"] == []
     assert {h["engine"] for h in fit.history()} == set(es)
 
 
@@ -68,10 +68,10 @@ async def test_ft3_power_change_reprobes_and_updates_the_plan(tmp_path: Any) -> 
     assert fit.plan.tts == ["kokoro", "piper"]
     es["kokoro"].latency_s = 0.6  # battery saver halves the CPU
     plan = await drive(clock, fit.power_changed())
-    assert plan.tts == ["piper"]
+    assert plan.tts == ["piper", "kokoro"]  # kokoro now over budget: fallback only
     # the plan survives a restart (quick check builds on it)
     again = Fitness(es, clock, db_path=tmp_path / "fitness.db")
-    assert again.plan.tts == ["piper"]
+    assert again.plan.tts == ["piper", "kokoro"]
 
 
 def test_nothing_fits_keeps_working_engines_fastest_first() -> None:
@@ -90,7 +90,7 @@ async def test_live_ewma_demotes_an_engine_that_slows_down() -> None:
     await drive(clock, fit.full())
     for _ in range(10):
         fit.observe("kokoro", 600)
-    assert fit.plan.tts == ["piper"]
+    assert fit.plan.tts == ["piper", "kokoro"]  # demoted to fallback
 
 
 async def speak(mouth: Mouth, clock: FakeClock, text: str, tone: str | None = None) -> bool:

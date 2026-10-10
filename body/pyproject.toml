@@ -10,6 +10,11 @@ dependencies = []
 [project.optional-dependencies]
 tts = ["edge-tts>=7.0"]
 audio = ["sounddevice>=0.5", "numpy>=1.26"]
+# On-device wake word, STT, and TTS (sherpa-onnx runs them all on CPU). Models download on first
+# run, picked for this device's hardware (spark_body/models.py).
+# The core (native libs incl. onnxruntime) is listed too: uv's lock misses it on Windows, and
+# then the old onnxruntime.dll in System32 gets loaded and fails. Versions must match.
+local = ["sherpa-onnx==1.13.8", "sherpa-onnx-core==1.13.8", "numpy>=1.26"]
 hands = ["pycaw>=20240210; sys_platform == 'win32'", "screen-brightness-control>=0.24"]
 
 [dependency-groups]

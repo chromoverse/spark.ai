@@ -186,14 +186,14 @@ channel and the brain socket. ✅ = built in R1.
 | ✅ `hello` | `{}` → `{ version, hardware, capabilities[], engine_plan }` | `hardware` = cpu, cores, ram_gb, power `{ plugged, battery_pct, saver }`; feeds `device.hello` |
 | ✅ `reflex.handle` | `{ text, verbosity? }` → `{ handled: false }` or `{ handled: true, intent, slots, result: { ok, said?, output?, error? }, chime? }` | tier 0 (§27): decides, runs the hand, speaks the phrase. Electron then sends `signal.handled_locally` (or `signal.final` when not handled). `stop` → `{ intent: "stop", interrupt: true }` (Electron sends `signal.interrupt`); `repeat` → `{ record: false }` (nothing to send) |
 | ✅ `tool.run` | `{ tool, input }` → `{ ok, output }` or `{ ok: false, error: { code, message } }` | answers a brain `tool.call`; codes `unknown_tool`, `not_installed`, `unsupported` |
-| ✅ `stt.transcribe` | `{ pcm16 (base64, mono), sample_rate? (16000) }` → `{ text, lang, engine, stt_ms }` | one endpointed utterance on the STT plan (on-device first, then `groq-whisper` via `/v2/proxy/stt`); a failing engine → `watchdog.incident` + next engine; none ready → error `-32000`. R1 ear: mic + Silero VAD in the renderer (`vad-web`, Chromium echo cancellation), endpoint after 250 ms of silence |
+| ✅ `stt.transcribe` | `{ pcm16 (base64, mono), sample_rate? (16000), wake? }` → `{ text, lang, engine, stt_ms, wake }` | one endpointed utterance on the STT plan (fitness order: e.g. `moonshine-tiny` on the device, then `groq-whisper` via `/v2/proxy/stt`); a failing engine → `watchdog.incident` + next engine; none ready → error `-32000`. `wake: true` = it must hold "Hey Spark": without it → `{ text: "", wake: false }` and nothing is transcribed; with it, STT hears only what follows the phrase (just the phrase → `{ text: "", wake: true }`). `wake: null` back = no wake check (not asked, or the spotter model isn't downloaded yet: open mic). R1 ear: mic + Silero VAD in the renderer (`vad-web`, Chromium echo cancellation), endpoint after 250 ms of silence; the renderer skips the wake word for 8 s after Spark talks or after a bare "Hey Spark" |
 | ✅ `tts.speak` | `{ utt_id, text, tone? }` → `{ queued: true }` | one `reply.delta` sentence; spoken in order on the engine plan |
 | ✅ `tts.stop` | `{}` → `{ stopped: true }` | barge-in: drops the queue and cancels the sentence being synthesized |
 | ✅ `fitness.run` / `fitness.quick` | `{}` → engine plan | full suite / start-up quick check (§18.1) |
-| ✅ `engine.plan` | `{}` → plan + `reasons` (per engine) + `history` (benchmark runs) | the Engines page readout |
+| ✅ `engine.plan` | `{}` → plan + `reasons` (per engine) + `history` (benchmark runs) + `budget_ms { tts, stt }` + `models { name: { role, mb, pct, state } }` + `wake` (spotter ready) | the Engines page readout. Electron forwards only `stt, tts, local_llm, scores` to the brain |
 | ✅ `apps.refresh` | `{}` → `{ apps }` | rescans the Start Menu app index tier 0 resolves against |
 | ✅ `auth.set` | `{ brain_url, access_token }` → `{ ok }` | lets cloud voice engines (Groq Orpheus via `/v2/proxy/tts`) reach the brain. Memory only; Electron main re-sends it every 10 min. The first link triggers a benchmark so the cloud engine can join the plan |
-| `stt.start`, `stt.stop` (streaming partials), `local_brain.chat`, `models.search`, `models.download` | | with on-device STT engines and R5 |
+| `stt.start`, `stt.stop` (streaming partials), `local_brain.chat`, `models.search`, `models.download` | | streaming partials and the LLM Models page (R5) |
 
 | Notification (body → Electron) | Params | Notes |
 |---|---|---|
@@ -203,4 +203,5 @@ channel and the brain socket. ✅ = built in R1.
 | ✅ `mouth.done` | `{ utt_id, ok, engine, first_audio_ms? }` | `ok: false` = no engine could speak it: show it as text (§19.2 degrade) |
 | ✅ `watchdog.incident` | `{ role, engine, error, remedy, outcome, utt_id? }` | forward as `engine.incident` |
 | ✅ `engine.plan` | the plan | the plan changed (benchmark, power change, live EWMA): forward as `device.engine_plan` |
-| `ear.wake`, `ear.partial`, `ear.final`, `download.progress` | | with the ear (R1) and Models page (R5) |
+| ✅ `models.progress` | `{ name, pct }` | an on-device voice model downloading (every 10%, then 100); the Engines page re-reads `engine.plan`. A failed download → `watchdog.incident` `{ remedy: "retry_next_start", outcome: "degraded" }` |
+| `ear.partial`, `ear.final`, `download.progress` | | streaming partials (with the body ear) and the Models page (R5) |

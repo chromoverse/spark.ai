@@ -83,6 +83,13 @@ cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (o
 | W2 | tie | the foreground / most recently used device wins |
 | W3 | a claim after the window | treated as a new signal only if its text differs; otherwise deduplicated |
 
+Wake word on one device (`body/tests/test_local_voice.py`):
+| ID | Scenario | Assertions |
+|---|---|---|
+| WK1 ✅ | speech without "Hey Spark" | dropped on the device: `{ text: "", wake: false }`, no STT engine called; a follow-up (no wake asked) is transcribed |
+| WK2 ✅ | "Hey Spark, what time is it" in one breath | STT hears only the audio after the phrase; text "what time is it?"; a bare "Hey Spark" → `{ text: "", wake: true }` (the renderer listens 8 s) |
+| WK3 ✅ | spotter model not downloaded yet | open mic: transcribed with `wake: null` |
+
 ### 4.3 Reflex arc (§27)
 | ID | Scenario | Assertions |
 |---|---|---|
@@ -94,12 +101,16 @@ cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (o
 ### 4.4 Device fitness & engines (§18)
 | ID | Scenario | Assertions |
 |---|---|---|
-| FT1 ✅ | full benchmark with fake engines (one fast, one slow) | the slow engine is excluded; the plan is ordered by expressiveness then latency. `body/tests/test_mouth_fitness.py` (+ nothing fits → working engines stay, fastest first) |
+| FT1 ✅ | full benchmark with fake engines (one fast, one slow) | engines that fit lead, expressive first, then fastest; the slow one only follows as a last-resort fallback; an engine that isn't installed stays out. `body/tests/test_mouth_fitness.py` |
 | FT2 ✅ | quick check on start | completes ≤ 2 s; plan unchanged when scores are stable |
 | FT3 ✅ | power change (battery saver) | affected roles re-probed; plan updated; the plan survives a restart |
 | FT4 ✅ | selected TTS returns empty audio twice | switches to the next engine for the same sentence; incident logged |
 | FT5 ✅ | tone tags | kept for Orpheus, stripped for engines without vocal-direction support |
 | FT6 ✅ | edge-tts 503 | circuit opens for 10 min; fallback engine used; Engines page reason text set |
+| FT7 ✅ | low-spec device (tier 0) | TTS budget 700 ms (first audio ≤ 2 s): the expressive cloud voice (650 ms) leads, fast local Piper follows; on tier ≥ 1 (250 ms) Piper leads. Quick check folds good probes into the average and spends nothing on over-budget fallbacks |
+| FT8 ✅ | STT candidates | probe clip transcribed per engine: accuracy (1 − WER) then speed among those within 300 ms; slower working engines kept as fallbacks |
+| FT9 ✅ | on-device models | the hardware tier picks the catalog (`body/spark_body/models.py`); download → sha256 check → safe unpack (no `../`) → `.ok`; idempotent; a bad checksum or path is rejected; a failed download → incident, retried next start; progress in `engine.plan` |
+| FT10 ✅ | real models on the dev machine (skipped in CI) | Piper speaks a WAV and benchmarks; "Hey Spark, turn the volume up to thirty" → cut at the phrase → Moonshine ≥ 80% words right; near-miss "the park was sparkling" not spotted |
 
 ### 4.5 Supervisor — never silent (§19)
 | ID | Scenario | Assertions |
@@ -215,7 +226,9 @@ Re-run monthly and whenever a free provider changes its offer.
 3. Stop the brain container → the pill shows the reconnecting state; start it → it reconnects on its own.
 
 ## 8b. R1 Smoke (dev laptop)
-1. `cd body && uv sync` (add `--extra tts` for edge-tts, `--extra hands` for exact volume via pycaw).
+1. `cd body && uv sync --extra tts --extra hands --extra local` (edge-tts, exact volume via pycaw,
+   on-device wake word / STT / TTS via sherpa-onnx). On first start the body downloads this PC's
+   models (low-spec: wake spotter, Piper, Moonshine-tiny, ~210 MB) into `%LOCALAPPDATA%\SparkAI\models`.
 2. Brain up (§8a) with `GROQ_API_KEYS` in `deploy/.env`; accept the Orpheus terms in the Groq console.
    R1 adds a migration (`incidents`): the brain container runs it on start; a host-run brain needs
    `cd brain && uv sync && uv run alembic upgrade head`.
@@ -225,6 +238,10 @@ Re-run monthly and whenever a free provider changes its offer.
    a joke" → tier 2, reply streams in and is spoken sentence by sentence; "open notepad" → opens
    (tier 0) with a short ack; the stop button cuts speech at once.
 5. Stop the brain → "tell me a joke" → spoken "I can't reach my brain right now".
+6. Engines page: "Wake word ready" shows; the table lists `piper` and `moonshine-tiny` with their
+   numbers. Mic on → say "what time is it" (ignored: no wake word) → "Hey Spark, what time is it"
+   → answered; then a follow-up within 8 s needs no wake word. "Hey Spark" alone → a chime, then
+   the command.
 
 ## 9. v1 Baseline (for reference)
 2026-10-09: `server/` unittest suite, 10 tests, 1 error (circular import in `app.socket`). v1 tests

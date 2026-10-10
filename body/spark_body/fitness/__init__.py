@@ -1,25 +1,42 @@
 """Device fitness (REDESIGN §18): no engine is used until it has proven, on this device, that it
 fits the latency budget. Full suite on first run, a quick probe on every start, a re-probe on
-power changes, and a moving average from every real call."""
+power changes, and a moving average from every real call. Covers TTS and STT."""
 
 from __future__ import annotations
 
 import json
+import logging
+import re
 import sqlite3
 import statistics
-from collections.abc import Callable
+import wave
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
+from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
 from spark_body.clock import Clock, within
+from spark_body.ear.stt import SttEngine
 from spark_body.mouth.engines import STANDARD_SENTENCE, TtsEngine, prepare
 
-Role = Literal["tts"]
-BUDGET_MS: dict[Role, float] = {"tts": 250.0}  # p95 first audio (§18.3)
+logger = logging.getLogger(__name__)
+
+Role = Literal["tts", "stt"]
+BUDGET_MS: dict[Role, float] = {"tts": 250.0, "stt": 300.0}  # p95 (§18.3)
+# Low-spec devices (models.tier 0) aim for first audio within 2 s instead of 1 s (owner's call,
+# 2026-10-10): the expressive cloud voice (~650 ms per sentence) still fits there.
+LOW_SPEC_TTS_MS = 700.0
 FULL_RUNS = 3
 PROBE_TIMEOUT_S = 3.0
 EWMA = 0.2
+
+PROBE_WAV = Path(__file__).resolve().parent.parent / "ear" / "probe.wav"
+PROBE_TEXT = "Turn the volume up to thirty, then play some music."  # a command, wake phrase cut
+
+
+def budgets(tier: int) -> dict[Role, float]:
+    return {**BUDGET_MS, "tts": LOW_SPEC_TTS_MS} if tier == 0 else dict(BUDGET_MS)
 
 
 @dataclass
@@ -31,26 +48,29 @@ class Score:
     success: float  # 0..1
     expressive: bool
     ewma_ms: float | None = None
+    accuracy: float | None = None  # STT: 1 - word error rate on the probe clip
 
-    def fits(self) -> bool:
+    def fits(self, budget: Mapping[Role, float]) -> bool:
         p95 = self.ewma_ms if self.ewma_ms is not None else self.p95_ms
-        return self.success >= 0.99 and p95 is not None and p95 <= BUDGET_MS[self.role]
+        return self.success >= 0.99 and p95 is not None and p95 <= budget[self.role]
 
 
 @dataclass
 class Plan:
     tts: list[str] = field(default_factory=list)
+    stt: list[str] = field(default_factory=list)
     scores: dict[str, Score] = field(default_factory=dict)
+    budget: dict[Role, float] = field(default_factory=lambda: dict(BUDGET_MS))
 
     @property
     def degraded(self) -> bool:
-        """True when the plan holds only engines over budget (or none at all)."""
-        return not any(self.scores[n].fits() for n in self.tts if n in self.scores)
+        """True when the TTS plan holds only engines over budget (or none at all)."""
+        return not any(self.scores[n].fits(self.budget) for n in self.tts if n in self.scores)
 
     def wire(self) -> dict[str, Any]:
         """`device.engine_plan` payload for the brain (API.md §3.1)."""
         return {
-            "stt": [],
+            "stt": self.stt,
             "tts": self.tts,
             "local_llm": [],
             "scores": {k: asdict(v) for k, v in self.scores.items()},
@@ -61,16 +81,33 @@ def _latency(s: Score) -> float:
     return s.ewma_ms if s.ewma_ms is not None else s.p95_ms if s.p95_ms is not None else 1e9
 
 
-def select(scores: dict[str, Score]) -> list[str]:
-    """§18.3: drop what misses the budget, then expressive first, then fastest. If nothing fits,
-    the working engines stay in, fastest first: late speech beats silence (§19.2), and the
+def _fold(s: Score, ms: float) -> None:
+    s.ewma_ms = ms if s.ewma_ms is None else (1 - EWMA) * s.ewma_ms + EWMA * ms
+
+
+def _working(scores: list[Score]) -> list[Score]:
+    return sorted((s for s in scores if s.success > 0 and s.p95_ms is not None), key=_latency)
+
+
+def select(scores: dict[str, Score], budget: Mapping[Role, float] = BUDGET_MS) -> list[str]:
+    """§18.3 TTS: what fits the budget, expressive first, then fastest. Every other working
+    engine follows as a fallback, fastest first: late speech beats silence (§19.2), and the
     brain's heard cue covers the gap."""
     tts = [s for s in scores.values() if s.role == "tts"]
-    fit = sorted((s for s in tts if s.fits()), key=lambda s: (not s.expressive, _latency(s)))
-    if fit:
-        return [s.engine for s in fit]
-    working = sorted((s for s in tts if s.success > 0 and s.p95_ms is not None), key=_latency)
-    return [s.engine for s in working]
+    fit = sorted((s for s in tts if s.fits(budget)), key=lambda s: (not s.expressive, _latency(s)))
+    return [s.engine for s in [*fit, *(s for s in _working(tts) if s not in fit)]]
+
+
+def select_stt(scores: dict[str, Score], budget: Mapping[Role, float] = BUDGET_MS) -> list[str]:
+    """§18.3 STT: what fits, most accurate first (accuracy in 5% steps, then fastest); then every
+    other working engine as a fallback, fastest first: being heard late beats not being heard."""
+    stt = [s for s in scores.values() if s.role == "stt"]
+    fit = sorted(
+        (s for s in stt if s.fits(budget)),
+        key=lambda s: (-round((s.accuracy or 0) * 20), _latency(s)),
+    )
+    rest = [s for s in _working(stt) if s not in fit]
+    return [s.engine for s in [*fit, *rest]]
 
 
 async def probe_tts(engine: TtsEngine, clock: Clock) -> float | None:
@@ -90,6 +127,40 @@ async def probe_tts(engine: TtsEngine, clock: Clock) -> float | None:
         await stream.aclose()
 
 
+def _words(text: str) -> list[str]:
+    return re.sub(r"[^a-z0-9' ]", " ", text.lower()).split()
+
+
+def accuracy(expected: str, heard: str) -> float:
+    """1 - word error rate (edit distance over words), floored at 0."""
+    a, b = _words(expected), _words(heard)
+    row = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        prev, row[0] = row[0], i
+        for j, y in enumerate(b, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (x != y))
+    return max(0.0, 1 - row[len(b)] / max(1, len(a)))
+
+
+@cache
+def probe_clip() -> tuple[bytes, int]:
+    with wave.open(str(PROBE_WAV), "rb") as w:
+        return w.readframes(w.getnframes()), w.getframerate()
+
+
+async def probe_stt(engine: SttEngine, clock: Clock) -> tuple[float, float] | None:
+    """(ms to the transcript of the probe clip, accuracy); None if it failed or heard nothing."""
+    pcm, rate = probe_clip()
+    t0 = clock.monotonic()
+    try:
+        heard = await within(clock, engine.transcribe(pcm, rate), PROBE_TIMEOUT_S)
+    except Exception:
+        return None
+    if not heard.text.strip():
+        return None
+    return (clock.monotonic() - t0) * 1000, accuracy(PROBE_TEXT, heard.text)
+
+
 def _pct(values: list[float], q: float) -> float:
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, round(q * (len(ordered) - 1)))]
@@ -102,10 +173,13 @@ class Fitness:
         clock: Clock | None = None,
         db_path: Path | None = None,
         on_change: Callable[[Plan], None] | None = None,
+        ears: dict[str, SttEngine] | None = None,
+        budget: dict[Role, float] | None = None,
     ) -> None:
         self.engines = engines
+        self.ears = ears if ears is not None else {}
         self.clock = clock or Clock()
-        self.plan = Plan()
+        self.plan = Plan(budget=budget or dict(BUDGET_MS))
         self.on_change = on_change
         self.db = sqlite3.connect(db_path or ":memory:", check_same_thread=False)
         self.db.execute(
@@ -117,14 +191,19 @@ class Fitness:
         if row is not None:  # last known scores: the start-up quick check builds on them
             saved = json.loads(row[0])
             self.plan.scores = {
-                k: Score(**v) for k, v in saved["scores"].items() if k in self.engines
+                k: Score(**v) for k, v in saved["scores"].items() if k in self._all()
             }
             self.plan.tts = [n for n in saved["tts"] if n in self.engines]
+            self.plan.stt = [n for n in saved.get("stt", []) if n in self.ears]
+
+    def _all(self) -> dict[str, TtsEngine | SttEngine]:
+        return {**self.engines, **self.ears}
 
     def _replan(self) -> None:
-        tts = select(self.plan.scores)
-        changed = tts != self.plan.tts
-        self.plan.tts = tts
+        tts = select(self.plan.scores, self.plan.budget)
+        stt = select_stt(self.plan.scores, self.plan.budget)
+        changed = (tts, stt) != (self.plan.tts, self.plan.stt)
+        self.plan.tts, self.plan.stt = tts, stt
         self.db.execute(
             "INSERT OR REPLACE INTO plan (id, body) VALUES (1, ?)", (json.dumps(self.plan.wire()),)
         )
@@ -147,67 +226,85 @@ class Fitness:
             ),
         )
 
+    async def _probe(self, name: str) -> tuple[float, float | None] | None:
+        if name in self.engines:
+            ms = await probe_tts(self.engines[name], self.clock)
+            return None if ms is None else (ms, None)
+        return await probe_stt(self.ears[name], self.clock)
+
     async def _bench(self, name: str, runs: int, trigger: str) -> Score:
-        engine = self.engines[name]
+        engine = self._all()[name]
         times: list[float] = []
-        ok = 0
+        accs: list[float] = []
         if engine.available():
+            if (warm := getattr(engine, "warm", None)) is not None:  # local models: load first
+                try:
+                    await warm()
+                except Exception:
+                    logger.exception("%s failed to load", name)
             for _ in range(runs):
-                ms = await probe_tts(engine, self.clock)
-                if ms is not None:
-                    ok += 1
-                    times.append(ms)
+                got = await self._probe(name)
+                if got is not None:
+                    times.append(got[0])
+                    if got[1] is not None:
+                        accs.append(got[1])
         score = Score(
             name,
-            "tts",
+            "tts" if name in self.engines else "stt",
             statistics.median(times) if times else None,
             _pct(times, 0.95) if times else None,
-            ok / runs if runs else 0.0,
-            engine.expressive,
+            len(times) / runs if runs else 0.0,
+            bool(getattr(engine, "expressive", False)),
+            accuracy=min(accs) if accs else None,
         )
         self._record(trigger, score)
         return score
 
     async def full(self, trigger: str = "first_run") -> Plan:
         """Every candidate, FULL_RUNS each (onboarding, weekly, "Run benchmark")."""
-        for name in self.engines:
+        for name in self._all():
             self.plan.scores[name] = await self._bench(name, FULL_RUNS, trigger)
         self._replan()
         return self.plan
 
     async def quick(self) -> Plan:
-        """Every app start (FT2): one probe per selected engine. A selected engine that now
-        fails or misses the budget is re-benchmarked fully; stable scores leave the plan alone.
+        """Every app start (FT2): one probe per engine that fits (and the first STT engine). One
+        that now fails or misses the budget is re-benchmarked fully; a good probe is folded into
+        its moving average. Fallbacks over budget are left alone (no quota spent on them).
         Engines never measured, or that weren't usable last time but are now (an extra got
-        installed, the brain link arrived), get their full benchmark."""
+        installed, a model finished downloading, the brain link arrived), get their full
+        benchmark."""
         if not self.plan.scores:
             return await self.full()
-        for name, engine in self.engines.items():
+        for name, engine in self._all().items():
             score = self.plan.scores.get(name)
             if (score is None or score.success == 0) and engine.available():
                 self.plan.scores[name] = await self._bench(name, FULL_RUNS, "newly_available")
-        for name in list(self.plan.tts):
-            ms = await probe_tts(self.engines[name], self.clock)
-            if ms is None or ms > BUDGET_MS["tts"]:
+        fitting = [n for n in self.plan.tts if self.plan.scores[n].fits(self.plan.budget)]
+        for name in [*fitting, *self.plan.stt[:1]]:
+            got = await self._probe(name)
+            role: Role = "tts" if name in self.engines else "stt"
+            if got is None or got[0] > self.plan.budget[role]:
                 self.plan.scores[name] = await self._bench(name, FULL_RUNS, "quick_recheck")
+            else:
+                _fold(self.plan.scores[name], got[0])
         self._replan()
         return self.plan
 
     async def power_changed(self) -> Plan:
         """FT3: plugged/unplugged or battery saver → every voice role is re-probed."""
-        for name in self.engines:
+        for name in self._all():
             self.plan.scores[name] = await self._bench(name, FULL_RUNS, "power_change")
         self._replan()
         return self.plan
 
     def observe(self, name: str, first_ms: float | None) -> None:
-        """Every real call (§18.1 'continuously'): EWMA of first audio; a failure counts as the
-        give-up time so a flaky engine drifts out of the plan."""
+        """Every real call (§18.1 'continuously'): EWMA of first audio (TTS) or transcript (STT);
+        a failure counts as the give-up time so a flaky engine drifts out of the plan."""
         s = self.plan.scores.get(name)
         if s is None:
             return
-        ms = first_ms if first_ms is not None else PROBE_TIMEOUT_S * 1000
-        s.ewma_ms = ms if s.ewma_ms is None else (1 - EWMA) * s.ewma_ms + EWMA * ms
+        _fold(s, first_ms if first_ms is not None else PROBE_TIMEOUT_S * 1000)
         self._replan()
 
     def history(self, limit: int = 50) -> list[dict[str, Any]]:

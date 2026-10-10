@@ -20,7 +20,7 @@ from spark_body.mouth.engines import TtsEngine, prepare
 
 logger = logging.getLogger(__name__)
 
-BUDGET_S = 0.25  # TTS first audio (§18.3)
+BUDGET_S = 0.25  # TTS first audio (§18.3); low-spec devices get fitness.LOW_SPEC_TTS_MS
 GIVE_UP_S = 3.0  # an engine with no audio by then has failed this sentence
 CIRCUIT_S = 600.0
 
@@ -50,6 +50,7 @@ class Mouth:
     notify: Notify
     clock: Clock = field(default_factory=Clock)
     observe: Observe | None = None
+    budget_s: float = BUDGET_S
     state: dict[str, EngineState] = field(default_factory=dict)
     queue: asyncio.Queue[Utterance] = field(default_factory=asyncio.Queue)
     current: asyncio.Task[bool] | None = None
@@ -176,7 +177,7 @@ class Mouth:
             return False, "empty audio"
         assert first_ms is not None
         st = self.state[name]
-        if first_ms > BUDGET_S * 1000:
+        if first_ms > self.budget_s * 1000:
             self._strike(name, f"took {first_ms:.0f} ms to first audio", nxt_name)
         else:
             st.strikes = 0
