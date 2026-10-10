@@ -216,6 +216,10 @@ async def run_task(
                 run.malformed += 1
             run.error = error.kind
             return run
+        if not uses and not said.strip() and not retried:  # the loop retries an empty turn too
+            run.malformed += 1
+            retried = True
+            continue
         retried = False
         run.turns += 1
         if not uses:

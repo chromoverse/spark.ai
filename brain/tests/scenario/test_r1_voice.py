@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
+from app.agent import persona
 from app.db.models import Incident, Message
 from app.llm.chains import ROLES, RoleConfig
 from tests.conftest import Brain
@@ -248,6 +249,16 @@ async def test_every_provider_down_is_explained_never_silent(
     assert (await laptop.next("reply.cue"))["kind"] == "error"
     [inc] = await incidents(brain)
     assert (inc.stage, inc.outcome) == ("llm", "failed_explained")
+
+
+async def test_an_empty_reply_is_never_silence(brain: Brain, laptop: FakeDevice) -> None:
+    """A reply that's only whitespace passes the chain's empty-output check (that one moves to the
+    next entry) but says nothing: say so, don't go quiet (reflex eval, 2026-10-10)."""
+    assert brain.groq is not None
+    brain.groq.queue(Turn(text=[" ", "  "]))
+    sid, _ = await laptop.say("pause whatever is playing")
+    [line] = spoken(await laptop.reply(sid))
+    assert line in persona.BANK["stuck"]
 
 
 async def test_s8_signal_past_its_deadline_is_explained(

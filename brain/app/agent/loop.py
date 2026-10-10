@@ -113,6 +113,9 @@ class Loop:
                 return "failed", await persona.phrase(
                     self.rt.redis, self.job.user_id, "unreachable"
                 )
+            if not uses and not text:  # whitespace only (gpt-oss does this): a bad turn
+                await self._malformed(self.job.provider or "")
+                continue
             if not uses:
                 return "done", await self._grounded(text)
             if text and self.role == "agent":
@@ -174,7 +177,8 @@ class Loop:
         return "".join(text).strip(), uses
 
     async def _malformed(self, entry: str) -> None:
-        """§5.2: 2 malformed tool calls in a row → the next chain entry, same history (T2)."""
+        """§5.2: 2 malformed tool calls (or empty turns) in a row → the next chain entry, same
+        history (T2)."""
         self.bad += 1
         if self.bad < 2 or not entry:
             return

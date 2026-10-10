@@ -148,7 +148,7 @@ def test_s5_grounding_finds_invented_names_times_and_files() -> None:
     # what models really write (agent eval, 2026-10-10): punctuation inside quotes, a
     # non-breaking hyphen, curly quotes, "Your" capitalized mid-sentence
     found = ['{"name": "resume-2026.pdf"}', "call dad", "Pictures/Screenshots"]
-    assert unsupported("It's saved as “resume‑2026.pdf.”", found) == []
+    assert unsupported("It's saved as “resume\u20112026.pdf.”", found) == []
     assert unsupported("Your note now says “call dad.” Anything else?", found) == []
     assert unsupported("I saved it to Your Pictures folder.", found) == []
 

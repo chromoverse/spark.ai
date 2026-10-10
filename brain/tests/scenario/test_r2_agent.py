@@ -349,6 +349,26 @@ async def test_t2_malformed_twice_escalates_with_the_same_history(
     assert (inc.engine_or_provider, inc.remedy) == ("groq/agent", "switch")
 
 
+async def test_t2_an_empty_turn_is_retried_not_spoken(brain: Brain, laptop: FakeDevice) -> None:
+    """T2: a turn with no tool calls and only whitespace (gpt-oss does this) is a bad turn, not
+    "done" (a fully empty stream is caught by the chain as malformed)."""
+    assert brain.groq is not None
+    brain.groq.queue(delegate("What's in my Downloads folder?"))
+    brain.groq.queue(
+        Turn(text=[" "]),
+        Turn(tool_calls=[tool("file_list", path="Downloads")]),
+        Turn(text=["Downloads has one file."]),
+        model="agent",
+    )
+    items = [{"name": "a.pdf", "type": "file"}]
+    laptop.tools["file_list"] = {"ok": True, "output": {"path": "Downloads", "items": items}}
+    sid, _ = await laptop.say("what's in my downloads folder")
+    await laptop.reply(sid)
+    assert (await updates(laptop))[-1]["status"] == "done"
+    assert spoken(await laptop.reply(sid)) == ["Downloads has one file."]
+    assert tool_calls(laptop, "file_list")
+
+
 async def test_t3_deny_rules_win_and_bare_denies_hide_tools(
     brain: Brain, laptop: FakeDevice
 ) -> None:

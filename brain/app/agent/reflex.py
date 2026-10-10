@@ -297,6 +297,11 @@ async def run(
         state = "failed_explained"
         follow = await _explain_tools(voice, w, ctx, [*messages, *_as_llm(turn[-2:])])
         turn.append(("assistant", [{"type": "text", "text": follow}]))
+    elif not speaker.spoken:  # whitespace only (gpt-oss does this): never leave them in silence
+        state = "failed_explained"
+        sorry = await persona.phrase(rt.redis, w.user_id, "stuck")
+        await speaker.say(sorry, "serious")
+        turn.append(("assistant", [{"type": "text", "text": sorry}]))
 
     await voice.store(w, ctx, turn)  # before the final marker: a follow-up sees this turn
     voice.sup.finish(w, state)
