@@ -91,6 +91,21 @@ async def test_ft11_throttled_cpu_demotes_the_local_engine_on_the_next_start(tmp
     assert not plan.scores["piper"].fits(plan.budget)  # kept only as a last-resort fallback
 
 
+async def test_ft12_one_slow_benchmark_call_doesnt_demote_for_good() -> None:
+    """Owner's laptop: one Whisper call of three took 1.2 s, its p95 missed the budget, and the
+    weaker local engine led from then on (a demoted engine gets no live calls to recover)."""
+    clock = FakeClock()
+    es = engines(clock, piper={"latency_s": 0.1}, orpheus={"latency_s": 0.15, "expressive": True})
+    fit = Fitness(es, clock)
+    await drive(clock, fit.full())
+    blip = fit.plan.scores["orpheus"]
+    blip.p95_ms = 1200.0  # the slow call; its median (150 ms) is fine
+    fit.observe("piper", 100)  # replan
+    assert fit.plan.tts == ["piper", "orpheus"]
+    plan = await drive(clock, fit.quick())
+    assert plan.tts == ["orpheus", "piper"]  # a good probe brought it back
+
+
 def test_nothing_fits_keeps_working_engines_fastest_first() -> None:
     scores = {
         "edge-tts": Score("edge-tts", "tts", 400, 520, 1.0, False),

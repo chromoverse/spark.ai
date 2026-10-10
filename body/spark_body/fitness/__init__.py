@@ -4,6 +4,7 @@ power changes, and a moving average from every real call. Covers TTS and STT."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -212,6 +213,9 @@ class Fitness:
         self.clock = clock or Clock()
         self.plan = Plan(budget=budget or dict(BUDGET_MS))
         self.on_change = on_change
+        # one run at a time: the brain-link benchmark landed on top of the start-up check and
+        # both measured a busy CPU (Piper read 500 ms instead of ~180; owner's laptop, 2026-10-10)
+        self._running = asyncio.Lock()
         self.db = sqlite3.connect(db_path or ":memory:", check_same_thread=False)
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS runs (ts REAL, trigger TEXT, role TEXT, engine TEXT, "
@@ -273,6 +277,8 @@ class Fitness:
                     await warm()
                 except Exception:
                     logger.exception("%s failed to load", name)
+            else:  # cloud engines: an untimed call first (a cold first call pays for connections)
+                await self._probe(name)
             for _ in range(runs):
                 got = await self._probe(name)
                 if got is not None:
@@ -296,6 +302,10 @@ class Fitness:
 
     async def full(self, trigger: str = "first_run") -> Plan:
         """Every candidate, FULL_RUNS each (onboarding, weekly, "Run benchmark")."""
+        async with self._running:
+            return await self._full(trigger)
+
+    async def _full(self, trigger: str) -> Plan:
         for name in self._all():
             self.plan.scores[name] = await self._bench(name, FULL_RUNS, trigger)
         self._replan()
@@ -307,30 +317,40 @@ class Fitness:
         its moving average. Fallbacks over budget are left alone (no quota spent on them).
         Engines never measured, or that weren't usable last time but are now (an extra got
         installed, a model finished downloading, the brain link arrived), get their full
-        benchmark."""
-        if not self.plan.scores:
-            return await self.full()
+        benchmark. One slow call of three can push a good engine's p95 over budget for good (a
+        demoted engine isn't used, so live calls never fix it): one whose median fits gets a probe
+        too, and a good one brings it back."""
+        async with self._running:
+            if not self.plan.scores:
+                return await self._full("first_run")
+            return await self._quick()
+
+    async def _quick(self) -> Plan:
         for name, engine in self._all().items():
             score = self.plan.scores.get(name)
             if (score is None or score.success == 0) and engine.available():
                 self.plan.scores[name] = await self._bench(name, FULL_RUNS, "newly_available")
-        fitting = [n for n in self.plan.tts if self.plan.scores[n].fits(self.plan.budget)]
-        for name in [*fitting, *self.plan.stt[:1]]:
+        budget = self.plan.budget
+        fitting = [n for n in self.plan.tts if self.plan.scores[n].fits(budget)]
+        near = [
+            n
+            for n, s in self.plan.scores.items()
+            if not s.fits(budget) and s.success > 0 and (s.p50_ms or 1e9) <= budget[s.role]
+        ]
+        for name in dict.fromkeys([*fitting, *self.plan.stt[:1], *near]):
             got = await self._probe(name)
             role: Role = "tts" if name in self.engines else "stt"
-            if got is None or got[0] > self.plan.budget[role]:
-                self.plan.scores[name] = await self._bench(name, FULL_RUNS, "quick_recheck")
-            else:
+            if got is not None and got[0] <= budget[role]:
                 _fold(self.plan.scores[name], got[0])
+            elif name not in near:
+                self.plan.scores[name] = await self._bench(name, FULL_RUNS, "quick_recheck")
         self._replan()
         return self.plan
 
     async def power_changed(self) -> Plan:
         """FT3: plugged/unplugged or battery saver → every voice role is re-probed."""
-        for name in self._all():
-            self.plan.scores[name] = await self._bench(name, FULL_RUNS, "power_change")
-        self._replan()
-        return self.plan
+        async with self._running:
+            return await self._full("power_change")
 
     def observe(self, name: str, first_ms: float | None) -> None:
         """Every real call (§18.1 'continuously'): EWMA of first audio (TTS) or transcript (STT);
