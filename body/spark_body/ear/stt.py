@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -37,6 +38,24 @@ def floats(pcm16: bytes) -> Any:
     import numpy as np
 
     return np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
+
+
+# What Whisper says for noise or breath with no words (owner's mic test: "foreign"). Only whole
+# transcripts that are exactly one of these are dropped.
+HALLUCINATIONS = frozenset(
+    {
+        "foreign",
+        "you",
+        "thanks for watching",
+        "thank you for watching",
+        "please subscribe",
+        "subtitles by the amara org community",
+    }
+)
+
+
+def hallucinated(text: str) -> bool:
+    return " ".join(re.sub(r"[^a-z ]", " ", text.lower()).split()) in HALLUCINATIONS
 
 
 class WhisperProxy:
@@ -71,7 +90,7 @@ class WhisperProxy:
         body = await asyncio.to_thread(self._post, wav(pcm16, sample_rate))
         data = body.get("data")
         text = str(data.get("text", "")) if isinstance(data, dict) else ""
-        return Transcript(text.strip(), self.lang)
+        return Transcript("" if hallucinated(text) else text.strip(), self.lang)
 
 
 class LocalStt:

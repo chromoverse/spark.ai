@@ -38,7 +38,7 @@ function toVoiceWindow(event: IVoiceEvent): void {
   voiceWindow()?.webContents.send("voiceEvent", event);
 }
 
-function broadcast(channel: "enginePlan" | "bodyStatus", payload: unknown): void {
+function broadcast(channel: "enginePlan" | "bodyStatus" | "voiceSpeakingState", payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send(channel, payload);
   }
@@ -89,6 +89,10 @@ class VoiceLoop {
     } catch (err) {
       console.warn("[voice] couldn't link the body to the brain", err);
     }
+  }
+
+  speakingChanged(speaking: boolean): void {
+    broadcast("voiceSpeakingState", { speaking, at: Date.now() });
   }
 
   stopAll(): void {

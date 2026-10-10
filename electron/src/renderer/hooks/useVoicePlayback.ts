@@ -24,6 +24,15 @@ export function lastSpokeAt(): number {
   return speaking ? Date.now() : spokeAt;
 }
 
+/** Audio plays in one window (often the floating panel) and the ear may listen in another, so
+ * the playing window tells main, and main tells every window (voiceSpeakingState). */
+function setSpeaking(value: boolean): void {
+  if (value === speaking) return;
+  speaking = value;
+  if (!value) spokeAt = Date.now();
+  void window.electronApi.voice.speaking(value);
+}
+
 let ctx: AudioContext | null = null;
 
 /** A short earcon (§4.4). Also used by the ear: "heard" when "Hey Spark" alone opens a command. */
@@ -60,8 +69,7 @@ export function useVoicePlayback(): void {
     const playNext = (): void => {
       if (current) return;
       const next = queue.shift();
-      if (speaking && !next) spokeAt = Date.now();
-      speaking = next !== undefined;
+      setSpeaking(next !== undefined);
       if (!next) return;
       const audio = new Audio(next.url);
       current = audio;
@@ -88,8 +96,7 @@ export function useVoicePlayback(): void {
         current.pause();
         current = null;
       }
-      if (speaking) spokeAt = Date.now();
-      speaking = false;
+      setSpeaking(false);
     };
 
     const off = window.electronApi.voice.onEvent((event: IVoiceEvent) => {
@@ -119,8 +126,13 @@ export function useVoicePlayback(): void {
           return;
       }
     });
+    const offSpeaking = window.electronApi.voice.onSpeaking((state) => {
+      speaking = state.speaking;
+      if (!state.speaking) spokeAt = state.at;
+    });
     return () => {
       off();
+      offSpeaking();
       stop();
       void ctx?.close();
       ctx = null;

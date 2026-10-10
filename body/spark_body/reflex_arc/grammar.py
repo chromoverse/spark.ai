@@ -214,6 +214,7 @@ RULES: tuple[Rule, ...] = (
         [
             r"what(?: is|'s|s)? the time(?: now| right now)?",
             r"what time is it(?: now| right now)?",
+            r"(?:tell me )?what time it is(?: now| right now)?",  # how STT often hears it
             r"(?:tell me |give me )?the time(?: please)?",
             r"time(?: please)?",
             r"what time(?: is it)? (?:now|right now)",

@@ -334,3 +334,10 @@ async def test_ft10_real_local_voice_speaks_a_wav() -> None:
     fit = Fitness({"piper": tts}, Clock())  # type: ignore[dict-item]
     plan = await fit.full("test")
     assert plan.scores["piper"].success == 1.0
+
+
+def test_whisper_noise_hallucinations_are_dropped() -> None:
+    from spark_body.ear.stt import hallucinated
+
+    assert hallucinated("Foreign.") and hallucinated("you") and hallucinated("Thanks for watching!")
+    assert not hallucinated("Thank you.") and not hallucinated("what time is it")

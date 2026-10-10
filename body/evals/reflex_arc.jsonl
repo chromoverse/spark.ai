@@ -115,6 +115,8 @@
 {"text": "brightness to max", "intent": "brightness_set", "slots": {"level": 100}, "kind": "positive"}
 {"text": "set brightness to 100", "intent": "brightness_set", "slots": {"level": 100}, "kind": "positive"}
 {"text": "what time is it", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "what time it is", "intent": "time_now", "slots": {}, "kind": "positive"}
+{"text": "Tell me what time it is.", "intent": "time_now", "slots": {}, "kind": "positive"}
 {"text": "what's the time", "intent": "time_now", "slots": {}, "kind": "positive"}
 {"text": "what is the time", "intent": "time_now", "slots": {}, "kind": "positive"}
 {"text": "Hey Spark, what time is it?", "intent": "time_now", "slots": {}, "kind": "positive"}

@@ -42,6 +42,11 @@ export function registerVoiceHandlers(): void {
     if (typeof signalId === "string" && typeof at === "number") void voiceLoop.firstAudio(signalId, at);
     return { ok: true };
   });
+  // Spark plays in one window, the ear may run in another: every window learns when it talks
+  ipcMainHandle("voiceSpeaking", (_event, payload) => {
+    voiceLoop.speakingChanged((payload as { speaking?: unknown } | null)?.speaking === true);
+    return { ok: true };
+  });
   ipcMainHandle("voiceStop", () => result(() => voiceLoop.stop().then(() => ({ stopped: true }))));
   ipcMainHandle("enginesGet", () => result(() => voiceLoop.engines()));
   ipcMainHandle("enginesBenchmark", () => result(() => voiceLoop.benchmark()));

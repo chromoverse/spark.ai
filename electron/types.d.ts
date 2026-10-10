@@ -225,6 +225,8 @@ export type IEventPayloadMapping = {
   voiceStop: IBrainResult<{ stopped: boolean }>;
   voiceHear: IBrainResult<IVoiceHeard>;
   voiceFirstAudio: { ok: boolean };
+  voiceSpeaking: { ok: boolean };
+  voiceSpeakingState: { speaking: boolean; at: number };
   enginesGet: IBrainResult<IEnginesInfo>;
   enginesBenchmark: IBrainResult<IEnginesInfo>;
   voiceEvent: IVoiceEvent;
@@ -326,6 +328,8 @@ declare global {
         stop: () => Promise<IBrainResult<{ stopped: boolean }>>;
         hear: (pcm16: string, endedAt: number, wake: boolean) => Promise<IBrainResult<IVoiceHeard>>;
         firstAudio: (signalId: string, at: number) => Promise<{ ok: boolean }>;
+        speaking: (speaking: boolean) => Promise<{ ok: boolean }>;
+        onSpeaking: (callback: (state: { speaking: boolean; at: number }) => void) => () => void;
         onEvent: (callback: (event: IVoiceEvent) => void) => () => void;
       };
       engines: {
