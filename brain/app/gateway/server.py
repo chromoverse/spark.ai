@@ -22,7 +22,7 @@ from app.core.logging import device_id_var, trace_id_var, user_id_var
 from app.core.runtime import Runtime
 from app.core.security import Principal, decode_access
 from app.db.models import Device
-from app.gateway import live, presence
+from app.gateway import live, presence, wake
 from app.gateway.envelope import Envelope
 from app.gateway.push import NAMESPACE, user_room
 from app.gateway.signals import (
@@ -68,6 +68,7 @@ EVENT_MODELS: dict[str, type[Envelope]] = {
     "device.engine_plan": EnginePlan,
     "approval.response": ApprovalResponse,
     "ask.response": AskResponse,
+    "wake.claim": wake.WakeClaim,
 }
 
 
@@ -168,6 +169,7 @@ def register(rt: Runtime) -> Voice:
             device.last_seen_at = rt.clock.now()
             await db.commit()
         await presence.touch(rt, p.user_id, p.device_id)
+        voice._spawn(voice.fire_queued(p.user_id, p.device_id))  # E2: calls that waited for it
         return {"device_id": str(p.device_id), "server_time": rt.clock.epoch_ms()}
 
     async def engine_plan(p: Principal, msg: EnginePlan) -> dict[str, Any]:
@@ -195,4 +197,9 @@ def register(rt: Runtime) -> Voice:
     on("device.engine_plan", engine_plan)
     on("approval.response", voice.approval_response)
     on("ask.response", voice.ask_response)
+
+    async def wake_claim(p: Principal, msg: wake.WakeClaim) -> dict[str, Any]:
+        return await wake.claim(rt, p, msg, voice.tasks)
+
+    on("wake.claim", wake_claim)
     return voice

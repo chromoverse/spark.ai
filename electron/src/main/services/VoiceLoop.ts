@@ -60,6 +60,7 @@ interface Trace {
 // Speech that resumes in between drops the turn (signal.interrupt: not stored).
 const CANDIDATE_MS = 250;
 const ENDPOINT_MS = 700;
+const CLAIM_WAIT_MS = 400; // the brain decides 150 ms after a window's first wake claim
 
 /** A brain turn started on an endpoint candidate: its live events wait here until commit. */
 interface Speculative {
@@ -173,6 +174,8 @@ class VoiceLoop {
     );
     const awake = stt.wake ?? null;
     if (!stt.text.trim()) return { signalId: "", heard: "", wake: awake };
+    // §26.2: another of the user's devices may have heard the same "Hey Spark"; one answers
+    if (awake === true && !(await this.claimWake(pcm16))) return { signalId: "", heard: "", wake: awake };
     const signalId = this.track({ startedAt: endedAt - CANDIDATE_MS, sttMs: stt.stt_ms, sttEngine: stt.engine });
     const tier0 = await bodyBridge
       .call<{ handled: boolean }>("reflex.handle", { text: stt.text, decide_only: true }, 2_000)
@@ -184,6 +187,34 @@ class VoiceLoop {
       setTimeout(() => void this.drop(signalId), 10_000); // the ear went away mid-utterance
     }
     return { signalId, heard: stt.text, wake: awake };
+  }
+
+  /** Wake-word arbitration: true = this device answers (alone online, granted, or no word from the
+   *  brain in time), false = another device won and this one stays quiet. */
+  private async claimWake(pcm16: string): Promise<boolean> {
+    const pcm = Buffer.from(pcm16, "base64");
+    let sum = 0;
+    for (let i = 0; i + 1 < pcm.length; i += 2) sum += pcm.readInt16LE(i) ** 2;
+    const rms = Math.sqrt(sum / Math.max(1, pcm.length / 2));
+    const ack = await brainSocket.emit("wake.claim", {
+      score: 1, // the spotter fired (the body doesn't report a score yet)
+      loudness: Math.min(1, rms / 8000),
+      foreground: BrowserWindow.getFocusedWindow() !== null,
+    });
+    const claim = ack?.data as { claim_id?: string; decision?: string } | undefined;
+    if (!claim?.claim_id || claim.decision === "grant") return true;
+    return new Promise((resolve) => {
+      const done = (granted: boolean): void => {
+        clearTimeout(timer);
+        off();
+        resolve(granted);
+      };
+      const off = brainSocket.onEvent((event, data) => {
+        if (event !== "wake.grant" && event !== "wake.yield") return;
+        if ((data as { claim_id?: string } | null)?.claim_id === claim.claim_id) done(event === "wake.grant");
+      });
+      const timer = setTimeout(() => done(true), CLAIM_WAIT_MS);
+    });
   }
 
   /** The ear confirmed the endpoint (speech didn't resume): run what hear() transcribed, or let

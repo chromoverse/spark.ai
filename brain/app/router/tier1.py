@@ -1,13 +1,14 @@
 """Tier-1 brain router (REDESIGN §27): intents the brain answers without an LLM, only when sure.
-Stop/cancel, language switching, job status, and yes / no / always for a pending approval. The
-caller drops `status` and `confirm` when no job runs or nothing is pending (then they're just
-conversation for the reflex)."""
+Stop/cancel, language switching, job status, yes / no / always for something pending, simple
+commands aimed at another device ("pause the music on my laptop", §26.4-F), and handoffs ("send
+this to my phone", "continue on my phone"). The caller drops an intent it can't be sure of: no
+job running, nothing pending, or no single online device matching (then the reflex takes it)."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 _STOP = re.compile(
     r"^(?:ok(?:ay)?\s+)?(?:stop|cancel|never ?mind|forget it|shut up)(?: it| that)?$"
@@ -45,15 +46,68 @@ _YES = frozenset(
 )
 _NO = frozenset("no nope nah don't dont not deny cancel never mind skip".split())
 _ALWAYS = frozenset({"always"})
+_DEV = r"(?:my|the) (?P<dev>[\w' -]{2,30})"
+_ON = rf"(?:on|from) {_DEV}"
+_MEDIA = r"(?: the)?(?: music| song| video| track| it| media)?"
+# pattern → (tool, slots, what Spark says before " on your <device>.")
+_REMOTE: tuple[tuple[re.Pattern[str], str, dict[str, Any], str], ...] = tuple(
+    (re.compile(p), tool, slots, say)
+    for p, tool, slots, say in (
+        (rf"^(?:pause|stop){_MEDIA} {_ON}$", "media_control", {"action": "pause"}, "Paused"),
+        (
+            rf"^(?:play|resume|unpause){_MEDIA} {_ON}$",
+            "media_control",
+            {"action": "play"},
+            "Playing",
+        ),
+        (
+            rf"^(?:next|skip)(?: the)?(?: song| track| one)? {_ON}$",
+            "media_control",
+            {"action": "next"},
+            "Skipped",
+        ),
+        (
+            rf"^(?:previous|go back)(?: song| track)? {_ON}$",
+            "media_control",
+            {"action": "previous"},
+            "Going back",
+        ),
+        (rf"^mute(?: it)? {_ON}$", "volume_mute", {"mute": True}, "Muted"),
+        (rf"^unmute(?: it)? {_ON}$", "volume_mute", {"mute": False}, "Unmuted"),
+        (
+            rf"^(?:turn )?(?:the )?volume up {_ON}$",
+            "volume_change",
+            {"direction": "up"},
+            "Turned it up",
+        ),
+        (
+            rf"^(?:turn )?(?:the )?volume down {_ON}$",
+            "volume_change",
+            {"direction": "down"},
+            "Turned it down",
+        ),
+    )
+)
+_VOLUME_TO = re.compile(
+    rf"^(?:set |turn )?(?:the )?volume (?:to )?(?P<n>\d{{1,3}})(?: percent)? {_ON}$"
+)
+_HANDOFF = re.compile(rf"^(?:send|share|push) (?:this|that|it)(?: over)? to {_DEV}$")
+_CONTINUE = re.compile(
+    rf"^(?:continue|pick (?:this|it) up|carry on)(?: this| it| here)? (?:on|from) {_DEV}$"
+)
 SUPPORTED = {"en"}
 LANGUAGE_NAMES = {code: name.capitalize() for name, code in _LANGUAGES.items()}
 
 
 @dataclass(frozen=True)
 class Intent:
-    kind: Literal["stop", "language", "status", "confirm", "answer"]
-    value: str | None = None
-    ref: str | None = None  # the approval or question it answers
+    kind: Literal[
+        "stop", "language", "status", "confirm", "answer", "remote", "handoff", "continue"
+    ]
+    value: str | None = None  # language code, decision, or tool
+    ref: str | None = None  # the approval or question it answers, or the device word
+    slots: dict[str, Any] | None = None  # remote: the tool's input
+    say: str | None = None  # remote: the phrase before " on your <device>."
 
 
 def normalize(text: str) -> str:
@@ -68,6 +122,21 @@ def classify(text: str) -> Intent | None:
         return Intent("status")
     if decision := _confirm(t):
         return Intent("confirm", decision)
+    for pattern, tool, slots, say in _REMOTE:
+        if m := pattern.match(t):
+            return Intent("remote", tool, m.group("dev"), dict(slots), say)
+    if (m := _VOLUME_TO.match(t)) and int(m.group("n")) <= 100:
+        return Intent(
+            "remote",
+            "volume_set",
+            m.group("dev"),
+            {"level": int(m.group("n"))},
+            f"Volume's at {m.group('n')}",
+        )
+    if m := _HANDOFF.match(t):
+        return Intent("handoff", None, m.group("dev"))
+    if m := _CONTINUE.match(t):
+        return Intent("continue", None, m.group("dev"))
     if m := _LANG.match(t):
         word = m.group(1) or m.group(2)
         if word in _LANGUAGES:

@@ -76,11 +76,12 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 ### 2.3 Threads, jobs, artifacts
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/v2/threads` / `/v2/threads/{id}/messages` | paginated history |
+| GET | `/v2/threads` / `/v2/threads/{id}/messages` | ✅ threads newest first `{ items: [{ id, title, last_message_at }] }`; messages oldest first within a page, `?limit≤100&before=<message id>` → `{ items: [{ id, role, content (blocks), tier, device_id, created_at }], next_cursor }`. Every device of the user reads the same thread ("continue on my phone") |
 | GET | `/v2/jobs` / `/v2/jobs/{id}` | ✅ newest first, `?limit≤100` → `{ items: [{ id, title, status: queued\|running\|waiting\|done\|cancelled\|failed, todo, eta_s, summary, provider_used, usage, device_id, thread_id, created_at, finished_at }] }`; `{id}` adds `steps: [{ id, tool, input, output (redacted, ≤ 2000 chars), status: running\|ok\|error\|denied, error, device_id, started_at, finished_at }]` |
 | POST | `/v2/jobs/{id}/cancel` | ✅ same as a "stop" signal → `{ status: "cancelled" }`; a finished job keeps its status |
-| GET | `/v2/artifacts/{id}` | metadata + signed download URL |
-| POST | `/v2/uploads` | signed upload URL for large tool outputs/files |
+| GET | `/v2/artifacts/{id}` | ✅ `{ id, kind, name, mime, size, preview, thread_id, job_id, device_id, created_at, url }`; `url` is a signed download link (1 h) |
+| GET | `/v2/artifacts/{id}/download` | ✅ `?exp&sig`, **no token**: the HMAC signature (over id + expiry, keyed from the server secret) is the permission. Bad or expired → `404` |
+| POST | `/v2/uploads` | ✅ raw body (≤ 20 MB, `Content-Type` = its mime) + `?name&kind=text\|file\|image\|table` → the artifact (as above). Becomes the newest artifact for "send this to my phone" |
 
 ### 2.4 Capabilities
 | Method | Path | Notes |
@@ -131,7 +132,7 @@ where noted.
 | `device.hello` | `{ platform, app_version, capabilities[], tool_versions, hardware }` | ✅ on connect; ack `{ device_id, server_time }`; stored on the device row |
 | `device.state` | `{ battery, power_mode, active_app, locale, mic, speaker }` | on change |
 | `device.engine_plan` | `{ stt[], tts[], local_llm[], scores, degraded? }` | ✅ after fitness runs (§18); stored as `devices.engine_plan`, ack `{ stored: true }` |
-| `wake.claim` | `{ score, loudness, foreground }` | wake-word arbitration (§26.2) |
+| `wake.claim` | `{ score 0–1, loudness 0–1, foreground }` | ✅ wake-word arbitration (§26.2). Ack `{ claim_id, decision: grant\|pending }`: `grant` at once when no other device of the user is online; otherwise the brain collects claims for 150 ms and answers with `wake.grant` / `wake.yield`. The desktop claims after STT confirms the wake word, waits ≤ 400 ms, and stays quiet on a yield |
 | `signal.partial` | `{ signal_id, text }` | ✅ prefetches the turn context (thread, recent turns, settings); ack `{ signal_id }` |
 | `signal.final` | `{ signal_id, text, lang?, confidence?, source?: voice\|text\|schedule, utc_offset_min? }` | ✅ the Socket.IO ack is the `signal.ack` payload `{ signal_id, tier }`; a repeated `signal_id` (5 min) acks `{ signal_id, duplicate: true }` and runs nothing. `utc_offset_min` = the device's current UTC offset, so "what time is it" is local. Voice signals may arrive on the ear's endpoint candidate (speculative start, §4.2): the device holds the turn's live events until the endpoint is confirmed, or cancels it with `signal.interrupt { signal_id }` if speech resumed |
 | `signal.handled_locally` | `{ signal_id, text, intent, slots, result: { ok, said?, output?, error?: { code, message } }, utc_offset_min? }` | ✅ tier-0 result (§27). `ok` → stored in the thread, ack `{ tier: 0 }`, no LLM. Not ok → the reflex LLM explains with the device's error, ack `{ tier: 2 }` |
@@ -151,7 +152,7 @@ signal came from, aren't written to the sync log, and carry a random `id`. The t
 their outcome. Everything else below is synced to every device of the user.
 | Event | Payload | Notes |
 |---|---|---|
-| `wake.grant` / `wake.yield` | `{ claim_id }` | yielding devices stop listening |
+| `wake.grant` / `wake.yield` | `{ claim_id }` / `{ claim_id, winner }` | ✅ live, to each claimant. Winner: highest score + loudness, then the foreground device, then the one used most recently (any signal). A yielded device's voice signals are dropped for 3 s (`signal.final` acks `duplicate: true`), and the same words from a second device within 3 s are one signal (W3) |
 | `signal.ack` | `{ signal_id, tier, job_id? }` | ✅ returned as the `signal.final` Socket.IO ack, right after routing (no DB or LLM wait) |
 | `reply.delta` | `{ signal_id, text, tone?, speak: bool, final: bool }` | ✅ one sentence (the first one cut early) per event, lint-clean, tone tag moved to `tone`. Every turn ends with `{ text: "", speak: false, final: true }`, sent after the turn is stored |
 | `reply.cue` | `{ signal_id, kind: heard\|done\|error }` | ✅ earcons (§4.4): `heard` when no sentence is out 500 ms after the signal or while a broken stream restarts; `done` when quick tools all succeeded within 1.5 s (slower → a spoken "Done."); `error` with an explained failure |
@@ -165,13 +166,24 @@ their outcome. Everything else below is synced to every device of the user.
 | `job.update` | `{ job_id, status, title, todo[], eta_s, step?, note?, summary?, artifact_id? }` | ✅ on every change. `status`: queued\|running\|waiting (an approval or question)\|done\|cancelled\|failed. `todo[]`: `{ text, status: pending\|in_progress\|done }` (the agent's `todo_write`). `step`: `{ id, tool, summary, input, status: running\|ok\|error\|denied, device_id }`. `note`: the agent's progress line (on screen, not spoken), or "This is taking longer than I thought…" with a new `eta_s` when a job runs 2x over its estimate (also spoken). `summary` + `artifact_id` arrive with the end |
 | `artifact.new` | `{ artifact_id, kind: text\|file\|image\|table, name, preview, thread_id, job_id }` | ✅ e.g. a job wrap-up longer than 3 sentences: the first 3 are spoken, the whole text is a `text` artifact (`preview.text`) |
 | `settings.changed` | `{ changed: {...} }` | ✅ pushed to every device of the user, including the one that changed it |
-| `notice` | `{ text, from_device?, level }` | e.g. "Spark opened YouTube, asked from Laptop" |
+| `notice` | `{ text, from_device?, level: info\|warn, artifact_id?, url?, thread_id? }` | ✅ live, to one device: a handoff ("From Laptop: notes.txt" + signed `url`), "continue on my phone" (`thread_id`), a queued call's outcome on the asking device ("Done on Pixel.") |
 | `fallback.notice` | `{ reason }` | brain degraded; the device switches to the local brain |
 
 **Job speech.** A job speaks on its origin device with `reply.delta` events carrying the origin
 `signal_id`, each utterance closed by its own `final: true` marker: an approval prompt, an
 `ask_user` question, a "taking longer" note, and the wrap-up (≤ 3 sentences: done → needs you →
 optional next step; `tone: serious` when it failed). Steps and notes stay on screen.
+
+**Choosing the device (§26.3).** With more than one device, every device tool the reflex or agent
+sees takes an optional `device` (a name or a kind: "phone", "laptop"); it's stripped before the
+`tool.call`. No `device` → the origin, or else an online device that can do it (said out loud:
+"Sending it from your phone."). Two matches → the model is told to ask; the answer becomes that
+device's `is_default_for` word. A target that's offline → the model is told to offer a queued run;
+"yes" stores it (1 h) and it fires on the device's next `device.hello`. Tier 1 runs simple commands
+for another device with no LLM ("pause the music on my laptop", "volume to 30 on my phone"), and
+handoffs ("send this to my phone", "continue on my phone"), only when exactly one online device
+matches. A device whose socket drops mid-call fails its calls at once; an agent call with no named
+device then moves to another capable device (said out loud), else the agent is told.
 
 ### 3.3 Tool call contract
 - ✅ `input` validated against `input_schema` before sending; `output` validated against

@@ -12,7 +12,19 @@ import socketio
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, capabilities, devices, health, incidents, jobs, me, permissions, proxy
+from app.api import (
+    artifacts,
+    auth,
+    capabilities,
+    devices,
+    health,
+    incidents,
+    jobs,
+    me,
+    permissions,
+    proxy,
+    threads,
+)
 from app.core import errors
 from app.core.clock import Clock
 from app.core.config import Settings
@@ -81,6 +93,8 @@ def create_app(
         jobs.router,
         permissions.router,
         capabilities.router,
+        artifacts.router,
+        threads.router,
     ):
         api.include_router(router)
     return socketio.ASGIApp(rt.sio, other_asgi_app=api, socketio_path="socket.io")

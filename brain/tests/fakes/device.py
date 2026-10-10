@@ -17,6 +17,7 @@ class FakeDevice:
         self.url = url
         self.access_token: str = tokens["access_token"]
         self.device_id: str = tokens["device_id"]
+        self.refresh_token: str | None = tokens.get("refresh_token")
         self.inbox: list[tuple[str, dict[str, Any]]] = []
         self.disconnected = asyncio.Event()
         self.refusals: list[Any] = []  # connect_error payloads from the brain

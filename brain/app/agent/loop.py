@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from app.agent import grounding, persona
+from app.agent.voice import DeviceGone
 from app.capabilities import hooks
 from app.capabilities.hooks import Outcome
 from app.core.clock import within
@@ -89,6 +90,7 @@ class Loop:
     stuck: str | None = None  # a tool called with the same input three times
     seen: Counter[str] = field(default_factory=Counter)
     evidence: list[str] = field(default_factory=list)
+    hint: str | None = None  # the device the model named for the current call
 
     @property
     def rt(self) -> Any:
@@ -149,7 +151,7 @@ class Loop:
             self.role,
             system=SYSTEM if self.role == "agent" else SUB_SYSTEM,
             messages=self.messages,
-            tools=[t.to_def() for t in self.tools] if tools else (),
+            tools=[t.to_def(with_device=job.ctx.multi) for t in self.tools] if tools else (),
             allow_training=job.ctx.allow_training,
             exclude=frozenset(job.exclude),
         )
@@ -301,12 +303,23 @@ class Loop:
     async def _act(self, spec: ToolSpec, raw: dict[str, Any]) -> tuple[bool, str]:
         """A device tool, or a brain tool with a handler: hooks → permissions → run → hooks."""
         job, jobs = self.job, self.jobs
+        hint = raw.get(DEVICE_FIELD)
         raw = {k: v for k, v in raw.items() if k != DEVICE_FIELD}
         try:
             inp = spec.validate(raw)
         except ValidationError as exc:
             return self._invalid(spec, exc)
-        device_id = job.device_id if spec.target == "device" else None
+        device_id = None
+        if spec.target == "device":
+            assert job.watch is not None
+            self.hint = hint if isinstance(hint, str) else None
+            target = await jobs.voice.target(job.watch, spec, inp, self.hint)
+            if isinstance(target, str):
+                return False, target
+            device_id = target.device.id
+            if target.announce:  # E4: capability fallback is said out loud
+                await jobs.say(job, target.announce)
+                await jobs.note(job, target.announce)
         call = hooks.Call(self.rt, job.user_id, job.id, device_id, spec, inp)
         before = await hooks.before(call)
         step = await jobs.step_start(job, spec, inp, device_id)
@@ -356,9 +369,20 @@ class Loop:
         assert job.watch is not None
         if spec.handler is not None:
             return Outcome(*await self._handle(call), decision)
-        ok, content = await self.jobs.voice.device_call(
+        voice = self.jobs.voice
+        ok, content = await voice.device_call(
             job.watch, spec, inp, device_id=call.device_id, job_id=job.id
         )
+        if not ok and content == DeviceGone.message and self.hint is None and call.device_id:
+            # S3: the device dropped mid-call; another one that can do it takes over, said aloud
+            other = await voice.target(job.watch, spec, inp, None, frozenset({call.device_id}))
+            if not isinstance(other, str):
+                note = f"That device went offline, so I'm using {other.device.name}."
+                await self.jobs.say(job, note)
+                await self.jobs.note(job, note)
+                ok, content = await voice.device_call(
+                    job.watch, spec, inp, device_id=other.device.id, job_id=job.id
+                )
         return Outcome(ok, content, decision)
 
     async def _handle(self, call: hooks.Call) -> tuple[bool, str]:
@@ -405,7 +429,7 @@ class Loop:
         if spec.name == "tool_search":
             pool = [
                 t
-                for t in registry.usable(job.ctx.capabilities, permissions.hidden(job.rules))
+                for t in registry.usable(job.ctx.all_capabilities, permissions.hidden(job.rules))
                 if t not in self.tools
             ]
             found = registry.search(data["query"], pool, 5)
@@ -426,7 +450,7 @@ class Loop:
         job = self.job
         pool = [
             t
-            for t in registry.usable(job.ctx.capabilities, permissions.hidden(job.rules))
+            for t in registry.usable(job.ctx.all_capabilities, permissions.hidden(job.rules))
             if t.risk is Risk.READ
         ]
         sub = Loop(
@@ -471,6 +495,6 @@ def first_messages(job: Job) -> list[LlmMessage]:
 
 async def run(jobs: Jobs, job: Job) -> tuple[str, str]:
     tools = registry.select(
-        f"{job.task} {job.request}", job.ctx.capabilities, permissions.hidden(job.rules)
+        f"{job.task} {job.request}", job.ctx.all_capabilities, permissions.hidden(job.rules)
     )
     return await Loop(jobs, job, tools=tools, messages=first_messages(job)).run()

@@ -72,13 +72,18 @@ JOB_TOOL_DEFS = [JOB_STEER.to_def(), JOB_CANCEL.to_def()]
 
 
 def tool_defs(
-    capabilities: frozenset[str], hidden: frozenset[str] = frozenset(), *, jobs: bool = False
+    capabilities: frozenset[str],
+    hidden: frozenset[str] = frozenset(),
+    *,
+    jobs: bool = False,
+    with_device: bool = False,
 ) -> list[ToolDef]:
-    """Only tools the origin device can run (its device.hello capabilities) and no bare-denied
-    ones, in catalog order so the prompt prefix stays cacheable for a given device. delegate is
-    always offered; job_steer / job_cancel only while a job runs."""
+    """Only tools some device of the user can run (device.hello capabilities) and no bare-denied
+    ones, in catalog order so the prompt prefix stays cacheable. With several devices each device
+    tool takes an optional `device` (§26.3). delegate is always offered; job_steer / job_cancel
+    only while a job runs."""
     defs = [
-        d
+        t.to_def(with_device=True) if with_device else d
         for t, d in zip(TOOLS, TOOL_DEFS, strict=True)
         if t.requires <= capabilities and t.name not in hidden
     ]
@@ -105,6 +110,7 @@ several steps, or anything risky. Give it the task and a short ack.
 a sentence), say in a few words that you didn't catch it. Never delegate it, never guess.
 - If the context note lists a running job: when the user changes or adds to it, call \
 job_steer; when they want it stopped, call job_cancel; say a few words either way.
+- If they name another of their devices ("on my phone"), set device on the tool.
 - The (context: ...) note at the end of the user's message is for you. Use it, never read it out.
 - Never claim you did something no tool did.
 - Never include internal or system XML tags in your reply."""
@@ -114,7 +120,11 @@ FAST_DONE_S = 1.5  # §4.4: faster quick actions get a chime, slower ones a spok
 
 
 def volatile_context(
-    ctx: Context, utc_offset_min: int | None, now_utc: Any, jobs: list[str] | None = None
+    ctx: Context,
+    utc_offset_min: int | None,
+    now_utc: Any,
+    jobs: list[str] | None = None,
+    origin: Any = None,
 ) -> str:
     tz = timezone(timedelta(minutes=utc_offset_min or 0))
     local = now_utc.astimezone(tz)
@@ -129,6 +139,8 @@ def volatile_context(
         parts.append(f"you may call the user {ctx.address_as} now and then")
     if jobs:
         parts.append("running job: " + " | ".join(jobs))
+    if ctx.multi and origin is not None:
+        parts.append("devices: " + ctx.devices_note(origin))
     return "(context: " + "; ".join(parts) + ")"
 
 
@@ -175,7 +187,7 @@ async def run(
     rt = voice.rt
     running = voice.jobs.mine(w.user_id)
     lines = [f"{j.title} ({voice.jobs.status_line(j)})" for j in running]
-    note = volatile_context(ctx, utc_offset_min, rt.clock.now(), lines)
+    note = volatile_context(ctx, utc_offset_min, rt.clock.now(), lines, w.device_id)
     user_msg: LlmMessage = {
         "role": "user",
         "content": [{"type": "text", "text": f"{user_text}\n\n{note}"}],
@@ -192,7 +204,9 @@ async def run(
         "reflex",
         system=SYSTEM,
         messages=messages,
-        tools=() if after else tool_defs(ctx.capabilities, ctx.hidden, jobs=bool(running)),
+        tools=()
+        if after
+        else tool_defs(ctx.all_capabilities, ctx.hidden, jobs=bool(running), with_device=ctx.multi),
         allow_training=ctx.allow_training,
     )
     try:
@@ -212,7 +226,8 @@ async def run(
                     continue
                 tools_t0 = tools_t0 or rt.clock.monotonic()
                 spec = BY_NAME[ev.name]
-                calls.append((ev, asyncio.create_task(voice.call_device(w, spec, ev.input))))
+                call = voice.call_device(w, spec, ev.input, say=speaker.say)
+                calls.append((ev, asyncio.create_task(call)))
             elif isinstance(ev, Restart):
                 speaker.splitter.reset()
                 await voice.cue(w, "heard")  # bridge while the next model starts over
@@ -234,7 +249,7 @@ async def run(
     if delegated is not None:
         if not speaker.spoken:
             await speaker.say(delegated.ack)
-        note_for_job = volatile_context(ctx, utc_offset_min, rt.clock.now())
+        note_for_job = volatile_context(ctx, utc_offset_min, rt.clock.now(), origin=w.device_id)
         job = await voice.jobs.start(w, ctx, delegated.task, user_text, note_for_job)
         job_note = f"Started a background job for it ({job.title}). It reports back when done."
 

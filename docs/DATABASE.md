@@ -79,7 +79,12 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 | `rl:{scope}:{id}` | request counter (fixed window; R0 scopes: `otp_start`, `otp_verify`, `refresh`, `google_start`, `google_exchange`, keyed by IP) | per window |
 | `oauth:google:state:{state}` | sign-in flow: nonce, PKCE challenge, loopback port, device info | 10 min, deleted on use |
 | `oauth:google:login:{code}` | Google identity waiting for the app's PKCE exchange | 60 s, deleted on use |
-| `wake:{user}:{window}` | arbitration claims | 2 s |
+| `wake:{user}:open` / `wake:{user}:claims` | ✅ the window's first claim id / its claims (JSON list) | 2 s |
+| `wakeused:{user}` | ✅ hash device_id → last signal (epoch ms): the wake tie-break | — |
+| `yielded:{user}:{device}` | ✅ the device lost arbitration: its voice signals are dropped | 3 s |
+| `heard:{user}:{normalized text}` | ✅ the first device to send those words: a second one within 3 s is a duplicate (W3) | 3 s |
+| `ambiguous:{user}:{word}` | ✅ device ids that matched "my phone": the answer becomes the default | 10 min |
+| `offer:{user}` | ✅ a call for an offline device, waiting for "yes" to be queued | 5 min |
 | `signal:{user}:{signal_id}` | ✅ dedupe marker: a repeated `signal.final` / `signal.handled_locally` runs once | 5 min |
 | `phrase:{user}:{moment}` | ✅ last phrase-bank line used for that moment, so it never repeats twice in a row | 1 h |
 | `cache:tool:{tool}:{hash}` | idempotent tool result (weather, places) | per tool (10 min – 1 day) |

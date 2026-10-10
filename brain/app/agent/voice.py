@@ -8,15 +8,19 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 from pydantic import ValidationError
+from sqlalchemy import select
 
-from app.agent import context, persona, reflex
+from app.agent import context, persona, reflex, targets
 from app.agent.context import Context
+from app.artifacts import store as artifacts
 from app.core.clock import within
 from app.core.runtime import Runtime
 from app.core.security import Principal
+from app.db.models import Artifact, Message
 from app.gateway import live
 from app.gateway.signals import (
     ApprovalResponse,
@@ -32,12 +36,15 @@ from app.gateway.signals import (
 from app.jobs.runtime import Jobs
 from app.router import tier1
 from app.supervisor.watch import Supervisor, Watch
-from app.tools.spec import ToolSpec
+from app.tools import registry
+from app.tools.spec import DEVICE_FIELD, ToolSpec
 
 logger = logging.getLogger(__name__)
 
 PREFETCH_TTL_S = 30.0
+HEARD_TWICE_S = 3  # the same words from two devices within this long: one signal (W3)
 Cue = Literal["heard", "done", "error"]
+Say = Callable[[str], Awaitable[None]]
 
 
 class Voice:
@@ -82,31 +89,64 @@ class Voice:
         return await context.load(self.rt, p.user_id, p.device_id)
 
     async def final(self, p: Principal, msg: SignalFinal) -> dict[str, Any]:
+        # W2: ties in wake arbitration go to the device used most recently
+        await self.rt.redis.hset(
+            f"wakeused:{p.user_id}", str(p.device_id), self.rt.clock.epoch_ms()
+        )
+        if msg.source == "voice" and await self._heard_elsewhere(p, msg.text):
+            return {"signal_id": msg.signal_id, "duplicate": True}
         w = await self.sup.open(p.user_id, p.device_id, msg.signal_id)
         if w is None:
             return {"signal_id": msg.signal_id, "duplicate": True}
-        intent = self._tier1_intent(p, msg.text)
+        intent, target = await self._tier1_intent(p, msg.text)
         w.tier = 1 if intent else 2
         if intent is not None:
-            w.task = self._spawn(self._tier1(p, w, msg, intent))
+            w.task = self._spawn(self._tier1(p, w, msg, intent, target))
         else:
             w.task = self._spawn(self._reflex(p, w, msg.text, msg.utc_offset_min, None))
             self._spawn(self.sup.heard_cue(w, lambda: self.cue(w, "heard")))
         self.sup.mark(w, "ack")
         return {"signal_id": msg.signal_id, "tier": w.tier}
 
-    def _tier1_intent(self, p: Principal, text: str) -> tier1.Intent | None:
-        """Tier 1 only when sure: status needs a running job, yes/no a pending approval. Any
-        other line soon after a job's spoken question answers it (§27)."""
+    async def _heard_elsewhere(self, p: Principal, text: str) -> bool:
+        """Wake arbitration's tail (§26.2, W3): a device that yielded drops its next voice
+        signal, and the same words from a second device within 3 s are one signal."""
+        key = f"heard:{p.user_id}:{tier1.normalize(text)}"[:200]
+        async with self.rt.redis.pipeline(transaction=False) as pipe:
+            pipe.exists(f"yielded:{p.user_id}:{p.device_id}")
+            pipe.set(key, str(p.device_id), nx=True, ex=HEARD_TWICE_S)
+            pipe.get(key)
+            yielded, _, first = await pipe.execute()
+        return bool(yielded) or first != str(p.device_id)
+
+    async def _tier1_intent(
+        self, p: Principal, text: str
+    ) -> tuple[tier1.Intent | None, targets.Target | None]:
+        """Tier 1 only when sure: status needs a running job, yes/no something pending, a
+        command for another device a single online device that can do it. Any other line soon
+        after a job's spoken question answers it (§27)."""
         intent = tier1.classify(text)
+        target: targets.Target | None = None
         if intent is not None and intent.kind == "status" and not self.jobs.mine(p.user_id):
             intent = None
         if intent is not None and intent.kind == "confirm":
-            approval = self.jobs.pending_approval(p.user_id)
-            intent = tier1.Intent("confirm", intent.value, approval) if approval else None
+            if approval := self.jobs.pending_approval(p.user_id):
+                intent = tier1.Intent("confirm", intent.value, approval)
+            elif await targets.pending_offer(self.rt, p.user_id):
+                intent = tier1.Intent("confirm", intent.value, "offer")
+            else:
+                intent = None
+        if intent is not None and intent.kind in ("remote", "handoff", "continue"):
+            spec = registry.BY_NAME.get(intent.value or "") or reflex.DELEGATE  # no requirements
+            try:
+                target = await targets.resolve(
+                    self.rt, p.user_id, p.device_id, spec, intent.ref or ""
+                )
+            except targets.Unresolved:
+                intent = None  # not sure: the reflex can explain, ask, or offer to queue
         if intent is None and (ask := self.jobs.pending_ask(p.user_id, spoken_window=True)):
             intent = tier1.Intent("answer", text, ask)
-        return intent
+        return intent, target
 
     async def handled_locally(self, p: Principal, msg: SignalHandledLocally) -> dict[str, Any]:
         """Tier 0 ran on the device (§27). Success: record it. Failure: the reflex LLM takes it
@@ -223,9 +263,17 @@ class Voice:
             if w.state == "open":
                 await self.fail(w, "failure", stage="brain", error="reflex crashed")
 
-    async def _tier1(self, p: Principal, w: Watch, msg: SignalFinal, intent: tier1.Intent) -> None:
+    async def _tier1(
+        self,
+        p: Principal,
+        w: Watch,
+        msg: SignalFinal,
+        intent: tier1.Intent,
+        target: targets.Target | None = None,
+    ) -> None:
         ctx = await self._context(p, w.signal_id)
         jobs = self.jobs
+        followup: str | None = None
         if intent.kind == "stop":
             for other in [o for o in self.sup.watches.values() if o.user_id == p.user_id]:
                 if other is not w and not other.name:
@@ -236,6 +284,33 @@ class Voice:
         elif intent.kind == "status":
             job = jobs.find(p.user_id)
             reply = jobs.status_line(job) if job else "Nothing's running right now."
+        elif intent.kind == "confirm" and intent.ref == "offer":
+            reply = await targets.accept_offer(self.rt, p.user_id, intent.value != "deny")
+        elif intent.kind == "remote" and target is not None:
+            # F1: "pause the music on my laptop", no LLM; the phrase first, the tool on the target
+            reply = f"{intent.say} on your {targets.word_of(intent.ref or '')}."
+            await self.delta(w, reply)
+            spec = registry.BY_NAME[intent.value or ""]
+            ok, content = await self.device_call(
+                w, spec, spec.validate(intent.slots or {}), device_id=target.device.id
+            )
+            if not ok:
+                followup = f"That didn't work on your {target.device.name}: {content}"
+        elif intent.kind == "handoff" and target is not None:
+            reply = await self._handoff(p, w, ctx, target)
+        elif intent.kind == "continue" and target is not None:
+            await live.send(
+                self.rt,
+                target.device.id,
+                "notice",
+                {
+                    "text": "Pick up where you left off.",
+                    "from_device": str(p.device_id),
+                    "level": "info",
+                    "thread_id": str(ctx.thread_id) if ctx.thread_id else None,
+                },
+            )
+            reply = f"It's on your {targets.word_of(intent.ref or '')}. Pick it up there."
         elif intent.kind == "confirm":
             await jobs.resolve(p.user_id, intent.ref or "", intent.value or "deny", p.device_id)
             reply = {
@@ -247,17 +322,96 @@ class Voice:
             reply = await persona.phrase(self.rt.redis, p.user_id, "ack")
         else:
             reply = tier1.language_reply(intent.value or "", ctx.language)
-        await self.delta(w, reply)
+        if intent.kind != "remote":
+            await self.delta(w, reply)
+        if followup:
+            await self.delta(w, followup, tone="serious")
+        said = " ".join(t for t in (reply, followup) if t)
         await self.store(
             w,
             ctx,
             [
                 ("user", [{"type": "text", "text": msg.text}]),
-                ("assistant", [{"type": "text", "text": reply}]),
+                ("assistant", [{"type": "text", "text": said}]),
             ],
         )
-        self.sup.finish(w, "answered")
+        self.sup.finish(w, "failed_explained" if followup else "answered")
         await self.end(w)
+
+    async def _handoff(self, p: Principal, w: Watch, ctx: Context, target: targets.Target) -> str:
+        """G1 "send this to my phone": the user's newest artifact from the last 30 min (or
+        Spark's last reply as text) goes to the target as a notice with a signed download link."""
+        async with self.rt.db() as db:
+            art = await db.scalar(
+                select(Artifact)
+                .where(
+                    Artifact.user_id == p.user_id,
+                    Artifact.created_at > self.rt.clock.now() - context.THREAD_IDLE,
+                )
+                .order_by(Artifact.created_at.desc())
+                .limit(1)
+            )
+            last = None
+            if art is None and ctx.thread_id:
+                last = await db.scalar(
+                    select(Message)
+                    .where(
+                        Message.user_id == p.user_id,
+                        Message.thread_id == ctx.thread_id,
+                        Message.role == "assistant",
+                    )
+                    .order_by(Message.created_at.desc())
+                    .limit(1)
+                )
+        if art is None:
+            text = " ".join(
+                b.get("text", "") for b in (last.content if last else []) if b.get("type") == "text"
+            ).strip()
+            if not text:
+                return "There's nothing to send yet."
+            art = await artifacts.save_text(
+                self.rt, p.user_id, ctx.thread_id, None, "From Spark", text
+            )
+        origin = next((d.name for d in ctx.devices if d.id == p.device_id), "your other device")
+        await live.send(
+            self.rt,
+            target.device.id,
+            "notice",
+            {
+                "text": f"From {origin}: {art.name}",
+                "from_device": str(p.device_id),
+                "level": "info",
+                "artifact_id": str(art.id),
+                "url": artifacts.signed_url(self.rt, art.id),
+            },
+        )
+        return f"Sent it to your {target.device.name}."
+
+    async def fire_queued(self, user_id: uuid.UUID, device_id: uuid.UUID) -> None:
+        """E2: a device came online; its queued calls run now and the asker hears about it."""
+        for row in await targets.due(self.rt, user_id, device_id):
+            spec = registry.BY_NAME.get(row.tool_call.get("tool", ""))
+            origin = row.origin_device_id or device_id
+            if spec is None:
+                continue
+            w = Watch(user_id, origin, f"queued:{row.id}", self.rt.clock.monotonic())
+            ok, content = await self.device_call(
+                w, spec, row.tool_call["input"], device_id=device_id
+            )
+            names = {d.id: d.name for d in await targets.devices(self.rt, user_id)}
+            where = names.get(device_id, "your other device")
+            await live.send(
+                self.rt,
+                origin,
+                "notice",
+                {
+                    "text": f"Done on {where}."
+                    if ok
+                    else f"That didn't work on {where}: {content}",
+                    "from_device": str(device_id),
+                    "level": "info" if ok else "warn",
+                },
+            )
 
     async def _store_local(
         self,
@@ -335,15 +489,41 @@ class Voice:
         await self.end(w)
         await self.cue(w, "error")
 
-    async def call_device(self, w: Watch, spec: ToolSpec, raw: dict[str, Any]) -> tuple[bool, str]:
-        """Validates, then runs a device tool on the origin device; (ok, content for the model)."""
+    async def call_device(
+        self, w: Watch, spec: ToolSpec, raw: dict[str, Any], say: Say | None = None
+    ) -> tuple[bool, str]:
+        """Validates, picks the device (§26.3), runs the tool; (ok, content for the model)."""
+        hint = raw.get(DEVICE_FIELD)
         try:
-            inp = spec.validate(raw)
+            inp = spec.validate({k: v for k, v in raw.items() if k != DEVICE_FIELD})
         except ValidationError as exc:
             first = exc.errors()[0]
             return False, f"Invalid input for {spec.name}: {first['loc']} {first['msg']}"
-        ok, content = await self.device_call(w, spec, inp)
+        target = await self.target(w, spec, inp, hint if isinstance(hint, str) else None)
+        if isinstance(target, str):
+            return False, target
+        if target.announce and say is not None:
+            await say(target.announce)
+        ok, content = await self.device_call(w, spec, inp, device_id=target.device.id)
         return ok, content[:2000]  # the reflex keeps tool results short
+
+    async def target(
+        self,
+        w: Watch,
+        spec: ToolSpec,
+        inp: dict[str, Any],
+        hint: str | None,
+        exclude: frozenset[uuid.UUID] = frozenset(),
+    ) -> targets.Target | str:
+        """The device for this call, or what to tell the model (offline → an offer to queue)."""
+        try:
+            return await targets.resolve(
+                self.rt, w.user_id, w.device_id, spec, hint, exclude=exclude
+            )
+        except targets.Unresolved as exc:
+            if exc.offline is not None:
+                return await targets.offer(self.rt, w.user_id, w.device_id, exc.offline, spec, inp)
+            return exc.message
 
     async def device_call(
         self,

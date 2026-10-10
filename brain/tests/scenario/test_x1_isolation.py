@@ -26,6 +26,9 @@ PUBLIC = {
     ("GET", "/v2/auth/google/start"),
     ("GET", "/v2/auth/google/callback"),
     ("POST", "/v2/auth/google/exchange"),
+    # signed link (HMAC over id + expiry): the signature is the permission; G1 proves a bad or
+    # expired one gets nothing
+    ("GET", "/v2/artifacts/{artifact_id}/download"),
 }
 _PARAM = re.compile(r"\{[^}]+\}")
 

@@ -71,20 +71,20 @@ cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (o
 | C1 ✅ | "open Spotify and play something calm" | speech delta and `tool.call` emitted in the same turn (parallel); done chime on success. `test_c1_*`: chime ≤ 1.5 s, spoken "Done." when slower, explained failure with a next step |
 | D1 ✅ | invoice email → save PDF | agent loop: gmail_search → get_attachment → file_write on the origin device; job steps persisted; summary contains only items from tool outputs. `brain/tests/scenario/test_r2_agent.py::test_d1_invoice_email_saved_to_downloads` with stub Gmail tools (brain tools with a handler; real Gmail lands in R4) |
 | D2 | D1 with Gmail not connected | connect card emitted; job paused; after fake OAuth completes, job resumes without a new signal |
-| E1 | spoken to laptop: "open YouTube on my phone" | target resolved to `adb:<serial>`; tool runs on the phone sub-device; the laptop speaks the ack before the tool result |
-| E2 | E1 with the phone offline | spoken explanation + offer to queue; queued run fires when the phone comes online; expires after 1 h |
-| E3 | two phones, "on my phone" | asks once; the answer is saved as default; the next request doesn't ask |
-| E4 | capability fallback: "send an SMS" from the laptop | routed to the phone with an announcement |
-| F1 | spoken to the phone: "pause music on my laptop" | brain routes with no LLM; the laptop gets `tool.call` |
-| G1 | handoff "send this to my phone" | artifact uploaded; phone notified; download URL valid and signed |
-| G2 | "continue on my phone" | both devices see the same thread state after sync |
+| E1 ✅ | spoken to laptop: "open YouTube on my phone" | target resolved to `adb:<serial>`; tool runs on the phone sub-device; the laptop speaks the ack before the tool result. `brain/tests/scenario/test_r2_devices.py::test_e1_open_youtube_on_my_phone` with the phone as a mobile body (FakeDevice); `adb:<serial>` routing through the laptop lands with real ADB in R4 |
+| E2 ✅ | E1 with the phone offline | spoken explanation + offer to queue; queued run fires when the phone comes online; expires after 1 h. `brain/tests/scenario/test_r2_devices.py::test_e2_offline_phone_gets_the_queued_run_when_it_is_back` (notice "Done on Pixel." on the laptop), `…test_e2_queued_run_expires_after_an_hour` |
+| E3 ✅ | two phones, "on my phone" | asks once; the answer is saved as default; the next request doesn't ask. `brain/tests/scenario/test_r2_devices.py::test_e3_two_phones_ask_once_then_remember` (`is_default_for: ["phone"]`) |
+| E4 ✅ | capability fallback: "send an SMS" from the laptop | routed to the phone with an announcement. `brain/tests/scenario/test_r2_devices.py::test_e4_capability_fallback_sends_the_sms_from_the_phone` ("Sending it from your phone.", then the approval: sending is external) |
+| F1 ✅ | spoken to the phone: "pause music on my laptop" | brain routes with no LLM; the laptop gets `tool.call`. `brain/tests/scenario/test_r2_devices.py::test_f1_pause_music_on_my_laptop_from_the_phone`; no laptop on the account → the reflex (`…test_f1_not_sure_goes_to_the_reflex`) |
+| G1 ✅ | handoff "send this to my phone" | artifact uploaded; phone notified; download URL valid and signed. `brain/tests/scenario/test_r2_devices.py::test_g1_send_this_to_my_phone_with_a_signed_link` (no token needed; a tampered or expired signature → 404; another user → 404) |
+| G2 ✅ | "continue on my phone" | both devices see the same thread state after sync. `brain/tests/scenario/test_r2_devices.py::test_g2_continue_on_my_phone_shares_the_thread` (notice with `thread_id`, `/v2/threads/{id}/messages`, the phone's follow-up carries the laptop's turns) |
 
 ### 4.2 Wake-word arbitration (§26.2)
 | ID | Scenario | Assertions |
 |---|---|---|
-| W1 | two devices claim within 150 ms | exactly one `wake.grant`; others `wake.yield`; the winner has the higher score + loudness |
-| W2 | tie | the foreground / most recently used device wins |
-| W3 | a claim after the window | treated as a new signal only if its text differs; otherwise deduplicated |
+| W1 ✅ | two devices claim within 150 ms | exactly one `wake.grant`; others `wake.yield`; the winner has the higher score + loudness. `brain/tests/scenario/test_r2_devices.py::test_w1_two_claims_one_grant` (the yielded device's next line is dropped), `…test_w1_alone_is_granted_at_once` |
+| W2 ✅ | tie | the foreground / most recently used device wins. `brain/tests/scenario/test_r2_devices.py::test_w2_ties_go_to_the_foreground_then_the_most_recent` |
+| W3 ✅ | a claim after the window | treated as a new signal only if its text differs; otherwise deduplicated. `brain/tests/scenario/test_r2_devices.py::test_w3_a_late_claim_is_new_only_if_the_words_differ` |
 
 Wake word on one device (`body/tests/test_local_voice.py`):
 | ID | Scenario | Assertions |
@@ -122,7 +122,7 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 |---|---|---|
 | S1 ✅ | stalled LLM stream (gap > 1.5 s) | switch to the next provider; the user hears a bridge cue. `test_s1_stalled_stream_bridges_then_next_provider_answers` + `test_llm_chains.py::test_s1_*` |
 | S2 ✅ | tool times out | agent gets a tool error and re-plans; job doesn't hang. `brain/tests/scenario/test_r2_agent.py::test_s2_tool_timeout_replans_and_the_job_finishes` (`tool.cancel` at 5 s) |
-| S3 | target device sleeps mid-job | re-route to another capable device, or explain |
+| S3 ✅ | target device sleeps mid-job | re-route to another capable device, or explain. `brain/tests/scenario/test_r2_devices.py::test_s3_device_drops_mid_job_and_another_takes_over` ("That device went offline, so I'm using Desktop PC."), `…test_s3_no_other_device_means_an_explanation` |
 | S4 ✅ | identical tool call 3× | loop broken; agent told; job ends explained. `brain/tests/scenario/test_r2_agent.py::test_s4_same_call_three_times_ends_explained` (the third never runs; a tool-less wrap-up, spoken `serious`) |
 | S5 ✅ | grounding: summary names an event absent from tool output | blocked before speaking; regenerated or corrected (v1 calendar bug). `brain/tests/scenario/test_r2_agent.py::test_s5_grounding_blocks_an_invented_event` + `brain/tests/test_permissions.py::test_s5_grounding_finds_invented_names_times_and_files`. Claims are found by shape (quoted text, file names, times, ids, capitalized names mid-sentence); one rewrite, then a safe line |
 | S6 ✅ | Groq quota exhausted | next chain entry used; health marks Groq cooling down until reset. `test_llm_chains.py::test_s6_rate_limit_falls_through_and_cools_down`; all entries down → `test_every_provider_down_is_explained_never_silent` |

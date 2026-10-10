@@ -11,8 +11,10 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.agent.targets import Known
 from app.core.runtime import Runtime
 from app.db.models import Device, Message, PermissionRule, Thread, UserSettings
+from app.gateway import presence
 from app.llm.types import Message as LlmMessage
 
 THREAD_IDLE = timedelta(minutes=30)  # a signal after this much quiet starts a new thread
@@ -31,7 +33,29 @@ class Context:
     language: str = "en"
     permission_mode: str = "default"
     hidden: frozenset[str] = frozenset()  # tools a bare deny rule removed (REDESIGN §20.6)
+    devices: tuple[Known, ...] = ()  # all of the user's devices, origin included (§26.1)
     extra: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def multi(self) -> bool:
+        return len(self.devices) > 1
+
+    @property
+    def all_capabilities(self) -> frozenset[str]:
+        """What some device of the user can do: tools for other devices are offered too."""
+        return frozenset().union(*(d.capabilities for d in self.devices)) | self.capabilities
+
+    def devices_note(self, origin: uuid.UUID) -> str:
+        """'Laptop (this one), Pixel (phone, offline)' for the volatile context."""
+        parts = []
+        for d in self.devices:
+            tags = ["this one"] if d.id == origin else []
+            if d.kind in ("mobile", "adb_phone"):
+                tags.append("phone")
+            if not d.online and d.id != origin:
+                tags.append("offline")
+            parts.append(f"{d.name} ({', '.join(tags)})" if tags else d.name)
+        return ", ".join(parts)
 
 
 def _flatten(m: Message) -> LlmMessage | None:
@@ -73,9 +97,12 @@ async def load(rt: Runtime, user_id: uuid.UUID, device_id: uuid.UUID) -> Context
             while history and history[0]["role"] != "user":
                 history.pop(0)
         settings = await db.scalar(select(UserSettings).where(UserSettings.user_id == user_id))
-        device = await db.scalar(
-            select(Device).where(Device.id == device_id, Device.user_id == user_id)
-        )
+        mine = (
+            await db.scalars(
+                select(Device).where(Device.user_id == user_id).order_by(Device.created_at)
+            )
+        ).all()
+        device = next((d for d in mine if d.id == device_id), None)
         denied = await db.scalars(
             select(PermissionRule.tool).where(
                 PermissionRule.user_id == user_id,
@@ -85,12 +112,25 @@ async def load(rt: Runtime, user_id: uuid.UUID, device_id: uuid.UUID) -> Context
             )
         )
         hidden = frozenset(denied)
+    online = await presence.online(rt, user_id) if len(mine) > 1 else set()
+    known = tuple(
+        Known(
+            d.id,
+            d.name,
+            d.kind,
+            frozenset(d.capabilities),
+            tuple(d.is_default_for),
+            str(d.id) in online or d.id == device_id,
+        )
+        for d in mine
+    )
     ctx = Context(
         thread_id=thread.id if thread else None,
         history=history,
         device_name=device.name if device else "this device",
         capabilities=frozenset(device.capabilities) if device else frozenset(),
         hidden=hidden,
+        devices=known,
     )
     if settings is not None:
         ctx.allow_training = settings.allow_training_providers

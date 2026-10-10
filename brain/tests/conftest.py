@@ -94,14 +94,18 @@ class Brain:
         return voice
 
     async def sign_in(
-        self, email: str = "asha@example.com", device: str = "Laptop"
+        self, email: str = "asha@example.com", device: str = "Laptop", kind: str = "desktop"
     ) -> dict[str, Any]:
         """Full OTP sign-in; returns the token payload. Moves the clock past the cooldown."""
         r = await self.client.post("/v2/auth/otp/start", json={"email": email})
         assert r.status_code == 200, r.text
         r = await self.client.post(
             "/v2/auth/otp/verify",
-            json={"email": email, "code": self.resend.last_code(email), "device": {"name": device}},
+            json={
+                "email": email,
+                "code": self.resend.last_code(email),
+                "device": {"name": device, "kind": kind},
+            },
         )
         assert r.status_code == 200, r.text
         self.clock.advance(61)

@@ -86,8 +86,16 @@ happens.
   desktop.py (clipboard + screenshot via PowerShell, SendInput keyboard/mouse, tasklist/taskkill,
   system info, lock, sleep); `hands.CAPABILITIES` in `hello`; body 79 tests (19 new). Electron:
   `brain.approve/answer/cancelJob/jobs` IPC, `brainAuth.request`, tier-0 "stop" sends
-  `scope: "all"`. **NEXT: M4** cross-device (target resolution, offline queue, ambiguity defaults,
-  tier-1 "pause music on my laptop", wake arbitration, handoffs + threads routes, S3 re-route). Open voice items, only if they show up in use: a
+  `scope: "all"`. **M4 done:** `agent/targets.py` (explicit name/kind/default → origin →
+  capable online device, said aloud; two matches → ask, the answer becomes the default; offline →
+  offer → "yes" → `queued_actions`, fired on the device's next hello, 1 h), optional `device` on
+  device tools when the user has several, tier 1 remote commands / "send this to my phone" /
+  "continue on my phone", wake arbitration (`gateway/wake.py`, Redis window, yielded devices and
+  repeated words dropped), `/v2/uploads`, `/v2/artifacts/{id}` (+ signed download, no token),
+  `/v2/threads`, S3 re-route; Electron claims the wake word before acting. Brain 139 tests.
+  Evals after the reflex prompt change (2026-10-10): gpt-oss-20b answers 59/59, tools 32/33,
+  delegate 11/12, persona 49/56, TTFT p50 476 / p95 620 ms; 120b 59/59, 32/33, 11/12, 51/56.
+  **NEXT: M5** agent eval set (~30 tasks, stubbed tools) + live run to order the agent chain. Open voice items, only if they show up in use: a
   loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
   flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
