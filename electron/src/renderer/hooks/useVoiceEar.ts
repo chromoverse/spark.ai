@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { IBrainResult, IVoiceHeard } from "@root/types";
-import { earcon, isSpeaking, lastAskedAt, lastSpokeAt } from "./useVoicePlayback";
+import { earcon, isSpeaking, lastAskedAt, lastSpokeAt, rms } from "./useVoicePlayback";
 
 // The ear's front half (R1): mic + Silero VAD in the renderer (vad-web, already used by v1),
 // with Chromium's echo cancellation removing Spark's own voice. Each endpointed utterance goes to
@@ -42,6 +42,14 @@ interface MicVadLike {
 
 interface VadModuleLike {
   MicVAD: { new: (options: Record<string, unknown>) => Promise<MicVadLike> };
+}
+
+// Mic loudness for the overlay's orb, read only while the ear is on.
+let micTap: { ctx: AudioContext; analyser: AnalyserNode; buf: Uint8Array<ArrayBuffer> } | null = null;
+
+/** 0..1 loudness at the mic right now (0 when the ear is off). */
+export function micLevel(): number {
+  return micTap ? rms(micTap.analyser, micTap.buf) : 0;
 }
 
 function pcm16Base64(audio: Float32Array): string {
@@ -152,6 +160,7 @@ export function useVoiceEar(
     } else if (wake === true) {
       armedUntil.current = Date.now() + ARMED_MS; // just "Hey Spark": listening now
       setStatus("Listening…");
+      window.setTimeout(() => setStatus((now) => (now === "Listening…" ? null : now)), ARMED_MS);
       earcon("heard");
     } else if (wake === false) {
       setStatus("Heard speech without “Hey Spark” first, so I ignored it.");
@@ -174,6 +183,8 @@ export function useVoiceEar(
     vadRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    void micTap?.ctx.close();
+    micTap = null;
     setListening(false);
   }, []);
 
@@ -184,6 +195,11 @@ export function useVoiceEar(
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
+      const micCtx = new AudioContext();
+      const analyser = micCtx.createAnalyser();
+      analyser.fftSize = 512;
+      micCtx.createMediaStreamSource(stream).connect(analyser);
+      micTap = { ctx: micCtx, analyser, buf: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
       const { MicVAD } = (await import("@ricky0123/vad-web")) as unknown as VadModuleLike;
       const vad = await MicVAD.new({
         startOnLoad: false,

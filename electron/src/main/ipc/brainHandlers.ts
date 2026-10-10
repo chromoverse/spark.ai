@@ -79,4 +79,20 @@ export function registerBrainHandlers(): void {
     result(() => brainAuth.request<{ status: string }>("POST", `/v2/jobs/${field(payload, "jobId", ID)}/cancel`)),
   );
   ipcMainHandle("brainJobs", () => result(() => brainAuth.request<{ items: IBrainJob[] }>("GET", "/v2/jobs?limit=30")));
+
+  // The UI's reads and edits of brain data (jobs, incidents, tools, rules, devices, settings,
+  // chains). Only these routes: never auth, never another host; the token stays in main.
+  ipcMainHandle("brainRequest", (_event, payload) =>
+    result(() => {
+      const { method, path, body } = (payload ?? {}) as { method?: unknown; path?: unknown; body?: unknown };
+      if (typeof method !== "string" || !BRAIN_METHODS.has(method) || typeof path !== "string" || !BRAIN_PATH.test(path)) {
+        throw new BrainError("invalid_input", BAD_INPUT);
+      }
+      return brainAuth.request<unknown>(method, path, body === undefined ? undefined : body);
+    }),
+  );
 }
+
+const BRAIN_METHODS = new Set(["GET", "POST", "PATCH", "DELETE"]);
+const BRAIN_PATH =
+  /^\/v2\/(?:jobs|incidents|capabilities\/tools|permissions\/rules|devices|settings|engines\/chains|threads|artifacts)(?:\/[\w-]+){0,3}(?:\?[\w=&%.-]{0,200})?$/;

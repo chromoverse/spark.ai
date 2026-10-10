@@ -3,144 +3,87 @@ import path from "node:path";
 import { getPreloadPath } from "../utils/pathResolver.js";
 import { isDevMode } from "../utils/isDevMode.js";
 
+// The voice overlay: a notch hanging from the top edge of the screen. The window never resizes or
+// moves (resizing it per hover made the old pill jump and clip): it is fixed at the largest size
+// the notch can grow to, transparent and click-through, and the notch morphs inside it in CSS.
+// The renderer turns clicks on while the pointer is over the notch itself (overlayInteractive).
+const WIDTH = 640;
+const HEIGHT = 480;
+
 export class SecondaryWindow {
   private window: BrowserWindow | null = null;
 
   constructor() {
-    const display = screen.getPrimaryDisplay().workAreaSize;
-
     this.window = new BrowserWindow({
-      width: 220, // 🔥 collapsed size (dynamic resize will expand)
-      height: 70,
-      x: Math.round((display.width - 220) / 2), // 🎯 centered horizontally
-      y: 0, // 📌 attached to top edge (snackbar style)
-      frame: false, // ❌ remove OS chrome
-      transparent: true, // 🌫 glass effect
+      ...this.bounds(),
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
       resizable: false,
+      movable: false,
       minimizable: false,
       maximizable: false,
-      // closable: false,
-      alwaysOnTop: true, // 🧲 stay above apps
+      fullscreenable: false,
+      alwaysOnTop: true,
       skipTaskbar: true,
-      hasShadow: true,
+      hasShadow: false, // a native shadow on a transparent window draws a box; the notch has its own
       show: false,
       webPreferences: {
         preload: getPreloadPath(),
         partition: "persist:spark",
         nodeIntegration: false,
         contextIsolation: true,
+        backgroundThrottling: false, // the ear and the voice live here
       },
     });
 
-    // 🔒 Strongest overlay level
     this.window.setAlwaysOnTop(true, "screen-saver");
     this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    this.setInteractive(false);
 
-    // 🚫 Refuse minimize
-    this.window.on("minimize", () => {
-      this.window?.restore();
-    });
-
+    this.window.on("minimize", () => this.window?.restore());
     this.window.on("hide", () => {
       // Use showInactive to avoid stealing focus from main window
       this.window?.showInactive();
       this.window?.setAlwaysOnTop(true, "screen-saver");
     });
+    this.window.once("ready-to-show", () => this.window?.showInactive());
 
-    this.window.once("ready-to-show", () => {
-      this.window?.show();
+    const place = (): void => this.window?.setBounds(this.bounds());
+    screen.on("display-metrics-changed", place);
+    screen.on("display-added", place);
+    screen.on("display-removed", place);
+    this.window.on("closed", () => {
+      screen.off("display-metrics-changed", place);
+      screen.off("display-added", place);
+      screen.off("display-removed", place);
+      this.window = null;
     });
 
     if (isDevMode()) {
       this.window.loadURL("http://localhost:5123/#/ai-panel");
     } else {
-      this.window.loadFile(
-        path.join(app.getAppPath(), "/dist-react/index.html"),
-        { hash: "ai-panel" }
-      );
+      this.window.loadFile(path.join(app.getAppPath(), "/dist-react/index.html"), { hash: "ai-panel" });
     }
+  }
 
-    // 🔒 Limit dragging to upper area (no bottom) of CURRENT display
-    this.window.on("will-move", (e, newBounds) => {
-      // Find the display the window is engaging with
-      const nearestDisplay = screen.getDisplayMatching(newBounds);
-      const workArea = nearestDisplay.workArea;
+  /** Top-center of the primary display, flush with its top edge. */
+  private bounds(): Electron.Rectangle {
+    const area = screen.getPrimaryDisplay().workArea;
+    return { x: Math.round(area.x + (area.width - WIDTH) / 2), y: area.y, width: WIDTH, height: HEIGHT };
+  }
 
-      const minY = workArea.y;
-      const maxY = workArea.y + Math.floor(workArea.height / 2);
-      
-      // Prevent dragging below the middle of the screen
-      if (newBounds.y > maxY) {
-        newBounds.y = maxY;
-      }
-      
-      // Prevent dragging off-screen top (respect display y)
-      if (newBounds.y < minY) {
-        newBounds.y = minY;
-      }
-    });
-
-    this.window.on("closed", () => {
-      this.window = null;
-    });
+  /** Clicks reach the notch only while the pointer is on it; elsewhere they fall through. */
+  public setInteractive(on: boolean): void {
+    if (on) this.window?.setIgnoreMouseEvents(false);
+    else this.window?.setIgnoreMouseEvents(true, { forward: true });
   }
 
   public show() {
-    this.window?.show();
-    this.window?.focus();
+    this.window?.showInactive();
   }
 
   public getBrowserWindow() {
     return this.window;
-  }
-
-  /**
-   * Smoothly resize the window with animation
-   * Uses setBounds with animate flag for buttery smooth transitions
-   */
-  public setSize(width: number, height: number) {
-    if (!this.window) return;
-
-    const currentBounds = this.window.getBounds();
-    
-    // Calculate new X to expand quickly from center
-    // newX = currentX - (changeInWidth / 2)
-    const newX = Math.round(currentBounds.x - (width - currentBounds.width) / 2);
-
-    // Use setBounds with animate flag for smooth transitions
-    this.window.setBounds(
-      {
-        x: newX,
-        y: currentBounds.y, // Keep current Y position
-        width: Math.round(width),
-        height: Math.round(height),
-      },
-      false, // ⚡ DISABLE ANIMATION - Let CSS handle it
-    );
-  }
-
-  public getBounds(): Electron.Rectangle {
-    if (!this.window) throw new Error("Window not initialized");
-    return this.window.getBounds();
-  }
-
-  /**
-   * Set bounds with optional animation
-   */
-  public setBounds(
-    bounds: Partial<Electron.Rectangle>,
-    animate: boolean = false,
-  ) {
-    if (!this.window) return;
-
-    const currentBounds = this.window.getBounds();
-    const newBounds = {
-      x: bounds.x ?? currentBounds.x,
-      y: bounds.y ?? currentBounds.y, // Respect current Y or passed Y
-      width: bounds.width ?? currentBounds.width,
-      height: bounds.height ?? currentBounds.height,
-    };
-
-    this.window.setBounds(newBounds, animate);
   }
 }

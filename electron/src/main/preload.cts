@@ -49,10 +49,8 @@ contextBridge.exposeInMainWorld("electronApi", {
 
   //Secondary Window API
   openSecondaryWindow: () => ipcInvoke("openSecondaryWindow"),
-  resizeSecondaryWindow: (width: number, height: number) =>
-    ipcInvoke("resizeSecondaryWindow", { width, height }),
-  onCloseAiPanelExpansion: (callback: () => void) =>
-    ipcOn("closeAiPanelExpansion", callback),
+  overlayInteractive: (on: boolean) => ipcInvoke("overlayInteractive", on),
+  openMainWindow: () => ipcInvoke("openMainWindow"),
 
   // Tray API
   updateMediaState: async (state) => {
@@ -88,6 +86,8 @@ contextBridge.exposeInMainWorld("electronApi", {
     answer: (askId: string, answer: string) => ipcInvoke("brainAnswer", { askId, answer }),
     cancelJob: (jobId: string) => ipcInvoke("brainJobCancel", { jobId }),
     jobs: () => ipcInvoke("brainJobs"),
+    request: (method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown) =>
+      ipcInvoke("brainRequest", { method, path, body }),
   },
 
   voice: {

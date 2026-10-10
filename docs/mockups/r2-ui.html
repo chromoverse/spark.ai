@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spark R2 UI mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* clean neutral dark, orange only as the accent (owner, 2026-10-10) */
+    --sp-bg: #0f1012; --sp-bg-2: #15171a; --sp-bg-3: #1c1f23;
+    --sp-line: #24272c; --sp-line-2: #2e3238;
+    --sp-ink: #eceef1; --sp-ink-2: #b3b8c0; --sp-ink-3: #7c828b; --sp-ink-4: #4f545b;
+    --sp-accent: #f97316; --sp-accent-2: #ea580c; --sp-accent-soft: rgba(249,115,22,.12);
+    --sp-ok: #4ade80; --sp-warn: #facc15; --sp-err: #f87171; --sp-info: #60a5fa;
+    --sp-ok-soft: rgba(74,222,128,.10); --sp-warn-soft: rgba(250,204,21,.10);
+    --sp-err-soft: rgba(248,113,113,.10); --sp-info-soft: rgba(96,165,250,.10);
+    --r: 10px;
+    --ui: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0a0b0c; color: var(--sp-ink); font: 14px/1.5 var(--ui); }
+  header.doc { padding: 28px 40px 8px; }
+  header.doc h1 { font: 600 28px/1.2 var(--ui); letter-spacing: -.01em; margin: 0 0 6px; }
+  header.doc p { color: var(--sp-ink-3); margin: 0; max-width: 860px; }
+  nav.screens { display: flex; gap: 6px; padding: 16px 40px; flex-wrap: wrap; position: sticky; top: 0; background: #0a0b0cee; z-index: 10; backdrop-filter: blur(6px); }
+  nav.screens button { background: var(--sp-bg-2); color: var(--sp-ink-2); border: 1px solid var(--sp-line); border-radius: 999px; padding: 6px 14px; font: 500 13px var(--ui); cursor: pointer; }
+  nav.screens button.on { background: var(--sp-accent-soft); color: var(--sp-accent); border-color: var(--sp-accent-2); }
+  body { overflow-x: auto; } .frame, .note { min-width: 1100px; }
+  .frame { margin: 0 40px 40px; border: 1px solid var(--sp-line-2); border-radius: 14px; overflow: hidden; height: 760px; display: none; box-shadow: 0 30px 80px #0008; }
+  .frame.on { display: flex; }
+  .note { margin: -28px 40px 40px; color: var(--sp-ink-3); font-size: 13px; display: none; max-width: 1000px; }
+  .note.on { display: block; }
+  .note b { color: var(--sp-ink-2); font-weight: 500; }
+
+  /* app chrome */
+  .rail { width: 64px; background: var(--sp-bg); border-right: 1px solid var(--sp-line); display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 4px; }
+  .logo { width: 30px; height: 30px; border-radius: 9px; background: var(--sp-accent); margin-bottom: 14px; }
+  .rail a { width: 48px; padding: 8px 0 6px; border-radius: 10px; color: var(--sp-ink-3); text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; }
+  .rail a svg { width: 19px; height: 19px; }
+  .rail a.on { background: var(--sp-bg-3); color: var(--sp-ink); }
+  .rail .spacer { flex: 1; }
+  .rail .me { width: 30px; height: 30px; border-radius: 50%; background: var(--sp-bg-3); border: 1px solid var(--sp-line-2); display: grid; place-items: center; font-size: 12px; color: var(--sp-ink-2); }
+  .main { flex: 1; display: flex; flex-direction: column; background: var(--sp-bg); min-width: 0; }
+  .topbar { height: 52px; border-bottom: 1px solid var(--sp-line); display: flex; align-items: center; padding: 0 20px; gap: 12px; }
+  .topbar h2 { font: 500 15px var(--ui); margin: 0; }
+  .topbar .grow { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--sp-line-2); color: var(--sp-ink-2); background: var(--sp-bg-2); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sp-ok); }
+  .dot.warn { background: var(--sp-warn); } .dot.off { background: var(--sp-ink-4); } .dot.info { background: var(--sp-info); }
+  .kbd { font: 500 11px var(--mono); border: 1px solid var(--sp-line-2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--sp-ink-3); }
+  .btn { border: 1px solid var(--sp-line-2); background: var(--sp-bg-3); color: var(--sp-ink); border-radius: 8px; padding: 6px 12px; font: 500 13px var(--ui); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .btn.primary { background: var(--sp-accent); border-color: var(--sp-accent); color: #fff; }
+  .btn.ghost { background: transparent; }
+  .btn.danger { color: var(--sp-err); border-color: #4d2a2a; background: var(--sp-err-soft); }
+  .btn:focus-visible, .btn.focus { outline: 2px solid var(--sp-accent); outline-offset: 2px; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .muted { color: var(--sp-ink-3); }
+
+  /* home */
+  .home { flex: 1; display: flex; min-height: 0; }
+  .convo { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .msgs { flex: 1; overflow: auto; padding: 26px 48px 10px; display: flex; flex-direction: column; gap: 18px; }
+  .you { align-self: flex-end; max-width: 70%; background: var(--sp-bg-3); border: 1px solid var(--sp-line); padding: 9px 14px; border-radius: 14px 14px 4px 14px; color: var(--sp-ink-2); }
+  .you small { display: block; color: var(--sp-ink-4); font-size: 11px; margin-top: 2px; }
+  .spark { max-width: 78%; font: 400 16px/1.55 var(--ui); color: var(--sp-ink); }
+  .spark .who { font: 500 11px var(--ui); color: var(--sp-accent); letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .spark .speaking { display: inline-flex; gap: 3px; margin-left: 8px; vertical-align: middle; }
+  .spark .speaking i { width: 3px; height: 12px; background: var(--sp-accent); border-radius: 2px; animation: b 1s ease-in-out infinite; }
+  .spark .speaking i:nth-child(2) { animation-delay: .15s } .spark .speaking i:nth-child(3) { animation-delay: .3s }
+  @keyframes b { 0%,100% { transform: scaleY(.35) } 50% { transform: scaleY(1) } }
+  @media (prefers-reduced-motion: reduce) { .spark .speaking i { animation: none; } }
+  .artifact { border: 1px solid var(--sp-line-2); border-radius: var(--r); background: var(--sp-bg-2); max-width: 78%; overflow: hidden; }
+  .artifact .bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--sp-line); font-size: 12px; color: var(--sp-ink-3); }
+  .artifact .bar .grow { flex: 1; }
+  .artifact .body { padding: 12px 14px; font: 13px/1.6 var(--ui); color: var(--sp-ink-2); }
+  .card { border: 1px solid var(--sp-line-2); border-radius: var(--r); background: var(--sp-bg-2); padding: 14px 16px; max-width: 560px; }
+  .card.warn { border-color: #4a3f17; background: linear-gradient(var(--sp-warn-soft), var(--sp-warn-soft)), var(--sp-bg-2); }
+  .card h4 { margin: 0 0 4px; font: 500 14px var(--ui); display: flex; align-items: center; gap: 8px; }
+  .card p { margin: 0 0 10px; color: var(--sp-ink-2); }
+  .tag { font: 500 10.5px var(--ui); text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 5px; }
+  .tag.destructive { background: var(--sp-err-soft); color: var(--sp-err); }
+  .tag.external { background: var(--sp-warn-soft); color: var(--sp-warn); }
+  .tag.write { background: var(--sp-info-soft); color: var(--sp-info); }
+  .tag.read { background: var(--sp-ok-soft); color: var(--sp-ok); }
+  .inputs { background: var(--sp-bg); border: 1px solid var(--sp-line); border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; }
+  .inputs div { display: flex; gap: 10px; } .inputs span:first-child { color: var(--sp-ink-4); width: 64px; flex: none; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--sp-line-2); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--sp-ink-2); background: var(--sp-bg-3); }
+  .chip.on { border-color: var(--sp-accent-2); color: var(--sp-accent); background: var(--sp-accent-soft); }
+  .inputbar { margin: 8px 48px 20px; border: 1px solid var(--sp-line-2); background: var(--sp-bg-2); border-radius: 14px; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; }
+  .inputbar input { flex: 1; background: none; border: 0; color: var(--sp-ink); font: 14px var(--ui); outline: none; }
+  .mic { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--sp-accent); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 6px var(--sp-accent-soft); }
+  .mic svg { width: 18px; height: 18px; }
+  .runon { font-size: 12px; color: var(--sp-ink-3); display: flex; align-items: center; gap: 6px; }
+
+  /* job panel */
+  .panel { width: 330px; border-left: 1px solid var(--sp-line); background: var(--sp-bg-2); display: flex; flex-direction: column; }
+  .panel header { padding: 14px 16px 10px; border-bottom: 1px solid var(--sp-line); }
+  .panel header .row { display: flex; align-items: center; gap: 8px; }
+  .panel h3 { margin: 0; font: 500 14px var(--ui); flex: 1; }
+  .panel .eta { font-size: 12px; color: var(--sp-ink-3); margin-top: 4px; }
+  .panel section { padding: 12px 16px; border-bottom: 1px solid var(--sp-line); }
+  .panel section h5 { margin: 0 0 8px; font: 500 11px var(--ui); color: var(--sp-ink-4); text-transform: uppercase; letter-spacing: .07em; }
+  .todo { display: flex; gap: 9px; align-items: flex-start; padding: 3px 0; color: var(--sp-ink-2); font-size: 13px; }
+  .todo .box { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--sp-ink-4); flex: none; margin-top: 2px; display: grid; place-items: center; }
+  .todo.done { color: var(--sp-ink-3); text-decoration: line-through; } .todo.done .box { background: var(--sp-ok); border-color: var(--sp-ok); }
+  .todo.now { color: var(--sp-ink); } .todo.now .box { border-color: var(--sp-info); box-shadow: 0 0 0 3px var(--sp-info-soft); }
+  .step { display: flex; gap: 10px; padding: 7px 0; font-size: 13px; }
+  .step .ic { width: 18px; height: 18px; border-radius: 50%; flex: none; margin-top: 1px; display: grid; place-items: center; font-size: 10px; }
+  .step .ic.ok { background: var(--sp-ok-soft); color: var(--sp-ok); } .step .ic.run { background: var(--sp-info-soft); color: var(--sp-info); }
+  .step .ic.wait { background: var(--sp-warn-soft); color: var(--sp-warn); } .step .ic.err { background: var(--sp-err-soft); color: var(--sp-err); }
+  .step .t { flex: 1; min-width: 0; } .step .t div:last-child { color: var(--sp-ink-4); font-size: 11.5px; }
+  .notebox { font-size: 12.5px; color: var(--sp-ink-3); font-style: italic; }
+  .panel .foot { margin-top: auto; padding: 14px 16px; display: flex; gap: 8px; }
+
+  /* lists */
+  .pad { padding: 22px 28px; overflow: auto; flex: 1; }
+  .search { display: flex; align-items: center; gap: 10px; border: 1px solid var(--sp-line-2); background: var(--sp-bg-2); border-radius: 10px; padding: 8px 12px; color: var(--sp-ink-3); margin-bottom: 14px; }
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table th { text-align: left; font: 500 11px var(--ui); color: var(--sp-ink-4); text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--sp-line); }
+  .table td { padding: 10px; border-bottom: 1px solid var(--sp-line); color: var(--sp-ink-2); vertical-align: top; }
+  .table tr:hover td { background: var(--sp-bg-2); }
+  .status { display: inline-flex; gap: 6px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--sp-line-2); border-radius: 8px; overflow: hidden; }
+  .seg span { padding: 4px 10px; font-size: 12px; color: var(--sp-ink-3); border-right: 1px solid var(--sp-line-2); } .seg span:last-child { border: 0; }
+  .seg span.on { background: var(--sp-bg-3); color: var(--sp-ink); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .box2 { border: 1px solid var(--sp-line-2); border-radius: var(--r); background: var(--sp-bg-2); padding: 14px 16px; }
+  .box2 h4 { margin: 0 0 10px; font: 500 13px var(--ui); display: flex; gap: 8px; align-items: center; }
+  .bar { height: 6px; background: var(--sp-bg); border-radius: 3px; overflow: hidden; } .bar i { display: block; height: 100%; background: var(--sp-ok); }
+  .tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--sp-line); padding: 0 28px; }
+  .tabs span { padding: 12px 0; font-size: 13px; color: var(--sp-ink-3); border-bottom: 2px solid transparent; }
+  .tabs span.on { color: var(--sp-ink); border-color: var(--sp-accent); }
+  .empty { border: 1px dashed var(--sp-line-2); border-radius: var(--r); padding: 26px; text-align: center; color: var(--sp-ink-3); }
+  .settings { display: flex; flex: 1; min-height: 0; }
+  .settings .side { width: 200px; border-right: 1px solid var(--sp-line); padding: 18px 10px; }
+  .settings .side a { display: block; padding: 7px 12px; border-radius: 8px; color: var(--sp-ink-3); text-decoration: none; font-size: 13px; }
+  .settings .side a.on { background: var(--sp-bg-3); color: var(--sp-ink); }
+  .field { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--sp-line); gap: 20px; }
+  .field p { margin: 2px 0 0; color: var(--sp-ink-3); font-size: 12.5px; }
+
+  /* overlays */
+  .scrim { position: absolute; inset: 0; background: #0009; display: grid; place-items: start center; padding-top: 110px; }
+  .palette { width: 560px; background: var(--sp-bg-2); border: 1px solid var(--sp-line-2); border-radius: 14px; box-shadow: 0 30px 80px #000a; overflow: hidden; }
+  .palette input { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--sp-line); padding: 16px 18px; color: var(--sp-ink); font: 15px var(--ui); outline: none; }
+  .palette .grp { padding: 8px 8px 4px; font: 500 11px var(--ui); color: var(--sp-ink-4); text-transform: uppercase; letter-spacing: .07em; }
+  .palette .it { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin: 0 6px; border-radius: 8px; color: var(--sp-ink-2); font-size: 13.5px; }
+  .palette .it.on { background: var(--sp-bg-3); color: var(--sp-ink); }
+  .palette .it .grow { flex: 1; }
+  .overlay { width: 380px; background: rgba(21,23,26,.92); border: 1px solid var(--sp-line-2); border-radius: 22px; padding: 16px 18px; box-shadow: 0 20px 60px #000b; backdrop-filter: blur(14px); }
+  .wave { display: flex; align-items: center; gap: 3px; height: 34px; }
+  .wave i { flex: 1; background: var(--sp-accent); border-radius: 2px; opacity: .85; }
+  .desk { flex: 1; background: radial-gradient(circle at 70% 20%, #23272e, #0c0d0f 60%); position: relative; }
+</style>
+</head>
+<body>
+<header class="doc">
+  <h1>Spark — R2 UI mockups</h1>
+  <p>Five destinations (REDESIGN §24, DESIGN.md), the job panel, approval and ask cards, the command palette, and the voice overlay. Static, high fidelity, clean neutral theme with orange as the only accent. Pick a screen below. Nothing here is wired; it's for your review before the UI is built.</p>
+</header>
+<nav class="screens" id="nav"></nav>
+
+<!-- shared rail -->
+<template id="rail">
+  <aside class="rail">
+    <div class="logo" title="Spark"></div>
+    <a data-k="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>Home</a>
+    <a data-k="activity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Activity</a>
+    <a data-k="caps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.6 5.6L20 9.4l-4 4.1.9 5.8L12 16.6 7.1 19.3 8 13.5 4 9.4l5.4-.8z"/></svg>Capabilities</a>
+    <a data-k="engines"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>Engines</a>
+    <a data-k="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</a>
+    <div class="spacer"></div>
+    <div class="me">A</div>
+  </aside>
+</template>
+
+<!-- 1. HOME: a job running, approval waiting -->
+<div class="frame" data-screen="Home · job + approval" data-rail="home">
+  <div class="main">
+    <div class="topbar">
+      <h2>Home</h2><div class="grow"></div>
+      <span class="pill"><span class="dot"></span>Connected</span>
+      <span class="pill"><span class="dot info"></span>Laptop · Pixel</span>
+      <span class="kbd">Ctrl K</span>
+    </div>
+    <div class="home">
+      <div class="convo">
+        <div class="msgs">
+          <div class="you">clean up my downloads and delete the old installers<small>Laptop · voice</small></div>
+          <div class="spark"><span class="who">Spark</span>On it, sorting your Downloads now.</div>
+          <div class="spark">Sorted 31 files. Heads up, deleting the installers needs your OK.<span class="speaking"><i></i><i></i><i></i></span></div>
+          <div class="card warn" role="alertdialog" aria-labelledby="ap1">
+            <h4 id="ap1">Delete 6 installers? <span class="tag destructive">destructive</span></h4>
+            <p>They go to the Recycle Bin, so you can get them back.</p>
+            <div class="inputs mono">
+              <div><span>tool</span><span>file_delete</span></div>
+              <div><span>path</span><span>C:/Users/asha/Downloads/Installers/*.exe</span></div>
+              <div><span>device</span><span>Laptop</span></div>
+            </div>
+            <div class="actions">
+              <button class="btn danger focus">Deny</button>
+              <button class="btn">Allow once</button>
+              <button class="btn ghost">Always allow this</button>
+              <span class="muted" style="margin-left:auto;font-size:12px">or say “yes, do it”</span>
+            </div>
+          </div>
+        </div>
+        <div class="inputbar">
+          <span class="runon">Run on <span class="chip on">Laptop</span><span class="chip">Pixel</span></span>
+          <input placeholder="Type to Spark, or say “Hey Spark”…">
+          <button class="mic" aria-label="Talk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        </div>
+      </div>
+      <aside class="panel" aria-live="polite">
+        <header>
+          <div class="row"><span class="dot warn"></span><h3>Clean up Downloads</h3><span class="pill" style="font-size:11px">needs you</span></div>
+          <div class="eta">About 20 seconds left · on Laptop</div>
+        </header>
+        <section>
+          <h5>Checklist</h5>
+          <div class="todo done"><span class="box">✓</span>Look through Downloads</div>
+          <div class="todo done"><span class="box">✓</span>Sort files into folders</div>
+          <div class="todo now"><span class="box"></span>Delete old installers</div>
+          <div class="todo"><span class="box"></span>Tell you what changed</div>
+        </section>
+        <section style="flex:1;overflow:auto">
+          <h5>Steps</h5>
+          <div class="step"><span class="ic ok">✓</span><div class="t"><div>file list · Downloads</div><div>48 items · 0.2 s</div></div></div>
+          <div class="step"><span class="ic ok">✓</span><div class="t"><div>organize · Downloads</div><div>31 moved into 5 folders · undo available</div></div></div>
+          <div class="step"><span class="ic wait">!</span><div class="t"><div>delete · Installers/*.exe</div><div>waiting for your OK</div></div></div>
+          <div class="notebox" style="margin-top:8px">“Found six installers older than a year.”</div>
+        </section>
+        <div class="foot"><button class="btn danger" style="flex:1;justify-content:center">■ Stop</button><button class="btn ghost">Details</button></div>
+      </aside>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Home · job + approval"><b>Home.</b> A clean conversation: Spark's replies in plain text, yours in a bubble. The live job panel on the right: status color by DESIGN §2.2, the checklist from <span class="mono">todo_write</span>, every step with its target device, the agent's progress line in italics, ETA, and a big Stop. The approval card sits inline, shows the exact inputs in mono, and focuses Deny for destructive actions; the same card shows on the phone, and the first answer wins. “Run on” is the device switcher.</p>
+
+<!-- 2. HOME: ask card + wrap-up with artifact -->
+<div class="frame" data-screen="Home · question + wrap-up" data-rail="home">
+  <div class="main">
+    <div class="topbar"><h2>Home</h2><div class="grow"></div><span class="pill"><span class="dot"></span>Connected</span><span class="kbd">Ctrl K</span></div>
+    <div class="home">
+      <div class="convo">
+        <div class="msgs">
+          <div class="you">make me a shopping list file with eggs and bread<small>Laptop · typed</small></div>
+          <div class="card">
+            <h4>Desktop or Documents?</h4>
+            <p class="muted" style="font-size:12.5px">Spark is asking. Tap one or just say it.</p>
+            <div class="chips"><span class="chip on">Desktop</span><span class="chip">Documents</span><span class="chip">Something else…</span></div>
+          </div>
+          <div class="you">desktop<small>Laptop · voice</small></div>
+          <div class="spark"><span class="who">Spark</span>Done. Your shopping list is on the desktop. Want me to add anything else?</div>
+          <div class="you">organize my downloads</div>
+          <div class="spark">Done. I sorted twelve files. Four went to Images.</div>
+          <div class="artifact">
+            <div class="bar"><span>📄 Organize my Downloads · full summary</span><span class="grow"></span><span class="chip" style="padding:2px 9px">Send to phone</span><span class="chip" style="padding:2px 9px">Copy</span></div>
+            <div class="body">Done. I sorted twelve files. Four went to Images. Three went to Documents. Five went to Other. Want me to undo it?</div>
+          </div>
+        </div>
+        <div class="inputbar"><input placeholder="Type to Spark, or say “Hey Spark”…"><button class="mic" aria-label="Talk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button></div>
+      </div>
+      <aside class="panel">
+        <header><div class="row"><span class="dot"></span><h3>Jobs</h3></div><div class="eta">Nothing running</div></header>
+        <section>
+          <h5>Recent</h5>
+          <div class="step"><span class="ic ok">✓</span><div class="t"><div>Organize my Downloads</div><div>12 files · 2 min ago</div></div></div>
+          <div class="step"><span class="ic ok">✓</span><div class="t"><div>Make a shopping list file</div><div>Desktop/shopping.txt · 4 min ago</div></div></div>
+          <div class="step"><span class="ic err">×</span><div class="t"><div>Find my 2019 tax return</div><div>Nothing matched · 1 h ago</div></div></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Home · question + wrap-up"><b>Questions and wrap-ups.</b> <span class="mono">ask_user</span> becomes an inline card with option chips (answerable by voice for 60 s). A wrap-up longer than three sentences is spoken as three, and the rest becomes an artifact card with Send to phone and Copy. With no job running, the panel shows recent jobs.</p>
+
+<!-- 3. ACTIVITY -->
+<div class="frame" data-screen="Activity" data-rail="activity">
+  <div class="main">
+    <div class="topbar"><h2>Activity</h2><div class="grow"></div><span class="kbd">Ctrl K</span></div>
+    <div class="tabs"><span class="on">Jobs</span><span>Incidents</span><span>Schedules</span><span>Logs</span></div>
+    <div class="pad">
+      <table class="table">
+        <thead><tr><th>Job</th><th>Status</th><th>Device</th><th>Steps</th><th>Started</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Clean up Downloads</td><td><span class="status"><span class="dot warn"></span>needs you</span></td><td>Laptop</td><td>2 of 4</td><td>just now</td><td><button class="btn ghost">Open</button></td></tr>
+          <tr><td>Organize my Downloads</td><td><span class="status"><span class="dot"></span>done</span></td><td>Laptop</td><td>2</td><td>2 min ago</td><td><button class="btn ghost">Open</button></td></tr>
+          <tr><td>Text Mom I'm on my way</td><td><span class="status"><span class="dot"></span>done</span></td><td>Pixel</td><td>1</td><td>18 min ago</td><td><button class="btn ghost">Open</button></td></tr>
+          <tr><td>Find my 2019 tax return</td><td><span class="status"><span class="dot" style="background:var(--sp-err)"></span>failed, explained</span></td><td>Laptop</td><td>1</td><td>1 h ago</td><td><button class="btn ghost">Open</button></td></tr>
+          <tr><td>Empty Downloads</td><td><span class="status"><span class="dot off"></span>cancelled</span></td><td>Laptop</td><td>0</td><td>yesterday</td><td><button class="btn ghost">Open</button></td></tr>
+        </tbody>
+      </table>
+      <div class="grid2" style="margin-top:18px">
+        <div class="box2"><h4><span class="dot warn"></span>Latest incident</h4><div style="font-size:13px;color:var(--sp-ink-2)">groq/agent sent a broken tool call twice; the job moved to the next model and finished.</div><div class="muted mono" style="margin-top:6px">llm · switch · recovered · 14:02</div></div>
+        <div class="box2"><h4>Schedules</h4><div class="empty" style="padding:14px">No schedules yet. Say “every morning at 8, read me my calendar”.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Activity"><b>Activity.</b> Job history with status colors, the device it ran on, and steps; Open shows the step log from <span class="mono">/v2/jobs/{id}</span>. Incidents from the supervisor (§19), schedules (later), logs. Every list has an empty state with one friendly line and one thing to do.</p>
+
+<!-- 4. CAPABILITIES -->
+<div class="frame" data-screen="Capabilities" data-rail="caps">
+  <div class="main">
+    <div class="topbar"><h2>Capabilities</h2><div class="grow"></div><span class="kbd">Ctrl K</span></div>
+    <div class="pad">
+      <div class="search">⌕ Search tools, skills, connectors…</div>
+      <div class="chips" style="margin-bottom:16px"><span class="chip">All</span><span class="chip">Connectors</span><span class="chip">Skills</span><span class="chip">Plugins</span><span class="chip on">Tools · 37</span><span class="chip">Discover</span></div>
+      <table class="table">
+        <thead><tr><th>Tool</th><th>Runs on</th><th>Risk</th><th>When Spark uses it</th></tr></thead>
+        <tbody>
+          <tr><td><div>file_read</div><div class="muted" style="font-size:12px">Reads a text file</div></td><td>Laptop</td><td><span class="tag read">read</span></td><td><div class="seg"><span class="on">Allow</span><span>Ask</span><span>Never</span></div></td></tr>
+          <tr><td><div>file_write</div><div class="muted" style="font-size:12px">Creates or replaces a text file</div></td><td>Laptop</td><td><span class="tag write">write</span></td><td><div class="seg"><span class="on">Auto-check</span><span>Ask</span><span>Never</span></div></td></tr>
+          <tr><td><div>file_delete</div><div class="muted" style="font-size:12px">Moves files to the Recycle Bin</div></td><td>Laptop</td><td><span class="tag destructive">destructive</span></td><td><div class="seg"><span>Allow</span><span class="on">Ask</span><span>Never</span></div> <span class="muted mono" style="margin-left:8px">+1 rule</span></td></tr>
+          <tr><td><div>shell_run</div><div class="muted" style="font-size:12px">Runs one PowerShell command</div></td><td>Laptop</td><td><span class="tag destructive">destructive</span></td><td><div class="seg"><span>Allow</span><span class="on">Ask</span><span>Never</span></div> <span class="muted" style="margin-left:8px;font-size:12px">read-only commands run</span></td></tr>
+          <tr><td><div>sms_send</div><div class="muted" style="font-size:12px">Sends a text message</div></td><td>Pixel</td><td><span class="tag external">external</span></td><td><div class="seg"><span>Allow</span><span class="on">Ask</span><span>Never</span></div></td></tr>
+          <tr><td><div>gmail_search</div><div class="muted" style="font-size:12px">Connect Google to use it</div></td><td>Brain</td><td><span class="tag read">read</span></td><td><button class="btn">Connect Google</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Capabilities"><b>Capabilities.</b> One searchable hub with chips (Connectors, Skills, Plugins, Tools, Discover). Each tool shows where it runs, its risk tag, and its permission as a three-way control that writes deny/ask/allow rules; “Auto-check” is the auto-reviewer for medium-risk writes. Pattern rules show as “+1 rule” and open the rule editor in Settings.</p>
+
+<!-- 5. ENGINES -->
+<div class="frame" data-screen="Engines" data-rail="engines">
+  <div class="main">
+    <div class="topbar"><h2>Engines</h2><div class="grow"></div><button class="btn">Run benchmark</button></div>
+    <div class="tabs"><span>Voice</span><span class="on">Models</span><span>Services</span><span>Keys</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div class="box2"><h4>Agent chain <span class="muted" style="font-weight:400">free first</span></h4>
+          <table class="table"><tbody>
+            <tr><td>1</td><td>Groq · gpt-oss-120b</td><td><span class="status"><span class="dot"></span>healthy</span></td><td class="mono">28/30 tasks</td></tr>
+            <tr><td>2</td><td>Groq · qwen3.8-27b</td><td><span class="status"><span class="dot"></span>healthy</span></td><td class="mono">eval</td></tr>
+            <tr><td>3</td><td>Groq · gpt-oss-20b</td><td><span class="status"><span class="dot warn"></span>cooling 40 s</span></td><td class="mono">eval</td></tr>
+            <tr><td>4</td><td>NVIDIA · DeepSeek V4</td><td><span class="status"><span class="dot off"></span>no key</span></td><td><button class="btn ghost">Add key</button></td></tr>
+            <tr><td>·</td><td>Claude Haiku → Opus</td><td><span class="status"><span class="dot off"></span>paid, off</span></td><td></td></tr>
+          </tbody></table>
+        </div>
+        <div class="box2"><h4>Reflex chain</h4>
+          <table class="table"><tbody>
+            <tr><td>1</td><td>Groq · gpt-oss-20b</td><td class="mono">p50 476 ms</td><td><span class="status"><span class="dot"></span></span></td></tr>
+            <tr><td>2</td><td>Groq · gpt-oss-120b</td><td class="mono">p50 533 ms</td><td><span class="status"><span class="dot"></span></span></td></tr>
+            <tr><td>3</td><td>Mistral · small</td><td class="mono">out of quota</td><td><span class="status"><span class="dot" style="background:var(--sp-err)"></span></span></td></tr>
+          </tbody></table>
+          <h4 style="margin-top:14px">Local model</h4>
+          <div class="empty" style="padding:14px">No local model yet. Spark picks one that fits this laptop in R5.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Engines"><b>Engines.</b> The existing Voice page moves under a tab here. Models shows each chain free first with health, measured speed or eval score, and a nudge to add free keys. Paid entries are listed but off during the build.</p>
+
+<!-- 6. SETTINGS -->
+<div class="frame" data-screen="Settings · permissions" data-rail="settings">
+  <div class="main">
+    <div class="topbar"><h2>Settings</h2><div class="grow"></div><span class="kbd">Ctrl K</span></div>
+    <div class="settings">
+      <nav class="side"><a>Account</a><a>Devices</a><a class="on">Permissions</a><a>Privacy &amp; memory</a><a>Language &amp; voice</a><a>Usage</a></nav>
+      <div class="pad">
+        <div class="field"><div>Permission mode<p>How careful Spark is before it acts.</p></div><div class="seg"><span class="on">Default</span><span>Ask for everything</span><span>Trust</span></div></div>
+        <div class="field" style="border:0"><div>Rules<p>Deny beats ask beats allow. A rule with no pattern covers every call.</p></div><button class="btn">+ Add rule</button></div>
+        <table class="table">
+          <thead><tr><th>Tool</th><th>Pattern</th><th>Device</th><th>Decision</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>file_delete</td><td class="mono">C:/Users/*/Documents/**</td><td>All</td><td><span class="tag destructive">deny</span></td><td><button class="btn ghost">Remove</button></td></tr>
+            <tr><td>shell_run</td><td class="mono">git status*</td><td>Laptop</td><td><span class="tag read">allow</span></td><td><button class="btn ghost">Remove</button></td></tr>
+            <tr><td>file_delete</td><td class="mono">Downloads/old.zip</td><td>All</td><td><span class="tag read">allow</span><span class="muted" style="font-size:11px;margin-left:6px">from “always allow”</span></td><td><button class="btn ghost">Remove</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Settings · permissions"><b>Settings.</b> Grouped sections instead of one tab per feature. Permissions holds the mode and the rule list from <span class="mono">/v2/permissions/rules</span>; rules made by “always allow” say so. Devices (rename, default for “my phone”, remove) uses <span class="mono">/v2/devices</span>.</p>
+
+<!-- 7. PALETTE -->
+<div class="frame" data-screen="Ctrl+K palette" data-rail="home" style="position:relative">
+  <div class="main">
+    <div class="topbar"><h2>Home</h2></div>
+    <div class="msgs" style="opacity:.35"><div class="you">what's in my downloads</div><div class="spark">Three files and a folder.</div></div>
+  </div>
+  <div class="scrim">
+    <div class="palette" role="dialog" aria-label="Command palette">
+      <input value="perm" aria-label="Search actions">
+      <div class="grp">Settings</div>
+      <div class="it on"><span>🛡</span><span class="grow">Permissions · mode and rules</span><span class="kbd">↵</span></div>
+      <div class="it"><span>🛡</span><span class="grow">Add a permission rule</span></div>
+      <div class="grp">Capabilities</div>
+      <div class="it"><span>★</span><span class="grow">file_delete · permission: Ask</span></div>
+      <div class="grp">Actions</div>
+      <div class="it"><span>■</span><span class="grow">Stop the running job</span><span class="kbd">Esc</span></div>
+      <div class="it"><span>⟲</span><span class="grow">Run engine benchmark</span></div>
+      <div style="height:8px"></div>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Ctrl+K palette"><b>Command palette.</b> Ctrl+K reaches every page, setting, tool permission, and action (stop job, run benchmark, sign out). Keyboard first, fuzzy search, grouped results.</p>
+
+<!-- 8. VOICE OVERLAY -->
+<div class="frame" data-screen="Voice overlay" data-rail="home">
+  <div class="desk">
+    <div class="overlay" style="position:absolute;right:28px;bottom:28px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div class="logo" style="width:22px;height:22px;margin:0"></div>
+        <span style="font-size:12px;color:var(--sp-ink-3)">Listening · Laptop</span>
+        <span style="flex:1"></span>
+        <button class="btn ghost" style="padding:3px 8px" aria-label="Stop">■</button>
+      </div>
+      <div class="wave" aria-hidden="true"></div>
+      <div style="color:var(--sp-ink-2);margin-top:10px">“empty my downloads folder”</div>
+      <div style="font:500 15px/1.45 var(--ui);margin-top:8px">Heads up, this will delete everything in Downloads. Go ahead?</div>
+      <div class="actions" style="margin-top:12px"><button class="btn danger focus">Deny</button><button class="btn">Allow</button><span class="muted" style="font-size:12px;margin-left:auto">2 of 3 · Running</span></div>
+    </div>
+    <div class="overlay" style="position:absolute;left:28px;bottom:28px;width:300px;padding:12px 16px">
+      <div style="font-size:12px;color:var(--sp-ink-3)">Answering on Pixel</div>
+      <div style="color:var(--sp-ink-2);margin-top:4px;font-size:13px">Both devices heard “Hey Spark”. Your phone took this one.</div>
+    </div>
+  </div>
+</div>
+<p class="note" data-for="Voice overlay"><b>Voice overlay.</b> The compact always-on-top panel (today's AI panel): what it heard, Spark's reply, a waveform, Stop, and approvals right there. The small card on the left is a device that lost wake-word arbitration (“Answering on Pixel”).</p>
+
+<script>
+  const frames = [...document.querySelectorAll(".frame")];
+  const nav = document.getElementById("nav");
+  const rail = document.getElementById("rail");
+  frames.forEach((f, i) => {
+    const r = rail.content.cloneNode(true);
+    r.querySelectorAll("a").forEach(a => a.classList.toggle("on", a.dataset.k === f.dataset.rail));
+    f.prepend(r);
+    const b = document.createElement("button");
+    b.textContent = f.dataset.screen;
+    b.onclick = () => show(i);
+    nav.append(b);
+  });
+  const wave = document.querySelector(".wave");
+  for (let i = 0; i < 46; i++) { const s = document.createElement("i"); s.style.height = (6 + Math.abs(Math.sin(i * .55) * 26) + (i % 3) * 2) + "px"; wave.append(s); }
+  function show(i) {
+    frames.forEach((f, j) => f.classList.toggle("on", i === j));
+    nav.querySelectorAll("button").forEach((b, j) => b.classList.toggle("on", i === j));
+    document.querySelectorAll(".note").forEach(n => n.classList.toggle("on", n.dataset.for === frames[i].dataset.screen));
+  }
+  show(0);
+</script>
+</body>
+</html>

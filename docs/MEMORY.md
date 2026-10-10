@@ -95,7 +95,25 @@ happens.
   `/v2/threads`, S3 re-route; Electron claims the wake word before acting. Brain 139 tests.
   Evals after the reflex prompt change (2026-10-10): gpt-oss-20b answers 59/59, tools 32/33,
   delegate 11/12, persona 49/56, TTFT p50 476 / p95 620 ms; 120b 59/59, 32/33, 11/12, 51/56.
-  **NEXT: M5** agent eval set (~30 tasks, stubbed tools) + live run to order the agent chain. Open voice items, only if they show up in use: a
+  **M5 done:** `brain/evals/agent.py` + 30 tasks (stubbed tools, unlisted lookups find nothing):
+  gpt-oss-120b 22/30, gpt-oss-20b 23/30, qwen3.8-27b 21/30 (4 rate-limited), every call valid;
+  misses are flaky run to run, so the chain order stays 120b → qwen → 20b. Fixes from it: tool
+  picker weights name > keywords > description and down-weights words naming many tools ("file");
+  "stop after 2–3 empty searches" prompt line; grounding ignores unicode hyphens/quotes; whitespace-
+  only model replies are a bad turn in the agent and a spoken "lost track" line in the reflex (S9);
+  `GET /v2/engines/chains` for Engines → Models. Reflex eval after: 20b answers 59/59, tools 31/33,
+  delegate 11/12, TTFT p50 481 / p95 607 ms; 120b 59/59, 30/33, 11/12. Brain 144 tests.
+  **Voice overlay redone (owner, 2026-10-10, with a screen recording of the old pill jumping):**
+  the floating window (`/ai-panel`) is now Spark's main voice surface, a notch hanging from the top
+  edge of the screen (flat top, concave flares, rounded bottom): it shows what you said and Spark's
+  reply live, the running job, approvals and questions, and the orb glows with Spark's real voice
+  level (and the mic's while listening). The window is fixed at 640×480, transparent and
+  click-through except over the notch (`overlayInteractive`); only the notch morphs (motion
+  springs, measured height), so nothing jumps or clips. The ear now lives in the overlay, mic off
+  at start (button or Ctrl+Shift+M). v1 `pages/AiPanel/` deleted. `sparkSlice` registered; every
+  window folds every brain event. Electron vitest: 10 tests.
+  **NEXT: M6 main window** (five destinations per `docs/mockups/r2-ui.html`, Home reusing the
+  overlay's pieces), then M7. Open voice items, only if they show up in use: a
   loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
   flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
@@ -237,6 +255,11 @@ happens.
   names must appear in the user's words or a tool input/output); one rewrite, then a safe line.
 - Plan approval grants only exact targets for that job; "always" stores a glob-escaped exact rule.
 - Artifacts: bytes under `ARTIFACTS_DIR` (compose volume), HMAC-signed download URLs (1 h).
+- Desktop unit tests use vitest (dev dependency, 2026-10-10): reducers and pure UI logic first;
+  Testing Library and Playwright for Electron come with M6 component and E2E tests.
+- The ear runs in the overlay window, not the main window: the overlay is always there (main can be
+  hidden to the tray) and audio already plays there. The Engines page's own mic toggle is a second
+  ear; don't run both at once (M6 points it at the overlay's).
 
 ## Completed Work
 
@@ -343,6 +366,9 @@ happens.
 | 2026-10-10 | Mic test: strangers' lines answered 6–8 times in a row after one "Hey Spark" | Follow-ups capped at 2, each within 6 s of Spark finishing; barge-in only inside an exchange |
 | 2026-10-10 | Mic test: follow-ups always needed "Hey Spark" | Audio plays in the floating panel, the ear ran in the main window, speaking state was per window: broadcast via main (`voiceSpeakingState`) |
 | 2026-10-10 | Whisper turned room noise into "foreign" and Spark answered it | Drop whole-transcript Whisper hallucinations |
+| 2026-10-10 | Floating pill jumped sideways and clipped its icons on hover (owner's recording) | It resized and re-centred the OS window per hover; now a fixed click-through window with the notch morphing in CSS |
+| 2026-10-10 | Agent eval: gpt-oss sometimes answers with nothing; a whitespace-only reply ended a job "done" in silence | Bad turn in the agent loop (retry, then next entry); the reflex says a "lost track" line |
+| 2026-10-10 | Tool picker missed clipboard tools for "save my clipboard to a file" ("file" named eight tools) | Words that name many tools count less |
 | 2026-10-10 | Tier-0 answers ("what time is it") never reported first audio: spoken as `t0-<intent>`, not the signal id | `reflex.handle { utt_id: "<signal_id>:t0" }` |
 | 2026-10-10 | Bench: the wake cut took the command's first word ("what time is it" → "I miss it") | Cloud STT hears the whole utterance; only on-device STT gets the cut |
 | 2026-10-10 | Bench: Whisper's "Hayspark turned the volume up" escaped tier 0, and the reflex said "volume's up" without calling the tool | `strip_wake` / tier-0 filler take joined forms; a leading "turned" reads as "turn"; RA1 rows |

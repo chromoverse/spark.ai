@@ -53,7 +53,8 @@ ai_local/
 ├── electron/                 desktop shell + UI
 │   ├── src/main/             windows, tray, IPC, BrainSocket, BodyBridge (stdio), keychain
 │   ├── src/renderer/
-│   │   ├── pages/            Home, Activity, Capabilities, Engines, Settings, Onboarding
+│   │   ├── pages/            Home, Activity, Capabilities, Engines, Settings, Onboarding;
+│   │   │                     overlay/ = the voice notch (route /ai-panel, the always-on-top window)
 │   │   ├── components/ui/    shadcn primitives
 │   │   ├── components/spark/ conversation, job panel, approval modal, connect card, artifacts, palette
 │   │   ├── store/            Redux Toolkit slices

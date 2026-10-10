@@ -118,27 +118,29 @@
 }
 
 /* ── Spark Design System ─────────────────────────────────────────────────── */
+/* Clean neutral dark; orange is the only accent (owner, 2026-10-10). DESIGN.md §2.1 */
 :root {
-  --sp-bg:           #161512;
-  --sp-bg-2:         #1c1b17;
-  --sp-bg-3:         #232118;
-  --sp-line:         #2a2822;
-  --sp-line-2:       #34312a;
-  --sp-ink:          #ece6da;
-  --sp-ink-2:        #b8b1a3;
-  --sp-ink-3:        #7a7468;
-  --sp-ink-4:        #524d44;
-  --sp-accent:       #d97757;
-  --sp-accent-2:     #c2643f;
-  --sp-accent-soft:  rgba(217,119,87,0.12);
-  --sp-ok:           #7fb685;
-  --sp-ok-soft:      rgba(127,182,133,0.12);
-  --sp-warn:         #d4a04a;
-  --sp-err:          #c97064;
-  --sp-err-soft:     rgba(201,112,100,0.10);
-  --sp-info:         #87a7c4;
-  --sp-info-soft:    rgba(135,167,196,0.10);
-  --sp-user-tint:    #e9d9c2;
+  --sp-bg:           #0f1012;
+  --sp-bg-2:         #15171a;
+  --sp-bg-3:         #1c1f23;
+  --sp-line:         #24272c;
+  --sp-line-2:       #2e3238;
+  --sp-ink:          #eceef1;
+  --sp-ink-2:        #b3b8c0;
+  --sp-ink-3:        #7c828b;
+  --sp-ink-4:        #4f545b;
+  --sp-accent:       #f97316;
+  --sp-accent-2:     #ea580c;
+  --sp-accent-soft:  rgba(249,115,22,0.12);
+  --sp-ok:           #4ade80;
+  --sp-ok-soft:      rgba(74,222,128,0.10);
+  --sp-warn:         #facc15;
+  --sp-warn-soft:    rgba(250,204,21,0.10);
+  --sp-err:          #f87171;
+  --sp-err-soft:     rgba(248,113,113,0.10);
+  --sp-info:         #60a5fa;
+  --sp-info-soft:    rgba(96,165,250,0.10);
+  --sp-user-tint:    #d7dbe0;
 }
 
 .sp-serif  { font-family: 'Instrument Serif', Georgia, serif; }
@@ -185,4 +187,127 @@
   0% { transform: scale(1); }
   50% { transform: scale(0.96); }
   100% { transform: scale(1); }
+}
+
+/* ── Voice overlay (pages/overlay) ───────────────────────────────────────── */
+/* A notch hanging from the top edge of the screen: flat top, concave flares where it meets the
+   edge, rounded bottom. Solid, not glass: backdrop blur can't see the desktop through a window. */
+html.sp-overlay-root, html.sp-overlay-root body { background: transparent !important; overflow: hidden; }
+
+.sp-notch {
+  --notch: #0a0a0b;
+  background: var(--notch);
+  color: var(--sp-ink);
+  box-shadow: 0 16px 40px -14px rgba(0, 0, 0, 0.7);
+}
+.sp-notch-flare { position: absolute; top: 0; width: 14px; height: 14px; pointer-events: none; }
+.sp-notch-flare-l { right: 100%; background: radial-gradient(circle at 0 100%, transparent 13.5px, var(--notch) 14px); }
+.sp-notch-flare-r { left: 100%; background: radial-gradient(circle at 100% 100%, transparent 13.5px, var(--notch) 14px); }
+
+/* Spark's light inside the notch: it swells with the voice while Spark talks */
+.sp-notch-glow {
+  position: absolute; left: -90px; top: -110px; width: 360px; height: 280px; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(249, 115, 22, 0.55), rgba(234, 88, 12, 0.16) 55%, transparent);
+  opacity: calc(var(--glow, 0) + var(--level, 0) * 0.8);
+  transition: opacity 0.4s ease;
+}
+/* and a bloom along the bottom edge, like light pooling inside the glass */
+.sp-notch-edge {
+  position: absolute; inset: auto 0 0 0; height: 60px; pointer-events: none;
+  background: radial-gradient(60% 100% at 50% 100%, rgba(249, 115, 22, 0.5), transparent 70%);
+  opacity: calc(var(--edge, 0) * (0.35 + var(--level, 0) * 0.65));
+  transform-origin: 50% 100%;
+  transform: scaleX(calc(0.6 + var(--level, 0) * 0.5));
+  transition: opacity 0.3s ease, transform 0.1s linear;
+}
+[data-mode="speaking"] .sp-notch-glow { --glow: 0.45; }
+[data-mode="speaking"] .sp-notch-edge { --edge: 1; }
+[data-mode="listening"] .sp-notch-glow,
+[data-mode="thinking"] .sp-notch-glow { --glow: 0.18; }
+[data-mode="attention"] .sp-notch-glow { --glow: 0.22; }
+
+/* The orb. --level (0..1, the live voice) drives its size and halo; the mode sets its motion.
+   Motion uses the individual scale/rotate properties so it never fights the level's transform. */
+.sp-orb {
+  border-radius: 50%; isolation: isolate;
+  background: radial-gradient(circle at 34% 28%, #fff4e6 0%, #fdba74 18%, #f97316 46%, #c2410c 74%, #431407 100%);
+  box-shadow: inset 0 -3px 8px rgba(67, 20, 7, 0.55), inset 0 2px 5px rgba(255, 237, 213, 0.45);
+  transform: scale(calc(1 + var(--level, 0) * 0.16));
+  transition: transform 0.08s linear;
+}
+.sp-orb::before {
+  content: ""; position: absolute; inset: 9%; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 18%, rgba(255, 237, 213, 0.8) 30%, transparent 44% 62%, rgba(251, 146, 60, 0.85) 76%, transparent 90%);
+  filter: blur(2px); mix-blend-mode: screen; opacity: 0.65;
+  animation: sp-spin 8s linear infinite;
+}
+.sp-orb::after {
+  content: ""; position: absolute; inset: -90%; border-radius: 50%; z-index: -1;
+  background: radial-gradient(closest-side, rgba(251, 146, 60, 0.85), rgba(249, 115, 22, 0.25) 45%, transparent);
+  opacity: calc(0.12 + var(--level, 0) * 0.88);
+  transform: scale(calc(0.8 + var(--level, 0) * 0.5));
+  transition: opacity 0.12s linear, transform 0.12s linear;
+}
+.sp-orb[data-mode="idle"],
+.sp-orb[data-mode="working"] { animation: sp-breathe 4.8s ease-in-out infinite; }
+.sp-orb[data-mode="working"]::before { animation-duration: 3s; }
+.sp-orb[data-mode="thinking"]::before { animation-duration: 1.3s; opacity: 1; }
+.sp-orb[data-mode="thinking"] { animation: sp-breathe 1.6s ease-in-out infinite; }
+.sp-orb[data-mode="speaking"]::before { animation-duration: 2.4s; opacity: 0.95; }
+.sp-orb[data-mode="speaking"]::after { opacity: calc(0.4 + var(--level, 0) * 0.6); animation: sp-halo 1.8s ease-in-out infinite; }
+.sp-orb[data-mode="listening"]::after { opacity: calc(0.3 + var(--level, 0) * 0.7); }
+.sp-orb[data-mode="attention"]::after { opacity: 0.45; animation: sp-halo 1.2s ease-in-out infinite; }
+
+@keyframes sp-spin { to { rotate: 360deg; } }
+@keyframes sp-breathe { 0%, 100% { scale: 0.94; } 50% { scale: 1; } }
+@keyframes sp-halo { 0%, 100% { scale: 1; } 50% { scale: 1.14; } }
+
+/* listening: bars that follow the mic */
+.sp-wave { display: inline-flex; align-items: center; gap: 3px; height: 22px; }
+.sp-wave i {
+  width: 3px; border-radius: 2px; background: var(--sp-accent);
+  height: calc(4px + var(--level, 0) * 18px * var(--k, 1));
+  transition: height 0.08s linear;
+  animation: sp-bar 1.1s ease-in-out infinite;
+}
+.sp-wave i:nth-child(1) { --k: 0.5; animation-delay: -0.2s; }
+.sp-wave i:nth-child(2) { --k: 0.85; animation-delay: -0.5s; }
+.sp-wave i:nth-child(3) { --k: 1; animation-delay: -0.1s; }
+.sp-wave i:nth-child(4) { --k: 0.75; animation-delay: -0.7s; }
+.sp-wave i:nth-child(5) { --k: 0.45; animation-delay: -0.35s; }
+@keyframes sp-bar { 0%, 100% { scale: 1 0.7; } 50% { scale: 1 1; } }
+
+.sp-shimmer {
+  background: linear-gradient(90deg, var(--sp-ink-4) 0%, var(--sp-ink) 50%, var(--sp-ink-4) 100%);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: sp-shimmer 1.6s linear infinite;
+}
+@keyframes sp-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+.sp-spinner {
+  width: 16px; height: 16px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(249, 115, 22, 0.2); border-top-color: var(--sp-accent);
+  animation: sp-spin 0.9s linear infinite;
+}
+
+.sp-btn-ghost, .sp-btn-accent, .sp-btn-accent-soft {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; min-width: 32px; border-radius: 9px; font-size: 13px; font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.sp-btn-ghost { color: var(--sp-ink-2); background: rgba(255, 255, 255, 0.05); }
+.sp-btn-ghost:hover { color: var(--sp-ink); background: rgba(255, 255, 255, 0.09); }
+.sp-btn-accent { color: #1a0a00; background: var(--sp-accent); }
+.sp-btn-accent:hover { background: #fb8a3c; }
+.sp-btn-accent-soft { color: var(--sp-accent); background: var(--sp-accent-soft); }
+.sp-btn-accent-soft:hover { background: rgba(249, 115, 22, 0.2); }
+.sp-input {
+  width: 100%; height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px;
+  color: var(--sp-ink); background: rgba(255, 255, 255, 0.05); border: 1px solid transparent; outline: none;
+}
+.sp-input::placeholder { color: var(--sp-ink-4); }
+.sp-input:focus { border-color: rgba(249, 115, 22, 0.45); background: rgba(255, 255, 255, 0.07); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-orb, .sp-orb::before, .sp-orb::after, .sp-wave i, .sp-shimmer, .sp-spinner, .sp-notch-edge { animation: none !important; transition: none !important; }
 }

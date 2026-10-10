@@ -8,7 +8,7 @@ import PublicGuard from "@/components/guards/PublicGuard";
 import Home from './pages/Home'
 import Welcome from "./pages/Welcome";
 import SignInPage from "./pages/SignInPage";
-import AiPanel from "./pages/AiPanel/AiPanel";
+import VoiceOverlay from "./pages/overlay/VoiceOverlay";
 import Onboarding from "./pages/Onboarding";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import About from "./pages/About";
@@ -34,7 +34,7 @@ export default function App() {
           <Route element={<AuthGuard />}>
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<Home />} />
-            <Route path="/ai-panel" element={<AiPanel />} />
+            <Route path="/ai-panel" element={<VoiceOverlay />} />
           </Route>
           
           {/* Catch all - Redirect to welcome (which will handle auth check if actually valid) or just 404 */}

@@ -59,6 +59,40 @@ export function earcon(kind: "heard" | "done" | "error"): void {
   }
 }
 
+// Loudness of what's playing, for the overlay's orb. Tapped with captureStream(), which leaves the
+// element's own output alone: playback never depends on Web Audio.
+let tap: { analyser: AnalyserNode; source: MediaStreamAudioSourceNode | null; buf: Uint8Array<ArrayBuffer> } | null = null;
+
+function listenTo(audio: HTMLAudioElement): void {
+  try {
+    ctx ??= new AudioContext();
+    if (!tap) {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      tap = { analyser, source: null, buf: new Uint8Array(new ArrayBuffer(analyser.fftSize)) };
+    }
+    tap.source?.disconnect();
+    const stream = (audio as HTMLAudioElement & { captureStream(): MediaStream }).captureStream();
+    tap.source = ctx.createMediaStreamSource(stream);
+    tap.source.connect(tap.analyser);
+  } catch {
+    // no level, the orb falls back to its own pulse
+  }
+}
+
+/** 0..1 loudness of Spark's voice right now (0 when silent). */
+export function speechLevel(): number {
+  if (!speaking || !tap) return 0;
+  return rms(tap.analyser, tap.buf);
+}
+
+export function rms(analyser: AnalyserNode, buf: Uint8Array<ArrayBuffer>): number {
+  analyser.getByteTimeDomainData(buf);
+  let sum = 0;
+  for (const v of buf) sum += ((v - 128) / 128) ** 2;
+  return Math.min(1, Math.sqrt(sum / buf.length) * 4);
+}
+
 function decode(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
   const out = new Uint8Array(new ArrayBuffer(bin.length));
@@ -82,6 +116,7 @@ export function useVoicePlayback(): void {
       current = audio;
       const signalId = next.uttId.split(":")[0];
       audio.onplaying = () => {
+        listenTo(audio);
         if (reported.has(signalId)) return;
         reported.add(signalId);
         void window.electronApi.voice.firstAudio(signalId, Date.now());
@@ -144,6 +179,7 @@ export function useVoicePlayback(): void {
       stop();
       void ctx?.close();
       ctx = null;
+      tap = null;
     };
   }, []);
 }

@@ -48,9 +48,11 @@ cd body && uv sync && uv run pytest -q   # + ruff check, mypy spark_body (CI on 
 cd body && python -m spark_body.fitness --bench   # real hardware benchmark (manual / nightly)
 # desktop
 cd electron && npm run lint && npm run typecheck   # what CI runs
-cd electron && npm test && npm run e2e             # unit/component + Playwright vs fake brain (not built yet)
+cd electron && npm test                           # ✅ R2: vitest (reducers, pure UI logic)
+cd electron && npm run e2e                         # Playwright vs fake brain (not built yet)
 # evals (live free providers, never in PR CI)
 cd brain && uv run python -m evals.run --suite reflex   # ✅ R1: 95 utterances, every keyed reflex entry
+cd brain && uv run python -m evals.agent --entry groq/openai/gpt-oss-120b  # ✅ R2: 30 agent tasks, stubbed tools
 cd brain && uv run python -m evals.latency < brain.log  # ✅ R1: p50/p95 first audio from signal traces
 cd brain && uv run python -m evals.latency --low-spec < brain.log  # low-spec gate: p95 < 2000 ms
 cd body && uv run python -m evals.clips                  # ✅ R1: the scripted ear's 50 clips (Piper)
@@ -128,12 +130,13 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | S6 ✅ | Groq quota exhausted | next chain entry used; health marks Groq cooling down until reset. `test_llm_chains.py::test_s6_rate_limit_falls_through_and_cools_down`; all entries down → `test_every_provider_down_is_explained_never_silent` |
 | S7 ✅ | estimate miss (job 2× over estimate) | user gets a progress note with a new estimate. `brain/tests/scenario/test_r2_agent.py::test_s7_job_twice_over_its_estimate_gets_a_new_one` (supervisor sweep; spoken once, `job.update` note + `eta_s`) |
 | S8 ✅ | invariant sweep | any signal past its deadline without a terminal state triggers the playbook. `test_s8_signal_past_its_deadline_is_explained` |
+| S9 ✅ | the model replies with nothing | an empty stream is malformed (next entry); a whitespace-only reply gets a spoken "lost track of that one" line, never silence. `brain/tests/scenario/test_r1_voice.py::test_an_empty_reply_is_never_silence` (gpt-oss did this in the 2026-10-10 evals) |
 
 ### 4.6 Agent, tools, permissions (§5.2, §7, §20)
 | ID | Scenario | Assertions |
 |---|---|---|
 | T1 ✅ | parallel read tools | all tool_results returned in **one** user message; ran concurrently. `brain/tests/scenario/test_r2_agent.py::test_t1_three_reads_run_in_parallel_in_one_turn` (all three `tool.call`s out before any answer) |
-| T2 ✅ | malformed tool call twice | escalates to the next chain entry; history preserved. `brain/tests/scenario/test_r2_agent.py::test_t2_malformed_twice_escalates_with_the_same_history` (Groq's 400 `tool_use_failed` and schema-invalid inputs count too) |
+| T2 ✅ | malformed tool call twice | escalates to the next chain entry; history preserved. `brain/tests/scenario/test_r2_agent.py::test_t2_malformed_twice_escalates_with_the_same_history` (Groq's 400 `tool_use_failed` and schema-invalid inputs count too; so do turns with no tool call and only whitespace, `…test_t2_an_empty_turn_is_retried_not_spoken`) |
 | T3 ✅ | deny → ask → allow precedence | a broad deny beats a narrow allow; a bare-tool deny removes the tool from the model's tool list. `brain/tests/scenario/test_r2_agent.py::test_t3_deny_rules_win_and_bare_denies_hide_tools` (agent and reflex) + 4 unit tests in `brain/tests/test_permissions.py` (device scope, modes, read-only shell allowlist) |
 | T4 ✅ | auto-reviewer | medium-risk call matching the request is allowed; a mismatch escalates to ask. Allowed: `brain/tests/scenario/test_r2_agent.py::test_notes_txt_completes_with_progress_shown`; escalated: `brain/tests/scenario/test_r2_agent.py::test_t4_reviewer_escalates_a_call_that_doesnt_match_the_request`. Errors or timeouts escalate too |
 | T5 ✅ | MCP untrusted server with `readOnlyHint` | still treated as "ask". `brain/tests/test_permissions.py::test_t5_untrusted_mcp_annotations_are_ignored` (the rule; the MCP client itself comes later) |
@@ -204,6 +207,12 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | L2 | reconnect | local turns uploaded to the thread |
 
 ### 4.11 Desktop UI (§24)
+| ID | Scenario | Assertions |
+|---|---|---|
+| U1 ✅ | voice overlay (the notch at the top of the screen) shows the right thing | rests small; opens for a bare "Hey Spark", a pending reply and Spark's voice; approvals/questions outrank everything; a running job shows as a small live pill, full on hover; a turn the brain never finishes stops "thinking" after 30 s; a finished exchange lingers 7 s. `electron/src/renderer/pages/overlay/overlayMode.test.ts` |
+| U2 ✅ | brain events fold into what the UI shows | sentences join the user's turn by signal id and end it; a job speaking after its turn is a new line; approval cards close on any device's answer and when the job ends; the current job is the newest active one. `electron/src/renderer/store/features/spark/sparkSlice.test.ts` |
+| U3 | overlay never jumps or clips (owner's recording, 2026-10-10) | the window is fixed and click-through, only the notch morphs; checked by hand in a browser harness (per-frame size: no reversals, 0 px centre drift). Automate with Playwright for Electron |
+
 Component tests: every list has loading / empty / error states; approval modal shows the exact
 inputs; connect card; job panel stop. E2E (Playwright for Electron against a fake brain): sign-in,
 Home conversation, Capabilities search, Engines "Run benchmark", Settings permission rule edit.
@@ -239,7 +248,7 @@ p50/p95. 2026-10-10 on the owner's low-spec laptop (Nepal → Groq): p50 1291 / 
 | Suite | Size | Measures | Used for |
 |---|---|---|---|
 | `reflex` ✅ | 95 (`brain/evals/reflex.jsonl`: 50 answers, 33 quick tools, 12 delegations) | answer rate, quick-tool validity (name + args), delegation, TTFT p50/p95 vs the 400 ms gate, banned phrases | reflex chain order (§5.5) |
-| `agent` | ~30 multi-step tasks, stubbed tools | task success, tool-call validity, steps, tokens | agent chain order |
+| `agent` ✅ | 30 multi-step tasks (`brain/evals/agent.jsonl`), stubbed tools | task success, tool-call validity, malformed turns, parallel calls, turns, tokens, wrap-up style + grounding | agent chain order. 2026-10-10: gpt-oss-120b 22/30, gpt-oss-20b 23/30, qwen3.8-27b 21/30 (4 rate-limited); every call valid; misses are run-to-run flaky (a rerun of 4 missed tasks passed 3) |
 | `reflex_arc` ✅ | 338 (`body/evals/reflex_arc.jsonl`) | false-accept, slot accuracy | tier-0 thresholds; offline, so it runs in CI |
 | `research` | ~20 questions | citation correctness, answer accuracy | research pipeline |
 | `persona` ✅ (R1 part) | 58 moments (`brain/evals/persona.jsonl`: small talk, stress, can't-do, lists, numbers, failures, advice) | auto-checked PERSONA §2 rules: ≤ 3 sentences, ≤ 25 words each, no banned phrase, no markdown/lists/links/emoji, no tool call; naturalness and honesty need a human or LLM judge (later) | every reflex/agent chain entry: `uv run python -m evals.run --suite persona` |

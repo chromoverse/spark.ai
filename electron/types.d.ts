@@ -208,8 +208,8 @@ export type IEventPayloadMapping = {
 
   // Secondary Window
   openSecondaryWindow: void;
-  resizeSecondaryWindow: void;
-  closeAiPanelExpansion: void;
+  overlayInteractive: void;
+  openMainWindow: void;
 
   // Tray Synchronization
   onTrayMediaToggle: { type: "MIC" | "CAMERA" };
@@ -243,6 +243,7 @@ export type IEventPayloadMapping = {
   brainAnswer: IBrainResult<{ accepted: boolean }>;
   brainJobCancel: IBrainResult<{ status: string }>;
   brainJobs: IBrainResult<{ items: IBrainJob[] }>;
+  brainRequest: IBrainResult<unknown>;
 
   // Voice loop (R1)
   voiceSend: IBrainResult<IVoiceSendResult>;
@@ -303,8 +304,9 @@ declare global {
 
       // Secondary Window API
       openSecondaryWindow: () => Promise<void>;
-      resizeSecondaryWindow: (width: number, height: number) => Promise<void>;
-      onCloseAiPanelExpansion: (callback: () => void) => () => void;
+      /** The overlay takes clicks only while the pointer is on the notch. */
+      overlayInteractive: (on: boolean) => Promise<void>;
+      openMainWindow: () => Promise<void>;
 
       // Tray Synchronization
       updateMediaState: (state: {
@@ -351,6 +353,7 @@ declare global {
         answer: (askId: string, answer: string) => Promise<IBrainResult<{ accepted: boolean }>>;
         cancelJob: (jobId: string) => Promise<IBrainResult<{ status: string }>>;
         jobs: () => Promise<IBrainResult<{ items: IBrainJob[] }>>;
+        request: (method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown) => Promise<IBrainResult<unknown>>;
       };
       // Voice loop (R1): tier 0 on the device, then the brain; audio plays in one window
       voice: {
