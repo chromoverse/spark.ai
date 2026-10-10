@@ -218,7 +218,14 @@ export default function EnginesPage() {
             <Square size={14} />
           </button>
         </form>
-        {ear.listening && <p className="text-xs opacity-60">Listening. Just talk; I'll pick up when you pause.</p>}
+        {ear.listening && (
+          <p className="text-xs opacity-60">
+            {ear.status ??
+              (plan?.wake
+                ? "Mic on. Start with “Hey Spark”; follow-ups within 8 s don't need it."
+                : "Listening. Just talk; I'll pick up when you pause.")}
+          </p>
+        )}
         {ear.error && (
           <p role="alert" className="text-xs text-red-500">
             {ear.error}

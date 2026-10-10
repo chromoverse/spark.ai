@@ -53,7 +53,7 @@ interface Trace {
   reported?: boolean;
 }
 
-const ENDPOINT_MS = 250; // the ear's VAD redemption window (useVoiceEar)
+const ENDPOINT_MS = 700; // the ear's VAD redemption window (useVoiceEar)
 
 class VoiceLoop {
   private started = false;

@@ -15,7 +15,7 @@ from typing import Any
 from spark_body import hands, models
 from spark_body.clock import Clock
 from spark_body.ear.stt import LocalStt, SttEngine, WhisperProxy
-from spark_body.ear.wake import MIN_COMMAND_S, Wake, strip_wake
+from spark_body.ear.wake import MIN_COMMAND_S, Wake, said_wake, strip_wake
 from spark_body.fitness import Fitness, Plan, Role, budgets, hardware, probe_clip
 from spark_body.hands.apps import INDEX, AppIndex
 from spark_body.mouth.engines import BrainLink, EdgeTts, LocalTts, OrpheusProxy, TtsEngine
@@ -264,15 +264,29 @@ class Body:
             downloading), so it was transcribed like an open mic."""
             pcm = base64.b64decode(_need(p, "pcm16", str))
             rate = int(p.get("sample_rate", 16000))
+            secs = len(pcm) / 2 / rate
             wake: bool | None = None
             if p.get("wake") is True and self.wake is not None and self.wake.available():
+                wake = True
                 cut = await self.wake.find(pcm, rate)
-                wake = cut is not None
-                if cut is None:
-                    return {"text": "", "wake": False}
-                pcm = pcm[cut * 2 :]
-                if len(pcm) / 2 / rate < MIN_COMMAND_S:
-                    return {"text": "", "wake": True}
+                if cut is not None:
+                    pcm = pcm[cut * 2 :]
+                    if len(pcm) / 2 / rate < MIN_COMMAND_S:
+                        logger.info("ear: %.1f s, wake phrase only", secs)
+                        return {"text": "", "wake": True}
+                else:
+                    # second chance, still on the device: the spotter misses a bare "Spark, …"
+                    # and ~1 in 5 "Hey Spark"s; an on-device transcript catches most of them
+                    local = next(
+                        (self.ears[n] for n in self.stt_plan() if self.ears[n].on_device), None
+                    )
+                    said = (await local.transcribe(pcm, rate)).text if local is not None else ""
+                    if not said_wake(said):
+                        logger.info("ear: %.1f s of speech, no wake phrase: dropped", secs)
+                        return {"text": "", "wake": False}
+                    if not strip_wake(said):
+                        logger.info("ear: %.1f s, wake phrase only (by transcript)", secs)
+                        return {"text": "", "wake": True}
             plan = self.stt_plan()
             if not plan:
                 raise RpcError(UNAVAILABLE, "No speech engine is ready. Sign in or install one.")
@@ -298,6 +312,15 @@ class Body:
                     continue
                 ms = round((self.clock.monotonic() - t0) * 1000)
                 self.fitness.observe(name, ms * scale)
+                # metadata only: what was said never goes to the log
+                logger.info(
+                    "ear: %.1f s of speech, wake=%s, %s in %d ms, %d words",
+                    secs,
+                    wake,
+                    name,
+                    ms,
+                    len(heard.text.split()),
+                )
                 return {
                     "text": strip_wake(heard.text) if wake else heard.text,
                     "lang": heard.lang,

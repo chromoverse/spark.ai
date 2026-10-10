@@ -27,16 +27,28 @@ BUDGET_MS: dict[Role, float] = {"tts": 250.0, "stt": 300.0}  # p95 (§18.3)
 # Low-spec devices (models.tier 0) aim for first audio within 2 s instead of 1 s (owner's call,
 # 2026-10-10): the expressive cloud voice (~650 ms per sentence) still fits there.
 LOW_SPEC_TTS_MS = 700.0
+# ...and STT: a cloud model that hears far better (Groq Whisper ~80% vs Moonshine-tiny ~70% words
+# right on short commands, ~300 ms) is worth its extra ~150 ms there.
+LOW_SPEC_STT_MS = 700.0
 FULL_RUNS = 3
 PROBE_TIMEOUT_S = 3.0
 EWMA = 0.2
 
 PROBE_WAV = Path(__file__).resolve().parent.parent / "ear" / "probe.wav"
 PROBE_TEXT = "Turn the volume up to thirty, then play some music."  # a command, wake phrase cut
+# Accuracy: short commands in four voices with light noise. The one-voice probe was too easy: every
+# engine scored 90% there, so accuracy never decided anything.
+ACCURACY_WAV = PROBE_WAV.with_name("accuracy.wav")
+ACCURACY_TEXT = (
+    "Tell me a joke. Set brightness to fifty percent. Open Spotify and play something calm. "
+    "What's the weather like in Kathmandu?"
+)
+ACCURACY_TIMEOUT_S = 10.0
 
 
 def budgets(tier: int) -> dict[Role, float]:
-    return {**BUDGET_MS, "tts": LOW_SPEC_TTS_MS} if tier == 0 else dict(BUDGET_MS)
+    low: dict[Role, float] = {"tts": LOW_SPEC_TTS_MS, "stt": LOW_SPEC_STT_MS}
+    return low if tier == 0 else dict(BUDGET_MS)
 
 
 @dataclass
@@ -142,10 +154,29 @@ def accuracy(expected: str, heard: str) -> float:
     return max(0.0, 1 - row[len(b)] / max(1, len(a)))
 
 
+def _read(path: Path) -> tuple[bytes, int]:
+    with wave.open(str(path), "rb") as w:
+        return w.readframes(w.getnframes()), w.getframerate()
+
+
 @cache
 def probe_clip() -> tuple[bytes, int]:
-    with wave.open(str(PROBE_WAV), "rb") as w:
-        return w.readframes(w.getnframes()), w.getframerate()
+    return _read(PROBE_WAV)
+
+
+@cache
+def accuracy_clip() -> tuple[bytes, int]:
+    return _read(ACCURACY_WAV)
+
+
+async def stt_accuracy(engine: SttEngine, clock: Clock) -> float | None:
+    """1 - WER on the accuracy clip; None if the engine failed on it."""
+    pcm, rate = accuracy_clip()
+    try:
+        heard = await within(clock, engine.transcribe(pcm, rate), ACCURACY_TIMEOUT_S)
+    except Exception:
+        return None
+    return accuracy(ACCURACY_TEXT, heard.text)
 
 
 async def probe_stt(engine: SttEngine, clock: Clock) -> tuple[float, float] | None:
@@ -248,6 +279,9 @@ class Fitness:
                     times.append(got[0])
                     if got[1] is not None:
                         accs.append(got[1])
+            if times and name in self.ears:
+                acc = await stt_accuracy(self.ears[name], self.clock)
+                accs = [acc] if acc is not None else accs
         score = Score(
             name,
             "tts" if name in self.engines else "stt",

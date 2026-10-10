@@ -42,6 +42,15 @@ def strip_wake(text: str) -> str:
     return _LEADING.sub("", text, count=1).strip()
 
 
+# The second chance (the spotter missed, e.g. a bare "Spark, …"): an on-device transcript that
+# starts with the phrase. Stricter than _LEADING: "a spark of genius" must not wake Spark.
+_SAID = re.compile(r"^\W*(?:(?:hey|hi|hay|okay|ok)\W+)?sparks?\b", re.IGNORECASE)
+
+
+def said_wake(text: str) -> bool:
+    return bool(_SAID.match(text))
+
+
 def _fp32(folder: Path, part: str) -> str:
     """The fp32 file: the int8 ones run ~4x slower on CPUs without VNNI."""
     return str(next(p for p in sorted(folder.glob(f"{part}-*.onnx")) if ".int8." not in p.name))

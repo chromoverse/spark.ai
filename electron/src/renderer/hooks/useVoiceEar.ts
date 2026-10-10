@@ -53,9 +53,11 @@ export function useVoiceEar(
   listening: boolean;
   toggle: () => void;
   error: string | null;
+  status: string | null;
 } {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const vadRef = useRef<MicVadLike | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onHeardRef = useRef(onHeard);
@@ -87,7 +89,9 @@ export function useVoiceEar(
         positiveSpeechThreshold: 0.75,
         negativeSpeechThreshold: 0.55,
         minSpeechMs: 300,
-        redemptionMs: 250, // endpoint after ~250 ms of silence (REDESIGN §4.2)
+        // endpoint after 0.7 s of silence: at 250 ms (REDESIGN §4.2) real speech split into
+        // fragments mid-sentence (owner's first mic test, 2026-10-10)
+        redemptionMs: 700,
         preSpeechPadMs: 120,
         baseAssetPath: VAD_BASE_ASSET_PATH,
         onnxWASMBasePath: ORT_WASM_BASE_PATH,
@@ -102,11 +106,15 @@ export function useVoiceEar(
           void window.electronApi.voice.hear(pcm16Base64(audio), endedAt, needWake).then((r) => {
             if (!r.ok) setError(r.error.message);
             else if (r.data.heard) {
-              armedUntil.current = 0;
+              armedUntil.current = Date.now() + FOLLOW_UP_MS; // keep listening while they go on
+              setStatus(null);
               onHeardRef.current({ text: r.data.heard, signalId: r.data.signalId, tier: r.data.tier });
             } else if (r.data.wake === true) {
               armedUntil.current = Date.now() + FOLLOW_UP_MS; // just "Hey Spark": listening now
+              setStatus("Listening…");
               earcon("heard");
+            } else if (r.data.wake === false) {
+              setStatus("Heard speech without “Hey Spark” first, so I ignored it.");
             }
           });
         },
@@ -128,5 +136,5 @@ export function useVoiceEar(
     else void start();
   }, [start, stop]);
 
-  return { listening, toggle, error };
+  return { listening, toggle, error, status };
 }
