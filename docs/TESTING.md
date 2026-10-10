@@ -69,7 +69,7 @@ cd body && uv run pytest tests/test_reflex_arc.py      # ✅ reflex_arc suite (o
 | B1 ✅ | normal conversation | reflex LLM called once; `reply.delta` streamed per sentence; first delta within budget given fake TTFT 300 ms. `test_b1_*` (+ recent turns carried into the follow-up) |
 | B2 ✅ | first provider slow (TTFT 600 ms) | hedge fires at 350 ms; second provider's stream used; first cancelled. `brain/tests/test_llm_chains.py::test_b2_hedge_at_350ms_second_stream_wins`. The hedge waits for late *for that entry* (1.3 x its usual TTFT, 350 ms at least): from Nepal a fixed 350 ms doubled every call (`test_b2_hedge_waits_for_late_by_this_entrys_usual`) |
 | C1 ✅ | "open Spotify and play something calm" | speech delta and `tool.call` emitted in the same turn (parallel); done chime on success. `test_c1_*`: chime ≤ 1.5 s, spoken "Done." when slower, explained failure with a next step |
-| D1 | invoice email → save PDF | agent loop: gmail_search → get_attachment → file_write on the origin device; job steps persisted; summary contains only items from tool outputs |
+| D1 ✅ | invoice email → save PDF | agent loop: gmail_search → get_attachment → file_write on the origin device; job steps persisted; summary contains only items from tool outputs. `brain/tests/scenario/test_r2_agent.py::test_d1_invoice_email_saved_to_downloads` with stub Gmail tools (brain tools with a handler; real Gmail lands in R4) |
 | D2 | D1 with Gmail not connected | connect card emitted; job paused; after fake OAuth completes, job resumes without a new signal |
 | E1 | spoken to laptop: "open YouTube on my phone" | target resolved to `adb:<serial>`; tool runs on the phone sub-device; the laptop speaks the ack before the tool result |
 | E2 | E1 with the phone offline | spoken explanation + offer to queue; queued run fires when the phone comes online; expires after 1 h |
@@ -98,8 +98,8 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 |---|---|---|
 | RA1 ✅ | eval set of ~300 utterances (positives, near-misses, negatives) | false-accept rate < 0.5%; per-intent slot accuracy ≥ 98%. `body/evals/reflex_arc.jsonl` (338 rows) via `body/tests/test_reflex_arc.py`: 0 false accepts, 100% slots. Grammar only for now; the embedding classifier joins when the ONNX model ships |
 | RA2 ✅ | destructive / send / purchase phrasing | never accepted by tier 0 (30 `never` rows) |
-| RA3 | tier 1: "how's it going" during a job | answered from job state; no LLM call |
-| RA4 | tier 1: "yes do it" with a pending approval | resolves the approval; no LLM call |
+| RA3 ✅ | tier 1: "how's it going" during a job | answered from job state; no LLM call. `brain/tests/scenario/test_r2_agent.py::test_ra3_how_is_it_going_answers_from_job_state` ("0 of 2 done. Working on: file search."); without a job it's conversation (tier 2) |
+| RA4 ✅ | tier 1: "yes do it" with a pending approval | resolves the approval; no LLM call. `brain/tests/scenario/test_r2_agent.py::test_ra4_yes_do_it_resolves_the_pending_approval` + `brain/tests/test_permissions.py::test_ra4_confirmations_by_voice` ("okay go ahead", "no thanks", "always allow it") |
 
 ### 4.4 Device fitness & engines (§18)
 | ID | Scenario | Assertions |
@@ -121,22 +121,22 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | ID | Scenario | Assertions |
 |---|---|---|
 | S1 ✅ | stalled LLM stream (gap > 1.5 s) | switch to the next provider; the user hears a bridge cue. `test_s1_stalled_stream_bridges_then_next_provider_answers` + `test_llm_chains.py::test_s1_*` |
-| S2 | tool times out | agent gets a tool error and re-plans; job doesn't hang |
+| S2 ✅ | tool times out | agent gets a tool error and re-plans; job doesn't hang. `brain/tests/scenario/test_r2_agent.py::test_s2_tool_timeout_replans_and_the_job_finishes` (`tool.cancel` at 5 s) |
 | S3 | target device sleeps mid-job | re-route to another capable device, or explain |
-| S4 | identical tool call 3× | loop broken; agent told; job ends explained |
-| S5 | grounding: summary names an event absent from tool output | blocked before speaking; regenerated or corrected (v1 calendar bug) |
+| S4 ✅ | identical tool call 3× | loop broken; agent told; job ends explained. `brain/tests/scenario/test_r2_agent.py::test_s4_same_call_three_times_ends_explained` (the third never runs; a tool-less wrap-up, spoken `serious`) |
+| S5 ✅ | grounding: summary names an event absent from tool output | blocked before speaking; regenerated or corrected (v1 calendar bug). `brain/tests/scenario/test_r2_agent.py::test_s5_grounding_blocks_an_invented_event` + `brain/tests/test_permissions.py::test_s5_grounding_finds_invented_names_times_and_files`. Claims are found by shape (quoted text, file names, times, ids, capitalized names mid-sentence); one rewrite, then a safe line |
 | S6 ✅ | Groq quota exhausted | next chain entry used; health marks Groq cooling down until reset. `test_llm_chains.py::test_s6_rate_limit_falls_through_and_cools_down`; all entries down → `test_every_provider_down_is_explained_never_silent` |
-| S7 | estimate miss (job 2× over estimate) | user gets a progress note with a new estimate |
+| S7 ✅ | estimate miss (job 2× over estimate) | user gets a progress note with a new estimate. `brain/tests/scenario/test_r2_agent.py::test_s7_job_twice_over_its_estimate_gets_a_new_one` (supervisor sweep; spoken once, `job.update` note + `eta_s`) |
 | S8 ✅ | invariant sweep | any signal past its deadline without a terminal state triggers the playbook. `test_s8_signal_past_its_deadline_is_explained` |
 
 ### 4.6 Agent, tools, permissions (§5.2, §7, §20)
 | ID | Scenario | Assertions |
 |---|---|---|
-| T1 | parallel read tools | all tool_results returned in **one** user message; ran concurrently |
-| T2 | malformed tool call twice | escalates to the next chain entry; history preserved |
-| T3 | deny → ask → allow precedence | a broad deny beats a narrow allow; a bare-tool deny removes the tool from the model's tool list |
-| T4 | auto-reviewer | medium-risk call matching the request is allowed; a mismatch escalates to ask |
-| T5 | MCP untrusted server with `readOnlyHint` | still treated as "ask" |
+| T1 ✅ | parallel read tools | all tool_results returned in **one** user message; ran concurrently. `brain/tests/scenario/test_r2_agent.py::test_t1_three_reads_run_in_parallel_in_one_turn` (all three `tool.call`s out before any answer) |
+| T2 ✅ | malformed tool call twice | escalates to the next chain entry; history preserved. `brain/tests/scenario/test_r2_agent.py::test_t2_malformed_twice_escalates_with_the_same_history` (Groq's 400 `tool_use_failed` and schema-invalid inputs count too) |
+| T3 ✅ | deny → ask → allow precedence | a broad deny beats a narrow allow; a bare-tool deny removes the tool from the model's tool list. `brain/tests/scenario/test_r2_agent.py::test_t3_deny_rules_win_and_bare_denies_hide_tools` (agent and reflex) + 4 unit tests in `brain/tests/test_permissions.py` (device scope, modes, read-only shell allowlist) |
+| T4 ✅ | auto-reviewer | medium-risk call matching the request is allowed; a mismatch escalates to ask. Allowed: `brain/tests/scenario/test_r2_agent.py::test_notes_txt_completes_with_progress_shown`; escalated: `brain/tests/scenario/test_r2_agent.py::test_t4_reviewer_escalates_a_call_that_doesnt_match_the_request`. Errors or timeouts escalate too |
+| T5 ✅ | MCP untrusted server with `readOnlyHint` | still treated as "ask". `brain/tests/test_permissions.py::test_t5_untrusted_mcp_annotations_are_ignored` (the rule; the MCP client itself comes later) |
 | T6 | output over 25k tokens | stored as an artifact; the model gets a preview + handle |
 | T7 | skill import | a skill folder from Claude Code / Codex loads; only name + description enter context until used |
 | T8 | workflow mode | intermediate rows never appear in model messages; the final artifact is correct |
@@ -172,12 +172,21 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | Throttle the CPU → the plan changes on the next start | FT11 |
 | Chaos: 100 signals, none silent | §5 |
 
+### 4.7c R2 acceptance (`PHASES.md` R2, in progress)
+| Acceptance test | Proven by |
+|---|---|
+| "Create notes.txt on the desktop, write my to-dos, open it" completes with progress shown | `brain/tests/scenario/test_r2_agent.py::test_notes_txt_completes_with_progress_shown` (todo, steps, note, wrap-up; real hands: body tests) |
+| "Delete everything in Downloads" → approval required; deny → nothing deleted | `brain/tests/scenario/test_r2_agent.py::test_delete_downloads_asks_and_deny_deletes_nothing` (+ multi-device first-answer-wins, plan approval, "always") |
+| "Stop" mid-job cancels within 500 ms; "use the D drive instead" steers the running job | `brain/tests/scenario/test_r2_agent.py::test_stop_mid_job_cancels_within_500ms`, `…test_stop_said_to_the_brain_cancels_the_job`, `…test_steer_use_the_d_drive_reaches_the_running_job`; barge-in leaves jobs alone |
+| 3 independent reads run in parallel | T1 |
+| Malformed free-model tool calls twice → next chain entry, job completes | T2 |
+
 ### 4.8 Persona (`PERSONA.md`)
 | ID | Scenario | Assertions |
 |---|---|---|
 | PS1 ✅ | banned phrase in a model reply ("Task completed successfully") | post-hook lint rewrites it before speaking. `test_ps1_banned_phrases_are_rewritten_before_speaking` |
 | PS2 ✅ | tier-0 acknowledgements over 10 signals | no identical phrase twice in a row. `test_reflex_arc.py` |
-| PS3 | job wrap-up | ≤ 3 spoken sentences: done → needs you → optional next step; details in an artifact |
+| PS3 ✅ | job wrap-up | ≤ 3 spoken sentences: done → needs you → optional next step; details in an artifact. `brain/tests/scenario/test_r2_agent.py::test_ps3_wrap_up_is_three_sentences_and_the_rest_is_an_artifact` |
 | PS4 | tone tags | `[serious]` on approvals/failures involving money or other people; stripped on non-expressive engines. Brain half ✅ `test_ps4_tone_tags_travel_as_tone_not_speech` (tag → `tone`, never spoken; explained failures are `serious`); stripping is FT5 in the body |
 
 ### 4.9 Language (§25)

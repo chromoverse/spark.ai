@@ -3,7 +3,9 @@
 A call goes to the first entry that is enabled, has a key, and whose circuit is closed. Reflex
 calls are hedged: no first token by `hedge_s` → the next entry starts in parallel and the first
 stream to produce output wins. Failures before output fall through silently; a failure after
-output yields `Restart` and the next entry starts over. Only `ChainExhausted` reaches the caller.
+output yields `Restart` and the next entry starts over. Only `ChainExhausted` reaches the caller,
+except for roles that surface malformed output (`Malformed`): the agent retries once, then
+escalates past that entry with `exclude` (§5.2).
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from app.llm.types import (
     ChainExhausted,
     Done,
     ErrorKind,
+    Malformed,
     Message,
     ProviderError,
     Restart,
@@ -34,7 +37,7 @@ from app.llm.types import (
 
 logger = logging.getLogger(__name__)
 
-Role = Literal["reflex"]
+Role = Literal["reflex", "agent", "subagent", "review"]
 T = TypeVar("T")
 
 
@@ -53,13 +56,25 @@ class RoleConfig:
     ttft_timeout_s: float  # an entry with no first token by then has failed
     gap_s: float  # a stream silent for longer has stalled (REDESIGN §19.1)
     max_tokens: int
+    surface_malformed: bool = False  # raise Malformed instead of falling through
 
 
 # gpt-oss reasons before answering; "low" keeps time-to-first-token inside the reflex budget.
 _FAST = {"reasoning_effort": "low"}
+_MEDIUM = {"reasoning_effort": "medium"}  # agent effort default (§28)
+_EFFORT = {"output_config": {"effort": "medium"}}
+_SUB = [
+    Entry("groq", "openai/gpt-oss-20b", extra=_FAST),
+    Entry("groq", "qwen/qwen3.8-27b"),
+    Entry("cloudflare", "@cf/openai/gpt-oss-20b"),
+    Entry("nvidia", "nvidia/nemotron-3-super"),
+    Entry("openrouter", "openai/gpt-oss-20b:free"),
+    Entry("anthropic", "claude-haiku-5-5", paid=True, extra={"output_config": {"effort": "low"}}),
+]
 
 # Order is free first, then measured quality and latency. The R1 reflex eval + latency bench
-# re-order these (PHASES R1); agent/subagent chains land with the agent loop in R2.
+# ordered the reflex; the R2 agent eval orders the agent chain. Each Groq model has its own rate
+# limit bucket, so escalating to the next model also escapes a 429.
 CHAINS: dict[Role, list[Entry]] = {
     "reflex": [
         Entry("groq", "openai/gpt-oss-20b", extra=_FAST),
@@ -75,10 +90,29 @@ CHAINS: dict[Role, list[Entry]] = {
             extra={"thinking": {"type": "disabled"}, "output_config": {"effort": "low"}},
         ),
     ],
+    "agent": [
+        Entry("groq", "openai/gpt-oss-120b", extra=_MEDIUM),
+        Entry("groq", "qwen/qwen3.8-27b"),
+        Entry("groq", "openai/gpt-oss-20b", extra=_MEDIUM),
+        Entry("nvidia", "deepseek-ai/deepseek-v4"),
+        Entry("cloudflare", "@cf/openai/gpt-oss-120b"),
+        Entry("mistral", "mistral-medium-latest"),
+        Entry("gemini", "gemini-flash-latest", trains_on_data=True),
+        Entry("openrouter", "openai/gpt-oss-120b:free"),
+        Entry("anthropic", "claude-haiku-5-5", paid=True, extra=_EFFORT),
+        Entry("anthropic", "claude-sonnet-5-5", paid=True, extra=_EFFORT),
+        Entry("anthropic", "claude-opus-5-5", paid=True, extra=_EFFORT),
+    ],
+    "subagent": _SUB,
+    "review": _SUB,
 }
 
 ROLES: dict[Role, RoleConfig] = {
     "reflex": RoleConfig(hedge_s=0.35, ttft_timeout_s=2.5, gap_s=1.5, max_tokens=300),
+    # reasoning models think before the first token; the agent isn't on the voice path
+    "agent": RoleConfig(None, 30.0, 15.0, 2048, surface_malformed=True),
+    "subagent": RoleConfig(None, 20.0, 15.0, 1024, surface_malformed=True),
+    "review": RoleConfig(None, 5.0, 5.0, 200),
 }
 # The hedge is for a late first token, late for that entry: from Nepal Groq's usual TTFT is
 # ~450 ms, so a fixed 350 ms hedge fired on ~95% of calls and doubled every turn's free quota
@@ -152,13 +186,17 @@ class ChainRunner:
         for api in self._claude.values():
             await api.close()
 
-    async def candidates(self, role: Role, *, allow_training: bool) -> list[Candidate]:
+    async def candidates(
+        self, role: Role, *, allow_training: bool, exclude: frozenset[str] = frozenset()
+    ) -> list[Candidate]:
         table = providers(self.settings)
         out: list[Candidate] = []
         for entry in CHAINS[role]:
             if entry.paid and not self.settings.paid_providers_enabled:
                 continue
             if entry.trains_on_data and not allow_training:
+                continue
+            if f"{entry.provider}/{entry.model}" in exclude:
                 continue
             base_url, keys = table.get(entry.provider, ("", []))
             out.extend(Candidate(entry, base_url, k) for k in keys)
@@ -206,9 +244,11 @@ class ChainRunner:
         messages: Sequence[Message],
         tools: Sequence[ToolDef] = (),
         allow_training: bool = False,
+        exclude: frozenset[str] = frozenset(),
     ) -> AsyncGenerator[StreamEvent, None]:
+        """`exclude` skips entries by "provider/model" (a job that escalated past them)."""
         cfg = ROLES[role]
-        pending = await self.candidates(role, allow_training=allow_training)
+        pending = await self.candidates(role, allow_training=allow_training, exclude=exclude)
         if not pending:
             raise ChainExhausted(role)
         while True:
@@ -222,6 +262,8 @@ class ChainRunner:
                     yield replace(ev, provider=cand.label) if isinstance(ev, Done) else ev
             except ProviderError as exc:
                 logger.warning("llm stream broke", extra={"llm": cand.label, "error": exc.kind})
+                if exc.kind == "malformed" and cfg.surface_malformed:
+                    raise Malformed(cand.label) from exc
                 await self.health.fail(cand.hid, exc)
                 if not pending:
                     raise ChainExhausted(role) from exc
@@ -277,6 +319,9 @@ class ChainRunner:
                         logger.warning(
                             "llm entry failed", extra={"llm": c.label, "error": exc.kind}
                         )
+                        if exc.kind == "malformed" and cfg.surface_malformed:
+                            await agen.aclose()
+                            raise Malformed(c.label) from exc
                         await self.health.fail(c.hid, exc)
                         await agen.aclose()
                         if not running and pending:

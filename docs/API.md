@@ -69,7 +69,7 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 | PATCH / DELETE | `/v2/memories/{id}` | edit / forget (removes the embedding) |
 | GET | `/v2/usage` | today's usage per role/provider, quota left |
 | GET / POST / DELETE | `/v2/keys` | user provider keys (free or BYOK); responses show provider + last 4 only |
-| GET / POST / DELETE | `/v2/permissions/rules` | deny / ask / allow rules |
+| GET / POST / DELETE | `/v2/permissions/rules` | ✅ deny / ask / allow rules (REDESIGN §7.2). POST `{ tool, pattern?: glob on the tool's matched input (path, command, name; `''` = every call), decision: deny\|ask\|allow, device_id?: one of yours }` → the rule. Unknown tool → `422`; another user's device or rule → `404`. Backslashes are stored as `/`. Precedence across matching rules is deny → ask → allow; a bare deny (no pattern, no device) removes the tool from the model's tool list |
 | POST | `/v2/account/export` | data export job |
 | DELETE | `/v2/account` | delete account + data (confirmation token required) |
 
@@ -77,15 +77,15 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v2/threads` / `/v2/threads/{id}/messages` | paginated history |
-| GET | `/v2/jobs` / `/v2/jobs/{id}` | job state, todo, steps, usage |
-| POST | `/v2/jobs/{id}/cancel` | same as a "stop" signal |
+| GET | `/v2/jobs` / `/v2/jobs/{id}` | ✅ newest first, `?limit≤100` → `{ items: [{ id, title, status: queued\|running\|waiting\|done\|cancelled\|failed, todo, eta_s, summary, provider_used, usage, device_id, thread_id, created_at, finished_at }] }`; `{id}` adds `steps: [{ id, tool, input, output (redacted, ≤ 2000 chars), status: running\|ok\|error\|denied, error, device_id, started_at, finished_at }]` |
+| POST | `/v2/jobs/{id}/cancel` | ✅ same as a "stop" signal → `{ status: "cancelled" }`; a finished job keeps its status |
 | GET | `/v2/artifacts/{id}` | metadata + signed download URL |
 | POST | `/v2/uploads` | signed upload URL for large tool outputs/files |
 
 ### 2.4 Capabilities
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/v2/capabilities/tools` | tool catalog with risk + effective permission |
+| GET | `/v2/capabilities/tools` | ✅ `{ items: [{ name, description, target: brain\|device, risk: read\|write\|destructive\|external, requires[], permission: allow\|review\|ask\|deny }] }`: what a call does by default under the user's mode and bare rules (`review` = the auto-reviewer decides, else ask); pattern rules can still change single calls |
 | GET / POST / DELETE | `/v2/skills` | list / import (zip or git URL) / remove |
 | GET | `/v2/plugins/marketplaces` / `/v2/plugins` | browse; context cost shown per plugin |
 | POST / DELETE | `/v2/plugins/{id}` | install (version-pinned) / uninstall |
@@ -135,11 +135,11 @@ where noted.
 | `signal.partial` | `{ signal_id, text }` | ✅ prefetches the turn context (thread, recent turns, settings); ack `{ signal_id }` |
 | `signal.final` | `{ signal_id, text, lang?, confidence?, source?: voice\|text\|schedule, utc_offset_min? }` | ✅ the Socket.IO ack is the `signal.ack` payload `{ signal_id, tier }`; a repeated `signal_id` (5 min) acks `{ signal_id, duplicate: true }` and runs nothing. `utc_offset_min` = the device's current UTC offset, so "what time is it" is local. Voice signals may arrive on the ear's endpoint candidate (speculative start, §4.2): the device holds the turn's live events until the endpoint is confirmed, or cancels it with `signal.interrupt { signal_id }` if speech resumed |
 | `signal.handled_locally` | `{ signal_id, text, intent, slots, result: { ok, said?, output?, error?: { code, message } }, utc_offset_min? }` | ✅ tier-0 result (§27). `ok` → stored in the thread, ack `{ tier: 0 }`, no LLM. Not ok → the reflex LLM explains with the device's error, ack `{ tier: 2 }` |
-| `signal.interrupt` | `{ signal_id? }` | ✅ barge-in / cancelled speculative start; no id = this device's latest turn. Ack `{ cancelled: signal_id \| null }`. A cancelled turn isn't stored |
+| `signal.interrupt` | `{ signal_id?, scope?: turn\|all }` | ✅ barge-in / cancelled speculative start; no id = this device's latest turn. Ack `{ cancelled: signal_id \| null }`. A cancelled turn isn't stored. `scope: "all"` (a spoken "stop" caught by tier 0) also cancels the user's most recent job; barge-in (`turn`, the default) never touches jobs |
 | `tool.progress` | `{ call_id, note, pct? }` | |
 | `tool.result` | `{ call_id, ok, output?, error?: { code, message }, artifacts[] }` | ✅ ack `{ accepted }`; another user's or an expired `call_id` → `false`. (`output_schema` validation lands with R2's ToolSpec) |
-| `approval.response` | `{ approval_id, decision: allow\|deny\|always }` | |
-| `ask.response` | `{ ask_id, answer }` | answer to `ask_user` |
+| `approval.response` | `{ approval_id, decision: allow\|deny\|always }` | ✅ ack `{ accepted }`: `true` for the first answer from any of the user's devices, `false` after that (or another user's id). `always` also adds an allow rule for exactly that input. Spoken "yes, do it" / "no" / "always" do the same through tier 1 |
+| `ask.response` | `{ ask_id, answer ≤ 500 }` | ✅ answer to `ask_user`; ack `{ accepted }`. A spoken line within 60 s of the question answers it too (tier 1) |
 | `engine.incident` | `{ role: stt\|tts\|wake\|vad\|local_llm\|tool, engine, error, remedy, outcome?: recovered\|failed_explained\|degraded }` | ✅ watchdog report (§19), stored in `incidents` |
 | `signal.trace` | `{ signal_id, spans: { endpoint, stt_final, first_audio, … (ms) }, stt_engine?, tts_engine? }` | ✅ device-measured spans (§13), logged next to the brain's own (`ack`, `ttft`, `first_delta`, `tool:*`, `end`) |
 | `sync.resume` | `{ last_event_id }` | replay missed events |
@@ -155,20 +155,32 @@ their outcome. Everything else below is synced to every device of the user.
 | `signal.ack` | `{ signal_id, tier, job_id? }` | ✅ returned as the `signal.final` Socket.IO ack, right after routing (no DB or LLM wait) |
 | `reply.delta` | `{ signal_id, text, tone?, speak: bool, final: bool }` | ✅ one sentence (the first one cut early) per event, lint-clean, tone tag moved to `tone`. Every turn ends with `{ text: "", speak: false, final: true }`, sent after the turn is stored |
 | `reply.cue` | `{ signal_id, kind: heard\|done\|error }` | ✅ earcons (§4.4): `heard` when no sentence is out 500 ms after the signal or while a broken stream restarts; `done` when quick tools all succeeded within 1.5 s (slower → a spoken "Done."); `error` with an explained failure |
-| `tool.call` | `{ call_id, job_id, signal_id, tool, input, timeout_s, risk }` | ✅ to the origin device, input already schema-checked; no result within `timeout_s` → `tool.cancel` and the model is told |
+| `tool.call` | `{ call_id, job_id, signal_id, tool, input, timeout_s, risk }` | ✅ to the origin device, input already schema-checked; no result within `timeout_s` → `tool.cancel` and the model is told. `job_id` is set for agent calls. A cancelled job sends `tool.cancel` for its in-flight call. The device's socket dropping fails the call at once ("That device went offline…") |
 | `tool.cancel` | `{ call_id }` | ✅ |
-| `approval.request` | `{ approval_id, tool, summary, inputs_preview, risk, options }` | sent to all online devices; first answer wins |
-| `ask.request` | `{ ask_id, question, options? }` | voice prompt + UI choice |
+| `approval.request` | `{ approval_id, job_id, tool, summary, inputs_preview, risk, options }` | ✅ synced to every device; first answer wins; expires after 120 s (`approval.resolved` with `expired`, the job is told nobody approved). `tool` is `"plan"` for plan approval (`inputs_preview.steps: [{ tool, target, why }]`, options allow/deny); approved steps with a target run without asking again in that job. The origin also hears it: "Heads up, this will delete everything in Downloads. Go ahead?" (`tone: serious`) |
+| `approval.resolved` | `{ approval_id, decision: allow\|deny\|always\|expired, by_device }` | ✅ every device closes its card |
+| `ask.request` | `{ ask_id, job_id, question, options[] }` | ✅ voice prompt + UI choice (the origin hears the question); unanswered after 300 s → the job carries on without it |
+| `ask.resolved` | `{ ask_id, answer \| null }` | ✅ |
 | `connect.request` | `{ service, scopes, reason, resume_job_id }` | just-in-time connect card (§23) |
-| `job.update` | `{ job_id, status, todo[], step?, note?, eta_s? }` | |
-| `artifact.new` | `{ artifact_id, kind, preview, thread_id }` | |
+| `job.update` | `{ job_id, status, title, todo[], eta_s, step?, note?, summary?, artifact_id? }` | ✅ on every change. `status`: queued\|running\|waiting (an approval or question)\|done\|cancelled\|failed. `todo[]`: `{ text, status: pending\|in_progress\|done }` (the agent's `todo_write`). `step`: `{ id, tool, summary, input, status: running\|ok\|error\|denied, device_id }`. `note`: the agent's progress line (on screen, not spoken), or "This is taking longer than I thought…" with a new `eta_s` when a job runs 2x over its estimate (also spoken). `summary` + `artifact_id` arrive with the end |
+| `artifact.new` | `{ artifact_id, kind: text\|file\|image\|table, name, preview, thread_id, job_id }` | ✅ e.g. a job wrap-up longer than 3 sentences: the first 3 are spoken, the whole text is a `text` artifact (`preview.text`) |
 | `settings.changed` | `{ changed: {...} }` | ✅ pushed to every device of the user, including the one that changed it |
 | `notice` | `{ text, from_device?, level }` | e.g. "Spark opened YouTube, asked from Laptop" |
 | `fallback.notice` | `{ reason }` | brain degraded; the device switches to the local brain |
 
+**Job speech.** A job speaks on its origin device with `reply.delta` events carrying the origin
+`signal_id`, each utterance closed by its own `final: true` marker: an approval prompt, an
+`ask_user` question, a "taking longer" note, and the wrap-up (≤ 3 sentences: done → needs you →
+optional next step; `tone: serious` when it failed). Steps and notes stay on screen.
+
 ### 3.3 Tool call contract
-- `input` validated against `input_schema` before sending; `output` validated against
-  `output_schema` on return.
+- ✅ `input` validated against `input_schema` before sending; `output` validated against
+  `output_schema` on return (a mismatch is an error for the model and an incident).
+- ✅ Agent calls pass `pre_tool` hooks, the permission engine (deny → ask → allow; in `default` mode
+  read runs, reversible writes run, medium-risk writes go to the auto-reviewer, destructive and
+  external ask; `ask` mode asks for everything; `trust` asks for nothing), then `post_tool` hooks
+  (secret redaction before the model or the step log sees an output; an audit row for every call
+  that can change something). Reflex quick tools honor bare deny rules.
 - Errors return `ok: false` with `{ code, message }` where `message` is actionable for the model
   ("App 'Spotify' isn't installed; installed media apps: VLC, Groove Music").
 - `timeout_s` is enforced by both sides; the device sends `tool.progress` at least every 5 s for

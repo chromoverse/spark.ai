@@ -1,7 +1,7 @@
 """Reflex (REDESIGN §5.1, §4.4): one streamed call on the reflex chain. Text is spoken sentence by
 sentence while quick tools run on the origin device in parallel; then a done cue, a short "Done.",
-or a follow-up turn that explains a failure. Multi-step work goes to `delegate` (a stub until the
-agent loop lands in R2)."""
+or a follow-up turn that explains a failure. Multi-step work goes to `delegate`, which starts a
+job (§6.1). While jobs run, the reflex is the signal router for them (§6.4): steer or cancel."""
 
 from __future__ import annotations
 
@@ -32,6 +32,17 @@ class Delegate(BaseModel):
     ack: str = Field(max_length=120, description="Short spoken acknowledgement, e.g. 'On it.'")
 
 
+class JobSteer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(max_length=500, description="What the user wants changed, in their words")
+    job: str | None = Field(default=None, max_length=80, description="Job title if several run")
+
+
+class JobCancel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    job: str | None = Field(default=None, max_length=80, description="Job title if several run")
+
+
 DELEGATE = ToolSpec(
     "delegate",
     "Hands work you can't do in one reply (files, email, calendar, current web info, live "
@@ -41,17 +52,40 @@ DELEGATE = ToolSpec(
     "brain",
     Risk.READ,
 )
+JOB_STEER = ToolSpec(
+    "job_steer",
+    "Passes the user's change or addition to the running job ('use the D drive instead').",
+    JobSteer,
+    "brain",
+    Risk.READ,
+)
+JOB_CANCEL = ToolSpec(
+    "job_cancel",
+    "Stops the running job when the user wants it stopped.",
+    JobCancel,
+    "brain",
+    Risk.READ,
+)
 TOOLS: tuple[ToolSpec, ...] = (*QUICK_TOOLS, DELEGATE)
 TOOL_DEFS = [t.to_def() for t in TOOLS]
+JOB_TOOL_DEFS = [JOB_STEER.to_def(), JOB_CANCEL.to_def()]
 
 
-def tool_defs(capabilities: frozenset[str]) -> list[ToolDef]:
-    """Only tools the origin device can run (its device.hello capabilities), in catalog order so
-    the prompt prefix stays cacheable for a given device. delegate is always offered."""
-    return [d for t, d in zip(TOOLS, TOOL_DEFS, strict=True) if t.requires <= capabilities]
+def tool_defs(
+    capabilities: frozenset[str], hidden: frozenset[str] = frozenset(), *, jobs: bool = False
+) -> list[ToolDef]:
+    """Only tools the origin device can run (its device.hello capabilities) and no bare-denied
+    ones, in catalog order so the prompt prefix stays cacheable for a given device. delegate is
+    always offered; job_steer / job_cancel only while a job runs."""
+    defs = [
+        d
+        for t, d in zip(TOOLS, TOOL_DEFS, strict=True)
+        if t.requires <= capabilities and t.name not in hidden
+    ]
+    return [*defs, *JOB_TOOL_DEFS] if jobs else defs
 
 
-BY_NAME = {t.name: t for t in TOOLS}
+BY_NAME = {t.name: t for t in (*TOOLS, JOB_STEER, JOB_CANCEL)}
 
 SYSTEM = (
     persona.PERSONA_BLOCK
@@ -69,16 +103,19 @@ email, the calendar, a web search for something current, live data (weather, new
 several steps, or anything risky. Give it the task and a short ack.
 - If what you heard is a fragment or makes no sense (a speech-to-text slip, "okay okay", half \
 a sentence), say in a few words that you didn't catch it. Never delegate it, never guess.
+- If the context note lists a running job: when the user changes or adds to it, call \
+job_steer; when they want it stopped, call job_cancel; say a few words either way.
 - The (context: ...) note at the end of the user's message is for you. Use it, never read it out.
 - Never claim you did something no tool did.
 - Never include internal or system XML tags in your reply."""
 )
 
 FAST_DONE_S = 1.5  # §4.4: faster quick actions get a chime, slower ones a spoken "Done."
-NOT_YET = "I can't run multi-step jobs yet, that part of me lands soon. Want to break it down?"
 
 
-def volatile_context(ctx: Context, utc_offset_min: int | None, now_utc: Any) -> str:
+def volatile_context(
+    ctx: Context, utc_offset_min: int | None, now_utc: Any, jobs: list[str] | None = None
+) -> str:
     tz = timezone(timedelta(minutes=utc_offset_min or 0))
     local = now_utc.astimezone(tz)
     when = local.strftime("%A %d %B %Y, %I:%M %p").replace(" 0", " ")
@@ -90,6 +127,8 @@ def volatile_context(ctx: Context, utc_offset_min: int | None, now_utc: Any) -> 
         parts.append("keep it extra short")
     if ctx.address_as:
         parts.append(f"you may call the user {ctx.address_as} now and then")
+    if jobs:
+        parts.append("running job: " + " | ".join(jobs))
     return "(context: " + "; ".join(parts) + ")"
 
 
@@ -134,7 +173,9 @@ async def run(
     """One reflex turn for signal `w`. `after` continues a turn that already happened (a tier-0
     action that failed): the model then explains instead of calling tools."""
     rt = voice.rt
-    note = volatile_context(ctx, utc_offset_min, rt.clock.now())
+    running = voice.jobs.mine(w.user_id)
+    lines = [f"{j.title} ({voice.jobs.status_line(j)})" for j in running]
+    note = volatile_context(ctx, utc_offset_min, rt.clock.now(), lines)
     user_msg: LlmMessage = {
         "role": "user",
         "content": [{"type": "text", "text": f"{user_text}\n\n{note}"}],
@@ -144,13 +185,14 @@ async def run(
     blocks: list[dict[str, Any]] = []
     calls: list[tuple[ToolUse, asyncio.Task[tuple[bool, str]]]] = []
     delegated: Delegate | None = None
+    routed: list[tuple[ToolUse, str]] = []  # job_steer / job_cancel: run in the brain at once
     tools_t0 = 0.0
 
     stream = rt.llm.stream(
         "reflex",
         system=SYSTEM,
         messages=messages,
-        tools=() if after else tool_defs(ctx.capabilities),
+        tools=() if after else tool_defs(ctx.capabilities, ctx.hidden, jobs=bool(running)),
         allow_training=ctx.allow_training,
     )
     try:
@@ -164,6 +206,9 @@ async def run(
                 blocks.append({"type": "tool_use", "id": ev.id, "name": ev.name, "input": ev.input})
                 if ev.name == DELEGATE.name:
                     delegated = Delegate.model_validate(ev.input)
+                    continue
+                if ev.name in (JOB_STEER.name, JOB_CANCEL.name):
+                    routed.append((ev, await _route(voice, w, ev)))
                     continue
                 tools_t0 = tools_t0 or rt.clock.monotonic()
                 spec = BY_NAME[ev.name]
@@ -185,10 +230,13 @@ async def run(
     finally:
         await stream.aclose()
 
+    job_note = ""
     if delegated is not None:
         if not speaker.spoken:
             await speaker.say(delegated.ack)
-        await speaker.say(NOT_YET)
+        note_for_job = volatile_context(ctx, utc_offset_min, rt.clock.now())
+        job = await voice.jobs.start(w, ctx, delegated.task, user_text, note_for_job)
+        job_note = f"Started a background job for it ({job.title}). It reports back when done."
 
     results: list[dict[str, Any]] = []
     failed = False
@@ -203,9 +251,13 @@ async def run(
             {
                 "type": "tool_result",
                 "tool_use_id": next(b["id"] for b in blocks if b["name"] == DELEGATE.name),
-                "content": "Not available yet: the agent arrives in a later release.",
-                "is_error": True,
+                "content": job_note,
+                "is_error": False,
             }
+        )
+    for use, content in routed:
+        results.append(
+            {"type": "tool_result", "tool_use_id": use.id, "content": content, "is_error": False}
         )
 
     turn: list[tuple[str, list[dict[str, Any]]]] = [
@@ -230,12 +282,24 @@ async def run(
         state = "failed_explained"
         follow = await _explain_tools(voice, w, ctx, [*messages, *_as_llm(turn[-2:])])
         turn.append(("assistant", [{"type": "text", "text": follow}]))
-    if delegated is not None:
-        state = "failed_explained"
 
     await voice.store(w, ctx, turn)  # before the final marker: a follow-up sees this turn
     voice.sup.finish(w, state)
     await voice.end(w)
+
+
+async def _route(voice: Voice, w: Watch, use: ToolUse) -> str:
+    """§6.4 steer / interrupt, decided by the reflex, applied to the job right away."""
+    jobs = voice.jobs
+    hint = use.input.get("job") if isinstance(use.input.get("job"), str) else None
+    job = jobs.find(w.user_id, hint)
+    if job is None:
+        return "No job is running."
+    if use.name == JOB_CANCEL.name:
+        await jobs.cancel(job)
+        return f"Stopped: {job.title}."
+    jobs.steer(job, str(use.input.get("message", ""))[:500])
+    return f"Passed it on to the job: {job.title}."
 
 
 def _as_llm(turn: list[tuple[str, list[dict[str, Any]]]]) -> list[LlmMessage]:

@@ -60,3 +60,12 @@ class ProviderError(Exception):
 
 class ChainExhausted(Exception):
     """No entry in the chain could answer. Callers explain it to the user, never go silent."""
+
+
+class Malformed(Exception):
+    """The entry produced a tool call that can't be parsed or names an unknown tool. Raised only
+    for roles with `surface_malformed` (the agent retries once, then escalates past `entry`)."""
+
+    def __init__(self, entry: str) -> None:
+        super().__init__(entry)
+        self.entry = entry

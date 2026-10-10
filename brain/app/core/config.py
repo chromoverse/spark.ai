@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://spark:spark@127.0.0.1:5432/spark"
     redis_url: str = "redis://127.0.0.1:6379/0"
     searxng_url: str = "http://127.0.0.1:8888"
+    artifacts_dir: str = "data/artifacts"  # artifact bytes on the brain host (compose: a volume)
 
     jwt_secret: SecretStr
     jwt_secret_previous: SecretStr | None = None

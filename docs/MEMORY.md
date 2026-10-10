@@ -68,16 +68,23 @@ happens.
   "Hey Spark" request); follow-ups never worked because audio plays in the floating panel while the
   ear runs in the main window (speaking state now broadcast to every window); Whisper's "foreign"
   noise hallucination; "what time it is" delegated (tier 0 + prompt fix).
-- **NEXT (start here): R2 — Agent loop + desktop hands** (`PHASES.md` R2), on a new branch
-  `r2/agent-loop` from `main`. The reflex's `delegate` is a stub ("I can't run multi-step jobs
-  yet"); R2 replaces it with the agent loop (REDESIGN §5.2), the ToolSpec registry and device tool
-  round trip, permissions (deny → ask → allow) with approvals, jobs with progress and interrupt, and
-  the R1 leftovers moved here (RA3, RA4, PS3). Plan it against the R2 acceptance tests and the
-  TESTING matrix rows first. Owner decisions from R1 (2026-10-10): "do what is best" on the hedge
-  (now adaptive), the low-spec gate (p95 < 2 s; 1 s stays the target for normal PCs and the R7
-  region). Open voice items, only if they show up in use: a loudness gate for follow-ups in noisy
-  rooms, speaker-aware barge-in, the on-device wake cut (FT10 flaky). Cleanup for later:
-  `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
+- **R2 in progress** on branch `r2/agent-loop` (from `main` at `725268a`). Plan shown to the owner
+  2026-10-10: M1 contracts → M2 agent + jobs → M3 desktop hands → M4 cross-device → M5 agent eval →
+  M6 UI (mockups first, owner reviews) → M7 delete v1 executor + close. **M1 + M2 done:**
+  `ToolSpec` v2 (output model, `match` field for rules, review flag, confirm text, MCP annotations,
+  brain-tool `handler`), 25 agent device tool specs + 5 brain tools, `tools/registry.py` (keyword
+  pre-selector, 8 picks + `file_list`/`file_read`, `tool_search` for more), agent/subagent/review
+  chains (Groq gpt-oss-120b → qwen3.8-27b → gpt-oss-20b, then keyless entries), migration 0003
+  (jobs, job_steps, approvals, artifacts, queued_actions, permission_rules), `agent/loop.py`,
+  `jobs/runtime.py`, permission engine + auto-reviewer + hooks (redaction, audit), grounding check,
+  approvals on every device (first answer wins), `ask_user`, `task` sub-agents, `plan_submit`,
+  tier 1 status / yes-no-always / ask answers, `signal.interrupt {scope: all}`, reflex `job_steer` /
+  `job_cancel`, routes `/v2/jobs`, `/v2/permissions/rules`, `/v2/capabilities/tools`. Brain: 124 tests
+  (37 new), ruff + mypy clean. **NEXT: M3** desktop hands in `body/hands` (port v1 file/system
+  ops, folder organize + restore, shell, clipboard, screenshot, keyboard/mouse, processes) and the
+  Electron relay for job/approval/ask events. Open voice items, only if they show up in use: a
+  loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
+  flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
   after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
   after body or main-process changes; renderer changes hot-reload). The body logs one line per
@@ -194,6 +201,29 @@ happens.
   took first words; Whisper copes with "Hey Spark" and `strip_wake` removes it).
 - The scripted ear is a dev env var in Electron main, not a separate driver: it measures the real
   path including playback, and its traces land in the brain log like live ones.
+
+**R2 implementation choices (2026-10-10, agent; owner can overrule)**
+- Phone in R2 = a mobile body (FakeDevice); ADB sub-device routing (`adb:<serial>` via the laptop)
+  comes with real ADB in R4. D1 runs on stub Gmail brain tools; T5 tests only the MCP permission
+  rule (the MCP client comes later).
+- Running jobs fail cleanly on a brain restart (`fail_stale`), they don't resume. Tool, approval,
+  and ask futures stay in-process (one brain process until R7); approval decisions are atomic in
+  Postgres (`WHERE decision IS NULL`).
+- The agent doesn't speak its steps: acks, approvals, questions, "taking longer" notes, and the
+  wrap-up (≤ 3 sentences; the rest becomes a `text` artifact). Job speech reuses `reply.delta` on
+  the origin signal id, one `final` marker per utterance.
+- "Medium risk" = write tools flagged `review` (file write/edit/move, organize, keyboard, mouse,
+  app close, sleep): the auto-reviewer (review chain, one word ALLOW/ASK) decides in default mode;
+  any error asks. `shell_run` is destructive except a small read-only allowlist (no chaining,
+  pipes, redirects, subexpressions). `file_delete` goes to the Recycle Bin and takes a glob in the
+  last part ("Downloads/*" = one approval for the whole folder).
+- Two malformed turns in a row (unparseable or unknown tool, Groq 400 `tool_use_failed`, or a
+  schema-invalid input) exclude that chain entry for the rest of the job. Malformed doesn't open
+  the provider's circuit (the reflex keeps using it).
+- Grounding is a shape heuristic (quoted text, file names, times, ids, capitalized mid-sentence
+  names must appear in the user's words or a tool input/output); one rewrite, then a safe line.
+- Plan approval grants only exact targets for that job; "always" stores a glob-escaped exact rule.
+- Artifacts: bytes under `ARTIFACTS_DIR` (compose volume), HMAC-signed download URLs (1 h).
 
 ## Completed Work
 

@@ -26,6 +26,8 @@ from app.gateway import live, presence
 from app.gateway.envelope import Envelope
 from app.gateway.push import NAMESPACE, user_room
 from app.gateway.signals import (
+    ApprovalResponse,
+    AskResponse,
     EngineIncident,
     EnginePlan,
     SignalFinal,
@@ -64,6 +66,8 @@ EVENT_MODELS: dict[str, type[Envelope]] = {
     "tool.result": ToolResult,
     "engine.incident": EngineIncident,
     "device.engine_plan": EnginePlan,
+    "approval.response": ApprovalResponse,
+    "ask.response": AskResponse,
 }
 
 
@@ -111,6 +115,7 @@ def register(rt: Runtime) -> Voice:
         except KeyError:
             return
         await presence.drop(rt, p.user_id, p.device_id)
+        voice.device_gone(p.device_id)
 
     async def heartbeat(sid: str, p: Principal) -> None:
         """Keeps presence fresh and drops the socket within REFRESH_S of its session ending
@@ -188,4 +193,6 @@ def register(rt: Runtime) -> Voice:
     on("tool.result", voice.tool_result)
     on("engine.incident", voice.engine_incident)
     on("device.engine_plan", engine_plan)
+    on("approval.response", voice.approval_response)
+    on("ask.response", voice.ask_response)
     return voice

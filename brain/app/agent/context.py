@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.core.runtime import Runtime
-from app.db.models import Device, Message, Thread, UserSettings
+from app.db.models import Device, Message, PermissionRule, Thread, UserSettings
 from app.llm.types import Message as LlmMessage
 
 THREAD_IDLE = timedelta(minutes=30)  # a signal after this much quiet starts a new thread
@@ -29,6 +29,8 @@ class Context:
     verbosity: str = "normal"
     address_as: str | None = None
     language: str = "en"
+    permission_mode: str = "default"
+    hidden: frozenset[str] = frozenset()  # tools a bare deny rule removed (REDESIGN §20.6)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -74,17 +76,28 @@ async def load(rt: Runtime, user_id: uuid.UUID, device_id: uuid.UUID) -> Context
         device = await db.scalar(
             select(Device).where(Device.id == device_id, Device.user_id == user_id)
         )
+        denied = await db.scalars(
+            select(PermissionRule.tool).where(
+                PermissionRule.user_id == user_id,
+                PermissionRule.decision == "deny",
+                PermissionRule.pattern == "",
+                PermissionRule.device_id.is_(None),
+            )
+        )
+        hidden = frozenset(denied)
     ctx = Context(
         thread_id=thread.id if thread else None,
         history=history,
         device_name=device.name if device else "this device",
         capabilities=frozenset(device.capabilities) if device else frozenset(),
+        hidden=hidden,
     )
     if settings is not None:
         ctx.allow_training = settings.allow_training_providers
         ctx.verbosity = settings.verbosity
         ctx.address_as = settings.address_as
         ctx.language = settings.language
+        ctx.permission_mode = settings.permission_mode
     return ctx
 
 

@@ -19,15 +19,15 @@ ai_local/
 │   │   ├── auth/             otp, google, sessions, devices
 │   │   ├── gateway/          Socket.IO /v2 handlers, presence, wake arbitration, sync log
 │   │   ├── router/           tier-1 brain router (no-LLM intents, status, approvals) (§27)
-│   │   ├── agent/            reflex.py, loop.py, subagents.py, context.py, prompts/ (persona block)
+│   │   ├── agent/            reflex.py, loop.py (agent + sub-agents), grounding.py, context.py, voice.py, persona.py
 │   │   ├── llm/              openai_compat.py, claude.py (Anthropic SDK), chains.py (+ hedging), health.py, types.py
 │   │   ├── supervisor/       per-user watcher, playbook, grounding check, incidents (§19)
-│   │   ├── tools/            spec.py, registry.py, permissions.py, reviewer.py, brain tools
-│   │   ├── capabilities/     skills/, plugins/, mcp/, hooks/ (§20)
+│   │   ├── tools/            spec.py, registry.py, permissions.py, reviewer.py, device_specs.py, brain_specs.py
+│   │   ├── capabilities/     hooks.py (pre/post tool: redaction, audit); skills/, plugins/, mcp/ later (§20)
 │   │   ├── integrations/     google/, slack/, notion/, places/, search/ (SearXNG, ddgs, fetcher)
 │   │   ├── research/         query planning, passage selection, citations (§22.2)
 │   │   ├── memory/           extract.py, store.py, retrieve.py, embed.py (local ONNX)
-│   │   ├── jobs/             runtime.py, scheduler.py, queue.py (offline-device queue)
+│   │   ├── jobs/             runtime.py (jobs, approvals, asks); scheduler.py, queue.py later
 │   │   ├── artifacts/        store, signed URLs, chart specs (§22.3)
 │   │   └── api/              HTTP routes (API.md §2)
 │   ├── evals/                reflex, agent, reflex_arc, research, persona suites

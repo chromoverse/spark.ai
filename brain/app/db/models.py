@@ -170,3 +170,123 @@ class Incident(Base):
     outcome: Mapped[str]  # answered | failed_explained | cancelled | recovered
     signal_id: Mapped[str | None]
     ts: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+# ── R2: jobs, approvals, artifacts, queued actions, permission rules (DATABASE.md §2, §4) ──
+
+
+def _set_null(table: str) -> ForeignKey:
+    return ForeignKey(f"{table}.id", ondelete="SET NULL")
+
+
+ACTIVE_JOB = "status IN ('queued', 'running', 'waiting')"
+
+
+class Job(Timestamps, Base):
+    """One delegated task (REDESIGN §6.1). Persisted at every step; a brain restart fails the
+    active ones with an explanation instead of dropping them."""
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        Index("ix_jobs_user_id_created_at", "user_id", text("created_at DESC")),
+        Index("ix_jobs_active", "user_id", postgresql_where=text(ACTIVE_JOB)),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk())
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("threads"))
+    device_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("devices"))  # origin
+    signal_id: Mapped[str | None]
+    title: Mapped[str]
+    status: Mapped[str] = mapped_column(
+        server_default="queued"
+    )  # queued|running|waiting|done|cancelled|failed
+    effort: Mapped[str] = mapped_column(server_default="medium")
+    todo: Mapped[list[Any]] = mapped_column(server_default=text("'[]'::jsonb"))
+    eta_s: Mapped[int | None]
+    provider_used: Mapped[str | None]
+    usage: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    summary: Mapped[str | None] = mapped_column(Text)
+    finished_at: Mapped[datetime | None]
+
+
+class JobStep(Timestamps, Base):
+    """One tool call of a job. `output` is the redacted, truncated result the model saw."""
+
+    __tablename__ = "job_steps"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk())
+    tool: Mapped[str]
+    input: Mapped[dict[str, Any]]
+    output: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        server_default="running"
+    )  # running|ok|error|denied|cancelled
+    device_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("devices"))
+    started_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    finished_at: Mapped[datetime | None]
+    error: Mapped[str | None]
+
+
+class Approval(Timestamps, Base):
+    """An ask (§7.2): sent to every online device, first answer wins, expires unanswered."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (Index(None, "user_id", "created_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk())
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
+    tool: Mapped[str]  # a tool name, or "plan" for plan approval
+    summary: Mapped[str]
+    risk: Mapped[str]
+    inputs_preview: Mapped[dict[str, Any]]
+    decision: Mapped[str | None]  # allow|deny|always|expired
+    decided_by_device: Mapped[uuid.UUID | None] = mapped_column(_set_null("devices"))
+    decided_at: Mapped[datetime | None]
+
+
+class Artifact(Timestamps, Base):
+    __tablename__ = "artifacts"
+    __table_args__ = (Index(None, "user_id", "thread_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk())
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("threads"))
+    job_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("jobs"))
+    device_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("devices"))  # who made it
+    kind: Mapped[str]  # text|file|image|table
+    name: Mapped[str]
+    mime: Mapped[str]
+    size: Mapped[int] = mapped_column(BigInteger)
+    storage_ref: Mapped[str]  # file name under ARTIFACTS_DIR
+    preview: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    meta: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+
+
+class QueuedAction(Timestamps, Base):
+    """A device tool call waiting for its target to come online (§26.3), 1 h at most."""
+
+    __tablename__ = "queued_actions"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk())
+    target_device_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), index=True
+    )
+    origin_device_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("devices"))
+    tool_call: Mapped[dict[str, Any]]  # {tool, input}
+    expires_at: Mapped[datetime]
+    fired_at: Mapped[datetime | None]
+
+
+class PermissionRule(Timestamps, Base):
+    """deny / ask / allow per tool, optionally for one device, with a glob on the tool's
+    matched input field (REDESIGN §7.2): `file_delete` + `C:/Users/*/Downloads/**`."""
+
+    __tablename__ = "permission_rules"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk(), index=True)
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE")
+    )
+    tool: Mapped[str]
+    pattern: Mapped[str] = mapped_column(server_default="")  # '' = every input
+    decision: Mapped[str]  # deny|ask|allow

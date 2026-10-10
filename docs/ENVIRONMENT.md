@@ -63,6 +63,7 @@ settings. Google OAuth works with `http://localhost` redirects in testing mode, 
 | `OPENROUTER_API_KEYS` | | `:free` models |
 | `ANTHROPIC_API_KEY` | later | only read when `PAID_PROVIDERS_ENABLED=true` |
 | `SEARXNG_URL` | yes | `http://searxng:8080` |
+| `ARTIFACTS_DIR` | | where artifact bytes live (wrap-up details, handoffs). Default `data/artifacts` (relative to the brain's working dir); compose mounts the `artifacts` volume at `/data/artifacts` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | yes | sign-in + Gmail/Calendar/Drive; add beta users as test users |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | R4 | |
 | `RESEND_API_KEY`, `MAIL_FROM` | yes | OTP email |

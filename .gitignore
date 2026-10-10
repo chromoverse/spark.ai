@@ -76,3 +76,6 @@ ui_insp
 *.log
 *.tmp
 .cache/
+
+# ---- Brain runtime data (artifacts on the dev host) ----------------
+brain/data/

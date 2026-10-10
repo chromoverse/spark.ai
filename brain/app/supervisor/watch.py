@@ -36,13 +36,17 @@ class Watch:
     task: asyncio.Task[None] | None = None
     spans: dict[str, float] = field(default_factory=dict)  # ms since t0
     provider: str | None = None
+    # Jobs (§6.1) get a named watch: their own key, expiry handler, and a check per sweep (S7).
+    name: str = ""
+    on_expire: Explain | None = None
+    check: Callable[[], Awaitable[None]] | None = None
 
     @property
     def key(self) -> tuple[uuid.UUID, str]:
-        return (self.user_id, self.signal_id)
+        return (self.user_id, self.name or self.signal_id)
 
 
-Explain = Callable[[Watch, str], Awaitable[None]]
+Explain = Callable[["Watch", str], Awaitable[None]]
 
 
 class Supervisor:
@@ -57,6 +61,11 @@ class Supervisor:
         if not fresh:
             return None
         w = Watch(user_id, device_id, signal_id, self.rt.clock.monotonic())
+        self.watches[w.key] = w
+        return w
+
+    def track(self, w: Watch) -> Watch:
+        """Watches something that isn't a fresh signal (a job), so no dedupe."""
         self.watches[w.key] = w
         return w
 
@@ -86,7 +95,9 @@ class Supervisor:
         mine = [
             w
             for w in self.watches.values()
-            if w.user_id == user_id and (device_id is None or w.device_id == device_id)
+            if w.user_id == user_id
+            and not w.name  # turns only: barge-in never cancels a job
+            and (device_id is None or w.device_id == device_id)
         ]
         return max(mine, key=lambda w: w.t0, default=None)
 
@@ -140,6 +151,8 @@ class Supervisor:
     async def sweep(self) -> None:
         now = self.rt.clock.monotonic()
         for w in list(self.watches.values()):
+            if w.state == "open" and w.check is not None and now - w.t0 <= w.deadline_s:
+                await w.check()
             if w.state == "open" and now - w.t0 > w.deadline_s:
                 logger.warning("signal past deadline", extra={"signal_id": w.signal_id})
                 if w.task is not None and not w.task.done():
@@ -148,7 +161,7 @@ class Supervisor:
                 if w.state != "open":
                     continue  # the task reached a terminal state while being cancelled
                 self.finish(w, "failed_explained")
-                await self.explain(w, "deadline")
+                await (w.on_expire or self.explain)(w, "deadline")
                 await self.incident(
                     w,
                     stage="deadline",

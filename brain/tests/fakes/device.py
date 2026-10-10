@@ -20,9 +20,10 @@ class FakeDevice:
         self.inbox: list[tuple[str, dict[str, Any]]] = []
         self.disconnected = asyncio.Event()
         self.refusals: list[Any] = []  # connect_error payloads from the brain
-        # tool name → tool.result payload ({"ok": True, "output": …} or {"ok": False, "error": …});
-        # a tool.call for one of these is answered automatically after `before_result()`.
-        self.tools: dict[str, dict[str, Any]] = {}
+        # tool name → tool.result payload ({"ok": True, "output": …} or {"ok": False, "error": …}),
+        # or a function of the input returning one (None = never answer: a hung tool). A
+        # tool.call for one of these is answered automatically after `before_result()`.
+        self.tools: dict[str, Any] = {}
         self.before_result: Callable[[], Awaitable[None]] | None = None
         self._replies: set[asyncio.Task[None]] = set()
         self._arrived = asyncio.Condition()
@@ -41,9 +42,14 @@ class FakeDevice:
             task.add_done_callback(self._replies.discard)
 
     async def _run_tool(self, call: dict[str, Any]) -> None:
+        answer = self.tools[call["tool"]]
+        result = answer(call["input"]) if callable(answer) else answer
+        if result is None:
+            return
         if self.before_result is not None:
             await self.before_result()
-        await self.call("tool.result", {"call_id": call["call_id"], **self.tools[call["tool"]]})
+        if self.sio.connected:
+            await self.call("tool.result", {"call_id": call["call_id"], **result})
 
     async def _refused(self, data: Any) -> None:
         self.refusals.append(data)

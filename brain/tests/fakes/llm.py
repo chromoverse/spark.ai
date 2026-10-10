@@ -30,18 +30,27 @@ class FakeProvider:
         self.clock = clock or Clock()
         self.model = model
         self.script: deque[Turn] = deque()
+        self.scripts: dict[str, deque[Turn]] = {}  # per model: agent, reviewer, reflex turns
         self.requests: list[dict[str, Any]] = []
         self.request_times: list[float] = []  # clock.monotonic() when each request arrived
 
-    def queue(self, *turns: Turn) -> None:
-        self.script.extend(turns)
+    def queue(self, *turns: Turn, model: str | None = None) -> None:
+        """Turns for any request, or only for requests naming `model`."""
+        if model is None:
+            self.script.extend(turns)
+        else:
+            self.scripts.setdefault(model, deque()).extend(turns)
+
+    def for_model(self, model: str) -> list[dict[str, Any]]:
+        return [r for r in self.requests if r.get("model") == model]
 
     async def handle(self, request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/chat/completions"), request.url
         body = json.loads(request.content)
         self.requests.append(body)
         self.request_times.append(self.clock.monotonic())
-        turn = self.script.popleft() if self.script else Turn(text=["Sure."])
+        script = self.scripts.get(body.get("model", ""), self.script)
+        turn = script.popleft() if script else Turn(text=["Sure."])
         if turn.status != 200:
             headers = {"retry-after": str(turn.retry_after_s)} if turn.retry_after_s else {}
             return httpx.Response(

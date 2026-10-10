@@ -73,6 +73,9 @@ def _error(r: httpx.Response) -> ProviderError:
         return ProviderError("rate_limited", "429", retry_s)
     if r.status_code >= 500:
         return ProviderError("unavailable", str(r.status_code))
+    if r.status_code == 400 and "tool_use_failed" in r.text:
+        # Groq checks the model's tool call server-side and returns 400 when it's broken
+        return ProviderError("malformed", "tool_use_failed")
     # 400/401/403/404/422: bad key, model gone, or a request this provider won't take.
     return ProviderError("rejected", str(r.status_code))
 

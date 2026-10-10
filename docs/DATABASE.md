@@ -33,12 +33,12 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 |---|---|---|
 | ✅ `threads` | id, user_id, title, last_message_at, created_at, updated_at | (user_id, last_message_at desc) |
 | ✅ `messages` | id, thread_id, user_id, role, content jsonb (content blocks), tier (0–3), device_id (set null on device delete), signal_id, created_at, updated_at | (thread_id, created_at), (user_id) |
-| `jobs` | id, user_id, thread_id, status, effort, todo jsonb, eta_s, provider_used, usage jsonb, created_at, finished_at | (user_id, created_at desc), partial on active status |
-| `job_steps` | id, job_id, tool, input jsonb, output_ref, status, device_id, started_at, finished_at, error | (job_id) |
-| `approvals` | id, user_id, job_id, tool, inputs_preview jsonb, decision, decided_by_device, created_at | (user_id, created_at) |
-| `artifacts` | id, user_id, thread_id, kind, storage_ref, preview jsonb, meta jsonb, created_at | (user_id, thread_id) |
+| ✅ `jobs` | id, user_id, thread_id (set null), device_id (origin, set null), signal_id, title, status (`queued`/`running`/`waiting`/`done`/`cancelled`/`failed`), effort, todo jsonb (`[{text, status}]`), eta_s, provider_used, usage jsonb (tokens), summary (the wrap-up), finished_at, created_at, updated_at | (user_id, created_at desc), `ix_jobs_active` (user_id) where status is queued/running/waiting. A brain start fails the active ones with a summary |
+| ✅ `job_steps` | id, job_id, user_id, tool, input jsonb, output (redacted, ≤ 2000 chars), status (`running`/`ok`/`error`/`denied`), device_id (set null; null for brain tools), started_at, finished_at, error, created_at, updated_at | (job_id) |
+| ✅ `approvals` | id, user_id, job_id, tool (a tool name or `plan`), summary, risk, inputs_preview jsonb, decision (null until answered: `allow`/`deny`/`always`/`expired`), decided_by_device (set null), decided_at, created_at, updated_at | (user_id, created_at). The first answer wins: the update only matches `decision IS NULL` |
+| ✅ `artifacts` | id, user_id, thread_id, job_id, device_id (all set null), kind (`text`/`file`/`image`/`table`), name, mime, size, storage_ref (file under `ARTIFACTS_DIR`), preview jsonb, meta jsonb, created_at, updated_at | (user_id, thread_id) |
 | `schedules` | id, user_id, cron, run_at, payload jsonb, next_run_at, last_run_at, enabled | (next_run_at) where enabled |
-| `queued_actions` | id, user_id, target_device_id, tool_call jsonb, expires_at | (target_device_id) |
+| ✅ `queued_actions` | id, user_id, target_device_id (cascade), origin_device_id (set null), tool_call jsonb (`{tool, input}`), expires_at (1 h), fired_at, created_at, updated_at | (target_device_id) |
 
 ## 3. Memory
 
@@ -51,7 +51,7 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 
 | Table | Columns |
 |---|---|
-| `permission_rules` | id, user_id, device_id?, tool, pattern, decision (`deny`/`ask`/`allow`), created_at |
+| ✅ `permission_rules` | id, user_id, device_id? (cascade; null = every device), tool, pattern (glob on the tool's matched input, `''` = every call), decision (`deny`/`ask`/`allow`), created_at, updated_at — indexed (user_id). "Always allow" adds an allow rule with the exact (glob-escaped) input |
 | `skills` | id, user_id, name, description, source (`builtin`/`import`/`plugin`), storage_ref, enabled, version |
 | `plugins` | id, user_id, name, marketplace, version, trust_tier, enabled, context_cost_tokens |
 | `mcp_servers` | id, user_id, name, url, transport, trusted, approval_mode, oauth_ciphertext, enabled |

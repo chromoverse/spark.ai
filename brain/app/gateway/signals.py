@@ -51,6 +51,9 @@ class SignalHandledLocally(Envelope):
 
 class SignalInterrupt(Envelope):
     signal_id: str | None = Field(default=None, max_length=64)
+    # "turn": barge-in, stops the reply only. "all": a spoken "stop" (tier 0), which also
+    # cancels the most recent job (§6.4).
+    scope: Literal["turn", "all"] = "turn"
 
 
 class ToolResult(Envelope):
@@ -86,3 +89,13 @@ class EnginePlan(Envelope):
     local_llm: list[str] = Field(default_factory=list, max_length=20)
     scores: dict[str, Any] = Field(default_factory=dict)
     degraded: bool = False
+
+
+class ApprovalResponse(Envelope):
+    approval_id: str = Field(min_length=1, max_length=64)
+    decision: Literal["allow", "deny", "always"]
+
+
+class AskResponse(Envelope):
+    ask_id: str = Field(min_length=1, max_length=64)
+    answer: str = Field(min_length=1, max_length=500)

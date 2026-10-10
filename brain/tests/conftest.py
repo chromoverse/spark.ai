@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,6 +50,7 @@ def make_settings(**overrides: Any) -> Settings:
         "google_client_secret": "test-google-secret",
         "resend_api_key": "re_test",
         "log_level": "WARNING",
+        "artifacts_dir": os.path.join(tempfile.gettempdir(), "spark-test-artifacts"),
     } | overrides
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
 
@@ -81,8 +83,10 @@ class Brain:
     client: httpx.AsyncClient
     resend: FakeResend = field(default_factory=FakeResend)
     google: FakeGoogle | None = None
-    groq: FakeProvider | None = None  # reflex chain entry 1 (api.groq.com)
-    mistral: FakeProvider | None = None  # reflex chain entry 2 (api.mistral.ai)
+    # api.groq.com serves reflex "fast", agent "agent", sub-agent "small", reviewer "review";
+    # api.mistral.ai serves reflex "backup" and agent "agent-b" (the next entries).
+    groq: FakeProvider | None = None
+    mistral: FakeProvider | None = None
 
     @property
     def voice(self) -> Voice:
@@ -169,6 +173,11 @@ async def brain(brain_server: Brain, monkeypatch: pytest.MonkeyPatch) -> AsyncIt
     voice.sup.watches.clear()
     voice.prefetch.clear()
     voice.calls.clear()
+    jobs = voice.jobs
+    jobs.active.clear()
+    jobs.slots.clear()
+    jobs.approvals.clear()
+    jobs.asks.clear()
     async with brain_server.rt.engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_TABLES} RESTART IDENTITY CASCADE"))
     await brain_server.rt.redis.flushdb()
@@ -182,6 +191,9 @@ async def brain(brain_server: Brain, monkeypatch: pytest.MonkeyPatch) -> AsyncIt
     brain_server.groq = FakeProvider(brain_server.clock, "groq-fake")
     brain_server.mistral = FakeProvider(brain_server.clock, "mistral-fake")
     monkeypatch.setitem(CHAINS, "reflex", [Entry("groq", "fast"), Entry("mistral", "backup")])
+    monkeypatch.setitem(CHAINS, "agent", [Entry("groq", "agent"), Entry("mistral", "agent-b")])
+    monkeypatch.setitem(CHAINS, "subagent", [Entry("groq", "small")])
+    monkeypatch.setitem(CHAINS, "review", [Entry("groq", "review")])
     brain_server.fake_http.hosts = {
         "api.resend.com": brain_server.resend.handle,
         "oauth2.googleapis.com": brain_server.google.handle,
