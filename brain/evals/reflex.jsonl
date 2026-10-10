@@ -48,6 +48,12 @@
 {"text": "should I learn python or javascript first", "expect": "answer"}
 {"text": "what's a good way to start a speech", "expect": "answer"}
 {"text": "summarize the plot of the lion king in two sentences", "expect": "answer"}
+{"text": "how far away is the moon", "expect": "answer"}
+{"text": "recommend a good book", "expect": "answer"}
+{"text": "give me a tongue twister", "expect": "answer"}
+{"text": "how do I make my coffee less bitter", "expect": "answer"}
+{"text": "who wrote romeo and juliet", "expect": "answer"}
+{"text": "why is the sky blue", "expect": "answer"}
 {"text": "set the volume to thirty percent please", "expect": "tool", "tool": "volume_set", "args": {"level": 30}}
 {"text": "make the volume 30", "expect": "tool", "tool": "volume_set", "args": {"level": 30}}
 {"text": "volume at 80", "expect": "tool", "tool": "volume_set", "args": {"level": 80}}
