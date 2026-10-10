@@ -206,7 +206,7 @@ class Body:
             return {
                 "version": VERSION,
                 "hardware": await asyncio.to_thread(hardware.scan),
-                "capabilities": sorted({"apps", "media", "volume", "brightness", "tts"}),
+                "capabilities": hands.CAPABILITIES,
                 "engine_plan": self.fitness.plan.wire(),
             }
 

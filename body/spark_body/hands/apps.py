@@ -87,6 +87,11 @@ class AppIndex:
 INDEX = AppIndex()
 
 
+def app_list(inp: dict[str, Any]) -> dict[str, Any]:
+    names = sorted({v[0] for v in INDEX.entries.values()}, key=str.lower)
+    return {"apps": names[:300], "total": len(names)}
+
+
 def app_open(inp: dict[str, Any]) -> dict[str, Any]:
     app = str(inp["app"])
     hit = INDEX.resolve(app)

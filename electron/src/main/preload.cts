@@ -83,6 +83,11 @@ contextBridge.exposeInMainWorld("electronApi", {
     getStatus: () => ipcInvoke("brainGetStatus"),
     onStatus: (callback: (status: IBrainStatus) => void) => ipcOn("brainStatus", callback),
     onEvent: (callback: (event: IBrainEvent) => void) => ipcOn("brainEvent", callback),
+    approve: (approvalId: string, decision: "allow" | "deny" | "always") =>
+      ipcInvoke("brainApprove", { approvalId, decision }),
+    answer: (askId: string, answer: string) => ipcInvoke("brainAnswer", { askId, answer }),
+    cancelJob: (jobId: string) => ipcInvoke("brainJobCancel", { jobId }),
+    jobs: () => ipcInvoke("brainJobs"),
   },
 
   voice: {

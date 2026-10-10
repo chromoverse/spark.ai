@@ -244,7 +244,8 @@ class VoiceLoop {
     if (local.handled) {
       if (local.interrupt) {
         toVoiceWindow({ kind: "stop" });
-        await brainSocket.emit("signal.interrupt", {});
+        // a spoken "stop" stops the work too; barge-in (stop()) only stops the speech
+        await brainSocket.emit("signal.interrupt", { scope: "all" });
         return { signalId, tier: 0, handled: true };
       }
       if (local.chime) toVoiceWindow({ kind: "cue", cue: "done", signalId });

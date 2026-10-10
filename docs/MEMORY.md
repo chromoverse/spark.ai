@@ -80,9 +80,14 @@ happens.
   approvals on every device (first answer wins), `ask_user`, `task` sub-agents, `plan_submit`,
   tier 1 status / yes-no-always / ask answers, `signal.interrupt {scope: all}`, reflex `job_steer` /
   `job_cancel`, routes `/v2/jobs`, `/v2/permissions/rules`, `/v2/capabilities/tools`. Brain: 124 tests
-  (37 new), ruff + mypy clean. **NEXT: M3** desktop hands in `body/hands` (port v1 file/system
-  ops, folder organize + restore, shell, clipboard, screenshot, keyboard/mouse, processes) and the
-  Electron relay for job/approval/ask events. Open voice items, only if they show up in use: a
+  (37 new), ruff + mypy clean. **M3 done:** `body/spark_body/hands/` files.py (known folders via
+  SHGetKnownFolderPath, so OneDrive Desktop/Documents resolve; system-folder + known-folder guards;
+  Recycle Bin deletes with a last-part glob; organize + restore via a hidden manifest), shell.py,
+  desktop.py (clipboard + screenshot via PowerShell, SendInput keyboard/mouse, tasklist/taskkill,
+  system info, lock, sleep); `hands.CAPABILITIES` in `hello`; body 79 tests (19 new). Electron:
+  `brain.approve/answer/cancelJob/jobs` IPC, `brainAuth.request`, tier-0 "stop" sends
+  `scope: "all"`. **NEXT: M4** cross-device (target resolution, offline queue, ambiguity defaults,
+  tier-1 "pause music on my laptop", wake arbitration, handoffs + threads routes, S3 re-route). Open voice items, only if they show up in use: a
   loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
   flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild

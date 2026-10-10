@@ -1,4 +1,4 @@
-import type { IBrainResult } from "@root/types";
+import type { IBrainJob, IBrainResult } from "@root/types";
 import { ipcMainHandle } from "../utils/ipcUtils.js";
 import { BrainError, brainAuth } from "../services/BrainAuth.js";
 import { brainSocket } from "../services/BrainSocket.js";
@@ -52,4 +52,31 @@ export function registerBrainHandlers(): void {
   );
 
   ipcMainHandle("brainGetStatus", () => brainSocket.getStatus());
+
+  // Jobs (R2): approvals and questions go back over the socket; the first answer from any device
+  // wins. Job state for the panel comes from job.update events and, after a reconnect, /v2/jobs.
+  const ID = /^[\w-]{1,64}$/;
+  ipcMainHandle("brainApprove", (_event, payload) =>
+    result(async () => {
+      const decision = field(payload, "decision", /^(allow|deny|always)$/);
+      const ack = await brainSocket.emit("approval.response", {
+        approval_id: field(payload, "approvalId", ID),
+        decision,
+      });
+      return { accepted: Boolean((ack?.data as { accepted?: boolean } | undefined)?.accepted) };
+    }),
+  );
+  ipcMainHandle("brainAnswer", (_event, payload) =>
+    result(async () => {
+      const ack = await brainSocket.emit("ask.response", {
+        ask_id: field(payload, "askId", ID),
+        answer: field(payload, "answer", /^[\s\S]{1,500}$/),
+      });
+      return { accepted: Boolean((ack?.data as { accepted?: boolean } | undefined)?.accepted) };
+    }),
+  );
+  ipcMainHandle("brainJobCancel", (_event, payload) =>
+    result(() => brainAuth.request<{ status: string }>("POST", `/v2/jobs/${field(payload, "jobId", ID)}/cancel`)),
+  );
+  ipcMainHandle("brainJobs", () => result(() => brainAuth.request<{ items: IBrainJob[] }>("GET", "/v2/jobs?limit=30")));
 }

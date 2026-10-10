@@ -10,6 +10,8 @@ import urllib.parse
 import webbrowser
 from typing import Any
 
+from spark_body.hands.errors import Unsupported
+
 VK = {
     "volume_mute": 0xAD,
     "volume_down": 0xAE,
@@ -19,10 +21,6 @@ VK = {
     "play_pause": 0xB3,
 }
 KEY_STEP = 2  # Windows moves the volume 2% per volume key press
-
-
-class Unsupported(Exception):
-    pass
 
 
 def _windows() -> None:

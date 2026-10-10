@@ -180,6 +180,7 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | "Stop" mid-job cancels within 500 ms; "use the D drive instead" steers the running job | `brain/tests/scenario/test_r2_agent.py::test_stop_mid_job_cancels_within_500ms`, `…test_stop_said_to_the_brain_cancels_the_job`, `…test_steer_use_the_d_drive_reaches_the_running_job`; barge-in leaves jobs alone |
 | 3 independent reads run in parallel | T1 |
 | Malformed free-model tool calls twice → next chain entry, job completes | T2 |
+| Desktop hands ported from v1 (one test per tool) | `body/tests/test_hands.py`: files for real in a temp folder (write/read/edit, base64, list/search, move, delete to the Recycle Bin, guards, organize + restore with special and unicode names), shell, clipboard, screenshot, keyboard (surrogate pairs), hotkeys, mouse, processes, app list/close, system info, lock/sleep; OS errors become actionable failures; every brain device tool has a hand |
 
 ### 4.8 Persona (`PERSONA.md`)
 | ID | Scenario | Assertions |

@@ -124,11 +124,16 @@ class BrainAuth {
   }
 
   async session(): Promise<IBrainSession> {
+    return this.request<IBrainSession>("GET", "/v2/me");
+  }
+
+  /** An authenticated brain route; one refresh and retry if the access token just expired. */
+  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     try {
-      return await call<IBrainSession>("GET", "/v2/me", undefined, await this.getAccessToken());
+      return await call<T>(method, path, body, await this.getAccessToken());
     } catch (err) {
       if (!(err instanceof BrainError) || err.code !== "unauthorized") throw err;
-      return call<IBrainSession>("GET", "/v2/me", undefined, await this.refresh());
+      return call<T>(method, path, body, await this.refresh());
     }
   }
 

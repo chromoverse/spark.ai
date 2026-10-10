@@ -98,6 +98,24 @@ export interface IBrainEvent {
   data: unknown;
 }
 
+// Jobs (R2, API.md §2.3 / §3.2 job.update)
+export type IJobStatus = "queued" | "running" | "waiting" | "done" | "cancelled" | "failed";
+export interface IJobTodo {
+  text: string;
+  status: "pending" | "in_progress" | "done";
+}
+export interface IBrainJob {
+  id: string;
+  title: string;
+  status: IJobStatus;
+  todo: IJobTodo[];
+  eta_s: number | null;
+  summary: string | null;
+  device_id: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
 // Voice loop (R1): the body sidecar and what plays in the voice window.
 export type IBodyStatus = "starting" | "ready" | "down" | "missing";
 
@@ -221,6 +239,10 @@ export type IEventPayloadMapping = {
   brainGetStatus: IBrainStatus;
   brainStatus: IBrainStatus;
   brainEvent: IBrainEvent;
+  brainApprove: IBrainResult<{ accepted: boolean }>;
+  brainAnswer: IBrainResult<{ accepted: boolean }>;
+  brainJobCancel: IBrainResult<{ status: string }>;
+  brainJobs: IBrainResult<{ items: IBrainJob[] }>;
 
   // Voice loop (R1)
   voiceSend: IBrainResult<IVoiceSendResult>;
@@ -325,6 +347,10 @@ declare global {
         getStatus: () => Promise<IBrainStatus>;
         onStatus: (callback: (status: IBrainStatus) => void) => () => void;
         onEvent: (callback: (event: IBrainEvent) => void) => () => void;
+        approve: (approvalId: string, decision: "allow" | "deny" | "always") => Promise<IBrainResult<{ accepted: boolean }>>;
+        answer: (askId: string, answer: string) => Promise<IBrainResult<{ accepted: boolean }>>;
+        cancelJob: (jobId: string) => Promise<IBrainResult<{ status: string }>>;
+        jobs: () => Promise<IBrainResult<{ items: IBrainJob[] }>>;
       };
       // Voice loop (R1): tier 0 on the device, then the brain; audio plays in one window
       voice: {
