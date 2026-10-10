@@ -234,6 +234,18 @@ RULES: tuple[Rule, ...] = (
         ],
     ),
     _rule(
+        "battery_status",
+        [
+            r"(?:tell me |check )?(?:what(?: is|'s|s) )?(?:my |the )?(?:laptop's |laptop )?"
+            r"battery(?: level| percentage| percent| status)?(?: now| left)?",
+            r"(?:tell me |check )?(?:what(?: is|'s|s) )?(?:the )?(?:percentage|percent|level) of "
+            r"(?:my |the )?battery",
+            r"how much (?:battery|charge) (?:do i have|is left|have i got)(?: left)?",
+            r"how(?: is|'s) (?:my |the )?battery(?: doing)?",
+            r"is (?:my |the )?(?:laptop|computer|pc|battery) charging",
+        ],
+    ),
+    _rule(
         "stop",
         [
             # "okay, stop, stop" / "hey stop" / "no no stop it": said in a hurry while Spark talks

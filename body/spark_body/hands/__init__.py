@@ -28,6 +28,7 @@ HANDS: dict[str, Hand] = {
     "media_play": system.media_play,
     "brightness_set": system.brightness_set,
     "app_open": apps.app_open,
+    "battery_status": system.battery_status,
 }
 
 

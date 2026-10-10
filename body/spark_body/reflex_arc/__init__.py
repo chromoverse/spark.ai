@@ -58,6 +58,12 @@ class Phrases:
             day = now.day
             suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
             return f"It's {now.strftime('%A, %B')} {day}{suffix}."
+        if m.intent == "battery_status":
+            pct, plugged = output.get("battery_pct"), output.get("plugged")
+            if pct is None:
+                return "I can't read the battery on this PC."
+            how = ", charging" if plugged else ", on battery" if plugged is False else ""
+            return f"You're at {pct} percent{how}."
         if m.intent == "app_open":
             name = str(output.get("opened") or m.slots.get("app", "it"))
             return self._pick("app_open", self.OPENING).format(app=name)

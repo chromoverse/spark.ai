@@ -327,7 +327,6 @@
 {"text": "organize my desktop", "intent": null, "slots": {}, "kind": "negative"}
 {"text": "create a note called groceries", "intent": null, "slots": {}, "kind": "negative"}
 {"text": "search the web for flights to delhi", "intent": null, "slots": {}, "kind": "negative"}
-{"text": "what's my battery", "intent": null, "slots": {}, "kind": "negative"}
 {"text": "how much storage do i have", "intent": null, "slots": {}, "kind": "negative"}
 {"text": "switch to hindi", "intent": null, "slots": {}, "kind": "negative"}
 {"text": "talk to me in nepali", "intent": null, "slots": {}, "kind": "negative"}
@@ -347,3 +346,13 @@
 {"text": "turned the volume down", "intent": "volume_change", "slots": {"direction": "down"}, "kind": "positive"}
 {"text": "I turned the volume up", "intent": null, "slots": {}, "kind": "near_miss"}
 {"text": "she turned the music down", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "Hey Spark, can you tell me the percentage of battery?", "intent": "battery_status", "slots": {}, "kind": "positive"}
+{"text": "what's my battery", "intent": "battery_status", "slots": {}, "kind": "positive"}
+{"text": "battery level", "intent": "battery_status", "slots": {}, "kind": "positive"}
+{"text": "how much battery is left", "intent": "battery_status", "slots": {}, "kind": "positive"}
+{"text": "is my laptop charging", "intent": "battery_status", "slots": {}, "kind": "positive"}
+{"text": "how's the battery doing", "intent": "battery_status", "slots": {}, "kind": "positive"}
+{"text": "turn on battery saver", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "my battery died yesterday", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "where can I buy a new laptop battery", "intent": null, "slots": {}, "kind": "near_miss"}
+{"text": "why is my battery draining so fast", "intent": null, "slots": {}, "kind": "near_miss"}

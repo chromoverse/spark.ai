@@ -130,3 +130,13 @@ def brightness_set(inp: dict[str, Any]) -> dict[str, Any]:
     if done.returncode != 0:
         raise Unsupported("This screen doesn't let me change its brightness.")
     return {"level": level}
+
+
+def battery_status(inp: dict[str, Any]) -> dict[str, Any]:
+    """Read-only: battery percent and whether it's charging (tier 0 answers it out loud)."""
+    from spark_body.fitness.hardware import power
+
+    p = power()
+    if p["battery_pct"] is None:
+        raise Unsupported("This PC doesn't report a battery.")
+    return {"battery_pct": p["battery_pct"], "plugged": p["plugged"]}
