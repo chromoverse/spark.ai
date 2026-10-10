@@ -85,8 +85,8 @@ def persona_misses(text: str) -> list[str]:
 
 def grade(row: dict[str, Any], text: str, uses: list[ToolUse]) -> bool:
     names = [u.name for u in uses]
-    if row["expect"] == "persona":
-        return not uses and not persona_misses(text)
+    if row["expect"] == "persona":  # graded as spoken: the speech lint strips emoji and markdown
+        return not uses and not persona_misses(persona.lint(text))
     if row["expect"] == "answer":
         return bool(text.strip()) and not uses
     if row["expect"] == "delegate":
@@ -98,43 +98,53 @@ async def run_entry(
     http: httpx.AsyncClient,
     label: str,
     base_url: str,
-    api_key: str,
+    keys: list[str],
     model: str,
     extra: dict[str, Any],
     rows: list[dict[str, Any]],
     spacing_s: float,
 ) -> EntryResult:
     res = EntryResult(label)
+    turn = 0  # round-robin over the keys, like the chain runner; free TPM limits are small
     for row in rows:
         kind = row["expect"]
         res.total[kind] = res.total.get(kind, 0) + 1
         messages = [
             {"role": "user", "content": [{"type": "text", "text": f"{row['text']}\n\n{CONTEXT}"}]}
         ]
-        t0 = time.perf_counter()
-        first: float | None = None
-        text, uses = "", []
-        try:
-            async for ev in openai_compat.stream(
-                http,
-                base_url=base_url,
-                api_key=api_key,
-                model=model,
-                system=reflex.SYSTEM,
-                messages=messages,
-                tools=reflex.TOOL_DEFS,
-                max_tokens=300,
-                extra=extra,
-            ):
-                if first is None and isinstance(ev, TextDelta | ToolUse):
-                    first = (time.perf_counter() - t0) * 1000
-                if isinstance(ev, TextDelta):
-                    text += ev.text
-                elif isinstance(ev, ToolUse):
-                    uses.append(ev)
-        except ProviderError as exc:
+        error: ProviderError | None = None
+        for _ in keys:
+            turn += 1
+            t0 = time.perf_counter()
+            first: float | None = None
+            text, uses = "", []
+            try:
+                async for ev in openai_compat.stream(
+                    http,
+                    base_url=base_url,
+                    api_key=keys[turn % len(keys)],
+                    model=model,
+                    system=reflex.SYSTEM,
+                    messages=messages,
+                    tools=reflex.TOOL_DEFS,
+                    max_tokens=300,
+                    extra=extra,
+                ):
+                    if first is None and isinstance(ev, TextDelta | ToolUse):
+                        first = (time.perf_counter() - t0) * 1000
+                    if isinstance(ev, TextDelta):
+                        text += ev.text
+                    elif isinstance(ev, ToolUse):
+                        uses.append(ev)
+                error = None
+                break
+            except ProviderError as exc:
+                error = exc
+                if exc.kind != "rate_limited":
+                    break
+        if error is not None:
             res.errors += 1
-            res.failures.append(f"{row['text']!r}: {exc.kind}")
+            res.failures.append(f"{row['text']!r}: {error.kind}")
             await asyncio.sleep(spacing_s)
             continue
         if first is not None:
@@ -176,7 +186,7 @@ async def main() -> None:
     ap.add_argument("--entry", help="only this provider/model, e.g. groq/openai/gpt-oss-20b")
     ap.add_argument("--limit", type=int, default=0, help="first N rows only")
     ap.add_argument(
-        "--spacing", type=float, default=2.1, help="seconds between calls (Groq: 30 RPM)"
+        "--spacing", type=float, default=2.0, help="seconds between calls (keys rotate)"
     )
     ap.add_argument("--allow-training", action="store_true", help="include Gemini (trains on data)")
     args = ap.parse_args()
@@ -204,10 +214,10 @@ async def main() -> None:
             if not keys:
                 print(f"skip {label}: no key")
                 continue
-            print(f"running {label} on {len(rows)} utterances…")
+            print(f"running {label} on {len(rows)} utterances, {len(keys)} key(s)…", flush=True)
             results.append(
                 await run_entry(
-                    http, label, base_url, keys[0], entry.model, entry.extra, rows, args.spacing
+                    http, label, base_url, keys, entry.model, entry.extra, rows, args.spacing
                 )
             )
     if not results:

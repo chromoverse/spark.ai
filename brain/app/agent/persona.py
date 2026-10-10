@@ -72,6 +72,7 @@ _BANNED: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 )
 _URL = re.compile(r"https?://\S+")
 _MARKDOWN = re.compile(r"[*_#`>]+|^\s*[-•]\s+|^\s*\d+\.\s+", re.MULTILINE)
+_EMOJI = re.compile("[\U0001f300-\U0001faff\u2600-\u27bf\ufe0f\u200d]")  # TTS reads them out
 _TAG = re.compile(r"^\s*\[(\w+)\]\s*")
 TONES = frozenset({"chill", "cheerful", "calm", "serious", "excited", "whisper"})
 
@@ -88,6 +89,7 @@ def lint(sentence: str) -> str:
         out = pattern.sub(replacement, out)
     out = _URL.sub("the link on screen", out)
     out = _MARKDOWN.sub("", out)
+    out = _EMOJI.sub("", out)
     out = re.sub(r"\s{2,}", " ", out).strip()
     if out and out[0].islower() and sentence[:1].isupper():
         out = out[0].upper() + out[1:]

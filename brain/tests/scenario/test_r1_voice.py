@@ -282,6 +282,10 @@ async def test_ps1_banned_phrases_are_rewritten_before_speaking(
     assert said == "Done."
     for banned in ("Certainly", "happy to help", "completed successfully"):
         assert banned not in said
+    # the live eval caught a model cheering with an emoji and *italics*: TTS would read them out
+    brain.groq.queue(Turn(text=["Congrats! \U0001f389 You *earned* it. ✨"]))
+    sid, _ = await laptop.say("I got the job")
+    assert " ".join(spoken(await laptop.reply(sid))) == "Congrats! You earned it."
 
 
 async def test_ps4_tone_tags_travel_as_tone_not_speech(brain: Brain, laptop: FakeDevice) -> None:

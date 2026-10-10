@@ -74,7 +74,7 @@
 {"text": "play the latest mkbhd video", "expect": "tool", "tool": "media_play", "args": {}}
 {"text": "can you open spotify for me", "expect": "tool", "tool": "app_open", "args": {"app": "spotify"}}
 {"text": "launch google chrome", "expect": "tool", "tool": "app_open", "args": {"app": "chrome"}}
-{"text": "open my browser", "expect": "tool", "tool": "app_open", "args": {"app": "chrome"}}
+{"text": "open my browser", "expect": "tool", "tool": "app_open", "args": {"app": "browser"}}
 {"text": "open notepad", "expect": "tool", "tool": "app_open", "args": {"app": "notepad"}}
 {"text": "I need the calculator", "expect": "tool", "tool": "app_open", "args": {"app": "calculator"}}
 {"text": "open vs code", "expect": "tool", "tool": "app_open", "args": {"app": "vs code"}}

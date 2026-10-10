@@ -73,7 +73,8 @@ QUICK_TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         "media_control",
-        "Controls whatever media is playing: play, pause, toggle, next, previous.",
+        "Controls whatever media is playing: play (also 'resume'), pause, next, previous. "
+        "toggle only when the user doesn't say which.",
         MediaControl,
         "device",
         Risk.WRITE,
@@ -81,7 +82,8 @@ QUICK_TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         "media_play",
-        "Starts playing something (a song, artist, mood, video) in a media app.",
+        "Starts playing something (a song, artist, mood, video) in a media app. 'Open Spotify "
+        "and play X' is one media_play call with app set.",
         MediaPlay,
         "device",
         Risk.WRITE,
@@ -90,7 +92,8 @@ QUICK_TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         "app_open",
-        "Opens an installed app. The device resolves the name against its installed apps.",
+        "Opens an installed app by the name the user said ('google chrome', or a generic "
+        "'browser'); the device resolves it against its installed apps.",
         AppOpen,
         "device",
         Risk.WRITE,

@@ -28,8 +28,8 @@
 {"text": "who will win the next world cup", "expect": "persona"}
 {"text": "what am I thinking right now", "expect": "persona"}
 {"text": "can you call my mom", "expect": "persona"}
-{"text": "send a text to rahul", "expect": "persona"}
-{"text": "what's the weather right now in kathmandu", "expect": "persona"}
+{"text": "send a text to rahul", "expect": "delegate"}
+{"text": "what's the weather right now in kathmandu", "expect": "delegate"}
 {"text": "give me three tips for a good presentation", "expect": "persona"}
 {"text": "what are the planets in order", "expect": "persona"}
 {"text": "name some good productivity apps", "expect": "persona"}
