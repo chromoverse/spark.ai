@@ -102,7 +102,7 @@ Target per device: first audio within 1 s of the end of speech, within 2 s on lo
   (tier 1 = stop + language now; job status and approvals arrive with jobs in R2)
 - ☑ More free reflex providers behind the latency gate + hedging at 350 ms. Run 2026-10-10 from
   the owner's laptop with 8 Groq keys: gpt-oss-20b TTFT p50 ~450–470 ms / p95 540–820 ms over
-  6 runs, 120b ~480 / ~585. Nothing meets the 400 ms p95 gate from Nepal (network RTT), accepted under the 2 s
+  6 runs; 120b ~490 / ~665 ms with tools 33/33 (20b: 31/33). 20b stays first, 120b is the hedge. Nothing meets the 400 ms p95 gate from Nepal (network RTT), accepted under the 2 s
   low-spec target. Mistral's key is out of quota; Cloudflare has no key yet
 - ☑ Signal protocol: `signal.partial` / `signal.final` / `signal.interrupt` / `signal.ack` /
   `reply.delta`
