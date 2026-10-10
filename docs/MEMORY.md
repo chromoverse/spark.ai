@@ -18,7 +18,7 @@ happens.
   2026-10-10: signed in, "Connected", brain stop → "Can't reach the brain", start → reconnected.
 - **R0 pushed to `origin/main`** 2026-10-10 (fast-forward `ec23e38..ffd8142`; CI green on GitHub).
 - **R1 in progress** on local branch `r1/voice-loop` (not pushed). Built and green (2026-10-10):
-  brain 85 tests (incl. 100-signal chaos), body 52 tests (Windows CI job; 2 real-model tests run
+  brain 85 tests (incl. 100-signal chaos), body 56 tests (Windows CI job; 2 real-model tests run
   only where the models are downloaded), Electron typecheck + lint (0 errors). What exists:
   - brain: free-first reflex chain (Groq ×2, Cloudflare, Gemini opt-in, Mistral; Claude Haiku 5.5
     paid/off) with 350 ms hedging, fallthrough, Redis health circuits, stall → `Restart`; the signal
@@ -45,11 +45,26 @@ happens.
   Orpheus via Groq ~220 ms to first byte, ~600 ms whole sentence; Piper fp32 ~150 ms per sentence;
   edge-tts ~750 ms; Moonshine-tiny ~120 ms per command; wake check ~80 ms; real sidecar smoke:
   wake-gated command transcribed in 140–175 ms over RPC, near-misses dropped in ~85 ms.
-- **R1 left** (see `PHASES.md` R1): the owner's live smoke with the mic (§8b step 6); the 50-utterance
-  latency acceptance run; speculative start in the live ear; the CPU-throttle acceptance check.
-- **Owner to-do for R1:** `cd body && uv sync --extra tts --extra hands --extra local`; run the R1
-  smoke (`TESTING.md` §8b, incl. "Hey Spark"). Groq keys are in `deploy/.env` (copied from
-  `server/.env`, Orpheus terms accepted per owner).
+- **Owner's live mic tests (2026-10-10 afternoon, Engines page, noisy room):** typed tier 0/2 work;
+  "Hey Spark" is caught; after "Run benchmark" the plan is STT `groq-whisper` #1 (90% on the
+  four-voice accuracy clip, ~300 ms) then `moonshine-tiny` (86%); TTS `piper` / `groq-orpheus` /
+  `edge-tts` swap places by live latency. Bugs found and fixed in that session: sentences split at
+  0.25 s pauses (endpoint now 0.7 s); the spotter missed bare "Spark, …" (on-device transcript
+  second chance); room voices chained follow-ups forever (now 2 follow-ups within 6 s after a
+  "Hey Spark" request); follow-ups never worked because audio plays in the floating panel while the
+  ear runs in the main window (speaking state now broadcast to every window); Whisper's "foreign"
+  noise hallucination; "what time it is" delegated (tier 0 + prompt fix).
+- **NEXT (start here):** the owner re-tests follow-ups with the cross-window fix (commit `0f1bca8`):
+  "Hey Spark, tell me a joke" → "another one" → "one more" (no wake word) → a 4th without it is
+  ignored. If room voices still slip into follow-ups, add a loudness gate (accept a follow-up only
+  if it's about as loud as the "Hey Spark" utterance). Then finish R1: the 50-utterance latency run
+  (`brain/evals/latency.py` reads the traces), speculative start in the live ear, the CPU-throttle
+  check; then fast-forward `r1/voice-loop` onto `origin/main` (owner pushes phases straight to main).
+- **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
+  after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
+  after body or main-process changes; renderer changes hot-reload). The body logs one line per
+  utterance (`ear: 2.3 s of speech, wake=True, groq-whisper in 297 ms, 6 words`, never the words).
+  The v1 Chat/Activity pages and the floating panel's chat are v1 (server off); test R1 on Engines.
 - **This laptop:** 8 cores, 7.4 GB RAM, AMD (no CUDA): local LLMs must be small (R5 Models page).
 - **Deferred past R0:** per-user rate limits, `sync.resume`/X4, retention jobs, real Caddy config,
   Electron lint warnings (react-hooks exhaustive-deps).
@@ -246,4 +261,8 @@ happens.
 | 2026-10-10 | Local engines benchmarked at ~1.5 s p95: the first call includes model load | `warm()` (load + one run) before timing; the ear warms at start |
 | 2026-10-10 | Sidecar stalled: a probe timed out while a model was loading, and a second load raced it in another thread | Thread lock taken on the worker thread (asyncio locks release on cancel while native work runs on) |
 | 2026-10-10 | Moonshine heard "Hey Spark, turn the volume…" as "He sparked her in the volume…" | Cut the audio where the spotter fired minus 0.4 s; STT hears only the command |
+| 2026-10-10 | Mic test: long requests arrived as fragments; only the first got through | VAD endpoint 0.25 s → 0.7 s of silence |
+| 2026-10-10 | Mic test: strangers' lines answered 6–8 times in a row after one "Hey Spark" | Follow-ups capped at 2, each within 6 s of Spark finishing; barge-in only inside an exchange |
+| 2026-10-10 | Mic test: follow-ups always needed "Hey Spark" | Audio plays in the floating panel, the ear ran in the main window, speaking state was per window: broadcast via main (`voiceSpeakingState`) |
+| 2026-10-10 | Whisper turned room noise into "foreign" and Spark answered it | Drop whole-transcript Whisper hallucinations |
 | 2026-10-10 | Vite `EACCES` on :5123 after Docker started | Windows dynamic port range started at 1024, so Hyper-V reserved 5041–5140; reset to 49152+ (`netsh int ipv4/ipv6 set dynamic tcp start=49152 num=16384`) + restart `winnat` |
