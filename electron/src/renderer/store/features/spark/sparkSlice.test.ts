@@ -19,6 +19,16 @@ describe("sparkSlice", () => {
     expect(turns(s)[0].at).toBeGreaterThan(0);
   });
 
+  it("a speculative reply that replays before the line is confirmed stays one turn", () => {
+    const s = run(
+      ev("reply.delta", { signal_id: "s1", text: "It's 3 pm.", speak: true, final: false }),
+      userSaid({ signalId: "s1", text: "what time is it", tier: 2 }),
+      ev("reply.delta", { signal_id: "s1", text: "", speak: false, final: true }),
+    );
+    expect(turns(s)).toHaveLength(1);
+    expect(turns(s)[0]).toMatchObject({ you: "what time is it", spark: "It's 3 pm.", done: true });
+  });
+
   it("a job speaking after its turn ended is a new Spark line", () => {
     const s = run(
       userSaid({ signalId: "s1", text: "tidy my downloads", tier: 3 }),

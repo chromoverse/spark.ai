@@ -144,6 +144,18 @@ const sparkSlice = createSlice({
     userSaid: {
       reducer: (state, action: PayloadAction<UserSaid, string, Stamp>) => {
         const { signalId, text, tier, reply, done } = action.payload;
+        // a speculative reply replays before the line is confirmed: fill in that turn
+        const started = state.entries.find(
+          (e): e is Turn => e.kind === "turn" && e.signalId === signalId && e.you === null,
+        );
+        if (started) {
+          started.you = text;
+          started.tier = tier;
+          if (reply && !started.spark) started.spark = reply;
+          if (done) started.done = true;
+          started.at = action.meta.at;
+          return;
+        }
         state.entries.push({
           kind: "turn",
           key: key(),

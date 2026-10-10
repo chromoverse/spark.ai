@@ -12,6 +12,7 @@ import type {
   IBodyStatus,
   IEnginePlan,
   IVoiceEvent,
+  IVoiceUserSaid,
 } from "@root/types";
 import type { TaskRecord } from "@shared/socket.types.js";
 
@@ -101,6 +102,11 @@ contextBridge.exposeInMainWorld("electronApi", {
     onSpeaking: (callback: (state: { speaking: boolean; at: number; asked?: boolean }) => void) =>
       ipcOn("voiceSpeakingState", callback),
     onEvent: (callback: (event: IVoiceEvent) => void) => ipcOn("voiceEvent", callback),
+    onUserSaid: (callback: (line: IVoiceUserSaid) => void) => ipcOn("voiceUserSaid", callback),
+    toggleEar: () => ipcInvoke("voiceEarToggle"),
+    earSet: (listening: boolean) => ipcInvoke("voiceEarSet", { listening }),
+    earGet: () => ipcInvoke("voiceEarGet"),
+    onEarState: (callback: (state: { listening: boolean }) => void) => ipcOn("voiceEarState", callback),
   },
   engines: {
     get: () => ipcInvoke("enginesGet"),

@@ -1,73 +1,52 @@
 import { useState, useEffect } from "react";
-import { X, Minus, Square, Copy, Mic, MicOff } from "lucide-react";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { toggleMicrophoneListening } from "@/store/features/localState/localSlice";
+import { X, Minus, Square, Copy, Mic, MicOff, Search } from "lucide-react";
+import { useEar } from "@/hooks/useEar";
 
-export default function Header() {
-  const dispatch = useAppDispatch();
+/** The frameless window's title bar: drag area, the Ctrl+K and mic buttons, window controls. */
+export default function Header({ onPalette }: { onPalette?: () => void }) {
   const [isMaximized, setIsMaximized] = useState(false);
-  const { isMicrophoneListening } = useAppSelector((s) => s.localState);
+  const ear = useEar();
 
   useEffect(() => {
-    (async () => {
-      setIsMaximized(await window.electronApi.isMainWindowMaximized());
-    })();
+    void window.electronApi.isMainWindowMaximized().then(setIsMaximized);
     window.electronApi.onWindowMaximizeStateChange(setIsMaximized);
   }, []);
 
   return (
-    <div
-      className="webkit-drag-drag w-full flex items-center justify-between shrink-0"
-      style={{
-        height: 34,
-        background: "var(--sp-bg)",
-        borderBottom: "1px solid var(--sp-line)",
-      }}
-    >
-      {/* Left — drag region */}
-      <div className="flex-1 h-full" />
+    <div className="webkit-drag-drag flex h-[34px] w-full shrink-0 items-center justify-between border-b border-[var(--sp-line)] bg-[var(--sp-bg)]">
+      <div className="h-full flex-1" />
 
-      {/* Centre — mic toggle */}
-      <div className="webkit-drag-nodrag flex items-center gap-1 px-3">
+      <div className="webkit-drag-nodrag flex items-center gap-1.5 px-3">
+        {onPalette && (
+          <button
+            onClick={onPalette}
+            className="flex h-[22px] items-center gap-1.5 rounded-md border border-[var(--sp-line-2)] px-2 text-[11px] text-[var(--sp-ink-3)] transition-colors hover:text-[var(--sp-ink)]"
+            title="Search everything (Ctrl+K)"
+          >
+            <Search size={11} strokeWidth={1.8} /> Ctrl K
+          </button>
+        )}
         <button
-          onClick={() => dispatch(toggleMicrophoneListening())}
-          title={isMicrophoneListening ? "Mute" : "Unmute"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 26,
-            height: 22,
-            borderRadius: 5,
-            border: "1px solid var(--sp-line-2)",
-            background: isMicrophoneListening ? "var(--sp-accent-soft)" : "transparent",
-            color: isMicrophoneListening ? "var(--sp-accent)" : "var(--sp-ink-3)",
-            cursor: "pointer",
-            transition: "all 120ms",
-          }}
+          onClick={ear.toggle}
+          title={ear.listening ? "Turn the mic off (Ctrl+Shift+M)" : "Turn the mic on (Ctrl+Shift+M)"}
+          aria-pressed={ear.listening}
+          className={`flex h-[22px] w-[26px] items-center justify-center rounded-md border border-[var(--sp-line-2)] transition-colors ${ear.listening ? "bg-[var(--sp-accent-soft)] text-[var(--sp-accent)]" : "text-[var(--sp-ink-3)]"}`}
         >
-          {isMicrophoneListening
-            ? <Mic size={12} strokeWidth={1.8} />
-            : <MicOff size={12} strokeWidth={1.8} />}
+          {ear.listening ? <Mic size={12} strokeWidth={1.8} /> : <MicOff size={12} strokeWidth={1.8} />}
         </button>
       </div>
 
-      {/* Right — window controls */}
-      <div className="webkit-drag-nodrag flex items-center h-full">
+      <div className="webkit-drag-nodrag flex h-full items-center">
         {[
-          { action: "MINIMIZE", icon: <Minus size={13} strokeWidth={1.5} />, hover: "hover:bg-[#2a2822]" },
-          {
-            action: "MAXIMIZE",
-            icon: isMaximized ? <Copy size={11} strokeWidth={1.5} /> : <Square size={11} strokeWidth={1.5} />,
-            hover: "hover:bg-[#2a2822]",
-          },
+          { action: "MINIMIZE", icon: <Minus size={13} strokeWidth={1.5} />, hover: "hover:bg-white/[0.06]" },
+          { action: "MAXIMIZE", icon: isMaximized ? <Copy size={11} strokeWidth={1.5} /> : <Square size={11} strokeWidth={1.5} />, hover: "hover:bg-white/[0.06]" },
           { action: "CLOSE", icon: <X size={13} strokeWidth={1.5} />, hover: "hover:bg-red-700/80" },
         ].map(({ action, icon, hover }) => (
           <button
             key={action}
             onClick={() => window.electronApi.sendFrameAction(action as "MINIMIZE" | "MAXIMIZE" | "CLOSE")}
-            className={`flex items-center justify-center w-11 h-full transition-colors ${hover}`}
-            style={{ color: "var(--sp-ink-3)" }}
+            className={`flex h-full w-11 items-center justify-center text-[var(--sp-ink-3)] transition-colors ${hover}`}
+            aria-label={action.toLowerCase()}
           >
             {icon}
           </button>

@@ -1,8 +1,21 @@
-import { app } from "electron";
-import type { IBrainResult } from "@root/types";
+import { app, BrowserWindow } from "electron";
+import type { IBrainResult, IVoiceSendResult } from "@root/types";
 import { ipcMainHandle } from "../utils/ipcUtils.js";
 import { BodyError } from "../services/BodyBridge.js";
 import { voiceLoop } from "../services/VoiceLoop.js";
+import { windowManager } from "../services/WindowManager.js";
+
+/** Every window shows the same conversation: the user's line goes to all of them, whichever
+ * window heard or typed it (each window has its own store). */
+function said(text: string, r: IVoiceSendResult): IVoiceSendResult {
+  const line = { signalId: r.signalId, text, tier: r.tier, error: r.error ?? null };
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send("voiceUserSaid", line);
+  }
+  return r;
+}
+
+let earOn = false; // the ear lives in the overlay; other windows show and toggle it
 
 async function result<T>(fn: () => Promise<T>): Promise<IBrainResult<T>> {
   try {
@@ -24,7 +37,7 @@ export function registerVoiceHandlers(): void {
       if (typeof text !== "string" || !text.trim() || text.length > 2000) {
         throw new BodyError("invalid_input", "Say or type something first.");
       }
-      return voiceLoop.send(text.trim());
+      return said(text.trim(), await voiceLoop.send(text.trim()));
     }),
   );
   ipcMainHandle("voiceHear", (_event, payload) =>
@@ -43,7 +56,7 @@ export function registerVoiceHandlers(): void {
       if (typeof signalId !== "string" || typeof text !== "string" || !text.trim() || text.length > 2000) {
         throw new BodyError("invalid_input", "Say that again?");
       }
-      return voiceLoop.commit(signalId, text.trim());
+      return said(text.trim(), await voiceLoop.commit(signalId, text.trim()));
     }),
   );
   ipcMainHandle("voiceDrop", (_event, payload) => {
@@ -56,6 +69,16 @@ export function registerVoiceHandlers(): void {
     if (typeof signalId === "string" && typeof at === "number") void voiceLoop.firstAudio(signalId, at);
     return { ok: true };
   });
+  ipcMainHandle("voiceEarToggle", () => {
+    windowManager.getSecondaryWindow()?.getBrowserWindow()?.webContents.send("onMicMuteToggle", {});
+  });
+  ipcMainHandle("voiceEarSet", (_event, payload) => {
+    earOn = (payload as { listening?: unknown } | null)?.listening === true;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.webContents.isDestroyed()) win.webContents.send("voiceEarState", { listening: earOn });
+    }
+  });
+  ipcMainHandle("voiceEarGet", () => ({ listening: earOn }));
   // Spark plays in one window, the ear may run in another: every window learns when it talks
   ipcMainHandle("voiceSpeaking", (_event, payload) => {
     voiceLoop.speakingChanged((payload as { speaking?: unknown } | null)?.speaking === true);

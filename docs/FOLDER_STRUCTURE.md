@@ -54,7 +54,8 @@ ai_local/
 │   ├── src/main/             windows, tray, IPC, BrainSocket, BodyBridge (stdio), keychain
 │   ├── src/renderer/
 │   │   ├── pages/            Home, Activity, Capabilities, Engines, Settings, Onboarding;
-│   │   │                     overlay/ = the voice notch (route /ai-panel, the always-on-top window)
+│   │   │                     overlay/ = the voice notch (route /ai-panel, the always-on-top window);
+│   │   │                     spark/ = the main window's five destinations (Home.tsx is the shell)
 │   │   ├── components/ui/    shadcn primitives
 │   │   ├── components/spark/ conversation, job panel, approval modal, connect card, artifacts, palette
 │   │   ├── store/            Redux Toolkit slices

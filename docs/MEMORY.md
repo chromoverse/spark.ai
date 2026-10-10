@@ -112,8 +112,27 @@ happens.
   springs, measured height), so nothing jumps or clips. The ear now lives in the overlay, mic off
   at start (button or Ctrl+Shift+M). v1 `pages/AiPanel/` deleted. `sparkSlice` registered; every
   window folds every brain event. Electron vitest: 10 tests.
-  **NEXT: M6 main window** (five destinations per `docs/mockups/r2-ui.html`, Home reusing the
-  overlay's pieces), then M7. Open voice items, only if they show up in use: a
+  **M6 main window done:** `pages/Home.tsx` is the new shell (rail: Home · Activity ·
+  Capabilities · Engines · Settings, Ctrl+K palette, frameless header with the mic toggle);
+  `pages/spark/` HomePage (conversation, inline approval/question cards shared with the overlay,
+  input bar, live job panel with Stop), ActivityPage (jobs + step log, incidents), CapabilitiesPage
+  (search, three-way permission control writing bare rules), EnginesHub (Voice = the old Engines
+  page minus its test chat and second ear, Models = `/v2/engines/chains`), SettingsHub (account,
+  devices, permission mode + rules, verbosity / name / training toggle). Main sends every user
+  line to all windows (`voiceUserSaid`); the overlay's ear state and toggle go through main
+  (`voiceEarSet/Get/Toggle`). Bug found in the browser check: `useEffect(() => el.scrollIntoView())`
+  returned a Promise (new Chromium) as the cleanup and crashed React on unmount. Electron tests 21
+  (vitest + Testing Library). The v1 pages under `pages/home/` and `components/local/home/` are now
+  unused; `HomeLive.tsx` holds the owner's uncommitted edits, so it stays until they say.
+  **Can't-do prompts (2026-10-10):** the reflex delegated impossible asks ("what's my bank
+  balance", "call my mom") once delegate started real jobs, and every agent model asked questions
+  instead of saying it can't book a table. Both prompts now say so first. After: persona 20b 46/56
+  (was 42), 120b 53/56 (was 49); reflex 20b 59/59, 31/33, 11/12; 120b 59/59, 32/33, 10/12 (a
+  "write a cover letter and save it" answered inline: variance near the line); agent 120b 24/30
+  (was 22), 20b 27/30 (was 23), can't-do passes on both. Over three runs the two are about even
+  (120b 21/22/24, 20b 18/23/27), so the agent chain keeps 120b first.
+  **NEXT: M7** (delete the v1 executor and unused v1 pages after asking about the owner's files,
+  CHANGELOG, PHASES boxes), then the owner's smoke test. Open voice items, only if they show up in use: a
   loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
   flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild

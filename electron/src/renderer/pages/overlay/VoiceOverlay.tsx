@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { ArrowUpRight, Check, Mic, MicOff, Square, X } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { ACTIVE, currentJob, userSaid, type ApprovalView, type AskView, type JobView, type Turn } from "@/store/features/spark/sparkSlice";
-import { micLevel, useVoiceEar, type Heard } from "@/hooks/useVoiceEar";
+import { micLevel, useVoiceEar } from "@/hooks/useVoiceEar";
 import { speechLevel } from "@/hooks/useVoicePlayback";
+import { ApprovalCard, AskCard } from "@/components/spark/Cards";
 import { lingering, overlayLayout, overlayMode, type OverlayLayout } from "./overlayMode";
 
 // The voice overlay (route /ai-panel): Spark's main voice surface, a notch hanging from the top
@@ -25,8 +26,9 @@ const ORB: Record<OverlayLayout, { size: number; left: number; top: number }> = 
 const SPRING = { type: "spring", stiffness: 380, damping: 36, mass: 0.9 } as const;
 const FADE = { duration: 0.2, ease: [0.2, 0, 0, 1] } as const;
 
+const heardElsewhere = (): void => {};
+
 export default function VoiceOverlay() {
-  const dispatch = useAppDispatch();
   const spark = useAppSelector((s) => s.spark);
   const brain = useAppSelector((s) => s.brain.status);
   const [speaking, setSpeaking] = useState(false);
@@ -40,11 +42,7 @@ export default function VoiceOverlay() {
   const job = currentJob(spark);
   const activeJob = job && ACTIVE.includes(job.status) ? job : null;
 
-  const onHeard = useCallback(
-    (h: Heard) => dispatch(userSaid({ signalId: h.signalId, text: h.text, tier: h.tier, done: h.tier === 0 })),
-    [dispatch],
-  );
-  const ear = useVoiceEar(onHeard, wake);
+  const ear = useVoiceEar(heardElsewhere, wake); // main sends the line to every window (useBrainBridge)
   const armed = ear.status === "Listening…";
   const turnAt = turn?.at ?? 0;
 
@@ -72,9 +70,10 @@ export default function VoiceOverlay() {
     };
   }, []);
 
-  // Ctrl+Shift+M toggles the ear (the shortcut reaches every window; the ear lives here)
+  // Ctrl+Shift+M and the main window's mic toggle the ear; every window sees its state
   const toggle = ear.toggle;
   useEffect(() => window.electronApi.onMicMuteToggle(() => toggle()), [toggle]);
+  useEffect(() => void window.electronApi.voice.earSet(ear.listening), [ear.listening]);
 
   // re-evaluate timed states (linger, thinking timeout) while one could lapse
   useEffect(() => {
@@ -313,72 +312,6 @@ function JobRow({ job }: { job: JobView }) {
   );
 }
 
-const RISK: Record<string, string> = { destructive: "var(--sp-err)", write: "var(--sp-warn)", external: "var(--sp-info)" };
-
-function ApprovalCard({ approval, more }: { approval: ApprovalView; more: number }) {
-  const decide = (d: "allow" | "deny" | "always"): void => void window.electronApi.brain.approve(approval.id, d);
-  const inputs = Object.entries(approval.inputs).slice(0, 2);
-  return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.035] p-3">
-      <div className="flex items-center gap-2">
-        <span className="size-1.5 rounded-full" style={{ background: RISK[approval.risk] ?? "var(--sp-ink-3)" }} />
-        <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--sp-ink-3)]">Needs your OK</span>
-        {more > 0 && <span className="ml-auto text-[11px] text-[var(--sp-ink-4)]">+{more} more</span>}
-      </div>
-      <p className="mt-1.5 text-[14px] leading-snug text-[var(--sp-ink)]">{approval.summary}</p>
-      {inputs.length > 0 && (
-        <p className="sp-mono mt-1 truncate text-[11px] text-[var(--sp-ink-3)]">
-          {inputs.map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("  ·  ")}
-        </p>
-      )}
-      <div className="mt-3 flex gap-2">
-        <button className="sp-btn-ghost px-3" onClick={() => decide("deny")}>
-          Deny
-        </button>
-        {approval.options.includes("always") && (
-          <button className="sp-btn-ghost px-3" onClick={() => decide("always")}>
-            Always allow
-          </button>
-        )}
-        <button className="sp-btn-accent ml-auto px-4" onClick={() => decide("allow")}>
-          Allow
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function AskCard({ ask }: { ask: AskView }) {
-  const [text, setText] = useState("");
-  const answer = (a: string): void => {
-    if (a.trim()) void window.electronApi.brain.answer(ask.id, a.trim());
-  };
-  return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.035] p-3">
-      <p className="text-[14px] leading-snug text-[var(--sp-ink)]">{ask.question}</p>
-      {ask.options.length > 0 ? (
-        <div className="mt-2.5 flex flex-wrap gap-2">
-          {ask.options.map((o) => (
-            <button key={o} className="sp-btn-ghost px-3" onClick={() => answer(o)}>
-              {o}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <form
-          className="mt-2.5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            answer(text);
-          }}
-        >
-          <input className="sp-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Answer…" maxLength={500} />
-        </form>
-      )}
-    </div>
-  );
-}
-
 function Controls({ listening, onToggleMic, speaking, hint }: { listening: boolean; onToggleMic: () => void; speaking: boolean; hint: string | null }) {
   const dispatch = useAppDispatch();
   const [text, setText] = useState("");
@@ -386,12 +319,8 @@ function Controls({ listening, onToggleMic, speaking, hint }: { listening: boole
     const said = text.trim();
     if (!said) return;
     setText("");
-    const r = await window.electronApi.voice.send(said);
+    const r = await window.electronApi.voice.send(said); // a sent line reaches every window
     if (!r.ok) dispatch(userSaid({ signalId: `local-${Date.now()}`, text: said, tier: null, reply: r.error.message, done: true }));
-    else {
-      const { signalId, tier, error } = r.data;
-      dispatch(userSaid({ signalId, text: said, tier, reply: error, done: tier === 0 || Boolean(error) }));
-    }
   };
   return (
     <div className="flex flex-col gap-1.5">

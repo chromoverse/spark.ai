@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { IBrainSettings, IBrainStatus } from "@root/types";
 import { useAppDispatch } from "@/store/hooks";
 import { mergeBrainSettings, setBrainStatus } from "@/store/features/brain/brainSlice";
-import { brainEvent, jobsLoaded } from "@/store/features/spark/sparkSlice";
+import { brainEvent, jobsLoaded, userSaid } from "@/store/features/spark/sparkSlice";
 
 /** Mirrors the main process's brain socket into Redux: connection status and pushed events
  * (each window has its own store, so every window folds every event). */
@@ -26,9 +26,14 @@ export function useBrainBridge(): void {
       }
       dispatch(brainEvent(e));
     });
+    // the user's own lines, from whichever window heard or typed them
+    const offSaid = window.electronApi.voice.onUserSaid(({ signalId, text, tier, error }) =>
+      dispatch(userSaid({ signalId, text, tier, reply: error ?? undefined, done: tier === 0 || Boolean(error) })),
+    );
     return () => {
       offStatus();
       offEvent();
+      offSaid();
     };
   }, [dispatch]);
 }

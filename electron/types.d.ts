@@ -125,6 +125,14 @@ export type IVoiceEvent =
   | { kind: "cue"; cue: "heard" | "done" | "error"; signalId: string }
   | { kind: "stop" };
 
+/** A line the user said or typed, sent to every window (each has its own store). */
+export interface IVoiceUserSaid {
+  signalId: string;
+  text: string;
+  tier: number | null;
+  error: string | null;
+}
+
 export interface IVoiceSendResult {
   signalId: string;
   tier: number | null;
@@ -254,6 +262,11 @@ export type IEventPayloadMapping = {
   voiceFirstAudio: { ok: boolean };
   voiceSpeaking: { ok: boolean };
   voiceSpeakingState: { speaking: boolean; at: number; asked?: boolean };
+  voiceUserSaid: IVoiceUserSaid;
+  voiceEarToggle: void;
+  voiceEarSet: void;
+  voiceEarGet: { listening: boolean };
+  voiceEarState: { listening: boolean };
   enginesGet: IBrainResult<IEnginesInfo>;
   enginesBenchmark: IBrainResult<IEnginesInfo>;
   voiceEvent: IVoiceEvent;
@@ -366,6 +379,12 @@ declare global {
         speaking: (speaking: boolean) => Promise<{ ok: boolean }>;
         onSpeaking: (callback: (state: { speaking: boolean; at: number; asked?: boolean }) => void) => () => void;
         onEvent: (callback: (event: IVoiceEvent) => void) => () => void;
+        onUserSaid: (callback: (line: IVoiceUserSaid) => void) => () => void;
+        /** The ear lives in the overlay window; any window can toggle it and see its state. */
+        toggleEar: () => Promise<void>;
+        earSet: (listening: boolean) => Promise<void>;
+        earGet: () => Promise<{ listening: boolean }>;
+        onEarState: (callback: (state: { listening: boolean }) => void) => () => void;
       };
       engines: {
         get: () => Promise<IBrainResult<IEnginesInfo>>;

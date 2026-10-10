@@ -1,124 +1,129 @@
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
+import { Activity, Cpu, Home as HomeIcon, Settings, Sparkles } from "lucide-react";
 import Header from "@/components/local/Header";
-import BottomBar from "@/components/local/bottomBar/BottomBar";
-import Sidebar, { type SidebarItem } from "@/components/local/home/Sidebar";
-import JobsPanel from "@/components/local/home/JobsPanel";
-import { useAiResponseHandler } from "@/hooks/useAiResponseHandler";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import type { EntityCardData } from "@/components/local/home/EntityCards";
-import type { TaskOutput } from "@shared/socket.types";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { resetUser } from "@/store/features/auth/authSlice";
+import { ACTIVE, currentJob } from "@/store/features/spark/sparkSlice";
+import { useEar } from "@/hooks/useEar";
+import HomePage from "./spark/HomePage";
+import ActivityPage from "./spark/ActivityPage";
+import CapabilitiesPage from "./spark/CapabilitiesPage";
+import EnginesHub from "./spark/EnginesHub";
+import SettingsHub, { SECTIONS, type Section } from "./spark/SettingsHub";
+import Palette from "./spark/Palette";
+import type { Command } from "./spark/logic";
 
-const SparkLogs = lazy(() => import("./home/SparkLogs"));
-const History = lazy(() => import("./home/History"));
-const SettingsPage = lazy(() => import("./home/SettingsPage"));
-const Connectors = lazy(() => import("./home/Connectors"));
-const Automation = lazy(() => import("./home/Automation"));
-const Bookings = lazy(() => import("./home/Bookings"));
-const ToolsPage = lazy(() => import("./home/ToolsPage"));
-const PluginsPage = lazy(() => import("./home/PluginsPage"));
-const SkillsPage = lazy(() => import("./home/SkillsPage"));
-const PermissionsPage = lazy(() => import("./home/PermissionsPage"));
-const EnginesPage = lazy(() => import("./home/EnginesPage"));
-const HomeLive = lazy(() => import("./home/HomeLive"));
+// The main window (DESIGN.md §3, docs/mockups/r2-ui.html): five destinations on a left rail,
+// Ctrl+K for everything. The voice overlay (pages/overlay) is the other half of the UI.
 
-function PageLoader() {
-  return <div className="flex items-center justify-center h-full"><div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
-}
+type Dest = "home" | "activity" | "capabilities" | "engines" | "settings";
 
-interface EntityResult {
-  entities: EntityCardData[];
-  intent: string;
-}
+const RAIL: { id: Dest; label: string; icon: ReactNode }[] = [
+  { id: "home", label: "Home", icon: <HomeIcon className="size-[18px]" strokeWidth={1.8} /> },
+  { id: "activity", label: "Activity", icon: <Activity className="size-[18px]" strokeWidth={1.8} /> },
+  { id: "capabilities", label: "Capabilities", icon: <Sparkles className="size-[18px]" strokeWidth={1.8} /> },
+  { id: "engines", label: "Engines", icon: <Cpu className="size-[18px]" strokeWidth={1.8} /> },
+  { id: "settings", label: "Settings", icon: <Settings className="size-[18px]" strokeWidth={1.8} /> },
+];
 
-function Home() {
-  const [activeTab, setActiveTab] = useState<SidebarItem>("home");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [showJobs, setShowJobs] = useState(false);
-  const [entityResult, setEntityResult] = useState<EntityResult | null>(null);
+// v1 deep links (tray, notifications) still name old tabs
+const LEGACY: Record<string, Dest> = { history: "activity", "spark-logs": "activity", tools: "capabilities", permissions: "settings" };
+
+export default function Home() {
+  const [dest, setDest] = useState<Dest>("home");
+  const [section, setSection] = useState<Section>("account");
+  const [palette, setPalette] = useState(false);
+  const spark = useAppSelector((s) => s.spark);
+  const user = useAppSelector((s) => s.auth.user);
+  const ear = useEar();
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+  const job = currentJob(spark);
+  const live = job && ACTIVE.includes(job.status) ? job : null;
 
   useEffect(() => {
-    const cleanup = window.electronApi?.onSparkNavigate?.((payload) => {
-      if (payload?.tab) setActiveTab(payload.tab as SidebarItem);
+    const off = window.electronApi.onSparkNavigate?.(({ tab }) => {
+      const d = (RAIL.find((r) => r.id === tab)?.id ?? LEGACY[tab]) as Dest | undefined;
+      if (d) setDest(d);
     });
-    return () => { cleanup?.(); };
-  }, []);
-
-  const handleTaskBatchComplete = useCallback((results: TaskOutput[]) => {
-    console.log("Tasks completed:", results);
-    for (const result of results) {
-      if (
-        result.success &&
-        result.data?.result_type === "entities" &&
-        Array.isArray(result.data?.entities) &&
-        result.data.entities.length > 0
-      ) {
-        setEntityResult({
-          entities: result.data.entities as EntityCardData[],
-          intent: typeof result.data.intent === "string" ? result.data.intent : "results",
-        });
-        break;
+    const key = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette((p) => !p);
       }
-    }
+    };
+    window.addEventListener("keydown", key);
+    return () => {
+      off?.();
+      window.removeEventListener("keydown", key);
+    };
   }, []);
 
-  useAiResponseHandler({
-    autoListen: true,
-    onPQHSuccess: (payload) => console.log("PQH completed:", payload),
-    onTaskBatchComplete: handleTaskBatchComplete,
-    onTaskBatchError: (error) => console.error("Tasks failed:", error),
-  });
-
-  const renderContent = () => {
-    switch (activeTab) {
-      case "home": return (
-        <HomeLive
-          entityResult={entityResult}
-          onEntityDismiss={() => setEntityResult(null)}
-          showJobs={showJobs}
-          onToggleJobs={() => setShowJobs(c => !c)}
-        />
-      );
-      case "history": return <History />;
-      case "spark-logs": return <SparkLogs />;
-      case "tools": return <ToolsPage />;
-      case "plugins": return <PluginsPage />;
-      case "skills": return <SkillsPage />;
-      case "permissions": return <PermissionsPage />;
-      case "settings": return <SettingsPage />;
-      case "connectors": return <Connectors />;
-      case "automation": return <Automation />;
-      case "bookings": return <Bookings />;
-      case "engines": return <EnginesPage />;
-    }
-  };
+  const commands = useMemo<Command[]>(() => {
+    const go = (d: Dest) => () => setDest(d);
+    const open = (s: Section) => () => {
+      setSection(s);
+      setDest("settings");
+    };
+    return [
+      ...RAIL.map((r) => ({ id: `go-${r.id}`, group: "Go to", label: r.label, run: go(r.id) })),
+      ...SECTIONS.map((s) => ({ id: `set-${s.id}`, group: "Settings", label: s.label, keywords: s.id === "permissions" ? "rules mode approvals" : s.id === "privacy" ? "verbosity training name" : "", run: open(s.id) })),
+      ...(live ? [{ id: "stop", group: "Actions", label: `Stop: ${live.title}`, keywords: "cancel job", run: () => void window.electronApi.brain.cancelJob(live.id) }] : []),
+      { id: "mic", group: "Actions", label: ear.listening ? "Turn the mic off" : "Turn the mic on", keywords: "listen ear voice", run: ear.toggle },
+      { id: "stop-voice", group: "Actions", label: "Stop talking", keywords: "quiet silence", run: () => void window.electronApi.voice.stop() },
+      { id: "bench", group: "Actions", label: "Run engine benchmark", keywords: "voice speed", run: () => {
+        setDest("engines");
+        void window.electronApi.engines.runBenchmark();
+      } },
+      { id: "signout", group: "Actions", label: "Sign out", keywords: "log out", run: () => {
+        void window.electronApi.brain.signOut().then(() => {
+          dispatch(resetUser());
+          navigate("/welcome");
+        });
+      } },
+    ];
+  }, [live, ear.listening, ear.toggle, dispatch, navigate]);
 
   return (
-    <div
-      className="h-screen w-screen overflow-hidden flex"
-      style={{ background: "var(--sp-bg)", color: "var(--sp-ink)", fontFamily: "'Geist', -apple-system, BlinkMacSystemFont, sans-serif" }}
-    >
-      {/* Sidebar spans full height */}
-      <Sidebar
-        active={activeTab}
-        onChange={setActiveTab}
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(c => !c)}
-      />
-
-      {/* Right column: header + content + status bar */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header />
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          <main className="flex-1 min-h-0 overflow-hidden">
-            <Suspense fallback={<PageLoader />}>
-              {renderContent()}
-            </Suspense>
-          </main>
-          {activeTab === "home" && <JobsPanel show={showJobs} />}
-        </div>
-        <BottomBar />
+    <div className="sp-sans flex h-screen w-screen overflow-hidden bg-[var(--sp-bg)] text-[var(--sp-ink)]">
+      <aside className="flex w-[76px] shrink-0 flex-col items-center gap-1 border-r border-[var(--sp-line)] py-3">
+        <div className="sp-orb mb-3 size-7 rounded-full" data-mode="idle" aria-hidden />
+        {RAIL.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => setDest(r.id)}
+            aria-current={dest === r.id ? "page" : undefined}
+            className={`relative flex w-[64px] flex-col items-center gap-1 rounded-xl py-2 text-[10.5px] transition-colors ${dest === r.id ? "bg-[var(--sp-bg-3)] text-[var(--sp-ink)]" : "text-[var(--sp-ink-3)] hover:text-[var(--sp-ink)]"}`}
+          >
+            {r.icon}
+            {r.label}
+            {r.id === "home" && (spark.approvals.length > 0 || spark.asks.length > 0) && <span className="absolute right-2 top-1.5 size-1.5 rounded-full bg-[var(--sp-warn)]" />}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <button
+          className="flex size-8 items-center justify-center rounded-full bg-[var(--sp-bg-3)] text-[12px] font-medium text-[var(--sp-ink-2)]"
+          title={user?.email}
+          onClick={() => {
+            setSection("account");
+            setDest("settings");
+          }}
+        >
+          {(user?.fullName ?? user?.email ?? "?").slice(0, 1).toUpperCase()}
+        </button>
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header onPalette={() => setPalette(true)} />
+        <main className="min-h-0 flex-1">
+          {dest === "home" && <HomePage />}
+          {dest === "activity" && <ActivityPage />}
+          {dest === "capabilities" && <CapabilitiesPage />}
+          {dest === "engines" && <EnginesHub />}
+          {dest === "settings" && <SettingsHub section={section} onSection={setSection} />}
+        </main>
       </div>
+      {palette && <Palette commands={commands} onClose={() => setPalette(false)} />}
     </div>
   );
 }
-
-export default Home;
