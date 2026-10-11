@@ -11,7 +11,8 @@
 1. Work **one phase at a time**, in order. Each phase ends with something that runs end to end.
 2. Check off every ☐ deliverable and pass every ☐ acceptance test before moving on.
 3. Update `MEMORY.md` after each completed item; add a `CHANGELOG.md` entry at phase end.
-4. v1 code (`server/`, `voice_daemon/`, `llms/`, `electron/action_executor`) is reference material.
+4. v1 code (`server/`, `voice_daemon/`, `llms/`) is reference material (`electron/action_executor`
+   was deleted in R2).
    Port from it, don't extend it. Delete each v1 piece in the phase that replaces it.
 5. **Free first:** whenever a phase picks a model or service, try the free option first and use
    paid only if the free one misses the bar (`REDESIGN.md` §5.5).
@@ -138,29 +139,30 @@ Target per device: first audio within 1 s of the end of speech, within 2 s on lo
 ## R2 — Agent Loop + Desktop Hands
 
 ### Deliverables
-- ☐ Agent loop (`REDESIGN.md` §5.2) on the agent chain; parallel tool calls; escalation rules
-- ☐ `ToolSpec` registry; device tool round trip (`tool.call` / `tool.result`) with timeouts
-- ☐ Permission engine: modes, deny → ask → allow rules with argument patterns, "always allow",
+- ☑ Agent loop (`REDESIGN.md` §5.2) on the agent chain; parallel tool calls; escalation rules
+- ☑ `ToolSpec` registry; device tool round trip (`tool.call` / `tool.result`) with timeouts
+- ☑ Permission engine: modes, deny → ask → allow rules with argument patterns, "always allow",
   multi-device approvals, auto-reviewer for medium-risk calls (§20.6)
-- ☐ Hooks: `pre_tool` / `post_tool` (audit, redaction)
-- ☐ Jobs: persisted steps, cancel, steer, status; signal router (interrupt / steer / new / status)
-- ☐ `todo_write`, `ask_user`, `task` sub-agents, plan approval for risky jobs
-- ☐ Desktop hands ported from v1: system, apps/processes, files (+ folder organize restore), shell,
+- ☑ Hooks: `pre_tool` / `post_tool` (audit, redaction)
+- ☑ Jobs: persisted steps, cancel, steer, status; signal router (interrupt / steer / new / status)
+- ☑ `todo_write`, `ask_user`, `task` sub-agents, plan approval for risky jobs
+- ☑ Desktop hands ported from v1: system, apps/processes, files (+ folder organize restore), shell,
   clipboard, screenshot, keyboard/mouse
-- ☐ **UI redesign** (§24): high-fidelity mockups first, then the five destinations (Home, Activity,
+- ☑ **UI redesign** (§24): high-fidelity mockups first, then the five destinations (Home, Activity,
   Capabilities, Engines, Settings), command palette, voice overlay; job panel, approval modal, stop
-- ☐ Agent eval set (~30 tasks with stubbed tools); set the agent chain order free first
-- ☐ Cross-device control (§26): device registry, target resolution, capability fallback, queued
+- ☑ Agent eval set (~30 tasks with stubbed tools); set the agent chain order free first
+- ☑ Cross-device control (§26): device registry, target resolution, capability fallback, queued
   runs, wake-word arbitration (`wake.claim/grant/yield`), handoffs; tested with two FakeDevices
-- ☐ Delete `electron/action_executor/` and `electron/python-service/`
+- ☑ Delete `electron/action_executor/` and `electron/python-service/` (with the v1 executor IPC, the
+  v1 server socket, the unused v1 pages and 13 dead npm packages, 2026-10-11)
 
 ### Acceptance Tests
-- ☐ `TESTING.md` rows D1, E1–E4 (phone as a FakeDevice; real ADB lands in R4), F1, G1–G2, W1–W3, T1–T5, S2–S5, S7, RA3, RA4, PS3 (moved from R1) pass
-- ☐ "Create notes.txt on the desktop, write my to-dos, open it" completes with progress shown
-- ☐ "Delete everything in Downloads" → approval required; deny → nothing deleted
-- ☐ "Stop" mid-job cancels within 500 ms; "use the D drive instead" steers the running job
-- ☐ 3 independent reads run in parallel (one model turn, three concurrent tool calls)
-- ☐ Malformed free-model tool calls twice → escalates to the next chain entry and the job still completes
+- ☑ `TESTING.md` rows D1, E1–E4 (phone as a FakeDevice; real ADB lands in R4), F1, G1–G2, W1–W3, T1–T5, S2–S5, S7, RA3, RA4, PS3 (moved from R1) pass
+- ☑ "Create notes.txt on the desktop, write my to-dos, open it" completes with progress shown
+- ☑ "Delete everything in Downloads" → approval required; deny → nothing deleted
+- ☑ "Stop" mid-job cancels within 500 ms; "use the D drive instead" steers the running job
+- ☑ 3 independent reads run in parallel (one model turn, three concurrent tool calls)
+- ☑ Malformed free-model tool calls twice → escalates to the next chain entry and the job still completes
 
 ---
 

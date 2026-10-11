@@ -10,7 +10,7 @@ rules, follow the rules and flag the conflict.
 1. Read `docs/MEMORY.md`, then the relevant parts of `REDESIGN.md` and `PHASES.md`.
 2. Use the code graph (`graphify query/path/explain`, see root `CLAUDE.md`) before grepping.
 3. Work only on the current phase unless the owner says otherwise.
-4. v1 code (`server/`, `voice_daemon/`, `llms/`, `electron/action_executor`) is reference only:
+4. v1 code (`server/`, `voice_daemon/`, `llms/`) is reference only:
    port from it, never extend it.
 
 ## 2. Stack (don't introduce alternatives)

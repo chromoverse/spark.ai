@@ -1,8 +1,7 @@
-import { shell, dialog } from "electron";
+import { shell } from "electron";
 import { ipcMainHandle, ipcMainOn } from "../utils/ipcUtils.js";
 import { MainWindow } from "../windows/MainWindow.js";
 import { windowManager } from "../services/WindowManager.js";
-import { socketService } from "../services/SocketService.js";
 import { brainSocket } from "../services/BrainSocket.js";
 import type { IMediaDevice } from "@root/types";
 
@@ -26,14 +25,6 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
     mainWindow.getBrowserWindow().isMaximized(),
   );
 
-  ipcMainHandle("setOnboardingWindowMode", (_event, payload) => {
-    if (payload !== "IMMERSIVE" && payload !== "MAXIMIZED" && payload !== "DEFAULT") {
-      throw new Error("Unknown onboarding window mode");
-    }
-    mainWindow.setOnboardingWindowMode(payload);
-    return { success: true };
-  });
-
   ipcMainHandle("openExternalUrl", async (_event, url) => {
     if (typeof url !== "string") throw new Error("openExternalUrl expects a URL string");
     const parsed = new URL(url);
@@ -43,12 +34,6 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
 
     await shell.openExternal(parsed.toString());
     return { success: true };
-  });
-
-  ipcMainHandle("getFrameState", () => {
-    return mainWindow.getBrowserWindow().isMinimized()
-      ? "MINIMIZE"
-      : "MAXIMIZE";
   });
 
   // Authentication success handler - close main window and open secondary window
@@ -70,20 +55,9 @@ export function registerWindowHandlers(mainWindow: MainWindow) {
   // Authentication failure handler - show main window for login
   ipcMainHandle("onAuthFailure", async () => {
     console.log("Authentication failed/missing - showing Main window for login");
-    socketService.disconnect("unauthenticated");
     brainSocket.disconnect("signed_out");
     mainWindow.getBrowserWindow().show();
     return { success: true };
-  });
-
-  // Native file open dialog — used by drive_upload approval modal
-  ipcMainHandle("showOpenFileDialog", async (_event) => {
-    const win = mainWindow.getBrowserWindow();
-    const result = await dialog.showOpenDialog(win, {
-      properties: ["openFile"],
-      title: "Select file to upload to Drive",
-    });
-    return { filePaths: result.filePaths, canceled: result.canceled };
   });
 
   // Media state sync from Renderer to Tray

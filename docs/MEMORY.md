@@ -68,7 +68,7 @@ happens.
   "Hey Spark" request); follow-ups never worked because audio plays in the floating panel while the
   ear runs in the main window (speaking state now broadcast to every window); Whisper's "foreign"
   noise hallucination; "what time it is" delegated (tier 0 + prompt fix).
-- **R2 in progress** on branch `r2/agent-loop` (from `main` at `725268a`). Plan shown to the owner
+- **R2 done, pending the owner's smoke test,** on branch `r2/agent-loop` (from `main` at `725268a`). Plan shown to the owner
   2026-10-10: M1 contracts → M2 agent + jobs → M3 desktop hands → M4 cross-device → M5 agent eval →
   M6 UI (mockups first, owner reviews) → M7 delete v1 executor + close. **M1 + M2 done:**
   `ToolSpec` v2 (output model, `match` field for rules, review flag, confirm text, MCP annotations,
@@ -131,8 +131,19 @@ happens.
   "write a cover letter and save it" answered inline: variance near the line); agent 120b 24/30
   (was 22), 20b 27/30 (was 23), can't-do passes on both. Over three runs the two are about even
   (120b 21/22/24, 20b 18/23/27), so the agent chain keeps 120b first.
-  **NEXT: M7** (delete the v1 executor and unused v1 pages after asking about the owner's files,
-  CHANGELOG, PHASES boxes), then the owner's smoke test. Open voice items, only if they show up in use: a
+  **M7 done (2026-10-11, owner: "unused can be deleted"):** import-graph walk from the three
+  entry points, then deleted what nothing reached: v1 pages (incl. `HomeLive.tsx`), bottom bar,
+  device widgets, terminals, UI-kit pieces, v1 hooks, the v1 socket + TTS contexts, the executor
+  (`ActionExecutorService.ts`, never started: `startActionExecutor` had no caller), `SocketService`
+  + `TokenManager`, device-usage polling (pushed CPU/RAM to no listener), unused IPC
+  (`getFrameState`, `setOnboardingWindowMode`, `showOpenFileDialog`, `openSecondaryWindow`,
+  media/system permission getters), `electron/action_executor/` + `electron/python-service/`
+  (105 files), v1 socket/agentic types, 13 npm packages (+2 `@types`). Renderer build 18 s → 12 s.
+  Brain container rebuilt (migration 0003 at head). Still v1 and broken: Onboarding saves the
+  user's details through `axios` to the v1 server (`/auth/update-user-details`); port it to
+  `PATCH /v2/settings` (R3 or sooner). R2 boxes in PHASES ticked.
+  **NEXT:** the owner's R2 smoke test (`TESTING.md` §8c; Spark talks), then push R2 to main and
+  start R3. Open voice items, only if they show up in use: a
   loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
   flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
@@ -148,8 +159,9 @@ happens.
   `cd brain && uv run pytest`. Desktop: `cd electron && npm run dev`. uv lives in
   `%APPDATA%/Python/Python311/Scripts` (not on PATH, PowerShell included). Voice models live in
   `%LOCALAPPDATA%/SparkAI/models` (v1's `embedding/`, `emotion/`, `whisper/` folders there are v1's).
-- **Working tree:** the owner's uncommitted v1 edits (`server/*`, `README.md`, parts of
-  `HomeLive.tsx` and `ActionExecutorService.ts`, `scripts/`, `*.env.example`) are theirs. Never stage them.
+- **Working tree:** the owner's uncommitted v1 edits (`server/*`, `README.md`, `scripts/`,
+  `*.env.example`) are theirs. Never stage them. (`HomeLive.tsx` and `ActionExecutorService.ts`
+  were deleted in M7 with the owner's OK.)
 - **v1 state:** feature-rich prototype (`server/`, `voice_daemon/`, `llms/`, `electron/`). Runs in
   dev; no CI; 10 server unit tests (1 error). Reference material for porting only; never deployed.
 

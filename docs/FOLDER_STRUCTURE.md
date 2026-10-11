@@ -62,8 +62,7 @@ ai_local/
 │   │   └── hooks/
 │   └── e2e/                  Playwright-for-Electron tests
 │
-└── (legacy, deleted phase by phase) server/, voice_daemon/, llms/,
-    electron/action_executor/, electron/python-service/
+└── (legacy, deleted phase by phase) server/, voice_daemon/, llms/
 ```
 
 ## Where new code goes

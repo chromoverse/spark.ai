@@ -1,10 +1,8 @@
-import type { TaskRecord } from "./src/types/socket.types";
 
 // types.d.ts
 
 // FrameWindowAction
 export type IFrameWindowAction = "CLOSE" | "MINIMIZE" | "MAXIMIZE";
-export type IOnboardingWindowMode = "IMMERSIVE" | "MAXIMIZED" | "DEFAULT";
 
 // Media Types handling
 export type IMediaDeviceType = "audioinput" | "audiooutput" | "videoinput";
@@ -31,36 +29,6 @@ export interface IMediaPermissions {
 export interface IMediaStream {
   audioDeviceiId?: string;
   cameraDeviceiId?: string;
-}
-
-interface IActionExecutorResponseResults {
-  taskId: string;
-  success: boolean;
-  data: Record<string, unknown>;
-  error?: string;
-  durationMs?: number;
-}
-export interface IActionExecutorResponse {
-  status: string;
-  results: Array<IActionExecutorResponseResults>;
-  message: string;
-}
-
-export interface IDeviceUsageStatusManager {
-  cpuUsage: number;
-  ramUsage: number;
-  storageData: { total: number; free: number; usage: number };
-}
-
-export interface ISocketConnectionState {
-  connected: boolean;
-  socketId?: string;
-  reason?: string;
-}
-
-export interface ISocketEventForwardPayload {
-  event: string;
-  data: unknown;
 }
 
 // Brain v2 (docs/API.md). Tokens stay in the main process; the renderer only sees these.
@@ -193,29 +161,21 @@ export interface IMicControlPayload {
 // Payload Mapper - FIXED: Now includes parameters
 export type IEventPayloadMapping = {
   frameWindowAction: IFrameWindowAction;
-  getFrameState: IFrameWindowAction;
   isMainWindowMaximized: boolean;
-  setOnboardingWindowMode: { success: boolean };
   openExternalUrl: { success: boolean };
 
   // Media
   getMediaDevices: IMediaDevices;
-  getMediaPermissions: IMediaPermissions;
   checkMediaPermission: IMediaPermissions;
   requestMediaPermissions: IMediaPermissions;
-  checkSystemPermissions: IMediaPermissions;
   startMediaStream: IMediaStream;
   stopMediaStream: void;
 
   // Device Usage Status
-  getDeviceUsageStatus: IDeviceUsageStatusManager;
-  poolDeviceStatus: void;
 
   // Task Execution
-  executeTasks: IActionExecutorResponse;
 
   // Secondary Window
-  openSecondaryWindow: void;
   overlayInteractive: void;
   openMainWindow: void;
 
@@ -274,13 +234,8 @@ export type IEventPayloadMapping = {
   enginePlan: IEnginePlan;
 
   // Socket IPC Bridge
-  socketEmit: { success: boolean; error?: string };
-  getSocketConnectionState: ISocketConnectionState;
-  socketConnectionState: ISocketConnectionState;
-  socketEventForward: ISocketEventForwardPayload;
 
   // File dialog
-  showOpenFileDialog: { filePaths: string[]; canceled: boolean };
 };
 
 declare global {
@@ -289,11 +244,7 @@ declare global {
     webkitAudioContext?: typeof AudioContext;
     electronApi: {
       sendFrameAction: (payload: IFrameWindowAction) => void;
-      getFrameState: () => Promise<IFrameWindowAction>;
       isMainWindowMaximized: () => Promise<boolean>;
-      setOnboardingWindowMode: (
-        payload: IOnboardingWindowMode,
-      ) => Promise<{ success: boolean }>;
       openExternalUrl: (url: string) => Promise<{ success: boolean }>;
       onWindowMaximizeStateChange: (
         callback: (payload: boolean) => void,
@@ -301,22 +252,10 @@ declare global {
 
       // Media APIs
       getMediaDevices: () => Promise<IMediaDevices>;
-      getMediaPermissions: () => Promise<IMediaPermissions>;
       checkMediaPermission: () => Promise<IMediaPermissions>;
       requestMediaPermissions: () => Promise<IMediaPermissions>;
-      checkSystemPermissions: () => Promise<IMediaPermissions>;
-
-      // Device Usage Status APIs
-      getDeviceUsageStatus: () => Promise<IDeviceUsageStatusManager>;
-      onDeviceUsageStatusChange: (
-        callback: (payload: IDeviceUsageStatusManager) => void,
-      ) => () => void;
-
-      // Python Automation API -  as SQH Listener
-      executeTasks: (tasks: TaskRecord[]) => Promise<IActionExecutorResponse>;
 
       // Secondary Window API
-      openSecondaryWindow: () => Promise<void>;
       /** The overlay takes clicks only while the pointer is on the notch. */
       overlayInteractive: (on: boolean) => Promise<void>;
       openMainWindow: () => Promise<void>;
@@ -392,22 +331,6 @@ declare global {
         onPlan: (callback: (plan: IEnginePlan) => void) => () => void;
         onBodyStatus: (callback: (status: IBodyStatus) => void) => () => void;
       };
-
-      // Socket IPC Bridge
-      socketEmit: (
-        event: string,
-        ...args: unknown[]
-      ) => Promise<{ success: boolean; error?: string }>;
-      getSocketConnectionState: () => Promise<ISocketConnectionState>;
-      onSocketConnectionState: (
-        callback: (payload: ISocketConnectionState) => void,
-      ) => () => void;
-      onSocketEventForward: (
-        callback: (payload: ISocketEventForwardPayload) => void,
-      ) => () => void;
-
-      // File dialog
-      showOpenFileDialog: () => Promise<{ filePaths: string[]; canceled: boolean }>;
     };
   }
 }

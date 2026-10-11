@@ -2,10 +2,6 @@ import { ipcMainHandle } from "../utils/ipcUtils.js";
 import { windowManager } from "../services/WindowManager.js";
 
 export function registerSecondaryWindowHandlers() {
-  ipcMainHandle("openSecondaryWindow", () => {
-    windowManager.openSecondaryWindow();
-  });
-
   ipcMainHandle("overlayInteractive", (_event, raw) => {
     windowManager.getSecondaryWindow()?.setInteractive(raw === true);
   });

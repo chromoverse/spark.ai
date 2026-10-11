@@ -8,6 +8,18 @@ backfilled from git history and grouped by theme.
 ## [Unreleased]
 
 ### Added
+- 2026-10-11 — **R2 Agent loop + desktop hands** (branch `r2/agent-loop`): brain agent loop on a
+  free-first agent chain (parallel tool calls, schema checks, malformed → next entry, repeat guard,
+  budgets, grounding check, ≤ 3-sentence wrap-ups with the rest as an artifact); jobs (persisted
+  steps, cancel / steer / status, ETA notes) synced to every device; permission engine (modes,
+  deny → ask → allow rules with patterns, "always allow", first-answer-wins approvals, auto-reviewer
+  for medium-risk writes), hooks (redaction, audit); `todo_write`, `ask_user`, `task`, plan
+  approval, `tool_search`; 25 desktop hands in the body (files with Recycle Bin deletes and
+  organize/restore, shell, clipboard, screenshot, keyboard/mouse, apps/processes, system);
+  cross-device control (target resolution, queued runs for offline devices, wake-word
+  arbitration, handoffs); artifacts with signed downloads; agent eval (30 tasks); desktop UI
+  redone: the voice overlay as a notch at the top of the screen and a five-destination main window
+  (Home, Activity, Capabilities, Engines, Settings) with Ctrl+K
 - 2026-10-10 — **R1 Voice loop** (branch `r1/voice-loop`): `body/` sidecar (stdio JSON-RPC) with
   tier-0 reflex arc, hands, mouth (Groq Orpheus via the brain, edge-tts, Piper/Kokoro on device),
   ear (wake word "Hey Spark" by keyword spotting, Moonshine / Groq Whisper STT), per-device
@@ -35,6 +47,11 @@ backfilled from git history and grouped by theme.
   CHANGELOG)
 - 2026-10-09 — Claude Opus 5.5 (`AnthropicClient`) leads the streaming route for PQH/SQH/chat;
   skipped when no `ANTHROPIC_API_KEY` is set
+
+### Removed
+- 2026-10-11 — v1 desktop code the v2 UI replaced: `electron/action_executor/` and
+  `electron/python-service/`, the executor IPC (`executeTasks`), the v1 server socket and token
+  store, the v1 pages and components, device-usage polling, and 13 npm packages nothing imported
 
 ### Fixed
 - 2026-10-09 — Whole-app Electron lint is green (v1 renderer + main), so CI can gate on it

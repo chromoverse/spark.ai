@@ -2,11 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   IEventPayloadMapping,
   IFrameWindowAction,
-  IOnboardingWindowMode,
-  IDeviceUsageStatusManager,
   IMicControlPayload,
-  ISocketConnectionState,
-  ISocketEventForwardPayload,
   IBrainEvent,
   IBrainStatus,
   IBodyStatus,
@@ -14,7 +10,6 @@ import type {
   IVoiceEvent,
   IVoiceUserSaid,
 } from "@root/types";
-import type { TaskRecord } from "@shared/socket.types.js";
 
 (() => {
   console.log("Preload Loaded");
@@ -24,32 +19,17 @@ contextBridge.exposeInMainWorld("electronApi", {
   //frameWindowAction Apis
   sendFrameAction: (payload: IFrameWindowAction) =>
     ipcSend("frameWindowAction", payload),
-  getFrameState: () => ipcInvoke("getFrameState", {}),
   isMainWindowMaximized: () => ipcInvoke("isMainWindowMaximized", {}),
-  setOnboardingWindowMode: (payload: IOnboardingWindowMode) =>
-    ipcInvoke("setOnboardingWindowMode", payload),
   openExternalUrl: (url: string) => ipcInvoke("openExternalUrl", url),
   onWindowMaximizeStateChange: (callback: (payload: boolean) => void) =>
     ipcOn("isMainWindowMaximized", callback),
 
   //media APIs
   getMediaDevices: () => ipcInvoke("getMediaDevices"),
-  getMediaPermissions: () => ipcInvoke("getMediaPermissions"),
   checkMediaPermission: () => ipcInvoke("checkMediaPermission"),
   requestMediaPermissions: () => ipcInvoke("requestMediaPermissions"),
-  checkSystemPermissions: () => ipcInvoke("checkSystemPermissions"),
-
-  //Device Usage Status APIs
-  getDeviceUsageStatus: () => ipcInvoke("getDeviceUsageStatus"),
-  onDeviceUsageStatusChange: (
-    callback: (payload: IDeviceUsageStatusManager) => void,
-  ) => ipcOn("getDeviceUsageStatus", callback),
-
-  //python Automation API
-  executeTasks: (payload: TaskRecord[]) => ipcInvoke("executeTasks", payload),
 
   //Secondary Window API
-  openSecondaryWindow: () => ipcInvoke("openSecondaryWindow"),
   overlayInteractive: (on: boolean) => ipcInvoke("overlayInteractive", on),
   openMainWindow: () => ipcInvoke("openMainWindow"),
 
@@ -115,17 +95,7 @@ contextBridge.exposeInMainWorld("electronApi", {
     onBodyStatus: (callback: (status: IBodyStatus) => void) => ipcOn("bodyStatus", callback),
   },
 
-  // File dialog
-  showOpenFileDialog: () => ipcInvoke("showOpenFileDialog"),
 
-  // Socket IPC Bridge
-  socketEmit: (event: string, ...args: unknown[]) =>
-    ipcInvoke("socketEmit", { event, args }),
-  getSocketConnectionState: () => ipcInvoke("getSocketConnectionState"),
-  onSocketConnectionState: (callback: (payload: ISocketConnectionState) => void) =>
-    ipcOn("socketConnectionState", callback),
-  onSocketEventForward: (callback: (payload: ISocketEventForwardPayload) => void) =>
-    ipcOn("socketEventForward", callback),
 } satisfies Window["electronApi"]);
 
 // ipc-preload-utils

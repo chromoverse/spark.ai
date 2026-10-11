@@ -175,7 +175,7 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | Throttle the CPU → the plan changes on the next start | FT11 |
 | Chaos: 100 signals, none silent | §5 |
 
-### 4.7c R2 acceptance (`PHASES.md` R2, in progress)
+### 4.7c R2 acceptance (`PHASES.md` R2)
 | Acceptance test | Proven by |
 |---|---|
 | "Create notes.txt on the desktop, write my to-dos, open it" completes with progress shown | `brain/tests/scenario/test_r2_agent.py::test_notes_txt_completes_with_progress_shown` (todo, steps, note, wrap-up; real hands: body tests) |
@@ -291,6 +291,28 @@ Re-run monthly and whenever a free provider changes its offer.
    stops it (0.2 s of speech, or at once mid-exchange) and that line needs no wake word; "Hey
    Spark, wait" stops it too. "What's my battery" → answered on the device. "Hey Spark" alone → a chime, then
    the command.
+
+## 8c. R2 Smoke (dev laptop)
+Spark talks out loud from step 3 on (the overlay's mic is off until you turn it on).
+1. `docker compose -f deploy/docker-compose.yml up -d --build brain` **from the repo root** (R2 adds
+   migration 0003: jobs, approvals, artifacts, queued actions, permission rules; the container runs
+   it on start). `cd electron && npm install && npm run dev`.
+2. The notch hangs from the top centre of the screen: "Spark" and a crossed-out mic. Hover → it
+   opens smoothly (no jump, no clipping) with the mic button, a text box and "open Spark".
+   Clicks next to the notch reach the app below it.
+3. Type "what's in my downloads" in the notch → it shows your line, "Thinking…", then the reply
+   while Spark speaks; the orb and the notch glow follow the voice. The same exchange shows on
+   the main window's Home.
+4. "Create notes.txt on the desktop, write buy milk and call mom, and open it" → a job: checklist,
+   steps and Stop in the main window's job panel, a small live pill on the notch; Notepad opens.
+5. "Delete everything in Downloads" → an approval card on the notch and on Home with the exact
+   path; Deny → nothing deleted. Ask again, "always allow" → Settings → Permissions lists the rule.
+6. Start a long job ("organize my downloads and pictures"), then say or type "stop" → it stops
+   within half a second.
+7. Ctrl+K → "perm" → Enter opens Settings → Permissions. Capabilities → set `shell_run` to Never →
+   the rule appears in Settings.
+8. Mic on (notch button or Ctrl+Shift+M) → "Hey Spark, what time is it" → the notch opens to
+   "Listening…" with bars that follow your voice, then the answer.
 
 ## 9. v1 Baseline (for reference)
 2026-10-09: `server/` unittest suite, 10 tests, 1 error (circular import in `app.socket`). v1 tests

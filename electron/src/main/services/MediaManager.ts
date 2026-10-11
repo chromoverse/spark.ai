@@ -1,4 +1,4 @@
-import { systemPreferences, BrowserWindow } from "electron";
+import { BrowserWindow } from "electron";
 import {
   IMediaDevices,
   IMediaPermissions,
@@ -123,42 +123,4 @@ export async function requestMediaPermissions(
       speaker: false,
     };
   }
-}
-
-// Legacy function - now uses checkMediaPermissions (non-intrusive)
-export async function getMediaPermissions(
-  mainWindow: BrowserWindow
-): Promise<IMediaPermissions> {
-  return checkMediaPermissions(mainWindow);
-}
-
-// System-level permission check (macOS only)
-export async function checkSystemPermissions(): Promise<IMediaPermissions> {
-  let camera = false;
-  let microphone = false;
-  const speaker = true; // Speakers don't need permissions
-
-  if (process.platform === "darwin") {
-    // macOS
-    const cameraStatus = systemPreferences.getMediaAccessStatus("camera");
-    const micStatus = systemPreferences.getMediaAccessStatus("microphone");
-
-    camera = cameraStatus === "granted";
-    microphone = micStatus === "granted";
-
-    console.log("🍎 macOS system permissions:", {
-      camera: cameraStatus,
-      microphone: micStatus,
-    });
-  } else if (process.platform === "win32") {
-    // Windows - permissions granted at runtime
-    camera = true;
-    microphone = true;
-  } else {
-    // Linux and others
-    camera = true;
-    microphone = true;
-  }
-
-  return { camera, microphone, speaker };
 }
