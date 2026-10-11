@@ -26,7 +26,7 @@ ai_local/
 │   │   ├── capabilities/     hooks.py (pre/post tool: redaction, audit); skills/, plugins/, mcp/ later (§20)
 │   │   ├── integrations/     google/, slack/, notion/, places/, search/ (SearXNG, ddgs, fetcher)
 │   │   ├── research/         query planning, passage selection, citations (§22.2)
-│   │   ├── memory/           extract.py, store.py, retrieve.py, embed.py (local ONNX)
+│   │   ├── memory/           embed.py (local ONNX e5), store.py (save, hybrid search, profile, forget), extract.py, tools.py (remember/recall/forget)
 │   │   ├── jobs/             runtime.py (jobs, approvals, asks); scheduler.py, queue.py later
 │   │   ├── artifacts/        store, signed URLs, chart specs (§22.3)
 │   │   └── api/              HTTP routes (API.md §2)

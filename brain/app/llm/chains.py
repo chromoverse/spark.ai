@@ -37,7 +37,7 @@ from app.llm.types import (
 
 logger = logging.getLogger(__name__)
 
-Role = Literal["reflex", "agent", "subagent", "review"]
+Role = Literal["reflex", "agent", "subagent", "review", "memory"]
 T = TypeVar("T")
 
 
@@ -105,6 +105,7 @@ CHAINS: dict[Role, list[Entry]] = {
     ],
     "subagent": _SUB,
     "review": _SUB,
+    "memory": _SUB,  # extraction after turns (§8): background, never on the voice path
 }
 
 ROLES: dict[Role, RoleConfig] = {
@@ -113,6 +114,7 @@ ROLES: dict[Role, RoleConfig] = {
     "agent": RoleConfig(None, 30.0, 15.0, 2048, surface_malformed=True),
     "subagent": RoleConfig(None, 20.0, 15.0, 1024, surface_malformed=True),
     "review": RoleConfig(None, 5.0, 5.0, 200),
+    "memory": RoleConfig(None, 20.0, 15.0, 600),
 }
 # The hedge is for a late first token, late for that entry: from Nepal Groq's usual TTFT is
 # ~450 ms, so a fixed 350 ms hedge fired on ~95% of calls and doubled every turn's free quota
@@ -185,6 +187,20 @@ class ChainRunner:
     async def aclose(self) -> None:
         for api in self._claude.values():
             await api.close()
+
+    async def _count_cache(self, role: Role, usage: dict[str, int]) -> None:
+        """Prompt-cache hits per role per day (§21): cached input tokens / input tokens."""
+        if not usage.get("input_tokens"):
+            return
+        key = f"cache:{role}:{self.clock.now():%Y-%m-%d}"
+        try:
+            async with self.health.redis.pipeline(transaction=False) as pipe:
+                pipe.hincrby(key, "input_tokens", usage["input_tokens"])
+                pipe.hincrby(key, "cached_tokens", usage.get("cache_read_tokens", 0))
+                pipe.expire(key, 8 * 86400)
+                await pipe.execute()
+        except Exception:
+            logger.warning("cache stats not counted", exc_info=True)
 
     async def candidates(
         self, role: Role, *, allow_training: bool, exclude: frozenset[str] = frozenset()
@@ -259,7 +275,10 @@ class ChainRunner:
                     ev = await _within(self.clock, _next(agen), cfg.gap_s, "stalled")
                     if ev is None:
                         return
-                    yield replace(ev, provider=cand.label) if isinstance(ev, Done) else ev
+                    if isinstance(ev, Done):
+                        await self._count_cache(role, ev.usage)
+                        ev = replace(ev, provider=cand.label)
+                    yield ev
             except ProviderError as exc:
                 logger.warning("llm stream broke", extra={"llm": cand.label, "error": exc.kind})
                 if exc.kind == "malformed" and cfg.surface_malformed:

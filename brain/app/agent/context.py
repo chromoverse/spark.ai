@@ -1,9 +1,11 @@
-"""What a turn needs from the database (thread, recent turns, settings, device) and how a finished
-turn is stored. Loaded once per signal, prefetched on `signal.partial` (REDESIGN §4.2)."""
+"""What a turn needs from the database (thread, recent turns, settings, device, what Spark remembers
+about the user) and how a finished turn is stored. Loaded once per signal, prefetched on
+`signal.partial` (REDESIGN §4.2, §8)."""
 
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -13,9 +15,13 @@ from sqlalchemy import select
 
 from app.agent.targets import Known
 from app.core.runtime import Runtime
+from app.db.base import uuid7
 from app.db.models import Device, Message, PermissionRule, Thread, UserSettings
 from app.gateway import presence
 from app.llm.types import Message as LlmMessage
+from app.memory import store as memory
+
+logger = logging.getLogger(__name__)
 
 THREAD_IDLE = timedelta(minutes=30)  # a signal after this much quiet starts a new thread
 RECENT_MESSAGES = 8  # lean prompts: Groq's free tier allows 8K tokens/min
@@ -34,7 +40,23 @@ class Context:
     permission_mode: str = "default"
     hidden: frozenset[str] = frozenset()  # tools a bare deny rule removed (REDESIGN §20.6)
     devices: tuple[Known, ...] = ()  # all of the user's devices, origin included (§26.1)
+    profile: list[memory.Found] = field(default_factory=list)  # always in the prompt (§8)
+    memories: list[memory.Found] = field(default_factory=list)  # found for this line, minus profile
+    memories_for: str | None = None  # the words they were found for
     extra: dict[str, Any] = field(default_factory=dict)
+
+    async def recall(self, rt: Runtime, user_id: uuid.UUID, text: str) -> None:
+        """Memories for these words (§8): ~10 ms, skipped when a partial already found them."""
+        if self.memories_for == text:
+            return
+        seen = {f.id for f in self.profile}
+        try:
+            found = await memory.search(rt, user_id, text)
+        except Exception:  # a turn never fails for want of memories
+            logger.warning("memory search failed", exc_info=True)
+            found = []
+        self.memories = [f for f in found if f.id not in seen]
+        self.memories_for = text
 
     @property
     def multi(self) -> bool:
@@ -72,7 +94,9 @@ def _flatten(m: Message) -> LlmMessage | None:
     return {"role": m.role, "content": [{"type": "text", "text": " ".join(parts)}]}
 
 
-async def load(rt: Runtime, user_id: uuid.UUID, device_id: uuid.UUID) -> Context:
+async def load(
+    rt: Runtime, user_id: uuid.UUID, device_id: uuid.UUID, text: str | None = None
+) -> Context:
     async with rt.db() as db:
         thread = await db.scalar(
             select(Thread)
@@ -138,6 +162,9 @@ async def load(rt: Runtime, user_id: uuid.UUID, device_id: uuid.UUID) -> Context
         ctx.address_as = settings.address_as
         ctx.language = settings.language
         ctx.permission_mode = settings.permission_mode
+    ctx.profile = await memory.profile(rt, user_id)
+    if text:
+        await ctx.recall(rt, user_id, text)
     return ctx
 
 
@@ -150,8 +177,9 @@ async def store_turn(
     signal_id: str,
     tier: int,
     messages: list[tuple[str, list[dict[str, Any]]]],
-) -> uuid.UUID:
-    """Appends (role, content blocks) rows to the active thread, creating it if needed."""
+) -> list[uuid.UUID]:
+    """Appends (role, content blocks) rows to the active thread, creating it if needed; the new
+    rows' ids, in order."""
     now = rt.clock.now()
     async with rt.db() as db:
         thread_id = ctx.thread_id
@@ -163,9 +191,11 @@ async def store_turn(
         else:
             thread = await db.get_one(Thread, thread_id)
             thread.last_message_at = now
+        ids = [uuid7() for _ in messages]
         for i, (role, content) in enumerate(messages):
             db.add(
                 Message(
+                    id=ids[i],
                     thread_id=thread_id,
                     user_id=user_id,
                     role=role,
@@ -179,4 +209,4 @@ async def store_turn(
             )
         await db.commit()
     ctx.thread_id = thread_id
-    return thread_id
+    return ids

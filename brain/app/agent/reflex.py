@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import timedelta, timezone
 from typing import TYPE_CHECKING, Any
@@ -18,6 +19,8 @@ from app.agent.context import Context
 from app.agent.speech import Splitter
 from app.llm.types import ChainExhausted, Done, Restart, TextDelta, ToolDef, ToolUse
 from app.llm.types import Message as LlmMessage
+from app.memory import store as memory
+from app.memory.tools import FORGET, REMEMBER
 from app.supervisor.watch import State, Watch
 from app.tools.device_specs import QUICK_TOOLS
 from app.tools.spec import Risk, ToolSpec
@@ -66,7 +69,7 @@ JOB_CANCEL = ToolSpec(
     "brain",
     Risk.READ,
 )
-TOOLS: tuple[ToolSpec, ...] = (*QUICK_TOOLS, DELEGATE)
+TOOLS: tuple[ToolSpec, ...] = (*QUICK_TOOLS, DELEGATE, REMEMBER, FORGET)
 TOOL_DEFS = [t.to_def() for t in TOOLS]
 JOB_TOOL_DEFS = [JOB_STEER.to_def(), JOB_CANCEL.to_def()]
 
@@ -91,6 +94,7 @@ def tool_defs(
 
 
 BY_NAME = {t.name: t for t in (*TOOLS, JOB_STEER, JOB_CANCEL)}
+MEMORY_TOOLS = {REMEMBER.name: REMEMBER, FORGET.name: FORGET}
 
 SYSTEM = (
     persona.PERSONA_BLOCK
@@ -114,6 +118,9 @@ a sentence), say in a few words that you didn't catch it. Never delegate it, nev
 - If the context note lists a running job: when the user changes or adds to it, call \
 job_steer; when they want it stopped, call job_cancel; say a few words either way.
 - If they name another of their devices ("on my phone"), set device on the tool.
+- You remember things about the user (below, and "remembered" in the context note). Use them \
+when they help, never recite them. When they ask you to remember something, call remember; to \
+forget something, call forget. Say a few words either way.
 - The (context: ...) note at the end of the user's message is for you. Use it, never read it out.
 - Never claim you did something no tool did.
 - Never include internal or system XML tags in your reply."""
@@ -122,12 +129,20 @@ job_steer; when they want it stopped, call job_cancel; say a few words either wa
 FAST_DONE_S = 1.5  # §4.4: faster quick actions get a chime, slower ones a spoken "Done."
 
 
+def system(ctx: Context) -> str:
+    """Static first, then the user's profile: stable per user, so the prefix stays cached (§21)."""
+    if not ctx.profile:
+        return SYSTEM
+    return f"{SYSTEM}\n\nWhat you know about the user: {memory.render(ctx.profile)}"
+
+
 def volatile_context(
     ctx: Context,
     utc_offset_min: int | None,
     now_utc: Any,
     jobs: list[str] | None = None,
     origin: Any = None,
+    remembered: list[memory.Found] | None = None,
 ) -> str:
     tz = timezone(timedelta(minutes=utc_offset_min or 0))
     local = now_utc.astimezone(tz)
@@ -144,6 +159,8 @@ def volatile_context(
         parts.append("running job: " + " | ".join(jobs))
     if ctx.multi and origin is not None:
         parts.append("devices: " + ctx.devices_note(origin))
+    if remembered:
+        parts.append("remembered: " + memory.render(remembered))
     return "(context: " + "; ".join(parts) + ")"
 
 
@@ -190,7 +207,9 @@ async def run(
     rt = voice.rt
     running = voice.jobs.mine(w.user_id)
     lines = [f"{j.title} ({voice.jobs.status_line(j)})" for j in running]
-    note = volatile_context(ctx, utc_offset_min, rt.clock.now(), lines, w.device_id)
+    note = volatile_context(
+        ctx, utc_offset_min, rt.clock.now(), lines, w.device_id, remembered=ctx.memories
+    )
     user_msg: LlmMessage = {
         "role": "user",
         "content": [{"type": "text", "text": f"{user_text}\n\n{note}"}],
@@ -205,7 +224,7 @@ async def run(
 
     stream = rt.llm.stream(
         "reflex",
-        system=SYSTEM,
+        system=system(ctx),
         messages=messages,
         tools=()
         if after
@@ -226,6 +245,12 @@ async def run(
                     continue
                 if ev.name in (JOB_STEER.name, JOB_CANCEL.name):
                     routed.append((ev, await _route(voice, w, ev)))
+                    continue
+                if ev.name in MEMORY_TOOLS:
+                    content = await _memory(voice, w, ev)
+                    routed.append((ev, content))
+                    if content == NOTHING_SAVED:
+                        await speaker.say("Actually, I didn't have anything like that saved.")
                     continue
                 tools_t0 = tools_t0 or rt.clock.monotonic()
                 spec = BY_NAME[ev.name]
@@ -252,7 +277,13 @@ async def run(
     if delegated is not None:
         if not speaker.spoken:
             await speaker.say(delegated.ack)
-        note_for_job = volatile_context(ctx, utc_offset_min, rt.clock.now(), origin=w.device_id)
+        note_for_job = volatile_context(
+            ctx,
+            utc_offset_min,
+            rt.clock.now(),
+            origin=w.device_id,
+            remembered=[*ctx.profile, *ctx.memories],  # the agent's system prompt has no profile
+        )
         job = await voice.jobs.start(w, ctx, delegated.task, user_text, note_for_job)
         job_note = f"Started a background job for it ({job.title}). It reports back when done."
 
@@ -306,9 +337,11 @@ async def run(
         await speaker.say(sorry, "serious")
         turn.append(("assistant", [{"type": "text", "text": sorry}]))
 
-    await voice.store(w, ctx, turn)  # before the final marker: a follow-up sees this turn
+    ids = await voice.store(w, ctx, turn)  # before the final marker: a follow-up sees this turn
     voice.sup.finish(w, state)
     await voice.end(w)
+    if ids and not after and not any(u.name in MEMORY_TOOLS for u, _ in routed):
+        voice.learn(w, ctx, user_text, speaker.text(), ids[0])
 
 
 async def _route(voice: Voice, w: Watch, use: ToolUse) -> str:
@@ -325,6 +358,24 @@ async def _route(voice: Voice, w: Watch, use: ToolUse) -> str:
     return f"Passed it on to the job: {job.title}."
 
 
+NOTHING_SAVED = "Nothing like that was saved."
+
+
+async def _memory(voice: Voice, w: Watch, use: ToolUse) -> str:
+    """remember / forget from the reflex: run in the brain right away, like job_steer."""
+    from app.capabilities import hooks  # hooks → runtime → … → reflex: imported late
+
+    spec = MEMORY_TOOLS[use.name]
+    try:
+        inp = spec.validate(use.input)
+        assert spec.handler is not None
+        call = hooks.Call(voice.rt, w.user_id, None, None, spec, inp)
+        return str(await spec.handler(call, inp))
+    except Exception:
+        logging.getLogger(__name__).warning("reflex memory tool failed", exc_info=True)
+        return f"{spec.name} didn't work this time."
+
+
 def _as_llm(turn: list[tuple[str, list[dict[str, Any]]]]) -> list[LlmMessage]:
     return [{"role": role, "content": content} for role, content in turn]
 
@@ -333,7 +384,7 @@ async def _explain_tools(voice: Voice, w: Watch, ctx: Context, messages: list[Ll
     """A second, tool-less turn: the model says what failed and offers a next step (§4.4)."""
     speaker = Speaker(voice, w)
     stream = voice.rt.llm.stream(
-        "reflex", system=SYSTEM, messages=messages, allow_training=ctx.allow_training
+        "reflex", system=system(ctx), messages=messages, allow_training=ctx.allow_training
     )
     try:
         async for ev in stream:

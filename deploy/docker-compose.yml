@@ -15,7 +15,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       SEARXNG_URL: http://searxng:8080
       ARTIFACTS_DIR: /data/artifacts
-    volumes: [artifacts:/data/artifacts]
+      MODELS_DIR: /data/models
+    volumes: [artifacts:/data/artifacts, models:/data/models]
     ports: ["127.0.0.1:8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -70,5 +71,6 @@ services:
 
 volumes:
   artifacts:
+  models:
   pgdata:
   redisdata:

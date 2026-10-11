@@ -146,6 +146,16 @@ happens.
   start R3. Open voice items, only if they show up in use: a
   loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
   flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
+- **R3 Memory started** 2026-10-11 on branch `r3/memory` (from `r2/agent-loop`; R2 still waits
+  for the owner's smoke test, so R3 isn't on main either). **M1 brain memory done:** migration 0004
+  (`memories`, halfvec(384) + HNSW + generated tsvector + GIN), `brain/app/memory/` (embed.py:
+  multilingual-e5-small int8 ONNX, downloaded on the brain's first start into `MODELS_DIR`,
+  sha256-pinned; store.py: save with dedupe, hybrid search fused by reciprocal rank, profile,
+  forget, decay; extract.py: background extraction after reflex turns on a new `memory` chain role;
+  tools.py: remember / recall / forget), reflex prompt gets the profile (system, cacheable) and
+  found memories (volatile note), remember/forget run in the reflex, the agent gets all three,
+  `/v2/memories` routes, prompt-cache hits per role in `GET /v2/engines/chains`. Brain 161 tests
+  (+16 M rows, +1 real-model test). Retrieval at 10k memories/user: p50 ~16, p95 18–22 ms.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
   after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
   after body or main-process changes; renderer changes hot-reload). The body logs one line per
@@ -263,6 +273,31 @@ happens.
   took first words; Whisper copes with "Hey Spark" and `strip_wake` removes it).
 - The scripted ear is a dev env var in Electron main, not a separate driver: it measures the real
   path including playback, and its traces land in the brain log like live ones.
+
+**R3 implementation choices (2026-10-11, agent; owner can overrule)**
+- Embedder: multilingual-e5-small, **int8** ONNX (118 MB + 17 MB tokenizer). On this laptop int8 is
+  faster than fp32 (5.5 vs 10.6 ms p50 per short line) with the same ranking. 384-d, multilingual
+  so memories stay language-neutral. New brain deps: `onnxruntime` + `tokenizers` (run it) and
+  `numpy` (pooling); `tokenizers` pulls `huggingface-hub` transitively (unused by our code: the
+  download is 20 lines of httpx with a pinned revision + sha256).
+- Embeddings are `halfvec(384)`: half the row of `vector`, same ranking; the full-text arm reads
+  every matching row, so smaller rows kept retrieval under budget at 10k memories.
+- Thresholds measured on e5: related query/memory 0.79–0.84, unrelated 0.71–0.78 → the prompt
+  gets vector hits ≥ 0.77; a paraphrase is 0.96–0.99 but so is "dark mode" vs "light mode" (0.96)
+  and two sisters are 0.92 → near-duplicates merge at ≥ 0.95 (newest wording wins); real
+  corrections come from the extractor's `replaces` (it sees the 5 nearest known memories).
+- No `profiles` table: the profile is the most important live memories (≤ 1200 chars), rebuilt
+  on any change, cached in Redis. An LLM summary could keep a forgotten fact; this can't. Add an
+  LLM summary only if users pile up hundreds of memories and the top-N cut loses too much.
+- Extraction mines only the user's words (+ Spark's reply for context), never tool output, and
+  only lines in the first person (no call for "volume to 30"). Memories the agent saves during a
+  job are unconfirmed until the user OKs them on the Memory page (injection guard, §21).
+- Forget deletes the row; the old line can still sit in the current thread's recent history (it's
+  conversation, not memory) until the thread goes idle.
+- `hnsw.iterative_scan = strict_order` and nothing else is set per DB connection (asyncpg
+  `server_settings`), so the shared HNSW index fills a user's LIMIT in exact order.
+- JWT `iat` is no longer checked against wall time (exp already is, against the injected clock):
+  tests that moved the fake clock past real time were refused at sign-in.
 
 **R2 implementation choices (2026-10-10, agent; owner can overrule)**
 - Phone in R2 = a mobile body (FakeDevice); ADB sub-device routing (`adb:<serial>` via the laptop)

@@ -132,10 +132,13 @@ async def stream(
                 if data == "[DONE]":
                     break
                 chunk = json.loads(data)
-                if u := chunk.get("usage"):
+                # Groq reports usage in x_groq on the last chunk; others in usage
+                if u := chunk.get("usage") or (chunk.get("x_groq") or {}).get("usage"):
+                    cached = (u.get("prompt_tokens_details") or {}).get("cached_tokens")
                     usage = {
                         "input_tokens": int(u.get("prompt_tokens") or 0),
                         "output_tokens": int(u.get("completion_tokens") or 0),
+                        "cache_read_tokens": int(cached or 0),
                     }
                 for choice in chunk.get("choices") or []:
                     delta = choice.get("delta") or {}

@@ -41,7 +41,7 @@ def issue_access(settings: Settings, clock: Clock, p: Principal) -> str:
 
 def decode_access(settings: Settings, clock: Clock, token: str) -> Principal:
     """Raises `unauthorized` for anything that isn't a live access token we signed.
-    Expiry is checked against the injected clock, so tests can move time."""
+    Expiry is checked against the injected clock, so tests can move time (past wall time too)."""
     keys = [settings.jwt_secret]
     if settings.jwt_secret_previous is not None:
         keys.append(settings.jwt_secret_previous)
@@ -51,7 +51,12 @@ def decode_access(settings: Settings, clock: Clock, token: str) -> Principal:
                 token,
                 key.get_secret_value(),
                 algorithms=["HS256"],
-                options={"verify_exp": False, "require": ["typ", "sub", "did", "sid", "exp"]},
+                # time claims are checked below against the injected clock, never wall time
+                options={
+                    "verify_exp": False,
+                    "verify_iat": False,
+                    "require": ["typ", "sub", "did", "sid", "exp"],
+                },
             )
         except jwt.InvalidSignatureError:
             continue

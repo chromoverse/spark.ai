@@ -65,8 +65,8 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 | Method | Path | Notes |
 |---|---|---|
 | GET / PATCH | `/v2/settings` | ✅ `{ language, auto_detect_language, voice, verbosity: brief\|normal\|detailed, address_as, permission_mode: default\|ask\|trust, allow_training_providers, models }`. PATCH sends only changed fields (`models` is read-only until R6); `voice`/`address_as` clear with `null`. `language` other than `en` → `422` "English is all I speak for now…". A real change pushes `settings.changed` to every device |
-| GET | `/v2/memories` | list/search (`?q=`) |
-| PATCH / DELETE | `/v2/memories/{id}` | edit / forget (removes the embedding) |
+| GET | `/v2/memories` | ✅ newest first, unconfirmed included, `?limit≤500` (200) → `{ items: [{ id, kind, text, importance, confirmed, last_used_at, expires_at, created_at, updated_at }], next_cursor: null }`. `?q=` searches instead (meaning + words, best first) |
+| PATCH / DELETE | `/v2/memories/{id}` | ✅ PATCH `{ text?, kind?, importance? (0–1), confirmed?: true }` (new text is re-embedded; `confirmed: false` → `422`, delete it instead) → the memory. DELETE = forget: the row and its embedding go, and the cached profile with them. Another user's id → `404` |
 | GET | `/v2/usage` | today's usage per role/provider, quota left |
 | GET / POST / DELETE | `/v2/keys` | user provider keys (free or BYOK); responses show provider + last 4 only |
 | GET / POST / DELETE | `/v2/permissions/rules` | ✅ deny / ask / allow rules (REDESIGN §7.2). POST `{ tool, pattern?: glob on the tool's matched input (path, command, name; `''` = every call), decision: deny\|ask\|allow, device_id?: one of yours }` → the rule. Unknown tool → `422`; another user's device or rule → `404`. Backslashes are stored as `/`. Precedence across matching rules is deny → ask → allow; a bare deny (no pattern, no device) removes the tool from the model's tool list |
@@ -105,7 +105,7 @@ the same commit as the code. v1 contracts are in `legacy/API_v1.md`.
 ### 2.6 Engines & health
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/v2/engines/chains` | chain entries, enabled/paid, health, measured TTFT |
+| GET | `/v2/engines/chains` | ✅ `{ roles: { reflex\|agent\|subagent\|review\|memory: [{ provider, model, paid, trains_on_data, keys, enabled, healthy, ttft_ms }] }, cache: { <role>: { input_tokens, cached_tokens, hit_rate } } }`: chain entries, health, measured TTFT, and today's prompt-cache hit rate per role |
 | GET | `/v2/incidents` | ✅ `?limit≤100` → `{ items: [{ id, device_id, stage, engine_or_provider, error, remedy, outcome, signal_id, ts }], next_cursor }`, newest first |
 | GET | `/health` | liveness (no auth) |
 | GET | `/ready` | DB, Redis, chain health (no auth, no details beyond up/down) |
@@ -133,7 +133,7 @@ where noted.
 | `device.state` | `{ battery, power_mode, active_app, locale, mic, speaker }` | on change |
 | `device.engine_plan` | `{ stt[], tts[], local_llm[], scores, degraded? }` | ✅ after fitness runs (§18); stored as `devices.engine_plan`, ack `{ stored: true }` |
 | `wake.claim` | `{ score 0–1, loudness 0–1, foreground }` | ✅ wake-word arbitration (§26.2). Ack `{ claim_id, decision: grant\|pending }`: `grant` at once when no other device of the user is online; otherwise the brain collects claims for 150 ms and answers with `wake.grant` / `wake.yield`. The desktop claims after STT confirms the wake word, waits ≤ 400 ms, and stays quiet on a yield |
-| `signal.partial` | `{ signal_id, text }` | ✅ prefetches the turn context (thread, recent turns, settings); ack `{ signal_id }` |
+| `signal.partial` | `{ signal_id, text }` | ✅ prefetches the turn context (thread, recent turns, settings, profile, memories for `text`); the final searches memories again only if its words differ; ack `{ signal_id }` |
 | `signal.final` | `{ signal_id, text, lang?, confidence?, source?: voice\|text\|schedule, utc_offset_min? }` | ✅ the Socket.IO ack is the `signal.ack` payload `{ signal_id, tier }`; a repeated `signal_id` (5 min) acks `{ signal_id, duplicate: true }` and runs nothing. `utc_offset_min` = the device's current UTC offset, so "what time is it" is local. Voice signals may arrive on the ear's endpoint candidate (speculative start, §4.2): the device holds the turn's live events until the endpoint is confirmed, or cancels it with `signal.interrupt { signal_id }` if speech resumed |
 | `signal.handled_locally` | `{ signal_id, text, intent, slots, result: { ok, said?, output?, error?: { code, message } }, utc_offset_min? }` | ✅ tier-0 result (§27). `ok` → stored in the thread, ack `{ tier: 0 }`, no LLM. Not ok → the reflex LLM explains with the device's error, ack `{ tier: 2 }` |
 | `signal.interrupt` | `{ signal_id?, scope?: turn\|all }` | ✅ barge-in / cancelled speculative start; no id = this device's latest turn. Ack `{ cancelled: signal_id \| null }`. A cancelled turn isn't stored. `scope: "all"` (a spoken "stop" caught by tier 0) also cancels the user's most recent job; barge-in (`turn`, the default) never touches jobs |

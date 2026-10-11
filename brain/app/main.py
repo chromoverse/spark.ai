@@ -22,6 +22,7 @@ from app.api import (
     incidents,
     jobs,
     me,
+    memories,
     permissions,
     proxy,
     threads,
@@ -32,6 +33,7 @@ from app.core.config import Settings
 from app.core.logging import setup_logging, trace_id_var
 from app.core.runtime import Runtime
 from app.gateway import server as gateway
+from app.memory.embed import Embedder
 
 
 def create_app(
@@ -39,15 +41,17 @@ def create_app(
     *,
     clock: Clock | None = None,
     http: httpx.AsyncClient | None = None,
+    embedder: Embedder | None = None,
 ) -> socketio.ASGIApp:
     settings = settings or Settings()  # required fields come from env
     setup_logging(settings.log_level)
-    rt = Runtime.build(settings, clock or Clock(), http)
+    rt = Runtime.build(settings, clock or Clock(), http, embedder)
     voice = gateway.register(rt)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await voice.jobs.fail_stale()
+        voice._spawn(rt.embedder.start(rt.http))  # first start downloads ~135 MB
         supervisor = asyncio.create_task(voice.sup.run())
         yield
         supervisor.cancel()
@@ -97,6 +101,7 @@ def create_app(
         artifacts.router,
         threads.router,
         engines.router,
+        memories.router,
     ):
         api.include_router(router)
     return socketio.ASGIApp(rt.sio, other_asgi_app=api, socketio_path="socket.io")

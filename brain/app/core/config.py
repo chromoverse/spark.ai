@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     searxng_url: str = "http://127.0.0.1:8888"
     artifacts_dir: str = "data/artifacts"  # artifact bytes on the brain host (compose: a volume)
+    models_dir: str = "data/models"  # the memory embedder, downloaded on first start
 
     jwt_secret: SecretStr
     jwt_secret_previous: SecretStr | None = None

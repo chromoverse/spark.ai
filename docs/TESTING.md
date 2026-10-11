@@ -185,6 +185,13 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | Malformed free-model tool calls twice → next chain entry, job completes | T2 |
 | Desktop hands ported from v1 (one test per tool) | `body/tests/test_hands.py`: files for real in a temp folder (write/read/edit, base64, list/search, move, delete to the Recycle Bin, guards, organize + restore with special and unicode names), shell, clipboard, screenshot, keyboard (surrogate pairs), hotkeys, mouse, processes, app list/close, system info, lock/sleep; OS errors become actionable failures; every brain device tool has a hand |
 
+### 4.7d R3 acceptance (`PHASES.md` R3)
+| Acceptance test | Proven by |
+|---|---|
+| "My sister is Asha" → next day "call my sister" resolves Asha | M1 (+ the live reflex eval's memory rows, §7) |
+| Retrieval p95 < 30 ms at 10k memories per user | M12 |
+| `forget` removes the memory and its embedding; it never resurfaces | M3, M8 |
+
 ### 4.8 Persona (`PERSONA.md`)
 | ID | Scenario | Assertions |
 |---|---|---|
@@ -219,6 +226,26 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 Component tests: every list has loading / empty / error states; approval modal shows the exact
 inputs; connect card; job panel stop. E2E (Playwright for Electron against a fake brain): sign-in,
 Home conversation, Capabilities search, Engines "Run benchmark", Settings permission rule edit.
+
+### 4.12 Memory (§8)
+| ID | Scenario | Assertions |
+|---|---|---|
+| M1 ✅ | "My sister is Asha", then the next day "call my sister" | the turn is mined after it ends (memory chain, JSON); one confirmed `person` memory tied to the user's message; next day (new thread, no history) the reflex's system prompt ends with the profile naming Asha. `brain/tests/scenario/test_r3_memory.py::test_m1_sister_is_asha_then_call_my_sister_the_next_day` |
+| M2 ✅ | a memory outside the profile | found for the line (hybrid search) and sent in the volatile note (`remembered: …`), never the system prompt; the profile stays ≤ 1200 characters. `…test_m2_found_memories_ride_in_the_note_not_the_system_prompt` |
+| M3 ✅ | "forget that my sister is Asha" | reflex `forget` deletes the closest memory (row + embedding); no extraction that turn; the next prompt has no Asha, search finds nothing; forgetting something unknown is said out loud. `…test_m3_forget_by_voice_and_it_never_resurfaces`, `…test_m3_forgetting_something_unknown_is_said` |
+| M4 ✅ | "remember that I parked on level 3" | reflex `remember` saves it at once, confirmed; no extraction call. `…test_m4_remember_by_voice_is_saved_at_once` |
+| M5 ✅ | "I moved to Pokhara" with "lives in Kathmandu" known | the extractor sees the numbered known memories; `replaces` updates that row (one memory, new text). `…test_m5_a_correction_replaces_the_old_fact` |
+| M6 ✅ | commands and questions ("how far is the moon", "volume to 30") | no extraction call (first-person filter saves free quota). `…test_m6_commands_and_questions_cost_no_extraction` |
+| M7 ✅ | the agent saves a memory during a job (it may have read it in a file) | unconfirmed: out of the profile and search until the user confirms it (`PATCH confirmed: true`) (§21 governance). Extraction reads only the user's words, never tool output. `…test_m7_what_the_agent_saves_waits_for_the_users_ok` |
+| M8 ✅ | Memory page routes | list newest first, `?q=` search, edit re-embeds, delete removes row + embedding, another user's memory → 404, `confirmed: false` → 422. `…test_m8_memory_page_routes` |
+| M9 ✅ | embedder not downloaded yet | saves work (embedding null), search finds by words. `…test_m9_without_the_model_words_still_find_it` |
+| M10 ✅ | the same fact twice | one row (near-identical embedding or same text), importance kept at the max; a different fact is a new row. `…test_m10_the_same_fact_twice_is_one_memory` |
+| M11 ✅ | decay | importance < 0.4 lapses 90 days after its last use; a use extends it; important ones never lapse; lapsed rows are purged on the next save. `…test_m11_unused_small_memories_lapse` |
+| M12 ✅ | retrieval at 10k memories per user (+ 10k for another user in the same HNSW index) | p95 < 30 ms (measured 2026-10-11, Windows + Docker: p50 ~16, p95 18–22 ms; the real embedder adds ~6 ms). `…test_m12_retrieval_p95_under_30ms_at_10k_memories` |
+| M13 ✅ | prompt-cache layout | system prompt (persona, then profile) and tools identical turn to turn; time and found memories only in the last message; provider cached-token counts (OpenAI `usage` and Groq `x_groq.usage`) → hit rate per role in `GET /v2/engines/chains`. `…test_m13_prompt_prefix_is_the_same_every_turn` |
+| M14 ✅ | prefetch on `signal.partial` | memories found on the partial; the final searches again only if its words changed. `…test_m14_partial_prefetch_searches_once_for_the_same_words` |
+| M15 ✅ | extractor output | JSON checked item by item (a bad item doesn't cost the rest), ≤ 5 per turn, no JSON → nothing. `…test_m15_extraction_output_is_checked_item_by_item` |
+| M16 ✅ | the real embedder (skipped until the brain downloads it) | "call my sister" → the sister memory over the related floor; "how far is the moon" → nothing related; a paraphrase merges, a second sister doesn't; p50 < 15 ms. `brain/tests/test_embed.py` |
 
 ## 5. Chaos Suite
 

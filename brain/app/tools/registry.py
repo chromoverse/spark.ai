@@ -8,6 +8,7 @@ import re
 from collections import Counter
 from collections.abc import Iterable
 
+from app.memory.tools import MEMORY_TOOLS
 from app.tools.brain_specs import BRAIN_TOOLS
 from app.tools.device_specs import DEVICE_TOOLS, QUICK_TOOLS
 from app.tools.spec import ToolSpec
@@ -15,7 +16,7 @@ from app.tools.spec import ToolSpec
 # Brain tools with a handler (integrations, R4). The loop runs them like device tools: hooks,
 # permissions, steps; they just execute in the brain.
 INTEGRATIONS: list[ToolSpec] = []
-ALL: tuple[ToolSpec, ...] = (*BRAIN_TOOLS, *QUICK_TOOLS, *DEVICE_TOOLS)
+ALL: tuple[ToolSpec, ...] = (*BRAIN_TOOLS, *QUICK_TOOLS, *DEVICE_TOOLS, *MEMORY_TOOLS)
 BY_NAME: dict[str, ToolSpec] = {t.name: t for t in ALL}
 ORDER = {t.name: i for i, t in enumerate(ALL)}
 
@@ -58,9 +59,10 @@ def _score(spec: ToolSpec, words: set[str]) -> int:
 
 
 def usable(capabilities: Iterable[str], hidden: Iterable[str] = ()) -> list[ToolSpec]:
-    """Device tools some device can run, minus tools a bare deny rule removed (§20.6)."""
+    """Tools some device can run (and brain tools with a handler), minus tools a bare deny rule
+    removed (§20.6)."""
     caps, gone = frozenset(capabilities), frozenset(hidden)
-    pool = (*QUICK_TOOLS, *DEVICE_TOOLS, *INTEGRATIONS)
+    pool = (*QUICK_TOOLS, *DEVICE_TOOLS, *MEMORY_TOOLS, *INTEGRATIONS)
     return [t for t in pool if t.requires <= caps and t.name not in gone]
 
 

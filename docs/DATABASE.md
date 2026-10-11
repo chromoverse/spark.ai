@@ -44,8 +44,11 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 
 | Table | Columns | Indexes |
 |---|---|---|
-| `memories` | id, user_id, kind (`preference`/`person`/`routine`/`fact`/`correction`), text, embedding vector(384), tsv tsvector, importance real, confirmed bool, source_message_id, last_used_at, expires_at | HNSW (embedding vector_cosine_ops); GIN (tsv); (user_id) |
-| `profiles` | user_id (pk), summary text (≤ 300 tokens), updated_at | — |
+| ✅ `memories` | id, user_id, kind (`preference`/`person`/`routine`/`fact`/`correction`), text (one sentence about "the user", ≤ 500 chars), embedding halfvec(384) (multilingual-e5-small; null until the brain's embedder is downloaded), tsv tsvector (generated: `to_tsvector('simple', text)`), importance real (0–1), confirmed bool (false = saved by the agent during a job; out of every prompt until the user OKs it), source_message_id (set null), last_used_at, expires_at (importance < 0.4: 90 days after the last use; else null), created_at, updated_at | HNSW (embedding halfvec_cosine_ops); GIN (tsv); (user_id). Search runs both arms in one statement and fuses by reciprocal rank; `hnsw.iterative_scan = strict_order` is set per connection so a user's rows fill the LIMIT in the shared index. Lapsed rows are filtered out and purged on the next save |
+
+No `profiles` table: the profile (≤ 1200 characters ≈ 300 tokens in every prompt) is the user's
+most important live memories, rebuilt from `memories` on any change and cached in
+`hot:{user}:profile`. A forgotten memory leaves it at once; an LLM-written summary could keep it.
 
 ## 4. Capabilities & access
 
@@ -73,8 +76,8 @@ file in the same commit as the Alembic migration. v1 (MongoDB) is in `legacy/DAT
 |---|---|---|
 | `presence:{user}` | ✅ hash device_id → last ping (epoch ms), written on connect/hello and every 30 s; an entry older than 60 s counts as offline | 60 s |
 | `hot:{user}:turns` | last N messages | 1 h |
-| `hot:{user}:profile` | profile summary + settings | 1 h |
-| `prefetch:{signal}` | retrieved memories for an in-flight signal | 30 s |
+| ✅ `hot:{user}:profile` | JSON `[[memory id, kind, text], …]`: the profile; deleted on any memory change | 1 h |
+| ✅ `cache:{role}:{yyyy-mm-dd}` | hash `input_tokens`, `cached_tokens`: prompt-cache hits per LLM role (provider-reported), for Engines → Models | 8 days |
 | `health:{provider}:{key}:{model}` | ✅ `open_until` (circuit), `fails` (consecutive), `ttft_ms` (EWMA), `last_error`; `{key}` is an 8-char hash prefix of the API key | 24 h |
 | `rl:{scope}:{id}` | request counter (fixed window; R0 scopes: `otp_start`, `otp_verify`, `refresh`, `google_start`, `google_exchange`, keyed by IP) | per window |
 | `oauth:google:state:{state}` | sign-in flow: nonce, PKCE challenge, loopback port, device info | 10 min, deleted on use |

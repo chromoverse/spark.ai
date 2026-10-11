@@ -64,6 +64,7 @@ settings. Google OAuth works with `http://localhost` redirects in testing mode, 
 | `ANTHROPIC_API_KEY` | later | only read when `PAID_PROVIDERS_ENABLED=true` |
 | `SEARXNG_URL` | yes | `http://searxng:8080` |
 | `ARTIFACTS_DIR` | | where artifact bytes live (wrap-up details, handoffs). Default `data/artifacts` (relative to the brain's working dir); compose mounts the `artifacts` volume at `/data/artifacts` |
+| `MODELS_DIR` | | where the memory embedder (multilingual-e5-small, int8 ONNX, ~135 MB) is downloaded on the brain's first start, sha256-pinned. Default `data/models`; compose mounts the `models` volume at `/data/models`. Until it's there, memory search uses full-text only |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | yes | sign-in + Gmail/Calendar/Drive; add beta users as test users |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` | R4 | |
 | `RESEND_API_KEY`, `MAIL_FROM` | yes | OTP email |

@@ -23,6 +23,8 @@ class Turn:
     status: int = 200  # 429 / 5xx return an error body instead of a stream
     retry_after_s: int | None = None
     malformed: bool = False  # tool call arguments that aren't valid JSON
+    # fields of a last chunk: {"usage": …} (OpenAI style) or {"x_groq": {"usage": …}} (Groq)
+    last_chunk: dict[str, Any] | None = None
 
 
 class FakeProvider:
@@ -94,4 +96,7 @@ class FakeProvider:
                 }
             )
         yield self._chunk({}, "tool_calls" if turn.tool_calls else "stop")
+        if turn.last_chunk is not None:
+            last = {"id": "chatcmpl-fake", "choices": [], **turn.last_chunk}
+            yield f"data: {json.dumps(last)}\n\n".encode()
         yield b"data: [DONE]\n\n"

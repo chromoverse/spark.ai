@@ -1,4 +1,4 @@
-"""R0 tables (DATABASE.md §1, §2, §5). Every user-owned row has user_id; queries filter by it."""
+"""Tables (DATABASE.md). Every user-owned row has user_id; queries filter by it."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Computed,
     ForeignKey,
     Identity,
     Index,
@@ -16,11 +17,12 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     text,
+    true,
 )
-from sqlalchemy.dialects.postgresql import CITEXT
+from sqlalchemy.dialects.postgresql import CITEXT, REAL, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, Timestamps, uuid7
+from app.db.base import Base, HalfVec, Timestamps, uuid7
 
 
 def _user_fk() -> ForeignKey:
@@ -290,3 +292,38 @@ class PermissionRule(Timestamps, Base):
     tool: Mapped[str]
     pattern: Mapped[str] = mapped_column(server_default="")  # '' = every input
     decision: Mapped[str]  # deny|ask|allow
+
+
+# ── R3: memory (DATABASE.md §3) ──
+
+
+class Memory(Timestamps, Base):
+    """A durable fact about the user (REDESIGN §8): pulled from their own words after a turn, or
+    saved with `remember`. One the agent saved during a job waits for the user's OK (it may have
+    read it somewhere), and stays out of prompts until then."""
+
+    __tablename__ = "memories"
+    __table_args__ = (
+        Index(
+            "ix_memories_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "halfvec_cosine_ops"},
+        ),
+        Index("ix_memories_tsv", "tsv", postgresql_using="gin"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(_user_fk(), index=True)
+    kind: Mapped[str]  # preference | person | routine | fact | correction
+    text: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        HalfVec(384)
+    )  # null until the model loads
+    tsv: Mapped[str] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('simple'::regconfig, text)", persisted=True)
+    )
+    importance: Mapped[float] = mapped_column(REAL)
+    confirmed: Mapped[bool] = mapped_column(server_default=true())  # `text` is a column here
+    source_message_id: Mapped[uuid.UUID | None] = mapped_column(_set_null("messages"))
+    last_used_at: Mapped[datetime | None]
+    expires_at: Mapped[datetime | None]  # low-importance memories lapse when unused

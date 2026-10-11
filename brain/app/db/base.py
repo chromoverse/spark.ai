@@ -8,7 +8,34 @@ from typing import Any
 
 from sqlalchemy import DateTime, MetaData, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql.base import ischema_names
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import UserDefinedType
+
+
+class HalfVec(UserDefinedType[list[float]]):
+    """pgvector's `halfvec(n)`: 16-bit floats, half the row of `vector(n)` (768 bytes at 384
+    dims) for the same ranking. Values travel in text form ('[0.1,0.2]'); nothing reads
+    embeddings back, the database compares them."""
+
+    cache_ok = True
+
+    def __init__(self, dim: int) -> None:
+        self.dim = dim
+
+    def get_col_spec(self, **kw: Any) -> str:
+        return f"halfvec({self.dim})"
+
+    def bind_processor(self, dialect: Any) -> Any:
+        def process(value: list[float] | str | None) -> str | None:
+            if value is None or isinstance(value, str):
+                return value
+            return "[" + ",".join(f"{x:.6f}" for x in value) + "]"
+
+        return process
+
+
+ischema_names["halfvec"] = HalfVec  # reflection (the migration test) knows the type
 
 
 def uuid7() -> uuid.UUID:

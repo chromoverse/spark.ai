@@ -34,6 +34,7 @@ from app.gateway.signals import (
     ToolResult,
 )
 from app.jobs.runtime import Jobs
+from app.memory import extract
 from app.router import tier1
 from app.supervisor.watch import Supervisor, Watch
 from app.tools import registry
@@ -75,18 +76,23 @@ class Voice:
                 del self.prefetch[key]
         key = (p.user_id, msg.signal_id)
         if key not in self.prefetch:
-            task = asyncio.create_task(context.load(self.rt, p.user_id, p.device_id))
+            task = asyncio.create_task(context.load(self.rt, p.user_id, p.device_id, msg.text))
             self.prefetch[key] = (now, task)
         return {"signal_id": msg.signal_id}
 
-    async def _context(self, p: Principal, signal_id: str) -> Context:
+    async def _context(self, p: Principal, signal_id: str, text: str | None = None) -> Context:
+        """The prefetched context if a partial started one; memories are searched again only if
+        the final words differ from the partial's."""
         hit = self.prefetch.pop((p.user_id, signal_id), None)
         if hit is not None:
             try:
-                return await hit[1]
+                ctx = await hit[1]
+                if text:
+                    await ctx.recall(self.rt, p.user_id, text)
+                return ctx
             except Exception:
                 logger.warning("prefetch failed", exc_info=True)
-        return await context.load(self.rt, p.user_id, p.device_id)
+        return await context.load(self.rt, p.user_id, p.device_id, text)
 
     async def final(self, p: Principal, msg: SignalFinal) -> dict[str, Any]:
         # W2: ties in wake arbitration go to the device used most recently
@@ -253,7 +259,7 @@ class Voice:
         after: list[dict[str, Any]] | None,
     ) -> None:
         try:
-            ctx = await self._context(p, w.signal_id)
+            ctx = await self._context(p, w.signal_id, text)
             await reflex.run(self, w, ctx, text, utc_offset_min=utc_offset_min, after=after)
         except asyncio.CancelledError:
             # ponytail: a cancelled turn isn't stored; keep the spoken part if history needs it
@@ -458,9 +464,10 @@ class Voice:
 
     async def store(
         self, w: Watch, ctx: Context, turn: list[tuple[str, list[dict[str, Any]]]]
-    ) -> None:
+    ) -> list[uuid.UUID]:
+        """The new message ids; none if storing failed (logged, the turn goes on)."""
         try:
-            await context.store_turn(
+            return await context.store_turn(
                 self.rt,
                 w.user_id,
                 w.device_id,
@@ -471,6 +478,20 @@ class Voice:
             )
         except Exception:
             logger.error("turn not stored", exc_info=True)
+            return []
+
+    def learn(self, w: Watch, ctx: Context, said: str, reply: str, message_id: uuid.UUID) -> None:
+        """Background memory extraction from the user's words (§8); never delays the turn."""
+        self._spawn(
+            extract.after_turn(
+                self.rt,
+                w.user_id,
+                said,
+                reply,
+                message_id=message_id,
+                allow_training=ctx.allow_training,
+            )
+        )
 
     async def fail(self, w: Watch, moment: persona.Moment, *, stage: str, error: str) -> None:
         """§19.2 step 8: spoken and visible, with a reason. Never silence."""

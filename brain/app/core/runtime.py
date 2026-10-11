@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.llm.chains import ChainRunner
+from app.memory.embed import Embedder
 
 
 @dataclass
@@ -29,13 +30,29 @@ class Runtime:
     redis: Redis
     sio: socketio.AsyncServer
     llm: ChainRunner
+    embedder: Embedder
 
     @classmethod
-    def build(cls, settings: Settings, clock: Clock, http: httpx.AsyncClient | None) -> Runtime:
+    def build(
+        cls,
+        settings: Settings,
+        clock: Clock,
+        http: httpx.AsyncClient | None,
+        embedder: Embedder | None = None,
+    ) -> Runtime:
         engine = create_async_engine(
             settings.database_url,
             pool_pre_ping=True,
-            connect_args={"timeout": 5, "command_timeout": 10},
+            connect_args={
+                "timeout": 5,
+                "command_timeout": 10,
+                # memories of many users share one HNSW index: keep scanning until this user's
+                # rows fill the LIMIT (pgvector ≥ 0.8), in exact distance order
+                "server_settings": {
+                    "hnsw.iterative_scan": "strict_order",
+                    "plan_cache_mode": "force_custom_plan",
+                },
+            },
         )
         sio = socketio.AsyncServer(
             async_mode="asgi",
@@ -61,6 +78,7 @@ class Runtime:
             redis=redis,
             sio=sio,
             llm=ChainRunner(settings, clock, http, redis),
+            embedder=embedder or Embedder(settings.models_dir),
         )
 
     async def close(self) -> None:

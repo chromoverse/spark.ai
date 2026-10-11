@@ -29,6 +29,7 @@ from app.db.base import Base
 from app.llm.chains import CHAINS, Entry
 from app.main import create_app
 from tests.fakes.clock import FakeClock
+from tests.fakes.embed import FakeEmbedder
 from tests.fakes.google import FakeGoogle
 from tests.fakes.llm import FakeProvider
 from tests.fakes.resend import FakeResend
@@ -145,7 +146,10 @@ async def brain_server() -> AsyncIterator[Brain]:
     fake_http = FakeHttp()
     http = httpx.AsyncClient(transport=httpx.MockTransport(fake_http.handle))
     asgi = create_app(
-        make_settings(groq_api_keys="gk-test", mistral_api_keys="mk-test"), clock=clock, http=http
+        make_settings(groq_api_keys="gk-test", mistral_api_keys="mk-test"),
+        clock=clock,
+        http=http,
+        embedder=FakeEmbedder(),
     )
     server = uvicorn.Server(
         uvicorn.Config(asgi, host="127.0.0.1", port=0, lifespan="on", log_config=None)
@@ -198,6 +202,12 @@ async def brain(brain_server: Brain, monkeypatch: pytest.MonkeyPatch) -> AsyncIt
     monkeypatch.setitem(CHAINS, "agent", [Entry("groq", "agent"), Entry("mistral", "agent-b")])
     monkeypatch.setitem(CHAINS, "subagent", [Entry("groq", "small")])
     monkeypatch.setitem(CHAINS, "review", [Entry("groq", "review")])
+    # Memory extraction runs after many turns; it stays off unless a test turns it on (it would
+    # take other tests' scripted turns): monkeypatch CHAINS["memory"] = [Entry("groq", "memory")]
+    monkeypatch.setitem(CHAINS, "memory", [])
+    embedder = brain_server.rt.embedder
+    assert isinstance(embedder, FakeEmbedder)
+    embedder.on = True
     brain_server.fake_http.hosts = {
         "api.resend.com": brain_server.resend.handle,
         "oauth2.googleapis.com": brain_server.google.handle,
