@@ -6,6 +6,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { resetUser } from "@/store/features/auth/authSlice";
 import { useBrainGet } from "@/hooks/useBrainGet";
 import { ago, type Rule, type ToolRow } from "./logic";
+import MemorySection from "./MemorySection";
 import { Dot, ListState, Page, Seg, Tag } from "./ui";
 
 // Settings (DESIGN.md §3): you and your data, in sections. Changes PATCH /v2/settings; the brain
@@ -15,6 +16,7 @@ export const SECTIONS = [
   { id: "account", label: "Account" },
   { id: "devices", label: "Devices" },
   { id: "permissions", label: "Permissions" },
+  { id: "memory", label: "Memory" },
   { id: "privacy", label: "Privacy & voice" },
 ] as const;
 export type Section = (typeof SECTIONS)[number]["id"];
@@ -43,6 +45,7 @@ export default function SettingsHub({ section, onSection }: { section: Section; 
           {section === "account" && <Account />}
           {section === "devices" && <Devices />}
           {section === "permissions" && <Permissions />}
+          {section === "memory" && <MemorySection />}
           {section === "privacy" && <Privacy />}
         </div>
       </div>

@@ -68,7 +68,7 @@ export default function Home() {
     };
     return [
       ...RAIL.map((r) => ({ id: `go-${r.id}`, group: "Go to", label: r.label, run: go(r.id) })),
-      ...SECTIONS.map((s) => ({ id: `set-${s.id}`, group: "Settings", label: s.label, keywords: s.id === "permissions" ? "rules mode approvals" : s.id === "privacy" ? "verbosity training name" : "", run: open(s.id) })),
+      ...SECTIONS.map((s) => ({ id: `set-${s.id}`, group: "Settings", label: s.label, keywords: s.id === "permissions" ? "rules mode approvals" : s.id === "privacy" ? "verbosity training name" : s.id === "memory" ? "remember forget learned" : "", run: open(s.id) })),
       ...(live ? [{ id: "stop", group: "Actions", label: `Stop: ${live.title}`, keywords: "cancel job", run: () => void window.electronApi.brain.cancelJob(live.id) }] : []),
       { id: "mic", group: "Actions", label: ear.listening ? "Turn the mic off" : "Turn the mic on", keywords: "listen ear voice", run: ear.toggle },
       { id: "stop-voice", group: "Actions", label: "Stop talking", keywords: "quiet silence", run: () => void window.electronApi.voice.stop() },
