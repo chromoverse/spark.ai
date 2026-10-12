@@ -17,7 +17,6 @@ from app.memory.store import _STOP
 
 class FakeEmbedder(Embedder):
     related = 0.3
-    same = 0.95
 
     def __init__(self) -> None:
         super().__init__(tempfile.gettempdir())

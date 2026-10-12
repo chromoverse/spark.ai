@@ -1,0 +1,32 @@
+{"said": "My sister is Asha", "reply": "Nice, Asha it is.", "expect": [{"kind": "person", "words": ["sister", "Asha"]}]}
+{"said": "I'm allergic to peanuts, so keep that in mind", "reply": "Got it, no peanuts.", "expect": [{"words": ["allerg", "peanut"]}]}
+{"said": "call me Sid from now on", "reply": "Sure thing, Sid.", "expect": [{"words": ["Sid"]}]}
+{"said": "I usually go to the gym at 6 in the morning", "reply": "Early bird. Nice.", "expect": [{"words": ["gym"]}]}
+{"said": "my wife's name is Priya and her birthday is March 4th", "reply": "Noted, March 4th for Priya.", "expect": [{"words": ["Priya"]}]}
+{"said": "I work as a nurse at Bir Hospital", "reply": "That's a tough, important job.", "expect": [{"words": ["nurse"]}]}
+{"said": "I hate long answers, keep your replies short with me", "reply": "Got it. Short it is.", "expect": [{"words": ["short|brief|concise"]}]}
+{"said": "I'm vegetarian", "reply": "Good to know.", "expect": [{"words": ["vegetarian"]}]}
+{"said": "I live in Pokhara", "reply": "Lovely city.", "expect": [{"words": ["Pokhara"]}]}
+{"said": "my dog's name is Momo", "reply": "Momo, cute name.", "expect": [{"words": ["Momo"]}]}
+{"said": "I prefer dark mode on everything", "reply": "Dark mode fan, noted.", "expect": [{"words": ["dark"]}]}
+{"said": "I'm learning Japanese these days", "reply": "Ganbatte!", "expect": [{"words": ["Japanese"]}]}
+{"said": "my favourite band is Coldplay, play them sometimes", "reply": "Coldplay it is.", "expect": [{"words": ["Coldplay"]}]}
+{"said": "my son Arjun starts school next week", "reply": "Big week for Arjun.", "expect": [{"words": ["Arjun"]}]}
+{"said": "I don't drink coffee, only green tea", "reply": "Green tea it is.", "expect": [{"words": ["tea"]}]}
+{"said": "actually I moved to Pokhara last month", "reply": "Oh nice, Pokhara.", "known": ["The user lives in Kathmandu."], "expect": [{"words": ["Pokhara"]}], "replaces": 1}
+{"said": "no, my sister's name is Asha, not Usha", "reply": "Sorry, Asha. Got it.", "known": ["The user's sister is Usha."], "expect": [{"words": ["Asha"]}], "replaces": 1}
+{"said": "I've switched to light mode, I like it better now", "reply": "Light mode, noted.", "known": ["The user prefers dark mode."], "expect": [{"words": ["light"]}], "replaces": 1}
+{"said": "my sister Asha is visiting today", "reply": "Have fun with Asha.", "known": ["The user's sister is Asha."], "expect": []}
+{"said": "as you know I'm vegetarian, what should I cook tonight", "reply": "Try a paneer curry.", "known": ["The user is vegetarian."], "expect": []}
+{"said": "I'm so tired today", "reply": "Rough day? Take it easy.", "expect": []}
+{"said": "can you tell me the time", "reply": "It's 2:05.", "expect": []}
+{"said": "open my downloads folder", "reply": "Opening it.", "expect": []}
+{"said": "what's the weather like in my area", "reply": "Let me check.", "expect": []}
+{"said": "I want to listen to some music right now", "reply": "Playing something.", "expect": []}
+{"said": "remind me to call the bank at 5", "reply": "I'll remind you at 5.", "expect": []}
+{"said": "my head hurts, any tips", "reply": "Drink some water and rest a bit.", "expect": []}
+{"said": "I think it's going to rain later", "reply": "Might be, take an umbrella.", "expect": []}
+{"said": "how far is the moon", "reply": "About 384,000 kilometres.", "expect": []}
+{"said": "volume to 30", "reply": "Done.", "expect": []}
+{"said": "tell me a joke", "reply": "Why did the scarecrow win an award? He was outstanding in his field.", "expect": []}
+{"said": "can you help me write an email to my boss", "reply": "Sure, what's it about?", "expect": []}

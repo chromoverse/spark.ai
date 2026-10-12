@@ -102,3 +102,15 @@
 {"text": "find the cheapest flight to delhi next friday and add it to my calendar", "expect": "delegate"}
 {"text": "write a cover letter for a frontend job and save it", "expect": "delegate"}
 {"text": "check my calendar for tomorrow and tell me if I'm free at 3", "expect": "delegate"}
+{"text": "call my sister", "profile": "The user's sister is Asha.", "expect": "mentions", "words": ["Asha"]}
+{"text": "who's my sister", "expect": "answer", "not_words": ["Asha", "Priya", "Sita"]}
+{"text": "what's my name", "profile": "The user's name is Siddhant. The user lives in Kathmandu.", "expect": "mentions", "words": ["Siddhant"]}
+{"text": "when is my wife's birthday", "profile": "The user's wife Priya was born on 4 March.", "expect": "mentions", "words": ["March"]}
+{"text": "what should I cook tonight", "profile": "The user is vegetarian.", "expect": "answer", "not_words": ["chicken", "beef", "pork", "fish", "mutton", "lamb", "shrimp", "prawn", "bacon", "tuna"]}
+{"text": "remind me what my wifi is called", "remembered": "The user's wifi is called Lotus.", "expect": "mentions", "words": ["Lotus"]}
+{"text": "suggest a gift for my wife", "profile": "The user's wife Priya loves gardening.", "expect": "mentions", "words": ["garden", "plant", "seed", "flower"]}
+{"text": "remember that I parked on level 3", "expect": "tool", "tool": "remember", "args": {"text": "level"}}
+{"text": "remember that my dentist is Dr Rai", "expect": "tool", "tool": "remember", "args": {"text": "Rai"}}
+{"text": "forget that my sister is Asha", "profile": "The user's sister is Asha.", "expect": "tool", "tool": "forget", "args": {"what": "sister"}}
+{"text": "remind me tomorrow to go to the bank", "expect": "answer", "not_words": ["I'll remind", "I will remind", "reminder set", "set a reminder for", "I've set"]}
+{"text": "what's my battery at and how much disk space is left", "expect": "delegate"}

@@ -169,16 +169,20 @@ Target per device: first audio within 1 s of the end of speech, within 2 s on lo
 ## R3 — Memory & Learning
 
 ### Deliverables
-- ☐ `memories` table with pgvector HNSW + full-text; local ONNX embedder in the brain
-- ☐ Background extraction after each turn (sub-agent chain, structured output), dedupe, importance
-- ☐ Profile summary in the reflex/agent prompts; hybrid retrieval prefetched on partials
-- ☐ `remember` / `recall` / `forget` tools; Memory page in Settings (view, edit, delete)
-- ☐ Prompt-cache layout verified (cache hit rate tracked per role)
+- ☑ `memories` table with pgvector HNSW + full-text; local ONNX embedder in the brain
+  (multilingual-e5-small int8, `halfvec(384)`)
+- ☑ Background extraction after each turn (its own free `memory` chain role, JSON output), dedupe,
+  importance, corrections replace the old fact, decay for small unused memories
+- ☑ Profile in the reflex system prompt and the agent's first message; hybrid retrieval
+  prefetched on partials (the profile is the most important memories, not an LLM summary)
+- ☑ `remember` / `recall` / `forget` tools; Memory page in Settings (view, search, edit, keep,
+  forget)
+- ☑ Prompt-cache layout verified (cache hit rate tracked per role)
 
 ### Acceptance Tests
-- ☐ "My sister is Asha" → next day "call my sister" resolves Asha
-- ☐ Retrieval p95 < 30 ms at 10k memories per user
-- ☐ `forget` removes the memory and its embedding; it never resurfaces
+- ☑ "My sister is Asha" → next day "call my sister" resolves Asha
+- ☑ Retrieval p95 < 30 ms at 10k memories per user (p50 ~16, p95 18–22 ms)
+- ☑ `forget` removes the memory and its embedding; it never resurfaces
 
 ---
 

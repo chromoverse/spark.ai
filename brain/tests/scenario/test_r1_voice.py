@@ -445,6 +445,4 @@ async def test_reflex_only_offers_tools_the_device_can_run(brain: Brain) -> None
         "media_control",
         "media_play",
         "delegate",
-        "remember",  # brain tools: no device needed
-        "forget",
     }

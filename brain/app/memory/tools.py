@@ -54,8 +54,8 @@ async def forget(call: Any, inp: dict[str, Any]) -> str:
 
 REMEMBER = ToolSpec(
     "remember",
-    "Saves something about the user for later: a person, a preference, a routine. Use it when "
-    "they ask you to remember something.",
+    "Keeps a fact about the user in your memory (a person, a preference, a routine) when they "
+    "ask you to remember it. Not for files or notes.",
     Remember,
     "brain",
     Risk.WRITE,
@@ -73,7 +73,7 @@ RECALL = ToolSpec(
 )
 FORGET = ToolSpec(
     "forget",
-    "Deletes something you remember about the user when they ask you to forget it.",
+    "Drops a fact about the user from your memory when they ask you to forget it. Not for files.",
     Forget,
     "brain",
     Risk.WRITE,

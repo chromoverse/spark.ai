@@ -87,3 +87,31 @@ def test_agent_eval_rows_name_real_tools_and_grade_offline() -> None:
     made_up = Run(names=["file_write", "file_open"], final="Saved notes.txt and todo.docx.")
     made_up.evidence = good.evidence
     assert grade(notes, made_up).startswith("ungrounded")  # type: ignore[union-attr]
+
+
+def test_memory_rows_grade_what_was_remembered() -> None:
+    from app.memory.extract import Item
+    from evals.run import grade_memory, turn_prompt
+
+    asha = Item(kind="person", text="The user's sister is Asha.", importance=0.9)
+    row = {"expect": [{"kind": "person", "words": ["sister", "asha"]}]}
+    assert grade_memory(row, [asha]) and not grade_memory(row, [])
+    assert not grade_memory({"expect": []}, [asha])  # nothing to learn: nothing learned
+    short = Item(kind="preference", text="The user wants brief replies.", importance=0.6)
+    assert grade_memory({"expect": [{"words": ["short|brief"]}]}, [short])
+    moved = Item(kind="correction", text="The user lives in Pokhara.", importance=0.6, replaces=1)
+    fix = {"expect": [{"words": ["Pokhara"]}], "replaces": 1}
+    assert grade_memory(fix, [moved]) and not grade_memory(
+        fix, [moved.model_copy(update={"replaces": None})]
+    )
+
+    # reflex rows: what's remembered reaches the prompt like a real turn's, and is graded
+    system, said = turn_prompt({"text": "call my sister", "profile": "The user's sister is Asha.",
+                                "remembered": "The user's wifi is Lotus."})  # fmt: skip
+    assert system.endswith("What you know about the user: The user's sister is Asha.")
+    assert said.startswith("call my sister\n\n(context: it's Saturday 10 October 2026, 2:05 PM")
+    assert said.endswith("remembered: The user's wifi is Lotus.)")
+    mentions = {"expect": "mentions", "words": ["Asha"], "not_words": ["Usha"]}
+    assert grade(mentions, "I can't call yet. Text Asha?", [])
+    assert not grade(mentions, "Calling Usha.", [])
+    assert not grade(mentions, "On it.", [ToolUse("c3", "delegate", {"task": "call Asha"})])

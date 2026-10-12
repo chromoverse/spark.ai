@@ -8,6 +8,14 @@ backfilled from git history and grouped by theme.
 ## [Unreleased]
 
 ### Added
+- 2026-10-11 — **R3 Memory & learning** (branch `r3/memory`): `memories` table (halfvec + HNSW,
+  generated tsvector + GIN), a local multilingual embedder in the brain (e5-small int8 ONNX,
+  downloaded on first start), hybrid search fused by reciprocal rank (p95 18–22 ms at 10k
+  memories per user), background extraction of durable first-person facts on a free `memory`
+  chain (corrections replace, the same words merge, close vectors never do, small unused memories lapse), the profile in
+  every reflex prompt and found memories in the volatile note (prefetched on partials),
+  `remember` / `recall` / `forget` (agent saves wait for the user's OK), Settings → Memory,
+  prompt-cache hit rate per role, memory evals (extraction 32/32 on gpt-oss-20b)
 - 2026-10-11 — **R2 Agent loop + desktop hands** (branch `r2/agent-loop`): brain agent loop on a
   free-first agent chain (parallel tool calls, schema checks, malformed → next entry, repeat guard,
   budgets, grounding check, ≤ 3-sentence wrap-ups with the rest as an artifact); jobs (persisted

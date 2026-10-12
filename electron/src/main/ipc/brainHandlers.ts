@@ -2,6 +2,7 @@ import type { IBrainJob, IBrainResult } from "@root/types";
 import { ipcMainHandle } from "../utils/ipcUtils.js";
 import { BrainError, brainAuth } from "../services/BrainAuth.js";
 import { brainSocket } from "../services/BrainSocket.js";
+import { BRAIN_METHODS, BRAIN_PATH } from "./brainPaths.js";
 
 const BAD_INPUT = "That doesn't look quite right. Check it and try again.";
 
@@ -80,8 +81,7 @@ export function registerBrainHandlers(): void {
   );
   ipcMainHandle("brainJobs", () => result(() => brainAuth.request<{ items: IBrainJob[] }>("GET", "/v2/jobs?limit=30")));
 
-  // The UI's reads and edits of brain data (jobs, incidents, tools, rules, devices, settings,
-  // chains). Only these routes: never auth, never another host; the token stays in main.
+  // The UI's reads and edits of brain data: only the routes in brainPaths.ts.
   ipcMainHandle("brainRequest", (_event, payload) =>
     result(() => {
       const { method, path, body } = (payload ?? {}) as { method?: unknown; path?: unknown; body?: unknown };
@@ -92,7 +92,3 @@ export function registerBrainHandlers(): void {
     }),
   );
 }
-
-const BRAIN_METHODS = new Set(["GET", "POST", "PATCH", "DELETE"]);
-const BRAIN_PATH =
-  /^\/v2\/(?:jobs|incidents|capabilities\/tools|permissions\/rules|devices|settings|engines\/chains|threads|artifacts)(?:\/[\w-]+){0,3}(?:\?[\w=&%.-]{0,200})?$/;

@@ -13,11 +13,12 @@ from typing import Any
 
 import pytest
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.db.models import Memory
 from app.llm.chains import CHAINS, Entry
 from app.memory import extract, store
-from tests.conftest import Brain
+from tests.conftest import TEST_DB, Brain
 from tests.fakes.device import FakeDevice
 from tests.fakes.embed import FakeEmbedder
 from tests.fakes.llm import Turn
@@ -161,6 +162,12 @@ async def test_m4_remember_by_voice_is_saved_at_once(brain: Brain, laptop: Lapto
     assert (m.text, m.kind, m.confirmed) == ("The user parks on level 3.", "routine", True)
     assert not brain.groq.for_model("memory")
 
+    # offered only when the line is about remembering: always listed, they cost file delegations
+    brain.groq.queue(Turn(text=["Sure."]), model="fast")
+    await turn(laptop, "delete everything in my downloads")
+    offered = [{t["function"]["name"] for t in r["tools"]} for r in brain.groq.for_model("fast")]
+    assert {"remember", "forget"} <= offered[0] and not {"remember", "forget"} & offered[1]
+
 
 async def test_m5_a_correction_replaces_the_old_fact(brain: Brain, laptop: Laptop) -> None:
     assert brain.groq is not None
@@ -274,6 +281,10 @@ async def test_m9_without_the_model_words_still_find_it(brain: Brain, laptop: La
     assert m.embedding is None
     [hit] = await store.search(brain.rt, laptop.user_id, "call Asha")
     assert hit.id == m.id
+    embedder.on = True  # the model is up: what was saved without it gets its vector
+    assert await store.embed_missing(brain.rt) == 1
+    async with brain.rt.db() as db:
+        assert (await db.get(Memory, m.id)).embedding is not None
 
 
 async def test_m10_the_same_fact_twice_is_one_memory(brain: Brain, laptop: Laptop) -> None:
@@ -282,7 +293,15 @@ async def test_m10_the_same_fact_twice_is_one_memory(brain: Brain, laptop: Lapto
     other = await store.save(brain.rt, laptop.user_id, "The user's sister is Asha.", "person", 0.9)
     assert again.id == first.id and again.importance == pytest.approx(0.9)
     assert other.id != first.id
-    assert len(await saved(brain)) == 2
+    # close vectors never merge: a flipped preference reads like a paraphrase (survey §3.1)
+    dark = await store.save(
+        brain.rt, laptop.user_id, "The user prefers dark mode.", "preference", 0.6
+    )
+    light = await store.save(
+        brain.rt, laptop.user_id, "The user prefers light mode.", "preference", 0.6
+    )
+    assert dark.id != light.id
+    assert len(await saved(brain)) == 4
 
 
 async def test_m11_unused_small_memories_lapse(brain: Brain, laptop: Laptop) -> None:
@@ -309,8 +328,10 @@ async def test_m12_retrieval_p95_under_30ms_at_10k_memories(brain: Brain, laptop
     rng = random.Random(7)
     words = [f"w{i}" for i in range(200)]  # ~1% of memories share a word, like real ones
     hnsw = next(i for i in Memory.__table__.indexes if i.name == "ix_memories_embedding")
-    async with brain.rt.engine.connect() as conn:
-        # a bulk load: rows first, then the index (one-by-one HNSW inserts take a minute)
+    # a bulk load: rows first, then the index (one-by-one HNSW inserts take a minute); its own
+    # engine, because building the index can outlast the brain's 10 s command timeout
+    loader = create_async_engine(TEST_DB, isolation_level="AUTOCOMMIT")
+    async with loader.connect() as conn:
         await conn.run_sync(hnsw.drop)
         for uid in (laptop.user_id, other):
             await conn.execute(
@@ -325,13 +346,8 @@ async def test_m12_retrieval_p95_under_30ms_at_10k_memories(brain: Brain, laptop
                 {"uid": uid},
             )
         await conn.run_sync(hnsw.create)
-        await conn.commit()
-    auto = await brain.rt.engine.connect()
-    try:  # what autovacuum does after a bulk load (VACUUM can't run in a transaction)
-        await auto.execution_options(isolation_level="AUTOCOMMIT")
-        await auto.execute(text("VACUUM ANALYZE memories"))
-    finally:
-        await auto.close()
+        await conn.execute(text("VACUUM ANALYZE memories"))  # what autovacuum does after a load
+    await loader.dispose()
     queries = [f"what about my {rng.choice(words)} and {rng.choice(words)}" for _ in range(50)]
     for q in queries[:5]:  # warm-up
         await store.search(brain.rt, laptop.user_id, q, touch=False)
@@ -414,3 +430,22 @@ def test_m15_extraction_output_is_checked_item_by_item() -> None:
     assert extract.parse("no json here") == [] and extract.parse("{broken") == []
     many = json.dumps({"memories": [good] * 9})
     assert len(extract.parse(many)) == extract.MAX_NEW
+
+
+async def test_m17_the_agent_gets_what_spark_remembers(brain: Brain, laptop: Laptop) -> None:
+    """The agent's system prompt is static (cached), so the profile and the found memories ride
+    in the job's first message."""
+    assert brain.groq is not None
+    await store.save(brain.rt, laptop.user_id, "The user's sister is Asha.", "person", 0.9)
+    brain.groq.queue(
+        Turn(text=["On it."], tool_calls=[tool("delegate", task="Email my sister", ack="On it.")]),
+        model="fast",
+    )
+    brain.groq.queue(Turn(text=["I can't send email yet."]), model="agent")
+    await turn(laptop, "email my sister about sunday")
+    for _ in range(300):
+        if brain.groq.for_model("agent"):
+            break
+        await asyncio.sleep(0.01)
+    first = brain.groq.for_model("agent")[0]["messages"][-1]["content"]
+    assert "remembered: The user's sister is Asha." in first

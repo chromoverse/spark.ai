@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta, timezone
 from typing import TYPE_CHECKING, Any
@@ -74,21 +75,30 @@ TOOL_DEFS = [t.to_def() for t in TOOLS]
 JOB_TOOL_DEFS = [JOB_STEER.to_def(), JOB_CANCEL.to_def()]
 
 
+# Offered only when the line talks about remembering: with remember/forget always listed, the
+# free models delegated file work less ("I can't delete files"), 2026-10-11 reflex eval A/B.
+_MEMORY_TALK = re.compile(r"\b(remember|forget|forgot|memori[sz]e|memory)\b", re.I)
+
+
 def tool_defs(
     capabilities: frozenset[str],
     hidden: frozenset[str] = frozenset(),
     *,
     jobs: bool = False,
     with_device: bool = False,
+    said: str = "",
 ) -> list[ToolDef]:
     """Only tools some device of the user can run (device.hello capabilities) and no bare-denied
     ones, in catalog order so the prompt prefix stays cacheable. With several devices each device
     tool takes an optional `device` (§26.3). delegate is always offered; job_steer / job_cancel
-    only while a job runs."""
+    only while a job runs; remember / forget only when the line is about remembering."""
+    memory = bool(_MEMORY_TALK.search(said))
     defs = [
         t.to_def(with_device=True) if with_device else d
         for t, d in zip(TOOLS, TOOL_DEFS, strict=True)
-        if t.requires <= capabilities and t.name not in hidden
+        if t.requires <= capabilities
+        and t.name not in hidden
+        and (memory or t.name not in MEMORY_TOOLS)
     ]
     return [*defs, *JOB_TOOL_DEFS] if jobs else defs
 
@@ -108,19 +118,20 @@ short phrase of what you're doing first ("Turning it up."). Don't wait for the r
 history, places, numbers), how-to tips, recommendations, jokes, chat, opinions, advice. The time \
 and date are in the context note.
 - If none of your tools could do it (drive a car, read minds, predict the future, phone \
-someone, see their bank account, do their taxes), never delegate it: say lightly that you can't, \
-then offer the closest thing you can do.
+someone, see their bank account, do their taxes, set a reminder), never delegate it: say lightly \
+that you can't, then offer the closest thing you can do.
 - Call delegate only when the answer needs what you can't know or do in one reply: files, \
-email, the calendar, a web search for something current, live data (weather, news, prices), \
-several steps, or anything risky. Give it the task and a short ack.
+email, the calendar, a web search for something current, live data (weather, news, prices, \
+battery), several steps, or anything risky. Give it the task and a short ack.
 - If what you heard is a fragment or makes no sense (a speech-to-text slip, "okay okay", half \
 a sentence), say in a few words that you didn't catch it. Never delegate it, never guess.
 - If the context note lists a running job: when the user changes or adds to it, call \
 job_steer; when they want it stopped, call job_cancel; say a few words either way.
 - If they name another of their devices ("on my phone"), set device on the tool.
 - You remember things about the user (below, and "remembered" in the context note). Use them \
-when they help, never recite them. When they ask you to remember something, call remember; to \
-forget something, call forget. Say a few words either way.
+when they help, never recite them. Say the names of people you know about, not "your sister". \
+When \
+they ask you to remember or forget something about themselves, call remember or forget.
 - The (context: ...) note at the end of the user's message is for you. Use it, never read it out.
 - Never claim you did something no tool did.
 - Never include internal or system XML tags in your reply."""
@@ -228,7 +239,13 @@ async def run(
         messages=messages,
         tools=()
         if after
-        else tool_defs(ctx.all_capabilities, ctx.hidden, jobs=bool(running), with_device=ctx.multi),
+        else tool_defs(
+            ctx.all_capabilities,
+            ctx.hidden,
+            jobs=bool(running),
+            with_device=ctx.multi,
+            said=user_text,
+        ),
         allow_training=ctx.allow_training,
     )
     try:

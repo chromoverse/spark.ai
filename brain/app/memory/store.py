@@ -95,9 +95,10 @@ async def save(
     source_message_id: uuid.UUID | None = None,
     replaces: uuid.UUID | None = None,
 ) -> Memory:
-    """Upsert. A memory that replaces another (a correction, a changed preference) or says the
-    same thing updates that row, newest wording wins; anything else is a new row. An unconfirmed
-    one never rewrites a confirmed one."""
+    """Upsert. A memory that replaces another (a correction, a changed preference) or has the
+    same words updates that row, newest wording wins; anything else is a new row. An unconfirmed
+    one never rewrites a confirmed one. Never merged on vector similarity: a flipped preference
+    scores like a paraphrase (embed.py); spotting paraphrases is the extractor's job."""
     text = " ".join(text.split())[:500]
     kind = kind if kind in KINDS else "fact"
     importance = min(1.0, max(0.0, importance))
@@ -112,22 +113,10 @@ async def save(
         row = None
         if replaces is not None:
             row = await db.scalar(select(Memory).where(Memory.id == replaces, *mine))
-        if row is None and vec is not None:
-            d = _distance(vec)
-            hit = (
-                await db.execute(
-                    select(Memory, d)
-                    .where(*mine, Memory.embedding.is_not(None))
-                    .order_by(d)
-                    .limit(1)
-                )
-            ).first()
-            if hit is not None and 1 - hit[1] >= rt.embedder.same:
-                row = hit[0]
         if row is None:
-            row = await db.scalar(
-                select(Memory).where(*mine, func.lower(Memory.text) == text.lower()).limit(1)
-            )
+            words = func.btrim(func.regexp_replace(func.lower(Memory.text), r"\W+", " ", "g"))
+            same = " ".join(re.findall(r"\w+", text.lower()))
+            row = await db.scalar(select(Memory).where(*mine, words == same).limit(1))
         if row is None:
             row = Memory(user_id=user_id, importance=importance, confirmed=confirmed)
             db.add(row)
@@ -140,6 +129,27 @@ async def save(
         await db.refresh(row)
     await forget_profile(rt, user_id)
     return row
+
+
+async def embed_missing(rt: Runtime, batch: int = 64) -> int:
+    """Embeds what was saved while the model was off (until then those are found by words only).
+    How many it did."""
+    done = 0
+    while True:
+        async with rt.db() as db:
+            rows = (
+                await db.execute(
+                    select(Memory.id, Memory.text).where(Memory.embedding.is_(None)).limit(batch)
+                )
+            ).all()
+        vecs = await rt.embedder.embed([r.text for r in rows], query=False) if rows else None
+        if not vecs:
+            return done
+        async with rt.db() as db:
+            for r, v in zip(rows, vecs, strict=True):
+                await db.execute(update(Memory).where(Memory.id == r.id).values(embedding=v))
+            await db.commit()
+        done += len(rows)
 
 
 async def search(
@@ -250,7 +260,7 @@ async def profile(rt: Runtime, user_id: uuid.UUID) -> list[Found]:
         size = 0
         for m in rows:
             if size + len(m.text) + 1 > PROFILE_CHARS:
-                break
+                continue  # a shorter one below may still fit
             out.append(Found(m.id, m.kind, m.text))
             size += len(m.text) + 1
     await rt.redis.set(

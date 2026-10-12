@@ -48,13 +48,6 @@ async def test_real_embedder_finds_the_right_memory_fast() -> None:
     [moon] = await e.embed(["how far is the moon"], query=True) or [[]]
     assert max(cos(moon, m) for m in mems) < e.related  # nothing related: nothing in the prompt
 
-    same = await e.embed(
-        ["The user's sister is Asha.", "The user has a sister named Asha."], query=False
-    )
-    two = await e.embed(["The user's sister is Asha.", "The user's sister is Priya."], query=False)
-    assert same and two
-    assert cos(*same) >= e.same > cos(*two)  # a paraphrase merges; a second sister doesn't
-
     took = []
     for i in range(20):
         t0 = time.perf_counter()

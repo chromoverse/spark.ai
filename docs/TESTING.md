@@ -51,7 +51,9 @@ cd electron && npm run lint && npm run typecheck   # what CI runs
 cd electron && npm test                           # ✅ R2: vitest (reducers, pure UI logic)
 cd electron && npm run e2e                         # Playwright vs fake brain (not built yet)
 # evals (live free providers, never in PR CI)
-cd brain && uv run python -m evals.run --suite reflex   # ✅ R1: 95 utterances, every keyed reflex entry
+cd brain && uv run python -m evals.run --suite reflex   # ✅ R1: 116 utterances (R3: + memory rows), every keyed reflex entry
+cd brain && uv run python -m evals.run --suite memory   # ✅ R3: 32 exchanges, the memory extractor on every keyed memory entry
+cd brain && uv run python -m evals.run --suite reflex --expect delegate mentions   # a slice: rows by expectation
 cd brain && uv run python -m evals.agent --entry groq/openai/gpt-oss-120b  # ✅ R2: 30 agent tasks, stubbed tools
 cd brain && uv run python -m evals.latency < brain.log  # ✅ R1: p50/p95 first audio from signal traces
 cd brain && uv run python -m evals.latency --low-spec < brain.log  # low-spec gate: p95 < 2000 ms
@@ -222,6 +224,7 @@ Wake word on one device (`body/tests/test_local_voice.py`):
 | U5 ✅ | Ctrl+K and Capabilities logic | the palette finds by the start of any word (label, keywords, group); tool search matches name and description words; the three-way control owns only bare rules. `electron/src/renderer/pages/spark/logic.test.ts` |
 | U6 ✅ | one conversation in every window | a speculative reply that replays before the line is confirmed stays one turn; main sends each user line to every window. `…/sparkSlice.test.ts::a speculative reply…` |
 | U7 ✅ | Settings → Memory | lists memories with kind and last use; an agent-saved one shows "needs your OK" and Keep sends `confirmed: true`; edit in place PATCHes the new text; forget only after a yes; empty state; search as you type (`?q=`). `electron/src/renderer/pages/spark/MemorySection.test.tsx`; checked in a browser harness 2026-10-11 (edit, keep, search, no match) |
+| U8 ✅ | every brain route the UI calls passes Electron main's allowlist | scanned from the renderer source; auth routes, `..` and other hosts never pass (the Memory page shipped before main allowed `/v2/memories`, owner's live try 2026-10-11). `electron/src/renderer/brainRoutes.test.ts` |
 | U3 | overlay never jumps or clips (owner's recording, 2026-10-10) | the window is fixed and click-through, only the notch morphs; checked by hand in a browser harness (per-frame size: no reversals, 0 px centre drift). Automate with Playwright for Electron |
 
 Component tests: every list has loading / empty / error states; approval modal shows the exact
@@ -234,18 +237,19 @@ Home conversation, Capabilities search, Engines "Run benchmark", Settings permis
 | M1 ✅ | "My sister is Asha", then the next day "call my sister" | the turn is mined after it ends (memory chain, JSON); one confirmed `person` memory tied to the user's message; next day (new thread, no history) the reflex's system prompt ends with the profile naming Asha. `brain/tests/scenario/test_r3_memory.py::test_m1_sister_is_asha_then_call_my_sister_the_next_day` |
 | M2 ✅ | a memory outside the profile | found for the line (hybrid search) and sent in the volatile note (`remembered: …`), never the system prompt; the profile stays ≤ 1200 characters. `…test_m2_found_memories_ride_in_the_note_not_the_system_prompt` |
 | M3 ✅ | "forget that my sister is Asha" | reflex `forget` deletes the closest memory (row + embedding); no extraction that turn; the next prompt has no Asha, search finds nothing; forgetting something unknown is said out loud. `…test_m3_forget_by_voice_and_it_never_resurfaces`, `…test_m3_forgetting_something_unknown_is_said` |
-| M4 ✅ | "remember that I parked on level 3" | reflex `remember` saves it at once, confirmed; no extraction call. `…test_m4_remember_by_voice_is_saved_at_once` |
+| M4 ✅ | "remember that I parked on level 3" | reflex `remember` saves it at once, confirmed; no extraction call. remember / forget are offered only when the line talks about remembering (always listed, they cost file delegations in the eval). `…test_m4_remember_by_voice_is_saved_at_once` |
 | M5 ✅ | "I moved to Pokhara" with "lives in Kathmandu" known | the extractor sees the numbered known memories; `replaces` updates that row (one memory, new text). `…test_m5_a_correction_replaces_the_old_fact` |
 | M6 ✅ | commands and questions ("how far is the moon", "volume to 30") | no extraction call (first-person filter saves free quota). `…test_m6_commands_and_questions_cost_no_extraction` |
 | M7 ✅ | the agent saves a memory during a job (it may have read it in a file) | unconfirmed: out of the profile and search until the user confirms it (`PATCH confirmed: true`) (§21 governance). Extraction reads only the user's words, never tool output. `…test_m7_what_the_agent_saves_waits_for_the_users_ok` |
 | M8 ✅ | Memory page routes | list newest first, `?q=` search, edit re-embeds, delete removes row + embedding, another user's memory → 404, `confirmed: false` → 422. `…test_m8_memory_page_routes` |
-| M9 ✅ | embedder not downloaded yet | saves work (embedding null), search finds by words. `…test_m9_without_the_model_words_still_find_it` |
-| M10 ✅ | the same fact twice | one row (near-identical embedding or same text), importance kept at the max; a different fact is a new row. `…test_m10_the_same_fact_twice_is_one_memory` |
+| M9 ✅ | embedder not downloaded yet | saves work (embedding null), search finds by words; once the model is up, `embed_missing` gives those rows vectors. `…test_m9_without_the_model_words_still_find_it` |
+| M10 ✅ | the same fact twice | one row (same words, punctuation aside), importance kept at the max; a different fact is a new row, and so is a flipped preference however close its vector (dark / light mode). `…test_m10_the_same_fact_twice_is_one_memory` |
 | M11 ✅ | decay | importance < 0.4 lapses 90 days after its last use; a use extends it; important ones never lapse; lapsed rows are purged on the next save. `…test_m11_unused_small_memories_lapse` |
 | M12 ✅ | retrieval at 10k memories per user (+ 10k for another user in the same HNSW index) | p95 < 30 ms (measured 2026-10-11, Windows + Docker: p50 ~16, p95 18–22 ms; the real embedder adds ~6 ms). `…test_m12_retrieval_p95_under_30ms_at_10k_memories` |
 | M13 ✅ | prompt-cache layout | system prompt (persona, then profile) and tools identical turn to turn; time and found memories only in the last message; provider cached-token counts (OpenAI `usage` and Groq `x_groq.usage`) → hit rate per role in `GET /v2/engines/chains`. `…test_m13_prompt_prefix_is_the_same_every_turn` |
 | M14 ✅ | prefetch on `signal.partial` | memories found on the partial; the final searches again only if its words changed. `…test_m14_partial_prefetch_searches_once_for_the_same_words` |
 | M15 ✅ | extractor output | JSON checked item by item (a bad item doesn't cost the rest), ≤ 5 per turn, no JSON → nothing. `…test_m15_extraction_output_is_checked_item_by_item` |
+| M17 ✅ | a delegated job | the agent's first message carries the profile and found memories (its system prompt stays static). `…test_m17_the_agent_gets_what_spark_remembers` |
 | M16 ✅ | the real embedder (skipped until the brain downloads it) | "call my sister" → the sister memory over the related floor; "how far is the moon" → nothing related; a paraphrase merges, a second sister doesn't; p50 < 15 ms. `brain/tests/test_embed.py` |
 
 ## 5. Chaos Suite
@@ -278,8 +282,9 @@ p50/p95. 2026-10-10 on the owner's low-spec laptop (Nepal → Groq): p50 1291 / 
 ## 7. Evals (live, free providers)
 | Suite | Size | Measures | Used for |
 |---|---|---|---|
-| `reflex` ✅ | 95 (`brain/evals/reflex.jsonl`: 50 answers, 33 quick tools, 12 delegations) | answer rate, quick-tool validity (name + args), delegation, TTFT p50/p95 vs the 400 ms gate, banned phrases | reflex chain order (§5.5) |
+| `reflex` ✅ | 116 (`brain/evals/reflex.jsonl`: answers, quick tools, delegations, and R3 memory rows that carry a `profile` / `remembered`) | answer rate, quick-tool validity (name + args), delegation, memory used in words (`mentions`), nothing invented (`not_words`), TTFT p50/p95 vs the 400 ms gate, banned phrases | reflex chain order (§5.5). 2026-10-11 (R3): 20b answers 61/61, tools 34/36, delegate 10/12, memory 4–5/5 (14/15 over three runs after "name the people you know"); 120b 61/61, 36/36, 8/12, 5/5. Always offering remember/forget cost file delegations (120b 18/24 → 22/24 once offered only when the line talks about remembering). Persona: 20b 52/56, 120b 53/56 |
 | `agent` ✅ | 30 multi-step tasks (`brain/evals/agent.jsonl`), stubbed tools | task success, tool-call validity, malformed turns, parallel calls, turns, tokens, wrap-up style + grounding | agent chain order. 2026-10-10: gpt-oss-120b 22/30, gpt-oss-20b 23/30, qwen3.8-27b 21/30 (4 rate-limited); every call valid; misses are run-to-run flaky (a rerun of 4 missed tasks passed 3). After the can't-do prompt line: 120b 24/30, 20b 27/30 |
+| `memory` ✅ | 32 exchanges (`brain/evals/memory.jsonl`: 15 facts, 3 corrections, 2 already known, 12 with nothing to keep) | facts found (words + kind), nothing kept from requests / moods / one-off events, `replaces` on corrections; the first-person filter runs first like in the brain | 2026-10-11: gpt-oss-20b 32/32 (after letting two-word facts like "I'm vegetarian" through and skipping one-off events), qwen3.8-27b 31/32 (1 timeout) |
 | `reflex_arc` ✅ | 338 (`body/evals/reflex_arc.jsonl`) | false-accept, slot accuracy | tier-0 thresholds; offline, so it runs in CI |
 | `research` | ~20 questions | citation correctness, answer accuracy | research pipeline |
 | `persona` ✅ (R1 part) | 58 moments (`brain/evals/persona.jsonl`: small talk, stress, can't-do, lists, numbers, failures, advice) | auto-checked PERSONA §2 rules: ≤ 3 sentences, ≤ 25 words each, no banned phrase, no markdown/lists/links/emoji, no tool call; naturalness and honesty need a human or LLM judge (later) | every reflex/agent chain entry: `uv run python -m evals.run --suite persona` |

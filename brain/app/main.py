@@ -33,6 +33,7 @@ from app.core.config import Settings
 from app.core.logging import setup_logging, trace_id_var
 from app.core.runtime import Runtime
 from app.gateway import server as gateway
+from app.memory import store
 from app.memory.embed import Embedder
 
 
@@ -51,7 +52,12 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await voice.jobs.fail_stale()
-        voice._spawn(rt.embedder.start(rt.http))  # first start downloads ~135 MB
+
+        async def embedder_up() -> None:  # first start downloads ~135 MB
+            await rt.embedder.start(rt.http)
+            await store.embed_missing(rt)
+
+        voice._spawn(embedder_up())
         supervisor = asyncio.create_task(voice.sup.run())
         yield
         supervisor.cancel()

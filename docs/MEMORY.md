@@ -7,6 +7,35 @@ happens.
 
 ## Current Progress
 
+- **VoiceStudio candidate trial (2026-10-12):** owner requested trying VoiceStudio, keeping this
+  7.37 GiB AMD laptop smooth, and retaining better voices for future high-spec devices. Added
+  measured results and device admission rules to `../chatgpt_astra_survey.md` §18. Inspected upstream
+  `7703ca66`; ran its supported KittenTTS Nano 0.8 int8 model directly in an isolated local cache
+  (two CPU threads; no full studio installation). Verified run: 2,482.51 ms warm sentence median
+  over five repetitions, 231.30 MiB sampled process-tree peak RSS, about 150–153 MiB resident
+  after generation. **Owner listening review:** the presented voice was not good; Spark's existing
+  voice is preferred. Reject the auditioned Nano int8 configuration for quality and live latency;
+  its modest memory footprint does not justify replacing the current voice. Keep OmniVoice as an untested
+  future-device candidate. No Spark voice defaults, production dependencies or application code
+  changed; all trial processes exited. Evaluation-only helpers and pinned model files occupy
+  about 81.5 MiB in ignored `.cache/voicestudio-eval/` (excluding reused libraries/cache).
+
+- **Architecture survey (2026-10-12):** added `../chatgpt_astra_survey.md`, a code-grounded,
+  research-linked proposal for personal companion memory, work continuity, efficient tool calling,
+  and token budgets. Owner clarified that Spark should understand the user and work as a personal
+  companion; first audio targets **1 s**, with **2 s only as a last resort**, and tool/model usage
+  must be token-efficient. The survey prioritizes safe corrections/provenance, reliable forgetting,
+  committed-speech boundaries for effects, durable capture, episodes/task state, and measured
+  retrieval quality. Recommendations are not implemented or phase-completion claims; no runtime
+  settings or application code changed. Existing benchmark figures are labelled repository-reported;
+  a local embedding probe produced no result and was stopped. Expanded the survey after the owner's
+  clarification that token savings must preserve data quality, complete understandable results, and
+  performance. Added primary-source research on caching, deferred tools, programmatic execution,
+  context masking/compression and routing; scoped companion preferences, humor, shared episodes,
+  and behavior learning; authoritative state views; and paired quality/cost experiments. Flagged
+  provider usage-normalization gaps and the final-response path applying speech lint to stored
+  full text. These are analysis findings and implementation proposals only.
+
 - **Direction:** v2: a cloud **Brain** + device **Bodies** (desktop now, mobile later). Full design
   in `REDESIGN.md`, one-page map in `ARCHITECTURE.md`, roadmap in `PHASES.md` (R0–R7).
 - **Phase:** R0 Brain foundations **done** (2026-10-10) on branch `r0/brain-foundations`: every
@@ -142,20 +171,42 @@ happens.
   Brain container rebuilt (migration 0003 at head). Still v1 and broken: Onboarding saves the
   user's details through `axios` to the v1 server (`/auth/update-user-details`); port it to
   `PATCH /v2/settings` (R3 or sooner). R2 boxes in PHASES ticked.
-  **NEXT:** the owner's R2 smoke test (`TESTING.md` §8c; Spark talks), then push R2 to main and
-  start R3. Open voice items, only if they show up in use: a
+  Open voice items, only if they show up in use: a
   loudness gate for follow-ups in noisy rooms, speaker-aware barge-in, the on-device wake cut (FT10
   flaky). Cleanup for later: `electron/.env` (v1, two URLs, no secrets) is still tracked in git.
-- **R3 Memory started** 2026-10-11 on branch `r3/memory` (from `r2/agent-loop`; R2 still waits
-  for the owner's smoke test, so R3 isn't on main either). **M1 brain memory done:** migration 0004
-  (`memories`, halfvec(384) + HNSW + generated tsvector + GIN), `brain/app/memory/` (embed.py:
-  multilingual-e5-small int8 ONNX, downloaded on the brain's first start into `MODELS_DIR`,
-  sha256-pinned; store.py: save with dedupe, hybrid search fused by reciprocal rank, profile,
-  forget, decay; extract.py: background extraction after reflex turns on a new `memory` chain role;
-  tools.py: remember / recall / forget), reflex prompt gets the profile (system, cacheable) and
-  found memories (volatile note), remember/forget run in the reflex, the agent gets all three,
-  `/v2/memories` routes, prompt-cache hits per role in `GET /v2/engines/chains`. Brain 161 tests
-  (+16 M rows, +1 real-model test). Retrieval at 10k memories/user: p50 ~16, p95 18–22 ms.
+- **R3 Memory done** 2026-10-11 on branch `r3/memory` (from `r2/agent-loop`), every PHASES R3
+  box ticked. Not on `main` yet: the owner asked to close R3 and tried it live (memory recalled
+  "the bank tomorrow"); R2 + R3 go to `main` together when the owner says push. What exists:
+  migration 0004 (`memories`, halfvec(384) + HNSW + generated tsvector + GIN), `brain/app/memory/`
+  (embed.py: multilingual-e5-small int8 ONNX, downloaded on the brain's first start into
+  `MODELS_DIR`, sha256-pinned; store.py: save with dedupe, hybrid search fused by reciprocal rank,
+  profile, forget, decay; extract.py: background extraction after reflex turns on a new `memory`
+  chain role; tools.py: remember / recall / forget), the profile in the reflex system prompt
+  (cacheable) and found memories in the volatile note, remember/forget in the reflex (offered only
+  when the line talks about remembering), all three for the agent (its saves wait for the user's
+  OK), `/v2/memories`, Settings → Memory, prompt-cache hits per role in `GET /v2/engines/chains`.
+  Brain 163 tests, Electron 27. Retrieval at 10k memories/user: p50 ~16, p95 18–22 ms. Evals:
+  extraction 32/32 (20b), reflex memory rows 14/15 over three runs, persona 20b 52/56.
+  **Owner's live try (2026-10-11 night) found:** the Memory page errored ("doesn't look quite
+  right"): Electron main's route allowlist didn't list `/v2/memories` (now in
+  `src/main/ipc/brainPaths.ts`, and `brainRoutes.test.ts` checks every renderer route against
+  it); the reflex promised "I'll remind you tomorrow" with no scheduler (reminders are now in the
+  can't-do list until R4's scheduler); "battery status" typed got "I can't" (battery now in the
+  delegate list; `system_info` has it). Web search, news, weather, location, reminders, Gmail
+  are R4: the agent says it can't, which is right for now.
+  **Outside review** (`chatgpt_astra_survey.md`, owner's, 2026-10-12) — fixed now: saves never
+  merge on vector similarity (a flipped preference scored 0.96 and overwrote, §3.1), memories
+  saved before the model was up get vectors once it is (§3.9), the profile skips a too-long
+  memory instead of stopping. **Memory backlog** (before or with R4, survey §11): Brain-side
+  effects in the speculative window (remember / forget / delegate run before the 700 ms endpoint
+  commit; needs a commit signal in the contract); forget that pending extraction can't undo;
+  corrections that keep history instead of overwriting; episodes + working state ("continue where
+  we stopped"); `source_message_id` on the remember tool; search pool ≥ k. Eval noise to watch:
+  20b answered "delete everything in my downloads" with "I can't delete files" in 2 of 3 runs
+  instead of delegating (120b delegates).
+  **NEXT:** owner restarts `npm run dev` (main-process change) and re-checks Settings → Memory;
+  push R2 + R3 to `main` when the owner OKs; then R4 (integrations: web search first, it's what
+  the owner reached for).
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
   after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
   after body or main-process changes; renderer changes hot-reload). The body logs one line per
@@ -284,8 +335,9 @@ happens.
   every matching row, so smaller rows kept retrieval under budget at 10k memories.
 - Thresholds measured on e5: related query/memory 0.79–0.84, unrelated 0.71–0.78 → the prompt
   gets vector hits ≥ 0.77; a paraphrase is 0.96–0.99 but so is "dark mode" vs "light mode" (0.96)
-  and two sisters are 0.92 → near-duplicates merge at ≥ 0.95 (newest wording wins); real
-  corrections come from the extractor's `replaces` (it sees the 5 nearest known memories).
+  and two sisters are 0.92 → nothing merges on similarity (a flip would overwrite); only the
+  same words merge. Paraphrases and corrections are the extractor's call (`replaces`, it sees
+  the 5 nearest known memories).
 - No `profiles` table: the profile is the most important live memories (≤ 1200 chars), rebuilt
   on any change, cached in Redis. An LLM summary could keep a forgotten fact; this can't. Add an
   LLM summary only if users pile up hundreds of memories and the top-N cut loses too much.

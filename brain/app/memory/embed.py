@@ -40,7 +40,6 @@ class Embedder:
     # an unrelated one 0.71-0.78; a paraphrase 0.96-0.99, but so is a flipped preference ("dark
     # mode" / "light mode" 0.96), and two different sisters score 0.92.
     related = 0.77
-    same = 0.95
 
     def __init__(self, models_dir: str) -> None:
         self.dir = Path(models_dir) / MODEL
