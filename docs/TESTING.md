@@ -250,7 +250,18 @@ Home conversation, Capabilities search, Engines "Run benchmark", Settings permis
 | M14 ✅ | prefetch on `signal.partial` | memories found on the partial; the final searches again only if its words changed. `…test_m14_partial_prefetch_searches_once_for_the_same_words` |
 | M15 ✅ | extractor output | JSON checked item by item (a bad item doesn't cost the rest), ≤ 5 per turn, no JSON → nothing. `…test_m15_extraction_output_is_checked_item_by_item` |
 | M17 ✅ | a delegated job | the agent's first message carries the profile and found memories (its system prompt stays static). `…test_m17_the_agent_gets_what_spark_remembers` |
-| M16 ✅ | the real embedder (skipped until the brain downloads it) | "call my sister" → the sister memory over the related floor; "how far is the moon" → nothing related; a paraphrase merges, a second sister doesn't; p50 < 15 ms. `brain/tests/test_embed.py` |
+| M16 ✅ | the real embedder (skipped until the brain downloads it) | "call my sister" → the sister memory over the related floor; "how far is the moon" → nothing related; p50 < 15 ms. `brain/tests/test_embed.py` |
+
+### 4.13 Web (§22.2, R4)
+`brain/tests/scenario/test_r4_web.py`; every host is a FakeHttp handler (no real network).
+
+| # | Scenario | Expected |
+|---|---|---|
+| W1 ✅ | news search | SearXNG asked for `format=json`, `categories=news`, `time_range=day`; each link listed once, with its date. `…test_w1_news_search_lists_each_link_once` |
+| W2 ✅ | search down / no results (PHASES R4: empty output never invents) | down → the model hears it isn't reachable; empty → "No results … never make results up". `…test_w2_search_down_or_empty_never_invents` |
+| W3 ✅ | web_fetch to a private address | 127.0.0.1, localhost, 10.x, 169.254.169.254, ::1, IPv4-mapped ::1, file:// all refused before any request; a public page redirecting to a private one is refused at the hop. `…test_w3_fetch_never_reaches_private_addresses` |
+| W4 ✅ | web_fetch of a long page | title + url + only the passages about the question (≤ 3000 chars); scripts, nav, footer dropped; a PDF link refused by content type. `…test_w4_fetch_returns_only_passages_about_the_question` |
+| W5 ✅ | "what's the weather in Pokhara" by voice | delegated job → `weather` (Open-Meteo geocode + forecast) → the agent's reply; the step is persisted and the model saw the real numbers. `…test_w5_weather_asked_by_voice_is_answered_from_the_forecast` |
 
 ## 5. Chaos Suite
 
@@ -283,7 +294,7 @@ p50/p95. 2026-10-10 on the owner's low-spec laptop (Nepal → Groq): p50 1291 / 
 | Suite | Size | Measures | Used for |
 |---|---|---|---|
 | `reflex` ✅ | 116 (`brain/evals/reflex.jsonl`: answers, quick tools, delegations, and R3 memory rows that carry a `profile` / `remembered`) | answer rate, quick-tool validity (name + args), delegation, memory used in words (`mentions`), nothing invented (`not_words`), TTFT p50/p95 vs the 400 ms gate, banned phrases | reflex chain order (§5.5). 2026-10-11 (R3): 20b answers 61/61, tools 34/36, delegate 10/12, memory 4–5/5 (14/15 over three runs after "name the people you know"); 120b 61/61, 36/36, 8/12, 5/5. Always offering remember/forget cost file delegations (120b 18/24 → 22/24 once offered only when the line talks about remembering). Persona: 20b 52/56, 120b 53/56 |
-| `agent` ✅ | 30 multi-step tasks (`brain/evals/agent.jsonl`), stubbed tools | task success, tool-call validity, malformed turns, parallel calls, turns, tokens, wrap-up style + grounding | agent chain order. 2026-10-10: gpt-oss-120b 22/30, gpt-oss-20b 23/30, qwen3.8-27b 21/30 (4 rate-limited); every call valid; misses are run-to-run flaky (a rerun of 4 missed tasks passed 3). After the can't-do prompt line: 120b 24/30, 20b 27/30 |
+| `agent` ✅ | 34 multi-step tasks (`brain/evals/agent.jsonl`), stubbed tools | task success, tool-call validity, malformed turns, parallel calls, turns, tokens, wrap-up style + grounding | agent chain order. 2026-10-10: gpt-oss-120b 22/30, gpt-oss-20b 23/30, qwen3.8-27b 21/30 (4 rate-limited); every call valid; misses are run-to-run flaky (a rerun of 4 missed tasks passed 3). After the can't-do prompt line: 120b 24/30, 20b 27/30. R4 web rows (weather, news, fact-needs-page, search-nothing), 2026-10-12: 120b 4/4, 7/7 calls valid |
 | `memory` ✅ | 32 exchanges (`brain/evals/memory.jsonl`: 15 facts, 3 corrections, 2 already known, 12 with nothing to keep) | facts found (words + kind), nothing kept from requests / moods / one-off events, `replaces` on corrections; the first-person filter runs first like in the brain | 2026-10-11: gpt-oss-20b 32/32 (after letting two-word facts like "I'm vegetarian" through and skipping one-off events), qwen3.8-27b 31/32 (1 timeout) |
 | `reflex_arc` ✅ | 338 (`body/evals/reflex_arc.jsonl`) | false-accept, slot accuracy | tier-0 thresholds; offline, so it runs in CI |
 | `research` | ~20 questions | citation correctness, answer accuracy | research pipeline |

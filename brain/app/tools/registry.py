@@ -8,6 +8,7 @@ import re
 from collections import Counter
 from collections.abc import Iterable
 
+from app.integrations.web import WEB_TOOLS
 from app.memory.tools import MEMORY_TOOLS
 from app.tools.brain_specs import BRAIN_TOOLS
 from app.tools.device_specs import DEVICE_TOOLS, QUICK_TOOLS
@@ -25,6 +26,10 @@ def register(spec: ToolSpec) -> None:
     INTEGRATIONS.append(spec)
     BY_NAME[spec.name] = spec
     ORDER[spec.name] = len(ORDER)
+
+
+for _spec in WEB_TOOLS:
+    register(_spec)
 
 
 PICK = 8  # device tools per job for free models (§21: "top 8 tools for the task")

@@ -103,8 +103,11 @@ CHAINS: dict[Role, list[Entry]] = {
         Entry("anthropic", "claude-sonnet-5-5", paid=True, extra=_EFFORT),
         Entry("anthropic", "claude-opus-5-5", paid=True, extra=_EFFORT),
     ],
-    "subagent": _SUB,
-    "review": _SUB,
+    # Off the voice path where a wrong call costs something (the safety check before an action
+    # on the user's computer, read-only research for the agent): the stronger free model first.
+    # Extraction scores 32/32 on 20b, so it stays there and off the agent's 120b quota.
+    "subagent": [Entry("groq", "openai/gpt-oss-120b", extra=_MEDIUM), *_SUB],
+    "review": [Entry("groq", "openai/gpt-oss-120b", extra=_FAST), *_SUB],
     "memory": _SUB,  # extraction after turns (§8): background, never on the voice path
 }
 

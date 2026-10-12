@@ -192,7 +192,8 @@ Target per device: first audio within 1 s of the end of speech, within 2 s on lo
 - ☐ OAuth connections (encrypted refresh tokens) with **just-in-time connect cards** that resume the
   job after OAuth, one "Connect Google" for Gmail/Calendar/Drive, reconnect banners (§23)
 - ☐ Google: Gmail, Calendar, Drive tools; Slack; Notion (ported from v1 plugins)
-- ☐ Web: SearXNG + DuckDuckGo search, own fetcher; entity search (OpenStreetMap first)
+- ◐ Web: ☑ SearXNG search (it queries DuckDuckGo, Bing, Google… itself), ☑ own fetcher, ☑ weather
+  (Open-Meteo); ☐ entity search (OpenStreetMap first)
 - ☐ Browser agent on the device over CDP (port v1 `plugins/installed/web/browser`)
 - ☐ ADB tools (devices, shell, screencap → image to model, input, install, push/pull)
 - ☐ MCP: remote servers (OAuth) in the brain, local stdio servers via the body, MCP Registry search,

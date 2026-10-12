@@ -204,9 +204,21 @@ happens.
   we stopped"); `source_message_id` on the remember tool; search pool ≥ k. Eval noise to watch:
   20b answered "delete everything in my downloads" with "I can't delete files" in 2 of 3 runs
   instead of delegating (120b delegates).
-  **NEXT:** owner restarts `npm run dev` (main-process change) and re-checks Settings → Memory;
-  push R2 + R3 to `main` when the owner OKs; then R4 (integrations: web search first, it's what
-  the owner reached for).
+- **R4 Integrations port — started 2026-10-12** on branch `r4/integrations` (from `r3/memory`).
+  Owner: "use the good model where we need for real" → the safety reviewer and sub-agents run on
+  gpt-oss-120b first; the reflex stays on 20b (voice latency; 120b didn't delegate better in the
+  R3 eval), extraction stays on 20b (32/32). Paid stays off. **Done:** `app/integrations/web.py`:
+  `web_search` (SearXNG only: it already queries DuckDuckGo/Bing/Google; a direct DDG fallback if
+  SearXNG uptime bites), `web_fetch` (own fetcher, honest `Spark/2.0` UA because Wikipedia 403s a
+  browser UA from httpx; private/loopback/link-local refused per redirect hop; words pick 40
+  passages, the local embedder ranks them; Wikipedia ~2.3 s, a news page ~0.8 s), `weather`
+  (Open-Meteo; free for non-commercial use only → its paid plan or met.no before production).
+  Agent eval web rows 4/4 on 120b. The reflex still delegates web/weather (a job, ~3–6 s); a
+  reflex-side quick `weather` is the next latency win. SearXNG must be up:
+  `docker compose -f deploy/docker-compose.yml up -d searxng`.
+  **NEXT:** owner tries "what's the weather", "latest news on X", "look up X" in the app; push
+  R2 + R3 (+ R4 so far) to `main` when the owner OKs; then places (OpenStreetMap), the scheduler
+  (reminders), Google OAuth + Gmail/Calendar.
 - **Running the stack:** `docker compose -f deploy/docker-compose.yml up -d --build brain` (rebuild
   after brain changes), `cd electron && npm run dev` (spawns the body from `body/.venv`; restart it
   after body or main-process changes; renderer changes hot-reload). The body logs one line per

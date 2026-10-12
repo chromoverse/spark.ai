@@ -24,7 +24,7 @@ ai_local/
 │   │   ├── supervisor/       per-user watcher, playbook, grounding check, incidents (§19)
 │   │   ├── tools/            spec.py, registry.py, permissions.py, reviewer.py, device_specs.py, brain_specs.py
 │   │   ├── capabilities/     hooks.py (pre/post tool: redaction, audit); skills/, plugins/, mcp/ later (§20)
-│   │   ├── integrations/     google/, slack/, notion/, places/, search/ (SearXNG, ddgs, fetcher)
+│   │   ├── integrations/     web.py (SearXNG search, page fetcher, Open-Meteo weather); google/, slack/, notion/, places/ to come
 │   │   ├── research/         query planning, passage selection, citations (§22.2)
 │   │   ├── memory/           embed.py (local ONNX e5), store.py (save, hybrid search, profile, forget), extract.py, tools.py (remember/recall/forget)
 │   │   ├── jobs/             runtime.py (jobs, approvals, asks); scheduler.py, queue.py later

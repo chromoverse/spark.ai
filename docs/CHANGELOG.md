@@ -8,6 +8,10 @@ backfilled from git history and grouped by theme.
 ## [Unreleased]
 
 ### Added
+- 2026-10-12 — **R4 web tools** (branch `r4/integrations`): `web_search` (self-hosted SearXNG,
+  news + time range), `web_fetch` (own fetcher: private addresses refused at every redirect hop,
+  only the passages about the question, ranked by the local embedder), `weather` (Open-Meteo, no
+  key). The safety reviewer and sub-agents now run on gpt-oss-120b first (extraction stays on 20b).
 - 2026-10-11 — **R3 Memory & learning** (branch `r3/memory`): `memories` table (halfvec + HNSW,
   generated tsvector + GIN), a local multilingual embedder in the brain (e5-small int8 ONNX,
   downloaded on first start), hybrid search fused by reciprocal rank (p95 18–22 ms at 10k
